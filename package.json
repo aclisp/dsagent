@@ -1,6 +1,6 @@
 {
   "name": "@thinkany/dscode",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A local-first coding agent powered by Pi and DeepSeek V4 Flash.",
   "type": "module",
   "license": "MIT",
