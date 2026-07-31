@@ -4,6 +4,14 @@
   "description": "A local-first coding agent powered by Pi and DeepSeek V4 Flash.",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://github.com/thinkany-ai/dscode#readme",
+  "bugs": {
+    "url": "https://github.com/thinkany-ai/dscode/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thinkany-ai/dscode.git"
+  },
   "publishConfig": {
     "access": "public"
   },

@@ -187,6 +187,9 @@ pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
 pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
+Daily development happens on `dev`; releases are merged to `main` and published from a matching GitHub
+Release tag. See [Releasing DSCode](docs/RELEASING.md).
+
 ## Current boundaries
 
 - DeepSeek V4 Flash Responses currently accepts text input; image tasks need an external vision tool or

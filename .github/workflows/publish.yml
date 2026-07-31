@@ -1,0 +1,63 @@
+name: Publish npm package
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source and version
+        shell: bash
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          package_version="$(node -p "require('./package.json').version")"
+          test "$GITHUB_REF_NAME" = "v$package_version"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.2
+          run_install: false
+
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release
+        run: pnpm check
+
+      - name: Pack the exact release artifact
+        run: |
+          mkdir -p package-artifacts
+          npm pack --pack-destination package-artifacts
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-${{ github.ref_name }}
+          path: package-artifacts/*.tgz
+          if-no-files-found: error
+
+      - name: Publish to npm
+        run: npm publish package-artifacts/*.tgz --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
