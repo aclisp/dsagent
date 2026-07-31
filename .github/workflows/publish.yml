@@ -4,13 +4,31 @@ on:
   release:
     types:
       - published
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub Release tag, for example v0.3.2
+        required: true
+        type: string
+      sha:
+        description: Commit SHA belonging to main
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-publish-${{ inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -22,19 +40,24 @@ jobs:
       - name: Check out release
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.sha || github.sha }}
           fetch-depth: 0
 
       - name: Verify release source and version
         id: metadata
         shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.sha || github.sha }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
           package_name="$(node -p "require('./package.json').name")"
           package_version="$(node -p "require('./package.json').version")"
-          test "$GITHUB_REF_NAME" = "v$package_version"
+          test "$RELEASE_TAG" = "v$package_version"
           echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
           echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -91,7 +114,7 @@ jobs:
         if: steps.registry.outputs.already_published != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: npm-package-${{ github.ref_name }}
+          name: npm-package-${{ steps.metadata.outputs.release_tag }}
           path: package-artifacts/*.tgz
           if-no-files-found: error
 

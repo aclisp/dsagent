@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-main
@@ -21,6 +22,10 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.result.outputs.ready }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      sha: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Check out the validated main commit
         uses: actions/checkout@v6
@@ -91,3 +96,17 @@ jobs:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
         run: gh release create "$RELEASE_TAG" --target "$RELEASE_SHA" --title "$RELEASE_TAG" --generate-notes
+
+      - name: Mark the release ready for npm
+        id: result
+        if: steps.source.outputs.stale != 'true'
+        run: echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: release
+    if: needs.release.outputs.ready == 'true'
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      sha: ${{ needs.release.outputs.sha }}
+    secrets: inherit
