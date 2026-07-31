@@ -1,0 +1,93 @@
+name: Create GitHub release
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the validated main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Confirm this is still the latest main commit
+        id: source
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$main_sha" != "$RELEASE_SHA" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale main commit $RELEASE_SHA; current main is $main_sha."
+            exit 0
+          fi
+          echo "stale=false" >> "$GITHUB_OUTPUT"
+
+      - name: Read package release metadata
+        id: metadata
+        if: steps.source.outputs.stale != 'true'
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          echo "tag=v$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect the release tag
+        id: state
+        if: steps.source.outputs.stale != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+            echo "$RELEASE_TAG already has a GitHub Release."
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            tag_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [ "$tag_sha" != "$RELEASE_SHA" ]; then
+              echo "::error::$RELEASE_TAG points to $tag_sha instead of $RELEASE_SHA."
+              exit 1
+            fi
+            echo "mode=existing_tag" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "mode=create_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create a release from the existing tag
+        if: steps.state.outputs.mode == 'existing_tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes
+
+      - name: Create the tag and GitHub Release
+        if: steps.state.outputs.mode == 'create_tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: gh release create "$RELEASE_TAG" --target "$RELEASE_SHA" --title "$RELEASE_TAG" --generate-notes

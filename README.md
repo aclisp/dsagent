@@ -191,8 +191,8 @@ pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
 pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
-Daily development happens on `dev`; releases are merged to `main` and published from a matching GitHub
-Release tag. See [Releasing DSCode](docs/RELEASING.md).
+Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
+GitHub Release and publishes the npm package after CI passes. See [Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries
 
