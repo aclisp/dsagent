@@ -65,13 +65,35 @@ dscode login
 dscode -C /path/to/project
 ```
 
-DSCode masks the API key, validates it through DeepSeek's `/models` endpoint, and stores it in
-`~/.dscode/agent/auth.json` with `0600` permissions. To avoid storing a key:
+DSCode masks the API key, then offers an optional API base URL. Press Enter to use
+`https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. The key is stored in
+`~/.dscode/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
+permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
+DeepSeek URL. To avoid storing a key:
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
+
+DSCode keeps all of its global state under `~/.dscode`:
+
+```text
+~/.dscode/settings.json    TUI and runtime preferences
+~/.dscode/config.json      DeepSeek endpoint
+~/.dscode/auth.json        API credential
+~/.dscode/skills/          Global skills
+~/.dscode/extensions/      Global extensions
+~/.dscode/mcp.json         Global MCP servers
+~/.dscode/hooks.json       Global hooks
+~/.dscode/sessions/        Session history
+```
+
+Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
+history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
+copied into the new layout on first launch without deleting or overwriting anything. Project skills
+should use the portable `.agents/skills/` convention.
 
 ## Default runtime
 
@@ -136,7 +158,8 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 The default command boundary is `workspace-write` with no network. When a command needs network or host
 access, the TUI offers **Allow once**, **Allow this command for this session**, or **Deny**, then retries
 an approved command with the smallest applicable access. Use `--network` to pre-authorize network for a
-run; use `--permission full` only in a trusted workspace.
+run; use `--permission full` only in a trusted workspace. `dscode -y` is the explicit YOLO shortcut: it
+trusts project resources for that run, skips tool approvals, disables the sandbox, and enables network.
 
 macOS uses Seatbelt. Linux and Windows use a configured Docker sandbox:
 
@@ -187,8 +210,8 @@ pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
 pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
-Daily development happens on `dev`; releases are merged to `main` and published from a matching GitHub
-Release tag. See [Releasing DSCode](docs/RELEASING.md).
+Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
+GitHub Release and publishes the npm package after CI passes. See [Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries
 

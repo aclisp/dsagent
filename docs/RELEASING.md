@@ -16,16 +16,15 @@ DSCode uses two long-lived branches:
    pnpm check
    ```
 
-3. Open a pull request from `dev` to `main` and merge it after CI passes.
-4. Create a GitHub Release from `main` using a tag that exactly matches the package version:
+3. Open a pull request from `dev` to `main`. CI rejects the release if its version was not changed or
+   if that package version already exists on npm.
+4. Merge after CI passes. The successful `main` CI run triggers `.github/workflows/release.yml`, which
+   creates the matching `vX.Y.Z` tag and GitHub Release automatically.
 
-   ```bash
-   gh release create v0.3.1 --target main --generate-notes
-   ```
-
-Publishing the release triggers `.github/workflows/publish.yml`. The workflow verifies that the tagged
-commit belongs to `main`, checks that `vX.Y.Z` matches `package.json`, runs the complete test suite,
-creates the npm tarball, uploads it as a workflow artifact, and publishes that exact tarball to npm.
+Publishing the GitHub Release triggers `.github/workflows/publish.yml`. The workflow verifies that the
+tagged commit belongs to `main`, checks that `vX.Y.Z` matches `package.json`, runs the complete test
+suite, creates the npm tarball, uploads it as a workflow artifact, and publishes that exact tarball to
+npm. Existing npm versions are detected and skipped so retries cannot publish the same version twice.
 
 ## npm authentication
 

@@ -1,5 +1,10 @@
 import path from "node:path";
 import { z } from "zod";
+import {
+  DEFAULT_DEEPSEEK_BASE_URL,
+  getStoredDeepSeekBaseUrl,
+  normalizeDeepSeekBaseUrl,
+} from "./settings.js";
 
 export const effortSchema = z.enum(["low", "high", "max"]);
 export type Effort = z.infer<typeof effortSchema>;
@@ -53,8 +58,11 @@ export function loadConfig(options: CliOptions): AppConfig {
   return {
     workspace,
     apiKey,
-    baseUrl: stripTrailingSlash(
-      options.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+    baseUrl: normalizeDeepSeekBaseUrl(
+      options.baseUrl ??
+        process.env.DEEPSEEK_BASE_URL ??
+        getStoredDeepSeekBaseUrl() ??
+        DEFAULT_DEEPSEEK_BASE_URL,
     ),
     modelId: options.model ?? process.env.DSCODE_MODEL ?? "deepseek-v4-flash",
     effort,
@@ -65,8 +73,4 @@ export function loadConfig(options: CliOptions): AppConfig {
     resume: options.resume ?? true,
     verbose: options.verbose ?? false,
   };
-}
-
-function stripTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
 }

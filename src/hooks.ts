@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import type { EffectiveAccess } from "./access.js";
 import { runProcess } from "./process.js";
 import { sandboxCommand } from "./sandbox.js";
+import { getDSCodeHome } from "./home.js";
 
 const hookSchema = z.object({
   command: z.string().min(1),
@@ -81,7 +81,7 @@ async function loadHookConfig(cwd: string, includeProject: boolean): Promise<Hoo
     afterTool: [],
     agentEnd: [],
   };
-  const files = [path.join(os.homedir(), ".dscode", "hooks.json")];
+  const files = [path.join(getDSCodeHome(), "hooks.json")];
   if (includeProject) files.push(path.join(cwd, ".dscode", "hooks.json"));
   for (const file of files) {
     try {

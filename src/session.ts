@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { getDSCodeSessionsDir } from "./home.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 interface StoredSession {
@@ -20,7 +20,7 @@ export class SessionStore {
     private readonly model: string,
   ) {
     const id = crypto.createHash("sha256").update(workspace).digest("hex").slice(0, 20);
-    this.file = path.join(os.homedir(), ".dscode", "sessions", `${id}.json`);
+    this.file = path.join(getDSCodeSessionsDir(), `${id}.json`);
   }
 
   async load(): Promise<AgentMessage[]> {
@@ -62,4 +62,3 @@ export class SessionStore {
     await fs.rm(this.file, { force: true });
   }
 }
-

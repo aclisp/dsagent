@@ -62,13 +62,33 @@ dscode login
 dscode -C /path/to/project
 ```
 
-DSCode 会遮罩 API key，通过 DeepSeek `/models` 接口验证，然后以 `0600` 权限保存到
-`~/.dscode/agent/auth.json`。如果不希望落盘：
+DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
+`https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。密钥保存到
+`~/.dscode/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
+优先级为 `--base-url`、`DEEPSEEK_BASE_URL`、本地保存值、DeepSeek 官方地址。如果不希望保存密钥：
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
+
+DSCode 的全局数据统一保存在 `~/.dscode`：
+
+```text
+~/.dscode/settings.json    TUI 与运行时偏好
+~/.dscode/config.json      DeepSeek endpoint
+~/.dscode/auth.json        API 凭证
+~/.dscode/skills/          全局 skills
+~/.dscode/extensions/      全局 extensions
+~/.dscode/mcp.json         全局 MCP servers
+~/.dscode/hooks.json       全局 hooks
+~/.dscode/sessions/        会话历史
+```
+
+可用 `DSCODE_HOME` 修改整个目录，用 `DSCODE_SESSIONS_DIR` 单独修改会话目录。DSCode 不再继承
+`PI_CODING_AGENT_DIR`。首次启动会把旧的 `~/.dscode/agent` 内容无损复制到新目录，不删除、
+不覆盖已有文件。项目 skills 建议使用可移植的 `.agents/skills/` 约定。
 
 ## 默认配置
 
@@ -131,7 +151,8 @@ TUI 常用命令：
 
 默认命令边界是 `workspace-write` 且禁止联网。命令需要联网或宿主机访问时，TUI 会提供
 **仅本次允许 / 本次会话始终允许这条命令 / 拒绝**，然后用最小必要权限自动重试。`--network`
-可以为本次运行预授权网络；`--permission full` 只应用于完全可信的工作区。
+可以为本次运行预授权网络；`--permission full` 只应用于完全可信的工作区。`dscode -y` 是明确的
+YOLO 快捷方式：本次运行直接信任项目资源、跳过工具审批、关闭 sandbox 并开放网络。
 
 macOS 使用 Seatbelt；Linux 和 Windows 使用配置好的 Docker sandbox：
 
@@ -180,8 +201,8 @@ pnpm smoke:live        # 使用真实 DeepSeek API 的修改与测试 smoke flow
 pnpm acceptance:live   # 完整真实 API 功能验收
 ```
 
-日常开发提交到 `dev`；发布版本合并到 `main`，并通过版本号一致的 GitHub Release tag 发布。详细流程
-见 [Releasing DSCode](docs/RELEASING.md)。
+日常开发提交到 `dev`；带新版本号的提交合并到 `main` 并通过 CI 后，会自动创建对应的 GitHub
+Release 并发布 npm 包。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
 
 ## 当前边界
 
