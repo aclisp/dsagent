@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
@@ -26,7 +28,7 @@ describe("DSCode welcome header", () => {
     const lines = renderWelcome(
       80,
       {
-        cwd: "/Users/idoubi/code/dscode",
+        cwd: path.join(os.homedir(), "code", "dscode"),
         modelId: "deepseek-v4-flash",
         effort: "max",
         version: "0.3.0",
