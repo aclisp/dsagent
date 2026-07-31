@@ -12,6 +12,7 @@ export {
   type RpcClientOptions,
 } from "./rpc-client.js";
 export {
+  authenticateProvider,
   getDSCodeAgentDir,
   getDSCodeAuthPath,
   hasDeepSeekEnvironmentKey,
@@ -21,9 +22,13 @@ export {
   removeStoredProviderCredential,
   runAuthCommand,
   saveDeepSeekKey,
+  saveProviderApiKey,
   validateDeepSeekKey,
+  type ApiKeyProviderId,
   type KeyValidation,
+  type ProviderLoginResult,
 } from "./auth.js";
+export type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
 export {
   getDSCodeHome,
   getDSCodeSessionsDir,

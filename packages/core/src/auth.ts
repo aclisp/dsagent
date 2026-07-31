@@ -27,6 +27,13 @@ interface ApiKeyCredential {
   key: string;
 }
 
+export type ApiKeyProviderId = Extract<SupportedProviderId, "deepseek" | "openai">;
+
+export interface ProviderLoginResult {
+  providerId: Exclude<SupportedProviderId, "deepseek">;
+  modelId: string;
+}
+
 type AuthFile = Record<string, unknown>;
 
 export type KeyValidation =
@@ -64,10 +71,18 @@ export async function saveDeepSeekKey(
   key: string,
   authPath = getDSCodeAuthPath(),
 ): Promise<void> {
+  await saveProviderApiKey(PROVIDER_ID, key, authPath);
+}
+
+export async function saveProviderApiKey(
+  providerId: ApiKeyProviderId,
+  key: string,
+  authPath = getDSCodeAuthPath(),
+): Promise<void> {
   const trimmed = key.trim();
-  if (!trimmed) throw new Error("DeepSeek API key cannot be empty");
+  if (!trimmed) throw new Error(`${providerDisplayName(providerId)} API key cannot be empty`);
   const auth = await readAuthFile(authPath);
-  auth[PROVIDER_ID] = { type: "api_key", key: trimmed } satisfies ApiKeyCredential;
+  auth[providerId] = { type: "api_key", key: trimmed } satisfies ApiKeyCredential;
   await writeAuthFile(authPath, auth);
 }
 
@@ -248,6 +263,18 @@ async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<stri
 }
 
 async function loginWithProvider(providerId: Exclude<SupportedProviderId, "deepseek">): Promise<void> {
+  process.stdout.write(`${pc.bold(providerDisplayName(providerId))}\n`);
+  const result = await authenticateProvider(providerId, terminalAuthInteraction());
+  process.stdout.write(
+    `${pc.green("✓")} Signed in securely. ${result.providerId}/${result.modelId} is now the default.\n`,
+  );
+}
+
+/** Authenticate a non-DeepSeek provider using callbacks supplied by a terminal or graphical host. */
+export async function authenticateProvider(
+  providerId: Exclude<SupportedProviderId, "deepseek">,
+  interaction: AuthInteraction,
+): Promise<ProviderLoginResult> {
   const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
   const runtime = await ModelRuntime.create({
     authPath: getDSCodeAuthPath(),
@@ -257,13 +284,10 @@ async function loginWithProvider(providerId: Exclude<SupportedProviderId, "deeps
   const provider = runtime.getProvider(providerId);
   if (!provider) throw new Error(`Provider ${providerId} is unavailable in this DSCode build`);
   const authType = providerId === "openai-codex" ? "oauth" : "api_key";
-  process.stdout.write(`${pc.bold(providerDisplayName(providerId))}\n`);
-  await runtime.login(providerId, authType, terminalAuthInteraction());
+  await runtime.login(providerId, authType, interaction);
   const modelId = defaultModelForProvider(providerId);
   await saveDefaultModelSelection(providerId, modelId);
-  process.stdout.write(
-    `${pc.green("✓")} Signed in securely. ${providerId}/${modelId} is now the default.\n`,
-  );
+  return { providerId, modelId };
 }
 
 async function saveDefaultModelSelection(

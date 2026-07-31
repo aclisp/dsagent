@@ -62,16 +62,21 @@ try {
   const rpcProbe = [
     'import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";',
     'import { DSCODE_VERSION } from "@thinkany/dscode-core";',
-    'const client = createDSCodeRpcClient({ cwd: process.cwd(), args: ["--no-session", "--no-approve"] });',
-    "await client.start();",
-    "const state = await client.getState();",
-    "await client.stop();",
-    "if (state.isStreaming || state.sessionFile) throw new Error('Unexpected RPC state');",
+    "const providers = [['deepseek', 'deepseek-v4-flash'], ['openai', 'gpt-5.6-sol'], ['openai-codex', 'gpt-5.6-sol']];",
+    "for (const [provider, model] of providers) {",
+    '  const client = createDSCodeRpcClient({ provider, model, cwd: process.cwd(), args: ["--no-session", "--no-approve"] });',
+    "  await client.start();",
+    "  const state = await client.getState();",
+    "  await client.stop();",
+    "  if (state.isStreaming || state.sessionFile) throw new Error('Unexpected RPC state');",
+    "  if (state.model?.provider !== provider) throw new Error(`RPC provider mismatch: ${state.model?.provider} !== ${provider}`);",
+    "}",
     `if (DSCODE_VERSION !== ${JSON.stringify(corePackage.version)}) throw new Error('Core version mismatch');`,
   ].join("\n");
   run(process.execPath, ["--input-type=module", "-e", rpcProbe], coreInstall, {
     DSCODE_HOME: dscodeHome,
     DEEPSEEK_API_KEY: "package-check-only",
+    OPENAI_API_KEY: "package-check-only",
   });
 
   process.stdout.write(

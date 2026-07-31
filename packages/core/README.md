@@ -28,3 +28,6 @@ const client = createDSCodeRpcClient({
 Configuration and sessions use the same `~/.dscode` home as the terminal client. Applications can
 use the exported credential and settings functions to build their own login interface without
 showing a terminal prompt.
+
+For graphical authentication, use `saveProviderApiKey()` for API-key providers or pass UI callbacks
+to `authenticateProvider()` for OpenAI API/Codex OAuth. No terminal rendering is required.
