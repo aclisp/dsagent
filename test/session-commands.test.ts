@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { registerSessionCommands } from "../packages/core/src/session-commands.js";
 
 describe("DSCode session commands", () => {
-  it("registers /clear as a new-session alias", async () => {
+  it("registers /clear as a new-session alias without reusing the stale context", async () => {
     let command:
       | {
           description?: string;
@@ -18,12 +18,18 @@ describe("DSCode session commands", () => {
     registerSessionCommands(pi);
 
     const newSession = vi.fn(async () => ({ cancelled: false }));
-    const notify = vi.fn();
-    await command!.handler("", { newSession, ui: { notify } });
+    const ui = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("stale context accessed after session replacement");
+        },
+      },
+    );
+    await command!.handler("", { newSession, ui });
 
     expect(command?.description).toContain("alias for /new");
     expect(newSession).toHaveBeenCalledOnce();
-    expect(notify).toHaveBeenCalledWith("New session started. Context cleared.", "info");
   });
 
   it("does not report success when session replacement is cancelled", async () => {
@@ -35,12 +41,16 @@ describe("DSCode session commands", () => {
     } as unknown as ExtensionAPI;
     registerSessionCommands(pi);
 
-    const notify = vi.fn();
     await handler!("", {
       newSession: async () => ({ cancelled: true }),
-      ui: { notify },
+      ui: new Proxy(
+        {},
+        {
+          get() {
+            throw new Error("stale context accessed after cancelled replacement");
+          },
+        },
+      ),
     });
-
-    expect(notify).not.toHaveBeenCalled();
   });
 });
