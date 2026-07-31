@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { getDSCodeHome } from "./home.js";
 
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
@@ -14,7 +14,7 @@ interface DSCodeSettings {
 }
 
 export function getDSCodeSettingsPath(): string {
-  return process.env.DSCODE_CONFIG_PATH ?? path.join(os.homedir(), ".dscode", "config.json");
+  return process.env.DSCODE_CONFIG_PATH ?? path.join(getDSCodeHome(), "config.json");
 }
 
 export function getStoredDeepSeekBaseUrl(

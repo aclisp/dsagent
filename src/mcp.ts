@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -8,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
+import { getDSCodeHome } from "./home.js";
 
 const stdioServerSchema = z.object({
   command: z.string().min(1),
@@ -153,7 +153,7 @@ async function loadMcpConfigs(
   includeProject: boolean,
 ): Promise<Record<string, MCPServerConfig>> {
   const configs: Record<string, MCPServerConfig> = {};
-  const files = [path.join(os.homedir(), ".dscode", "mcp.json")];
+  const files = [path.join(getDSCodeHome(), "mcp.json")];
   if (includeProject) files.push(path.join(cwd, ".dscode", "mcp.json"));
   for (const file of files) {
     try {

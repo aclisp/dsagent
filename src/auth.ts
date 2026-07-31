@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import pc from "picocolors";
+import { getDSCodeHome } from "./home.js";
 import {
   getDSCodeSettingsPath,
   normalizeDeepSeekBaseUrl,
@@ -26,7 +26,7 @@ export type KeyValidation =
   | { status: "unverified"; message: string };
 
 export function getDSCodeAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".dscode", "agent");
+  return getDSCodeHome();
 }
 
 export function getDSCodeAuthPath(): string {
