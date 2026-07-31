@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Linux sandbox image
+        run: docker pull "$DSCODE_SANDBOX_IMAGE"
+
       - name: Validate release
         run: pnpm check
 
