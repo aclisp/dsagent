@@ -67,7 +67,7 @@ dscode -C /path/to/project
 
 DSCode masks the API key, then offers an optional API base URL. Press Enter to use
 `https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. The key is stored in
-`~/.dscode/agent/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
+`~/.dscode/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
 permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
 DeepSeek URL. To avoid storing a key:
 
@@ -76,6 +76,24 @@ export DEEPSEEK_API_KEY="sk-..."
 export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
+
+DSCode keeps all of its global state under `~/.dscode`:
+
+```text
+~/.dscode/settings.json    TUI and runtime preferences
+~/.dscode/config.json      DeepSeek endpoint
+~/.dscode/auth.json        API credential
+~/.dscode/skills/          Global skills
+~/.dscode/extensions/      Global extensions
+~/.dscode/mcp.json         Global MCP servers
+~/.dscode/hooks.json       Global hooks
+~/.dscode/sessions/        Session history
+```
+
+Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
+history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
+copied into the new layout on first launch without deleting or overwriting anything. Project skills
+should use the portable `.agents/skills/` convention.
 
 ## Default runtime
 

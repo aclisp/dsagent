@@ -64,7 +64,7 @@ dscode -C /path/to/project
 
 DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
 `https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。密钥保存到
-`~/.dscode/agent/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
+`~/.dscode/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
 优先级为 `--base-url`、`DEEPSEEK_BASE_URL`、本地保存值、DeepSeek 官方地址。如果不希望保存密钥：
 
 ```bash
@@ -72,6 +72,23 @@ export DEEPSEEK_API_KEY="sk-..."
 export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
+
+DSCode 的全局数据统一保存在 `~/.dscode`：
+
+```text
+~/.dscode/settings.json    TUI 与运行时偏好
+~/.dscode/config.json      DeepSeek endpoint
+~/.dscode/auth.json        API 凭证
+~/.dscode/skills/          全局 skills
+~/.dscode/extensions/      全局 extensions
+~/.dscode/mcp.json         全局 MCP servers
+~/.dscode/hooks.json       全局 hooks
+~/.dscode/sessions/        会话历史
+```
+
+可用 `DSCODE_HOME` 修改整个目录，用 `DSCODE_SESSIONS_DIR` 单独修改会话目录。DSCode 不再继承
+`PI_CODING_AGENT_DIR`。首次启动会把旧的 `~/.dscode/agent` 内容无损复制到新目录，不删除、
+不覆盖已有文件。项目 skills 建议使用可移植的 `.agents/skills/` 约定。
 
 ## 默认配置
 
