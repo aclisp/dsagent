@@ -7,6 +7,7 @@ import pc from "picocolors";
 import { ensureFirstRunAuth, runAuthCommand } from "./auth.js";
 import { createDSCodeExtension } from "./dscode-extension.js";
 import { installPiLoginSecretMask } from "./pi-login-mask.js";
+import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
 
@@ -45,6 +46,7 @@ async function run(): Promise<void> {
     piArgs: parsed.piArgs,
   });
   installPiLoginSecretMask();
+  installPiMarkdownCodeBlocks();
 
   const { main } = await import("@earendil-works/pi-coding-agent");
   await main(parsed.piArgs, {

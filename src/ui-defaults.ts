@@ -3,10 +3,11 @@ import path from "node:path";
 
 interface DSCodePiSettings {
   quietStartup?: boolean;
+  showHardwareCursor?: boolean;
   [key: string]: unknown;
 }
 
-/** Keep Pi's resource inventory behind Ctrl+O so DSCode can own the startup surface. */
+/** Apply DSCode's startup surface and native blinking-cursor defaults without replacing preferences. */
 export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<void> {
   const settingsPath = path.join(agentDirectory, "settings.json");
   let settings: DSCodePiSettings = {};
@@ -15,8 +16,16 @@ export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<vo
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
   }
-  if (settings.quietStartup !== undefined) return;
-  settings.quietStartup = true;
+  let changed = false;
+  if (settings.quietStartup === undefined) {
+    settings.quietStartup = true;
+    changed = true;
+  }
+  if (settings.showHardwareCursor === undefined) {
+    settings.showHardwareCursor = true;
+    changed = true;
+  }
+  if (!changed) return;
   await fs.mkdir(agentDirectory, { recursive: true, mode: 0o700 });
   const temporary = `${settingsPath}.${process.pid}.tmp`;
   await fs.writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });

@@ -46,6 +46,7 @@ export function registerPlanTool(
       "Update the plan as execution progresses; do not leave stale statuses.",
     ],
     parameters: updatePlanParameters,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const issue = validatePlanSteps(params.plan);

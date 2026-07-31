@@ -6,6 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 
 const stdioServerSchema = z.object({
   command: z.string().min(1),
@@ -111,6 +112,7 @@ export class MCPManager {
           description: tool.description ?? `Call MCP tool ${tool.name} on ${serverName}`,
           promptSnippet: `${localName}: ${tool.description ?? tool.name}`,
           parameters: tool.inputSchema as any,
+          renderShell: "self",
           executionMode: "parallel",
           async execute(_id, params, signal) {
             const result = await client.callTool(
@@ -124,6 +126,14 @@ export class MCPManager {
               content: [{ type: "text", text }],
               details: { server: serverName, tool: tool.name },
             };
+          },
+          renderCall(_args, theme, context) {
+            return renderToolCall("Called MCP", `${serverName}.${tool.name}`, theme, context);
+          },
+          renderResult(result, renderOptions, theme, context) {
+            return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+              collapsedSummary: "response received",
+            });
           },
         });
       }

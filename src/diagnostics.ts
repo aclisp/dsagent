@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { runProcess, type ProcessResult } from "./process.js";
 import type { DSCodeRuntimeOptions, SandboxMode } from "./runtime-options.js";
 import { sandboxCommand } from "./sandbox.js";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 
 const diagnosticsParameters = Type.Object({
   path: Type.Optional(
@@ -48,6 +49,7 @@ export function registerDiagnosticsTool(
       "Do not install a missing checker unless the user explicitly asks.",
     ],
     parameters: diagnosticsParameters,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal, _update, ctx) {
       const target = resolveTarget(ctx.cwd, params.path);
@@ -97,6 +99,23 @@ export function registerDiagnosticsTool(
         content: [{ type: "text", text: reports.join("\n\n") }],
         details: { target, commands: details },
       };
+    },
+    renderCall(args, theme, context) {
+      const detail = args.languages?.length
+        ? `${args.languages.join(", ")} in ${args.path ?? "."}`
+        : args.path ?? "auto-detect workspace";
+      return renderToolCall("Checked diagnostics", detail, theme, context);
+    },
+    renderResult(result, renderOptions, theme, context) {
+      const commands = (result.details as { commands?: ProcessResult[] } | undefined)?.commands ?? [];
+      const failed = commands.some((command) => command.timedOut || command.exitCode !== 0);
+      const summary = commands.length === 0
+        ? "no installed checker detected"
+        : `${commands.length} ${commands.length === 1 ? "checker" : "checkers"} · ${failed ? "issues found" : "clean"}`;
+      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+        collapsedSummary: summary,
+        forceError: failed,
+      });
     },
   });
 }

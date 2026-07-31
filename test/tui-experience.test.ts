@@ -1,19 +1,34 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
   minimalStatusParts,
   panelLine,
+  renderEditorPlaceholder,
   renderMinimalStatus,
+  stripFakeCursorHighlight,
 } from "../src/tui-experience.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,
+  inverse: (text: string) => `<inverse>${text}</inverse>`,
   getBgAnsi: () => "\x1b[48;5;254m",
   getColorMode: () => "256color",
 } as unknown as Theme;
 
 describe("DSCode Codex-style input presentation", () => {
+  it("places the native blinking cursor on the first placeholder character", () => {
+    const rendered = renderEditorPlaceholder(theme, true);
+    expect(rendered).toBe(`${CURSOR_MARKER}Ask DSCode to change, explain, or test code`);
+    expect(rendered.slice(CURSOR_MARKER.length)).toMatch(/^Ask/);
+  });
+
+  it("removes Pi's steady fake cursor when the native cursor is active", () => {
+    expect(stripFakeCursorHighlight(`before${CURSOR_MARKER}\x1b[7mW\x1b[0mrite`)).toBe(
+      `before${CURSOR_MARKER}Write`,
+    );
+  });
+
   it("keeps the default status compact", () => {
     const details = {
       model: "deepseek-v4-flash",

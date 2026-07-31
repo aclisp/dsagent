@@ -20,6 +20,10 @@ import { routeDSCodeLogin, scopeLoginSuggestions } from "./login-scope.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
+export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
+const BLINKING_BLOCK_CURSOR = "\x1b[1 q";
+const DEFAULT_CURSOR_STYLE = "\x1b[0 q";
+
 export function registerCodingTui(
   pi: ExtensionAPI,
   options: DSCodeRuntimeOptions,
@@ -54,6 +58,7 @@ export function registerCodingTui(
 
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
+    activeTui?.terminal.write(DEFAULT_CURSOR_STYLE);
     activeTui = undefined;
   });
 
@@ -82,9 +87,13 @@ export function registerCodingTui(
     }
 
     class DSCodeEditor extends CustomEditor {
+      private readonly dscodeTui: TUI;
+
       constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
         super(tui, theme, keybindings, { paddingX: 0 });
+        this.dscodeTui = tui;
         activeTui = tui;
+        tui.terminal.write(BLINKING_BLOCK_CURSOR);
       }
 
       render(width: number): string[] {
@@ -100,12 +109,12 @@ export function registerCodingTui(
         const bottomIndex = autocompleteStart - 1;
         if (bottomIndex < 2) return lines;
 
-        const content = lines.slice(1, bottomIndex);
+        const hardwareCursor = this.dscodeTui.getShowHardwareCursor();
+        const content = lines
+          .slice(1, bottomIndex)
+          .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line));
         if (this.getText().length === 0 && content.length > 0) {
-          content[0] = `${CURSOR_MARKER}${theme.inverse(" ")}${theme.fg(
-            "dim",
-            " Ask DSCode to change, explain, or test code",
-          )}`;
+          content[0] = renderEditorPlaceholder(theme, hardwareCursor);
         }
         const panel = [
           panelLine("", width, theme),
@@ -155,6 +164,27 @@ export function registerCodingTui(
       };
     }
   });
+}
+
+export function renderEditorPlaceholder(theme: Theme, hardwareCursor: boolean): string {
+  if (hardwareCursor) {
+    return `${CURSOR_MARKER}${theme.fg("dim", EDITOR_PLACEHOLDER)}`;
+  }
+  return `${CURSOR_MARKER}${theme.inverse(EDITOR_PLACEHOLDER[0]!)}${theme.fg(
+    "dim",
+    EDITOR_PLACEHOLDER.slice(1),
+  )}`;
+}
+
+export function stripFakeCursorHighlight(line: string): string {
+  const markerEnd = line.indexOf(CURSOR_MARKER) + CURSOR_MARKER.length;
+  if (markerEnd < CURSOR_MARKER.length || !line.startsWith("\x1b[7m", markerEnd)) return line;
+  const characterStart = markerEnd + "\x1b[7m".length;
+  const resetStart = line.indexOf("\x1b[0m", characterStart);
+  if (resetStart === -1) return line;
+  return `${line.slice(0, markerEnd)}${line.slice(characterStart, resetStart)}${line.slice(
+    resetStart + "\x1b[0m".length,
+  )}`;
 }
 
 function deepSeekOnlyAutocomplete(current: AutocompleteProvider): AutocompleteProvider {

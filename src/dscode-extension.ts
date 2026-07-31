@@ -1,11 +1,13 @@
-import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type {
   BashOperations,
   ExtensionAPI,
   ExtensionContext,
   InlineExtension,
   SessionEntry,
+  Theme,
   ToolDefinition,
+  ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -32,6 +34,12 @@ import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
 import { formatStatusReport } from "./status.js";
 import { registerSubagentTools } from "./subagents.js";
+import {
+  oneLine,
+  renderCollapsibleToolResult,
+  renderToolCall,
+  type ToolPresentationContext,
+} from "./tool-ui.js";
 import { createCodingTools } from "./tools.js";
 import { registerCodingTui } from "./tui-experience.js";
 import { Workspace } from "./workspace.js";
@@ -680,6 +688,7 @@ function registerCommandTools(
       "When a process is still running, use write_stdin with its process_id.",
     ],
     parameters: execCommandParameters,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal, _onUpdate, ctx) {
       const mode = getPermission() === "plan" ? "read-only" : options.sandbox;
@@ -695,12 +704,15 @@ function registerCommandTools(
         details: result,
       };
     },
-    renderCall(args, theme) {
-      return new Text(
-        `${theme.fg("toolTitle", theme.bold("exec"))} ${theme.fg("muted", args.cmd)}`,
-        0,
-        0,
-      );
+    renderCall(args, theme, context) {
+      return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context);
+    },
+    renderResult(result, renderOptions, theme, context) {
+      const details = result.details as ManagedProcessResult;
+      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+        collapsedSummary: managedProcessSummary(details),
+        forceError: managedProcessFailed(details),
+      });
     },
   });
 
@@ -711,6 +723,7 @@ function registerCommandTools(
       "Write characters to, poll, or terminate a managed process returned by exec_command.",
     promptSnippet: "write_stdin: interact with or poll a managed background process",
     parameters: writeStdinParameters,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params) {
       const result = await registry.interact(params.process_id, {
@@ -723,7 +736,33 @@ function registerCommandTools(
         details: result,
       };
     },
+    renderCall(args, theme, context) {
+      const action = args.terminate ? "Stop" : args.chars === undefined ? "Poll" : "Write to";
+      return renderToolCall(action, `process ${args.process_id}`, theme, context);
+    },
+    renderResult(result, renderOptions, theme, context) {
+      const details = result.details as ManagedProcessResult;
+      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+        collapsedSummary: managedProcessSummary(details),
+        forceError: managedProcessFailed(details),
+      });
+    },
   });
+}
+
+function managedProcessSummary(result: ManagedProcessResult): string {
+  if (result.running) return `running · process ${result.processId} · ${result.sandbox}`;
+  const lines = result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0;
+  return [
+    result.exitCode === 0 ? "exit 0" : `exit ${result.exitCode ?? "?"}`,
+    lines > 0 ? `${lines} output ${lines === 1 ? "line" : "lines"}` : "no output",
+    result.sandbox,
+  ].join(" · ");
+}
+
+function managedProcessFailed(result: ManagedProcessResult): boolean {
+  return result.timedOut === true ||
+    (!result.running && result.exitCode !== undefined && result.exitCode !== 0);
 }
 
 function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): void {
@@ -738,6 +777,7 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       "Never report a change as complete before running relevant validation.",
     ],
     parameters: applyPatchParameters,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const workspace = new Workspace(ctx.cwd);
@@ -766,14 +806,19 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     },
     renderCall(args, theme, context) {
       const summary = summarizePatch(args.input);
+      const header = renderToolCall("Updated", summary, theme, context);
+      if (!context.expanded) return header;
       return new Text(
-        [
-          `${theme.fg("toolTitle", theme.bold("apply_patch"))} ${theme.fg("muted", summary)}`,
-          ...(context.expanded ? [colorPatch(args.input, theme)] : []),
-        ].join("\n"),
+        `${header.render(10_000)[0]?.trimEnd() ?? ""}\n${colorPatch(args.input, theme)}`,
         0,
         0,
       );
+    },
+    renderResult(result, renderOptions, theme, context) {
+      const details = result.details as ApplyPatchResult & { checkpointId: string };
+      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+        collapsedSummary: `checkpoint ${details.checkpointId} · +${details.additions} -${details.deletions}`,
+      });
     },
   });
 }
@@ -786,6 +831,7 @@ function registerSafeHarness(pi: ExtensionAPI, initialCwd: string): void {
   for (const template of safeTools) {
     const definition = {
       ...template,
+      renderShell: "self" as const,
       async execute(
         id: string,
         params: unknown,
@@ -801,9 +847,49 @@ function registerSafeHarness(pi: ExtensionAPI, initialCwd: string): void {
         if (!live) throw new Error(`Tool disappeared: ${template.name}`);
         return live.execute(id, params as never, signal, onUpdate);
       },
+      renderCall(
+        args: Record<string, unknown>,
+        theme: Theme,
+        context: ToolPresentationContext,
+      ) {
+        const { label, detail } = safeToolSummary(template.name, args);
+        return renderToolCall(label, detail, theme, context);
+      },
+      renderResult(
+        result: AgentToolResult<unknown>,
+        renderOptions: ToolRenderResultOptions,
+        theme: Theme,
+        context: ToolPresentationContext,
+      ) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+          collapsedSummary: false,
+        });
+      },
     } as ToolDefinition;
     pi.registerTool(definition);
   }
+}
+
+function safeToolSummary(
+  name: string,
+  args: Record<string, unknown>,
+): { label: string; detail: string } {
+  if (name === "read_file") {
+    const range = args.line_start || args.line_end
+      ? `:${String(args.line_start ?? 1)}-${String(args.line_end ?? "")}`
+      : "";
+    return { label: "Read", detail: `${String(args.path ?? "file")}${range}` };
+  }
+  if (name === "list_files") {
+    return { label: "Listed", detail: String(args.pattern ?? "workspace files") };
+  }
+  if (name === "search_files") {
+    return {
+      label: "Searched",
+      detail: `${oneLine(String(args.query ?? ""), 80)} in ${String(args.path ?? ".")}`,
+    };
+  }
+  return { label: name, detail: "" };
 }
 
 function registerEntryRenderers(pi: ExtensionAPI): void {
@@ -950,6 +1036,7 @@ function engineeringInstructions(
   options: DSCodeRuntimeOptions,
   projectCommands: string[],
 ): string {
+  const commandSandbox = sandboxDescription({ mode: options.sandbox, network: options.network });
   const instructions = [
     "# DSCode engineering contract",
     "- Work to a verified repository outcome: inspect first, make focused changes, run the narrowest relevant checks, then broaden validation in proportion to risk.",
@@ -959,7 +1046,13 @@ function engineeringInstructions(
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
     "- Use update_plan for complex multi-step work. Keep at most one step in_progress and update statuses as verified work advances.",
     "- Use delegate only for genuinely independent work. The parent agent owns integration and final verification.",
+    `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
     `- Command network access is ${options.network ? "enabled" : "disabled"}; do not work around this boundary.`,
+    ...(options.network
+      ? []
+      : [
+          "- If a command is blocked because it needs network access, name the active sandbox and tell the user to restart DSCode with --network. Do not vaguely say to run it outside a sandbox.",
+        ]),
     "- Keep the final answer evidence-based: changed files, checks actually run, failures or limitations, and the shortest useful next action.",
   ];
   if (projectCommands.length > 0) {

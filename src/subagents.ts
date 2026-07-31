@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { runProcess } from "./process.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 
 const agentTaskSchema = Type.Object({
   role: Type.Union([
@@ -51,6 +51,7 @@ export function registerSubagentTools(
       "The main agent owns final integration and verification.",
     ],
     parameters: delegateSchema,
+    renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal, onUpdate, ctx) {
       const results = await mapLimited(params.tasks, 4, async (task) => {
@@ -81,12 +82,22 @@ export function registerSubagentTools(
         details: { results },
       };
     },
-    renderCall(args, theme) {
-      return new Text(
-        `${theme.fg("toolTitle", theme.bold("delegate"))} ${theme.fg("muted", `${args.tasks.length} task(s)`)}`,
-        0,
-        0,
+    renderCall(args, theme, context) {
+      const roles = [...new Set(args.tasks.map((task) => task.role))].join(", ");
+      return renderToolCall(
+        "Delegated",
+        `${args.tasks.length} ${args.tasks.length === 1 ? "task" : "tasks"} · ${roles}`,
+        theme,
+        context,
       );
+    },
+    renderResult(result, renderOptions, theme, context) {
+      const results = (result.details as { results?: SubagentResult[] } | undefined)?.results ?? [];
+      const failures = results.filter((item) => !item.success).length;
+      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
+        collapsedSummary: `${results.length - failures}/${results.length} agents succeeded`,
+        forceError: failures > 0,
+      });
     },
   });
 
