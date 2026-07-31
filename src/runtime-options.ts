@@ -9,6 +9,11 @@ import {
   type PermissionMode,
 } from "./config.js";
 import { DSCODE_VERSION } from "./version.js";
+import {
+  DEFAULT_DEEPSEEK_BASE_URL,
+  getStoredDeepSeekBaseUrl,
+  normalizeDeepSeekBaseUrl,
+} from "./settings.js";
 
 export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;
@@ -37,7 +42,10 @@ export interface ParsedRuntimeArgs {
 export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   const forwarded: string[] = [];
   let cwd = process.cwd();
-  let baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
+  let baseUrl =
+    process.env.DEEPSEEK_BASE_URL ??
+    getStoredDeepSeekBaseUrl() ??
+    DEFAULT_DEEPSEEK_BASE_URL;
   let modelId = process.env.DSCODE_MODEL ?? "deepseek-v4-flash";
   let effort = process.env.DSCODE_EFFORT ?? "max";
   let transport = transportSchema.parse(process.env.DSCODE_TRANSPORT ?? "responses");
@@ -97,7 +105,11 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       // Pi starts a new persisted session unless --continue/--resume is passed.
     } else if (flag === "--help" || flag === "-h") {
       help = true;
-    } else if (flag === "--version" || flag === "-V") {
+    } else if (
+      flag === "--version" ||
+      flag === "-V" ||
+      (flag === "version" && argv.length === 1)
+    ) {
       version = true;
     } else {
       forwarded.push(argument);
@@ -112,7 +124,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   return {
     options: {
       cwd,
-      baseUrl: baseUrl.replace(/\/+$/, ""),
+      baseUrl: normalizeDeepSeekBaseUrl(baseUrl),
       modelId,
       transport,
       harness,
@@ -170,14 +182,14 @@ DSCode options:
   --web                            Enable DeepSeek server-side web search
   -y, --yes                        Trusted mode: unrestricted host + network access
 
-Core experience inherited from Pi:
+Session and editor features:
   /help /settings /name /resume /tree /compact /reload /export
   Ctrl+O tool folding, Ctrl+G external editor, Ctrl+P model cycle
   --name, --fork, --session, --session-dir, --skills, --extension
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
-  /plan /permissions /effort /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
+  /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
 
 Authentication:
   dscode login                      Mask, validate, and securely store an API key

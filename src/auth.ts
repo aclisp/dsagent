@@ -5,6 +5,11 @@ import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import pc from "picocolors";
+import {
+  getDSCodeSettingsPath,
+  normalizeDeepSeekBaseUrl,
+  saveDeepSeekBaseUrl,
+} from "./settings.js";
 
 const PROVIDER_ID = "deepseek";
 
@@ -112,7 +117,7 @@ export async function ensureFirstRunAuth(options: {
   baseUrl: string;
   modelId: string;
   piArgs: string[];
-}): Promise<void> {
+}): Promise<string | undefined> {
   if (!usesDeepSeekProvider(options.piArgs)) return;
   if (hasDeepSeekEnvironmentKey() || (await hasStoredDeepSeekKey())) return;
   if (!isInteractiveInvocation(options.piArgs)) {
@@ -132,7 +137,7 @@ export async function ensureFirstRunAuth(options: {
       "",
     ].join("\n"),
   );
-  await promptAndStoreKey(options.baseUrl, options.modelId);
+  return promptAndStoreKey(options.baseUrl, options.modelId);
 }
 
 export async function runAuthCommand(
@@ -161,7 +166,9 @@ export async function runAuthCommand(
         `DeepSeek authentication: ${stored || environment ? pc.green("configured") : pc.yellow("not configured")}`,
         `  stored credential: ${stored ? "yes" : "no"}`,
         `  DEEPSEEK_API_KEY: ${environment ? "set" : "not set"}`,
+        `  API base URL: ${options.baseUrl}`,
         `  auth file: ${getDSCodeAuthPath()}`,
+        `  settings file: ${getDSCodeSettingsPath()}`,
       ].join("\n") + "\n",
     );
     return;
@@ -172,14 +179,16 @@ export async function runAuthCommand(
   await promptAndStoreKey(options.baseUrl, options.modelId);
 }
 
-async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<void> {
+async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<string> {
   while (true) {
     const key = await readSecret("DeepSeek API key: ");
     if (!key.trim()) throw new Error("API key setup cancelled");
-    process.stdout.write(pc.dim("Validating with DeepSeek… "));
-    const validation = await validateDeepSeekKey(key, baseUrl, modelId);
+    const selectedBaseUrl = await promptBaseUrl(baseUrl);
+    process.stdout.write(pc.dim(`Validating with ${selectedBaseUrl}… `));
+    const validation = await validateDeepSeekKey(key, selectedBaseUrl, modelId);
     if (validation.status === "invalid") {
       process.stdout.write(`${pc.red("failed")}\n${pc.red(validation.message)}. Try again.\n`);
+      baseUrl = selectedBaseUrl;
       continue;
     }
     if (validation.status === "unverified") {
@@ -196,8 +205,25 @@ async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<void
       }
     }
     await saveDeepSeekKey(key);
+    await saveDeepSeekBaseUrl(selectedBaseUrl);
     process.stdout.write(`${pc.green("✓")} API key saved securely. Start coding with ${pc.bold("dscode")}.\n`);
-    return;
+    return selectedBaseUrl;
+  }
+}
+
+async function promptBaseUrl(defaultBaseUrl: string): Promise<string> {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    while (true) {
+      const value = (await readline.question(`API base URL [${defaultBaseUrl}]: `)).trim();
+      try {
+        return normalizeDeepSeekBaseUrl(value || defaultBaseUrl);
+      } catch (error) {
+        process.stdout.write(`${pc.red((error as Error).message)}. Try again.\n`);
+      }
+    }
+  } finally {
+    readline.close();
   }
 }
 

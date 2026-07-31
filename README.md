@@ -65,11 +65,15 @@ dscode login
 dscode -C /path/to/project
 ```
 
-DSCode masks the API key, validates it through DeepSeek's `/models` endpoint, and stores it in
-`~/.dscode/agent/auth.json` with `0600` permissions. To avoid storing a key:
+DSCode masks the API key, then offers an optional API base URL. Press Enter to use
+`https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. The key is stored in
+`~/.dscode/agent/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
+permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
+DeepSeek URL. To avoid storing a key:
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 

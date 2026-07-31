@@ -38,9 +38,11 @@ import {
   type PlanState,
 } from "./plan.js";
 import { discoverProjectCommands } from "./project-profile.js";
+import { registerDSCodeProjectTrust } from "./project-trust.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
 import { formatStatusReport } from "./status.js";
+import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.js";
 import { registerSubagentTools } from "./subagents.js";
 import {
   oneLine,
@@ -119,6 +121,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
   return {
     name: "dscode",
     factory(pi) {
+      registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       const mcp = new MCPManager();
       let permission: PermissionMode = options.permission;
@@ -526,6 +529,27 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
           }
           pi.setThinkingLevel(value as ThinkingLevel);
           ctx.ui.notify(`Thinking effort: ${pi.getThinkingLevel()}`, "info");
+        },
+      });
+
+      pi.registerCommand("base-url", {
+        description: "Show or save the DeepSeek-compatible API base URL",
+        handler: async (args, ctx) => {
+          const requested = args.trim() ||
+            (ctx.hasUI
+              ? await ctx.ui.input("DeepSeek API base URL", options.baseUrl)
+              : undefined);
+          if (requested === undefined) return;
+          try {
+            const baseUrl = normalizeDeepSeekBaseUrl(requested || options.baseUrl);
+            await saveDeepSeekBaseUrl(baseUrl);
+            ctx.ui.notify(
+              `${baseUrl}\nSaved. Restart DSCode to use this API endpoint.`,
+              "info",
+            );
+          } catch (error) {
+            ctx.ui.notify((error as Error).message, "error");
+          }
         },
       });
 

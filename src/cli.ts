@@ -41,11 +41,12 @@ async function run(): Promise<void> {
     await runAuthCommand(authCommand, parsed.options);
     return;
   }
-  await ensureFirstRunAuth({
+  const configuredBaseUrl = await ensureFirstRunAuth({
     baseUrl: parsed.options.baseUrl,
     modelId: parsed.options.modelId,
     piArgs: parsed.piArgs,
   });
+  if (configuredBaseUrl) parsed.options.baseUrl = configuredBaseUrl;
   installPiLoginSecretMask();
   installPiMarkdownCodeBlocks();
 

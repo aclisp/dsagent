@@ -62,11 +62,14 @@ dscode login
 dscode -C /path/to/project
 ```
 
-DSCode 会遮罩 API key，通过 DeepSeek `/models` 接口验证，然后以 `0600` 权限保存到
-`~/.dscode/agent/auth.json`。如果不希望落盘：
+DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
+`https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。密钥保存到
+`~/.dscode/agent/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
+优先级为 `--base-url`、`DEEPSEEK_BASE_URL`、本地保存值、DeepSeek 官方地址。如果不希望保存密钥：
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 

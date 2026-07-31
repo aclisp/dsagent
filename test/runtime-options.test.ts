@@ -85,6 +85,11 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.options.toolsExplicit).toBe(true);
     expect(parsed.piArgs).not.toContain("--tools");
   });
+
+  it("accepts version as a command without starting authentication", () => {
+    expect(parseRuntimeArgs(["version"]).version).toBe(true);
+    expect(parseRuntimeArgs(["--version"]).version).toBe(true);
+  });
 });
 
 function restore(name: string, value: string | undefined): void {
