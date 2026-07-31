@@ -86,6 +86,17 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.piArgs).not.toContain("--tools");
   });
 
+  it("maps YOLO mode to full access and one-run project trust", () => {
+    const parsed = parseRuntimeArgs(["-y"]);
+    expect(parsed.options.permission).toBe("full");
+    expect(parsed.piArgs).toContain("--approve");
+
+    const explicitlyUntrusted = parseRuntimeArgs(["-y", "--no-approve"]);
+    expect(explicitlyUntrusted.options.permission).toBe("full");
+    expect(explicitlyUntrusted.piArgs).toContain("--no-approve");
+    expect(explicitlyUntrusted.piArgs).not.toContain("--approve");
+  });
+
   it("accepts version as a command without starting authentication", () => {
     expect(parseRuntimeArgs(["version"]).version).toBe(true);
     expect(parseRuntimeArgs(["--version"]).version).toBe(true);

@@ -151,7 +151,8 @@ TUI 常用命令：
 
 默认命令边界是 `workspace-write` 且禁止联网。命令需要联网或宿主机访问时，TUI 会提供
 **仅本次允许 / 本次会话始终允许这条命令 / 拒绝**，然后用最小必要权限自动重试。`--network`
-可以为本次运行预授权网络；`--permission full` 只应用于完全可信的工作区。
+可以为本次运行预授权网络；`--permission full` 只应用于完全可信的工作区。`dscode -y` 是明确的
+YOLO 快捷方式：本次运行直接信任项目资源、跳过工具审批、关闭 sandbox 并开放网络。
 
 macOS 使用 Seatbelt；Linux 和 Windows 使用配置好的 Docker sandbox：
 

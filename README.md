@@ -158,7 +158,8 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 The default command boundary is `workspace-write` with no network. When a command needs network or host
 access, the TUI offers **Allow once**, **Allow this command for this session**, or **Deny**, then retries
 an approved command with the smallest applicable access. Use `--network` to pre-authorize network for a
-run; use `--permission full` only in a trusted workspace.
+run; use `--permission full` only in a trusted workspace. `dscode -y` is the explicit YOLO shortcut: it
+trusts project resources for that run, skips tool approvals, disables the sandbox, and enables network.
 
 macOS uses Seatbelt. Linux and Windows use a configured Docker sandbox:
 

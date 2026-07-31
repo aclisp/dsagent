@@ -58,6 +58,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let toolsExplicit = false;
   let help = false;
   let version = false;
+  let yolo = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]!;
@@ -88,6 +89,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       webSearch = true;
     } else if (flag === "--yes" || flag === "-y") {
       permission = "full";
+      yolo = true;
     } else if (flag === "--effort") {
       effort = takeValue();
     } else if (flag === "--model") {
@@ -116,6 +118,12 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     }
   }
 
+  if (
+    yolo &&
+    !["--approve", "-a", "--no-approve", "-na"].some((flag) => hasFlag(forwarded, flag))
+  ) {
+    forwarded.unshift("--approve");
+  }
   if (!hasFlag(forwarded, "--provider")) forwarded.unshift("--provider", "deepseek");
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (!hasFlag(forwarded, "--thinking")) forwarded.unshift("--thinking", effort);
@@ -180,7 +188,7 @@ DSCode options:
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
   --network                        Pre-authorize command network access for this run
   --web                            Enable DeepSeek server-side web search
-  -y, --yes                        Trusted mode: unrestricted host + network access
+  -y, --yes                        YOLO: trust project, skip approvals, allow host + network
 
 Session and editor features:
   /help /settings /name /resume /tree /compact /reload /export
