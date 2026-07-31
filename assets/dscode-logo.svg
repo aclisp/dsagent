@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DSCode whale icon">
+  <!-- DeepSeek reference blue, sampled from the supplied logo image: #4E6BFE. -->
+  <g fill="#4E6BFE">
+    <!-- A compact block-whale body, facing right. -->
+    <rect x="180" y="169" width="215" height="180" rx="46"/>
+
+    <!-- A deliberately pixel-like forked tail, unlike DeepSeek's flowing whale. -->
+    <path d="M194 210H166L117 178V231L158 254L117 287V342L178 292H194Z"/>
+
+    <!-- One small lower fin. -->
+    <rect x="264" y="340" width="39" height="54"/>
+
+    <!-- Three pixels are just enough to read as a whale spout. -->
+    <rect x="305" y="144" width="16" height="25"/>
+    <rect x="279" y="121" width="19" height="19"/>
+    <rect x="326" y="116" width="19" height="19"/>
+  </g>
+
+  <!-- One eye only: unmistakably a side-view whale, not a robot face. -->
+  <rect x="340" y="222" width="18" height="32" fill="#111217"/>
+</svg>

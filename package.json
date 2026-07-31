@@ -1,0 +1,58 @@
+{
+  "name": "@thinkany/dscode",
+  "version": "0.3.0",
+  "description": "A local-first coding agent powered by Pi and DeepSeek V4 Flash.",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@10.12.2",
+  "files": [
+    "assets",
+    "dist",
+    "docs",
+    "editors",
+    "scripts/live-smoke.mjs",
+    "scripts/live-features.mjs",
+    ".env.example",
+    "README.md"
+  ],
+  "bin": {
+    "dscode": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm check",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "smoke:live": "pnpm build && node scripts/live-smoke.mjs",
+    "features:live": "pnpm build && node scripts/live-features.mjs",
+    "acceptance:live": "pnpm check && node scripts/live-smoke.mjs && node scripts/live-features.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.83.0",
+    "@earendil-works/pi-ai": "^0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "fast-glob": "^3.3.3",
+    "picocolors": "^1.1.1",
+    "typebox": "^1.3.7",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

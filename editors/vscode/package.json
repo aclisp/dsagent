@@ -1,0 +1,71 @@
+{
+  "name": "dscode-vscode",
+  "displayName": "DSCode",
+  "description": "DeepSeek V4 Flash coding agent for local VS Code workspaces.",
+  "version": "0.3.0",
+  "publisher": "dscode",
+  "license": "MIT",
+  "files": [
+    "extension.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:dscode.open",
+    "onCommand:dscode.askSelection",
+    "onCommand:dscode.fixDiagnostics"
+  ],
+  "main": "./extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dscode.open",
+        "title": "DSCode: Open Coding Agent"
+      },
+      {
+        "command": "dscode.askSelection",
+        "title": "DSCode: Ask About Selection"
+      },
+      {
+        "command": "dscode.fixDiagnostics",
+        "title": "DSCode: Fix File Diagnostics"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "dscode.askSelection",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "DSCode",
+      "properties": {
+        "dscode.executable": {
+          "type": "string",
+          "default": "dscode",
+          "description": "Path to the dscode executable."
+        },
+        "dscode.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments passed when starting DSCode."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "npx @vscode/vsce package --no-dependencies"
+  }
+}
