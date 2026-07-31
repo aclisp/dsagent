@@ -54,6 +54,10 @@ export function sandboxCommand(
   const image = process.env.DSCODE_SANDBOX_IMAGE;
   if (image && commandExists("docker")) {
     const networkArgs = options.network ? [] : ["--network", "none"];
+    const userArgs =
+      typeof process.getuid === "function" && typeof process.getgid === "function"
+        ? ["--user", `${process.getuid()}:${process.getgid()}`]
+        : [];
     const mount = options.mode === "read-only" ? `${cwd}:/workspace:ro` : `${cwd}:/workspace`;
     const readOnlyArgs =
       options.mode === "read-only"
@@ -65,6 +69,7 @@ export function sandboxCommand(
         "run",
         "--rm",
         "-i",
+        ...userArgs,
         "--cap-drop",
         "ALL",
         "--security-opt",

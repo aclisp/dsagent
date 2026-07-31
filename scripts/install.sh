@@ -14,8 +14,7 @@
 set -e
 
 # --- config ----------------------------------------------------------------
-# NOTE: set this to the real repo before hosting the one-liner.
-REPO_URL="${DSCode_REPO_URL:-https://github.com/thinkany/dscode.git}"
+REPO_URL="${DSCode_REPO_URL:-https://github.com/thinkany-ai/dscode.git}"
 REPO_BRANCH="${DSCode_REPO_BRANCH:-main}"
 INSTALL_DIR="${DSCode_INSTALL_DIR:-$HOME/.local/share/dscode}"
 BIN_DIR="${DSCode_BIN_DIR:-$HOME/.local/bin}"

@@ -49,7 +49,7 @@ ripgrep through Homebrew when available.
 Install from npm:
 
 ```bash
-npm install -g dscode
+npm install -g @thinkany/dscode
 ```
 
 Alternatively, install the latest source build:
@@ -186,6 +186,9 @@ pnpm check             # typecheck, tests, and production build
 pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
 pnpm acceptance:live   # complete real-API feature acceptance
 ```
+
+Daily development happens on `dev`; releases are merged to `main` and published from a matching GitHub
+Release tag. See [Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries
 

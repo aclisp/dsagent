@@ -46,7 +46,7 @@ Homebrew 安装 ripgrep。
 从 npm 安装：
 
 ```bash
-npm install -g dscode
+npm install -g @thinkany/dscode
 ```
 
 也可以安装最新源码版本：
@@ -179,6 +179,9 @@ pnpm check             # 类型检查、测试和生产构建
 pnpm smoke:live        # 使用真实 DeepSeek API 的修改与测试 smoke flow
 pnpm acceptance:live   # 完整真实 API 功能验收
 ```
+
+日常开发提交到 `dev`；发布版本合并到 `main`，并通过版本号一致的 GitHub Release tag 发布。详细流程
+见 [Releasing DSCode](docs/RELEASING.md)。
 
 ## 当前边界
 

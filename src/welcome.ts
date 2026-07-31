@@ -8,15 +8,15 @@ export interface WelcomeDetails {
   cwd: string;
   modelId: string;
   effort: string;
-  username?: string;
+  version: string;
 }
 
 /** Terminal pixel-art rendering of DSCode's block-whale logo. */
 export const DSCODE_LOGO = [
   "      ▀▄▀",
-  "▄▄▄███████▄",
-  " ████████ █",
-  "█▀▀███████▀",
+  "▄▄▄██████▄",
+  " ███████ █",
+  "█▀███████▀",
   "     ██",
 ];
 
@@ -35,39 +35,31 @@ export class DSCodeWelcomeHeader implements Component {
 
 export function renderWelcome(width: number, details: WelcomeDetails, theme: Theme): string[] {
   if (width <= 0) return [];
-  const cardWidth = Math.min(width, 86);
-  if (cardWidth < 18) {
-    return [truncateToWidth(brandBlue("DSCode", theme), width, "")];
+  if (width < 18) {
+    return [truncateToWidth(brandBlue(`DSCode v${details.version}`, theme), width, "")];
   }
-  const indent = " ".repeat(Math.max(0, Math.floor((width - cardWidth) / 2)));
-  const innerWidth = cardWidth - 2;
-  const username = details.username?.trim() || safeUsername();
-  const logo = DSCODE_LOGO;
-  const border = (value: string): string => brandBlue(value, theme);
-  const body = (value: string): string => {
-    const content = truncateToWidth(value, innerWidth, theme.fg("dim", "…"));
-    const left = Math.max(0, Math.floor((innerWidth - visibleWidth(content)) / 2));
-    const right = Math.max(0, innerWidth - left - visibleWidth(content));
-    return `${indent}${border("│")}${" ".repeat(left)}${content}${" ".repeat(right)}${border("│")}`;
-  };
-  const title = " DSCode ";
-  const topFill = "─".repeat(Math.max(0, cardWidth - 2 - visibleWidth(title) - 1));
-  const lines = [
-    `${indent}${border(`╭─${title}${topFill}╮`)}`,
-    body(""),
-    body(theme.bold(`Welcome back, ${username}!`)),
-    body(""),
-    ...normalizeLogo(logo).map((line) => body(brandBlue(line, theme))),
-    body(""),
-    body(theme.fg("muted", `${humanizeModel(details.modelId)} (1M context)`)),
-    body(theme.fg("muted", `DeepSeek API · ${details.effort} effort`)),
-    body(theme.fg("muted", formatCwd(details.cwd))),
-    body(""),
-    `${indent}${border(`╰${"─".repeat(cardWidth - 2)}╯`)}`,
+  const padding = width >= 24 ? "  " : "";
+  const gap = "   ";
+  const logo = normalizeLogo(DSCODE_LOGO);
+  const info = [
+    `${theme.bold("DSCode")} ${theme.fg("muted", `v${details.version}`)}`,
+    theme.fg("muted", `${humanizeModel(details.modelId)} · ${details.effort} effort`),
+    theme.fg("muted", formatCwd(details.cwd)),
   ];
-  const hint = theme.fg("dim", "Type /help for commands · /status for usage");
-  const hintIndent = " ".repeat(Math.max(0, Math.floor((width - visibleWidth(hint)) / 2)));
-  return [...lines, "", `${hintIndent}${truncateToWidth(hint, width, "")}`];
+  const sideBySideWidth = visibleWidth(padding) + visibleWidth(logo[0] ?? "") + gap.length + 12;
+  if (width < sideBySideWidth) {
+    return [
+      ...logo.map((line) => truncateToWidth(`${padding}${brandBlue(line, theme)}`, width, "")),
+      ...info.map((line) => truncateToWidth(`${padding}${line}`, width, theme.fg("dim", "…"))),
+    ];
+  }
+  return logo.map((line, index) =>
+    truncateToWidth(
+      `${padding}${brandBlue(line, theme)}${index < info.length ? `${gap}${info[index]}` : ""}`,
+      width,
+      theme.fg("dim", "…"),
+    ),
+  );
 }
 
 export function formatCwd(cwd: string): string {
@@ -80,14 +72,6 @@ export function formatCwd(cwd: string): string {
 function humanizeModel(modelId: string): string {
   if (modelId === "deepseek-v4-flash") return "DeepSeek V4 Flash";
   return modelId;
-}
-
-function safeUsername(): string {
-  try {
-    return os.userInfo().username || "developer";
-  } catch {
-    return process.env.USER || "developer";
-  }
 }
 
 function normalizeLogo(lines: string[]): string[] {
