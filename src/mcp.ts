@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { DSCODE_VERSION } from "./version.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
@@ -76,7 +77,7 @@ export class MCPManager {
     serverName: string,
     config: MCPServerConfig,
   ): Promise<void> {
-    const client = new Client({ name: "dscode", version: "0.3.0" });
+    const client = new Client({ name: "dscode", version: DSCODE_VERSION });
     let close: (() => Promise<void>) | undefined;
     try {
       if ("command" in config) {

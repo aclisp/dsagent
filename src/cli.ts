@@ -10,6 +10,7 @@ import { installPiLoginSecretMask } from "./pi-login-mask.js";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
+import { DSCODE_VERSION } from "./version.js";
 
 void run().catch((error) => {
   process.stderr.write(`${pc.red("error:")} ${formatError(error)}\n`);
@@ -23,7 +24,7 @@ async function run(): Promise<void> {
     return;
   }
   if (parsed.version) {
-    process.stdout.write("0.3.0\n");
+    process.stdout.write(`${DSCODE_VERSION}\n`);
     return;
   }
   process.chdir(parsed.options.cwd);

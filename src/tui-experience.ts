@@ -18,6 +18,7 @@ import { brandBlue } from "./brand.js";
 import type { PermissionMode } from "./config.js";
 import { routeDSCodeLogin, scopeLoginSuggestions } from "./login-scope.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
+import { DSCODE_VERSION } from "./version.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
 export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
@@ -78,6 +79,7 @@ export function registerCodingTui(
             cwd: ctx.cwd,
             modelId: ctx.model?.id ?? options.modelId,
             effort: pi.getThinkingLevel(),
+            version: DSCODE_VERSION,
           },
           theme,
         ),

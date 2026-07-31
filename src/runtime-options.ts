@@ -8,6 +8,7 @@ import {
   type ModelTransport,
   type PermissionMode,
 } from "./config.js";
+import { DSCODE_VERSION } from "./version.js";
 
 export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;
@@ -146,7 +147,7 @@ function defaultActiveTools(harness: HarnessMode): string[] {
 }
 
 export function printDSCodeHelp(): void {
-  process.stdout.write(`DSCode 0.3.0 — DeepSeek V4 Flash coding agent
+  process.stdout.write(`DSCode ${DSCODE_VERSION} — DeepSeek V4 Flash coding agent
 
 Usage:
   dscode [options] [prompt]
