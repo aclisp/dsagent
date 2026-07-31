@@ -13,11 +13,10 @@ export interface WelcomeDetails {
 
 /** Terminal pixel-art rendering of DSCode's block-whale logo. */
 export const DSCODE_LOGO = [
-  "      ▀▄▀",
-  "▄▄▄███████▄",
-  " ████████ █",
-  "█▀▀███████▀",
-  "     ██",
+  "   ▀▄▀",
+  "▄▄████▄",
+  "▀████ █",
+  "  ██",
 ];
 
 export class DSCodeWelcomeHeader implements Component {

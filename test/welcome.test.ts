@@ -12,16 +12,15 @@ const theme = {
 } as unknown as Theme;
 
 describe("DSCode welcome header", () => {
-  it("keeps the supplied whale's spout, forked tail, eye, and lower fin at five rows", () => {
+  it("keeps the whale's spout, forked tail, eye, and lower fin in a compact square", () => {
     expect(DSCODE_LOGO).toEqual([
-      "      ▀▄▀",
-      "▄▄▄███████▄",
-      " ████████ █",
-      "█▀▀███████▀",
-      "     ██",
+      "   ▀▄▀",
+      "▄▄████▄",
+      "▀████ █",
+      "  ██",
     ]);
-    expect(DSCODE_LOGO).toHaveLength(5);
-    expect(Math.max(...DSCODE_LOGO.map((line) => visibleWidth(line)))).toBe(11);
+    expect(DSCODE_LOGO).toHaveLength(4);
+    expect(Math.max(...DSCODE_LOGO.map((line) => visibleWidth(line)))).toBe(7);
   });
 
   it("renders a compact borderless header with the logo and product details", () => {
@@ -37,14 +36,14 @@ describe("DSCode welcome header", () => {
     );
     const output = lines.join("\n");
     expect(output).toContain("DSCode v0.3.0");
-    expect(output).toContain("████████ █");
+    expect(output).toContain("████ █");
     expect(output).not.toContain("< DS >");
     expect(output).toContain("DeepSeek V4 Flash · max effort");
     expect(output).toContain("~/code/dscode");
     expect(output).not.toMatch(/[╭╮╰╯│─]/u);
     expect(output).not.toContain("Welcome back");
     expect(lines.every((line) => visibleWidth(line) <= 80)).toBe(true);
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(4);
     expect(lines[0]!.indexOf("DSCode v0.3.0")).toBeGreaterThan(0);
   });
 
@@ -59,7 +58,7 @@ describe("DSCode welcome header", () => {
       },
       theme,
     );
-    expect(lines.join("\n")).toContain("████████ █");
+    expect(lines.join("\n")).toContain("████ █");
     expect(lines.every((line) => visibleWidth(line) <= 30)).toBe(true);
   });
 
@@ -77,6 +76,6 @@ describe("DSCode welcome header", () => {
     expect(lines[0]).toContain("DSCode v9.8.7");
     expect(lines[0]!.startsWith("  ")).toBe(true);
     expect(visibleWidth(lines[0]!)).toBeLessThan(50);
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(4);
   });
 });
