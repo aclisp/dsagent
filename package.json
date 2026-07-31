@@ -1,7 +1,7 @@
 {
   "name": "@thinkany/dscode",
   "version": "0.3.1",
-  "description": "A local-first coding agent powered by Pi and DeepSeek V4 Flash.",
+  "description": "A local-first coding agent powered by DeepSeek V4 Flash.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/thinkany-ai/dscode#readme",
@@ -21,6 +21,7 @@
     "dist",
     "docs",
     "editors",
+    "scripts/postinstall.mjs",
     "scripts/live-smoke.mjs",
     "scripts/live-features.mjs",
     ".env.example",
@@ -32,6 +33,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "postinstall": "node scripts/postinstall.mjs",
     "prepack": "pnpm build",
     "prepublishOnly": "pnpm check",
     "dev": "tsx src/cli.ts",

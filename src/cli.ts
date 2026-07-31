@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 import pc from "picocolors";
 import { ensureFirstRunAuth, runAuthCommand } from "./auth.js";
 import { createDSCodeExtension } from "./dscode-extension.js";
+import { initializeDSCodeHome } from "./home.js";
 import { installPiLoginSecretMask } from "./pi-login-mask.js";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
+import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
 import { DSCODE_VERSION } from "./version.js";
 
@@ -28,10 +28,7 @@ async function run(): Promise<void> {
     return;
   }
   process.chdir(parsed.options.cwd);
-  const agentDirectory =
-    process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".dscode", "agent");
-  process.env.PI_CODING_AGENT_DIR = agentDirectory;
-  process.env.PI_CODING_AGENT_SESSION_DIR ??= path.join(os.homedir(), ".dscode", "sessions");
+  const agentDirectory = await initializeDSCodeHome();
   process.env.PI_TELEMETRY ??= "0";
   process.env.PI_SKIP_VERSION_CHECK ??= "1";
   await ensureDSCodeUiDefaults(agentDirectory);
@@ -49,6 +46,7 @@ async function run(): Promise<void> {
   if (configuredBaseUrl) parsed.options.baseUrl = configuredBaseUrl;
   installPiLoginSecretMask();
   installPiMarkdownCodeBlocks();
+  installDSCodeRuntimeBranding();
 
   const { main } = await import("@earendil-works/pi-coding-agent");
   await main(parsed.piArgs, {
