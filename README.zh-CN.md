@@ -210,8 +210,24 @@ dscode -C ./project --sandbox workspace-write
 - 可信项目 hooks 与 MCP server
 - 可重连后台命令
 - 面向 CI 的 JSONL，以及完整 stdin/stdout RPC 模式
+- 可复用的 `@thinkany/dscode-core` 包及其内置 headless RPC worker
 - [editors/vscode](editors/vscode/README.md) 中的 VS Code 扩展
 - `safe` harness 自动发现 TypeScript、Pyright、Rust、Go 和 Swift diagnostics
+
+图形客户端和 IDE 集成可以直接安装 `@thinkany/dscode-core`，不要求用户全局安装 CLI。Core
+提供凭证、设置 API 和类型化 RPC client，使用与终端版完全相同的 Agent、工具、权限和本地会话格式：
+
+```ts
+import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+
+const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
+await client.start();
+client.onEvent((event) => render(event));
+await client.prompt("检查这个仓库");
+```
+
+普通 `@thinkany/dscode` tarball 会内嵌相同版本的 Core 构建，因此现有 CLI 安装不会新增运行时
+registry 依赖，也不会改变命令、配置或会话行为。
 
 ## 从源码构建
 

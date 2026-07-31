@@ -10,7 +10,7 @@ import {
   defaultModelForProvider,
   getStoredModelSelection,
   stripModelCredentialEnvironment,
-} from "../src/providers.js";
+} from "../packages/core/src/providers.js";
 
 describe("DSCode model providers", () => {
   const temporaryDirectories: string[] = [];

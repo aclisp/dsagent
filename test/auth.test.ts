@@ -9,7 +9,7 @@ import {
   removeStoredDeepSeekKey,
   saveDeepSeekKey,
   validateDeepSeekKey,
-} from "../src/auth.js";
+} from "../packages/core/src/auth.js";
 
 describe("DSCode authentication", () => {
   const temporaryDirectories: string[] = [];

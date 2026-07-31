@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { registerSessionCommands } from "../src/session-commands.js";
+import { registerSessionCommands } from "../packages/core/src/session-commands.js";
 
 describe("DSCode session commands", () => {
   it("registers /clear as a new-session alias", async () => {

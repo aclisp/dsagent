@@ -54,9 +54,14 @@ jobs:
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
           package_name="$(node -p "require('./package.json').name")"
           package_version="$(node -p "require('./package.json').version")"
+          core_package_name="$(node -p "require('./packages/core/package.json').name")"
+          core_package_version="$(node -p "require('./packages/core/package.json').version")"
           test "$RELEASE_TAG" = "v$package_version"
+          test "$core_package_version" = "$package_version"
           echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
           echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "core_package_name=$core_package_name" >> "$GITHUB_OUTPUT"
+          echo "core_package_version=$core_package_version" >> "$GITHUB_OUTPUT"
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
@@ -72,54 +77,77 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Check for an existing npm version
+      - name: Check for existing npm versions
         id: registry
         shell: bash
         env:
           PACKAGE_NAME: ${{ steps.metadata.outputs.package_name }}
           PACKAGE_VERSION: ${{ steps.metadata.outputs.package_version }}
+          CORE_PACKAGE_NAME: ${{ steps.metadata.outputs.core_package_name }}
+          CORE_PACKAGE_VERSION: ${{ steps.metadata.outputs.core_package_version }}
         run: |
-          npm_error="$RUNNER_TEMP/npm-view-error.log"
-          if published_version="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>"$npm_error")"; then
-            test "$published_version" = "$PACKAGE_VERSION"
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already on npm; skipping duplicate publication."
-            exit 0
-          fi
-          if ! grep -q "E404" "$npm_error"; then
-            cat "$npm_error" >&2
-            exit 1
-          fi
-          echo "already_published=false" >> "$GITHUB_OUTPUT"
+          check_package() {
+            key="$1"
+            name="$2"
+            version="$3"
+            npm_error="$RUNNER_TEMP/npm-view-$key-error.log"
+            if published_version="$(npm view "$name@$version" version 2>"$npm_error")"; then
+              test "$published_version" = "$version"
+              echo "${key}_already_published=true" >> "$GITHUB_OUTPUT"
+              echo "$name@$version is already on npm; skipping duplicate publication."
+              return
+            fi
+            if ! grep -q "E404" "$npm_error"; then
+              cat "$npm_error" >&2
+              exit 1
+            fi
+            echo "${key}_already_published=false" >> "$GITHUB_OUTPUT"
+          }
+          check_package cli "$PACKAGE_NAME" "$PACKAGE_VERSION"
+          check_package core "$CORE_PACKAGE_NAME" "$CORE_PACKAGE_VERSION"
 
       - name: Install dependencies
-        if: steps.registry.outputs.already_published != 'true'
+        if: steps.registry.outputs.cli_already_published != 'true' || steps.registry.outputs.core_already_published != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Prepare Linux sandbox image
-        if: steps.registry.outputs.already_published != 'true'
+        if: steps.registry.outputs.cli_already_published != 'true' || steps.registry.outputs.core_already_published != 'true'
         run: docker pull "$DSCODE_SANDBOX_IMAGE"
 
       - name: Validate release
-        if: steps.registry.outputs.already_published != 'true'
+        if: steps.registry.outputs.cli_already_published != 'true' || steps.registry.outputs.core_already_published != 'true'
         run: pnpm check
 
-      - name: Pack the exact release artifact
-        if: steps.registry.outputs.already_published != 'true'
+      - name: Pack the exact release artifacts
+        if: steps.registry.outputs.cli_already_published != 'true' || steps.registry.outputs.core_already_published != 'true'
+        env:
+          CLI_UNPUBLISHED: ${{ steps.registry.outputs.cli_already_published != 'true' }}
+          CORE_UNPUBLISHED: ${{ steps.registry.outputs.core_already_published != 'true' }}
         run: |
           mkdir -p package-artifacts
-          npm pack --pack-destination package-artifacts
+          if [ "$CLI_UNPUBLISHED" = "true" ]; then
+            npm pack --pack-destination package-artifacts
+          fi
+          if [ "$CORE_UNPUBLISHED" = "true" ]; then
+            npm pack ./packages/core --pack-destination package-artifacts
+          fi
 
       - name: Upload package artifact
-        if: steps.registry.outputs.already_published != 'true'
+        if: steps.registry.outputs.cli_already_published != 'true' || steps.registry.outputs.core_already_published != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: npm-package-${{ steps.metadata.outputs.release_tag }}
           path: package-artifacts/*.tgz
           if-no-files-found: error
 
-      - name: Publish to npm
-        if: steps.registry.outputs.already_published != 'true'
-        run: npm publish ./package-artifacts/*.tgz --access public
+      - name: Publish CLI to npm
+        if: steps.registry.outputs.cli_already_published != 'true'
+        run: npm publish "./package-artifacts/thinkany-dscode-${{ steps.metadata.outputs.package_version }}.tgz" --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Core to npm
+        if: steps.registry.outputs.core_already_published != 'true'
+        run: npm publish "./package-artifacts/thinkany-dscode-core-${{ steps.metadata.outputs.core_package_version }}.tgz" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

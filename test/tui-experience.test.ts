@@ -7,7 +7,7 @@ import {
   renderEditorPlaceholder,
   renderMinimalStatus,
   stripFakeCursorHighlight,
-} from "../src/tui-experience.js";
+} from "../packages/core/src/tui-experience.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,

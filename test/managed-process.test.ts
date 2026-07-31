@@ -1,6 +1,6 @@
 import os from "node:os";
 import { describe, expect, it } from "vitest";
-import { ManagedProcessRegistry } from "../src/managed-process.js";
+import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 
 describe("ManagedProcessRegistry", () => {
   it("yields and reconnects to a background process", async () => {

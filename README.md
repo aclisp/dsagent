@@ -221,8 +221,25 @@ MCP server environments.
 - Trusted-project hooks and MCP servers
 - Reconnectable background commands
 - JSONL output for CI and a full stdin/stdout RPC mode
+- Reusable `@thinkany/dscode-core` package with a bundled headless RPC worker
 - VS Code extension in [editors/vscode](editors/vscode/README.md)
 - Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
+
+Graphical clients and IDE integrations can install `@thinkany/dscode-core` without requiring a global
+CLI. It exposes credential and settings APIs plus a typed RPC client backed by the exact same Agent,
+tools, permissions, and local session format as the terminal client:
+
+```ts
+import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+
+const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
+await client.start();
+client.onEvent((event) => render(event));
+await client.prompt("Review this repository");
+```
+
+The normal `@thinkany/dscode` tarball embeds its matching Core build, so existing CLI installations do
+not add a registry-time dependency or change their command, configuration, and session behavior.
 
 ## Build from source
 

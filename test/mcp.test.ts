@@ -7,7 +7,7 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { MCPManager } from "../src/mcp.js";
+import { MCPManager } from "../packages/core/src/mcp.js";
 
 describe("MCPManager", () => {
   let root: string | undefined;

@@ -1,7 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { formatStatusReport, summarizeSessionUsage } from "../src/status.js";
+import { formatStatusReport, summarizeSessionUsage } from "../packages/core/src/status.js";
 
 function usage(input: number, output: number, cacheRead = 0, cacheWrite = 0): Usage {
   return {

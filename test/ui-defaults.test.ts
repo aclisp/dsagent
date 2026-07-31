@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureDSCodeUiDefaults } from "../src/ui-defaults.js";
+import { ensureDSCodeUiDefaults } from "../packages/core/src/ui-defaults.js";
 
 const temporaryDirectories: string[] = [];
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { routeDSCodeLogin, scopeLoginSuggestions } from "../src/login-scope.js";
+import { routeDSCodeLogin, scopeLoginSuggestions } from "../packages/core/src/login-scope.js";
 
 describe("DSCode provider login", () => {
   it("routes bare login to the active provider", () => {

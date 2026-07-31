@@ -5,7 +5,7 @@ import {
   renderCollapsibleToolResult,
   renderToolCall,
   type ToolPresentationContext,
-} from "../src/tool-ui.js";
+} from "../packages/core/src/tool-ui.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,

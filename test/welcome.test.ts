@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { DSCODE_LOGO, renderWelcome } from "../src/welcome.js";
+import { DSCODE_LOGO, renderWelcome } from "../packages/core/src/welcome.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,

@@ -3,7 +3,7 @@ import {
   EDITOR_PLACEHOLDER,
   formatThinkingLabel,
   HIDDEN_THINKING_LABEL,
-} from "../src/tui-experience.js";
+} from "../packages/core/src/tui-experience.js";
 
 describe("DSCode runtime UI language", () => {
   it("uses English for the primary editor and thinking labels", () => {

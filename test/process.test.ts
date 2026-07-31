@@ -1,6 +1,6 @@
 import os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { runProcess } from "../src/process.js";
+import { runProcess } from "../packages/core/src/process.js";
 
 describe("runProcess", () => {
   const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;

@@ -7,7 +7,7 @@ import {
   getDSCodeSessionsDir,
   initializeDSCodeHome,
   migrateLegacyDSCodeHome,
-} from "../src/home.js";
+} from "../packages/core/src/home.js";
 
 describe("DSCode home", () => {
   const temporaryDirectories: string[] = [];

@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseRuntimeArgs } from "../src/runtime-options.js";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
 import {
   DEFAULT_DEEPSEEK_BASE_URL,
   getStoredDeepSeekBaseUrl,
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
-} from "../src/settings.js";
+} from "../packages/core/src/settings.js";
 
 describe("DeepSeek API endpoint settings", () => {
   const temporaryDirectories: string[] = [];

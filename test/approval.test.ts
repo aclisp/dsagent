@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApprovalController, classifyCommand } from "../src/approval.js";
+import { ApprovalController, classifyCommand } from "../packages/core/src/approval.js";
 
 describe("classifyCommand", () => {
   it("allows simple read-only commands", () => {

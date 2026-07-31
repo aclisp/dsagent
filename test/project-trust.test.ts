@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { registerDSCodeProjectTrust } from "../src/project-trust.js";
+import { registerDSCodeProjectTrust } from "../packages/core/src/project-trust.js";
 
 describe("DSCode project trust", () => {
   const temporaryDirectories: string[] = [];
