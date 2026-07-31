@@ -49,7 +49,7 @@ ripgrep through Homebrew when available.
 Install from npm:
 
 ```bash
-npm install -g dscode
+npm install -g @thinkany/dscode
 ```
 
 Alternatively, install the latest source build:

@@ -22,7 +22,7 @@ describe("DSCode hooks", () => {
         hooks: {
           sessionStart: [
             {
-              command: process.execPath,
+              command: "node",
               args: [
                 "-e",
                 "require('fs').writeFileSync('hook.txt', process.env.DEEPSEEK_API_KEY ?? 'unset')",
@@ -31,7 +31,7 @@ describe("DSCode hooks", () => {
           ],
           beforeTool: [
             {
-              command: process.execPath,
+              command: "node",
               args: ["-e", "process.stderr.write('policy blocked'); process.exit(7)"],
             },
           ],

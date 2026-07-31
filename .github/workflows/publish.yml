@@ -12,6 +12,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      DSCODE_SANDBOX_IMAGE: node:24-bookworm-slim
     steps:
       - name: Check out release
         uses: actions/checkout@v6

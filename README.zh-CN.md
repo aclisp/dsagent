@@ -46,7 +46,7 @@ Homebrew 安装 ripgrep。
 从 npm 安装：
 
 ```bash
-npm install -g dscode
+npm install -g @thinkany/dscode
 ```
 
 也可以安装最新源码版本：
