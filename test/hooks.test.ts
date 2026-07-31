@@ -4,7 +4,6 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerHooks } from "../src/hooks.js";
-import type { DSCodeRuntimeOptions } from "../src/runtime-options.js";
 
 describe("DSCode hooks", () => {
   let root: string | undefined;
@@ -54,20 +53,7 @@ describe("DSCode hooks", () => {
       signal: undefined,
       isProjectTrusted: () => true,
     } as unknown as ExtensionContext;
-    const options: DSCodeRuntimeOptions = {
-      cwd: root,
-      baseUrl: "https://api.deepseek.com",
-      modelId: "deepseek-v4-flash",
-      transport: "responses",
-      harness: "minimal",
-      permission: "auto",
-      sandbox: "workspace-write",
-      network: false,
-      webSearch: false,
-      activeTools: ["exec_command", "write_stdin", "apply_patch", "delegate"],
-      toolsExplicit: false,
-    };
-    registerHooks(pi, options, () => "workspace-write");
+    registerHooks(pi, () => ({ sandbox: "workspace-write", network: false }));
 
     await handlers.get("session_start")![0]!({ type: "session_start" }, ctx);
     await expect(fs.readFile(path.join(root, "hook.txt"), "utf8")).resolves.toBe("unset");

@@ -163,11 +163,11 @@ DSCode options:
   --effort <level>                 Alias for --thinking low|high|max
   --transport <responses|chat>     API transport (default: responses)
   --harness <minimal|safe>         Tool harness (default: minimal)
-  --permission <mode>              plan|ask|auto|full (default: auto)
+  --permission <mode>              plan|ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
-  --network                        Permit command network access in the OS sandbox
+  --network                        Pre-authorize command network access for this run
   --web                            Enable DeepSeek server-side web search
-  -y, --yes                        Alias for --permission full
+  -y, --yes                        Trusted mode: unrestricted host + network access
 
 Core experience inherited from Pi:
   /help /settings /name /resume /tree /compact /reload /export

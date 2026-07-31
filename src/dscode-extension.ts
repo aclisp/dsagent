@@ -11,6 +11,14 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import {
+  commandNeedsNetwork,
+  detectSandboxBoundary,
+  SessionAccessController,
+  type AccessBoundary,
+  type EffectiveAccess,
+} from "./access.js";
+import { classifyCommand } from "./approval.js";
 import { brandBlue } from "./brand.js";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
 import { permissionSchema, type PermissionMode } from "./config.js";
@@ -41,7 +49,7 @@ import {
   type ToolPresentationContext,
 } from "./tool-ui.js";
 import { createCodingTools } from "./tools.js";
-import { registerCodingTui } from "./tui-experience.js";
+import { HIDDEN_THINKING_LABEL, registerCodingTui } from "./tui-experience.js";
 import { Workspace } from "./workspace.js";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
@@ -123,17 +131,41 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       let lastAgentFailed = false;
       let planState: PlanState | undefined;
       let lastOfferedPlanRevision = 0;
+      const access = new SessionAccessController(options.sandbox, options.network);
+      const effectiveAccess = (): EffectiveAccess => access.effective(permission);
+
+      const updateStatus = (ctx: ExtensionContext): void => {
+        const currentAccess = effectiveAccess();
+        const status = `DSCode · ${permission} · ${sandboxDescription({
+          mode: currentAccess.sandbox,
+          network: currentAccess.network,
+        })}`;
+        ctx.ui.setStatus(
+          "dscode",
+          permission === "plan"
+            ? ctx.ui.theme.fg("warning", status)
+            : brandBlue(status, ctx.ui.theme),
+        );
+        ctx.ui.setTitle(`DSCode — ${ctx.cwd}`);
+        ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
+      };
 
       registerDeepSeekProvider(pi, options);
       registerNaturalExit(pi);
-      registerCommandTools(pi, options, processes, () => permission);
+      registerCommandTools(
+        pi,
+        processes,
+        () => permission,
+        access,
+        updateStatus,
+      );
       registerPatchTool(pi, checkpoints);
       if (options.harness === "safe") {
         registerSafeHarness(pi, options.cwd);
         registerDiagnosticsTool(
           pi,
           options,
-          () => permission === "plan" ? "read-only" : options.sandbox,
+          () => effectiveAccess().sandbox,
         );
       }
       registerSubagentTools(pi, options);
@@ -146,20 +178,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
           ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
         },
       );
-      registerCodingTui(pi, options, () => permission);
-
-      const updateStatus = (ctx: ExtensionContext): void => {
-        const sandbox = permission === "plan" ? "read-only" : options.sandbox;
-        const status = `DSCode · ${permission} · ${sandboxDescription({ mode: sandbox, network: options.network })}`;
-        ctx.ui.setStatus(
-          "dscode",
-          permission === "plan"
-            ? ctx.ui.theme.fg("warning", status)
-            : brandBlue(status, ctx.ui.theme),
-        );
-        ctx.ui.setTitle(`DSCode — ${ctx.cwd}`);
-        ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
-      };
+      registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
 
       const applyPermissionTools = (): void => {
         if (permission === "plan") {
@@ -193,7 +212,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         planState = restorePlanState(ctx.sessionManager.getBranch());
         lastOfferedPlanRevision = planState?.revision ?? 0;
         updateStatus(ctx);
-        ctx.ui.setHiddenThinkingLabel("DeepSeek V4 Flash 正在思考");
+        ctx.ui.setHiddenThinkingLabel(HIDDEN_THINKING_LABEL);
         const staleMcpTools = new Set(mcp.toolNames());
         if (staleMcpTools.size > 0) {
           pi.setActiveTools(
@@ -222,7 +241,8 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
 
       pi.on("before_agent_start", async (event) => {
         lastAgentFailed = false;
-        const systemPrompt = `${event.systemPrompt}\n\n${engineeringInstructions(options, projectCommands)}`;
+        const currentAccess = effectiveAccess();
+        const systemPrompt = `${event.systemPrompt}\n\n${engineeringInstructions(projectCommands, currentAccess)}`;
         if (permission !== "plan") return { systemPrompt };
         return {
           systemPrompt,
@@ -232,7 +252,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
             content: [
               "[PLAN MODE ACTIVE]",
               "Explore and reason only. File mutation tools are unavailable.",
-              "Commands run in a read-only OS sandbox with network disabled unless explicitly enabled.",
+              `Commands run in a read-only OS sandbox with network ${currentAccess.network ? "enabled" : "subject to scoped approval"}.`,
               "Use update_plan to publish a concrete implementation plan after exploration.",
               "Include validation and important risks in the plan steps or explanation.",
               "Do not claim to have changed or tested anything you could not actually run.",
@@ -263,7 +283,23 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
           };
         }
         const externalMcp = event.toolName.startsWith("mcp__");
-        if (permission !== "ask" && !(permission === "auto" && externalMcp)) return;
+        const command =
+          event.toolName === "exec_command" &&
+          isRecord(event.input) &&
+          typeof event.input.cmd === "string"
+            ? event.input.cmd
+            : undefined;
+        const dangerousCommand = command !== undefined && classifyCommand(command) === "dangerous";
+        if (permission === "plan" && dangerousCommand) {
+          return {
+            block: true,
+            reason: "Plan mode blocks destructive commands. Leave plan mode before running this command.",
+          };
+        }
+        const needsApproval =
+          permission === "ask" ||
+          (permission === "auto" && (externalMcp || dangerousCommand));
+        if (!needsApproval) return;
         if (!externalMcp && askWithoutPromptTools.has(event.toolName)) return;
         if (
           event.toolName === "write_stdin" &&
@@ -273,6 +309,15 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         ) {
           return;
         }
+        if (
+          command !== undefined &&
+          !dangerousCommand &&
+          !effectiveAccess().network &&
+          commandNeedsNetwork(command)
+        ) {
+          // The scoped network selector in exec_command is the approval UI for this action.
+          return;
+        }
         if (!ctx.hasUI) {
           return {
             block: true,
@@ -280,7 +325,13 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
               "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
           };
         }
-        if (
+        if (dangerousCommand) {
+          const approved = await ctx.ui.confirm(
+            "Run destructive command?",
+            `${command}\n\nThis may delete data or alter system/process state.`,
+          );
+          if (!approved) return { block: true, reason: "Destructive command denied by user" };
+        } else if (
           event.toolName === "apply_patch" &&
           isRecord(event.input) &&
           typeof event.input.input === "string"
@@ -298,18 +349,31 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         }
       });
 
-      pi.on("user_bash", (_event, _ctx) => {
+      pi.on("user_bash", (_event, ctx) => {
         const operations: BashOperations = {
-          exec: (command, cwd, execution) =>
-            executeSandboxedCommand(
+          exec: async (command, cwd, execution) => {
+            let commandAccess = access.forCommand(permission, command);
+            if (!commandAccess.network && commandNeedsNetwork(command)) {
+              commandAccess = await requestCommandAccess(
+                "network",
+                command,
+                ctx,
+                permission,
+                commandAccess,
+                access,
+                updateStatus,
+              );
+            }
+            return executeSandboxedCommand(
               command,
               cwd,
               {
-                mode: permission === "plan" ? "read-only" : options.sandbox,
-                network: options.network,
+                mode: commandAccess.sandbox,
+                network: commandAccess.network,
               },
               execution,
-            ),
+            );
+          },
         };
         return { operations };
       });
@@ -412,8 +476,15 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         description: "Show or set plan|ask|auto|full",
         handler: async (args, ctx) => {
           if (!args.trim()) {
+            const currentAccess = effectiveAccess();
             ctx.ui.notify(
-              `permission: ${permission}\nsandbox: ${options.sandbox}\nnetwork: ${options.network ? "enabled" : "blocked"}`,
+              [
+                `permission: ${permission}`,
+                `sandbox: ${currentAccess.sandbox}`,
+                `network: ${currentAccess.network ? "enabled" : "blocked"}`,
+                `session grants: ${access.describeGrants().join(", ") || "none"}`,
+                "Escalation: allow once / allow for session / deny",
+              ].join("\n"),
               "info",
             );
             return;
@@ -422,6 +493,13 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
           if (!parsed.success) {
             ctx.ui.notify("Expected /permissions plan|ask|auto|full", "warning");
             return;
+          }
+          if (parsed.data === "full" && permission !== "full" && ctx.hasUI) {
+            const approved = await ctx.ui.confirm(
+              "Enable full access?",
+              "Commands will run on the host with unrestricted filesystem and network access. Use only in a trusted workspace.",
+            );
+            if (!approved) return;
           }
           if (parsed.data === "plan" && permission !== "plan") {
             permissionBeforePlan = permission;
@@ -550,6 +628,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         description: "Show model, access, context, cache, token, and cost details",
         handler: async (_args, ctx) => {
           const usage = ctx.getContextUsage();
+          const currentAccess = effectiveAccess();
           const git = await pi
             .exec("git", ["branch", "--show-current"], { cwd: ctx.cwd })
             .catch(() => undefined);
@@ -561,10 +640,10 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
               effort: ctx.thinkingLevel ?? pi.getThinkingLevel(),
               permission,
               sandbox: sandboxDescription({
-                mode: permission === "plan" ? "read-only" : options.sandbox,
-                network: options.network,
+                mode: currentAccess.sandbox,
+                network: currentAccess.network,
               }),
-              network: options.network,
+              network: currentAccess.network,
               cwd: ctx.cwd,
               branch: git?.stdout.trim() || undefined,
               sessionName: ctx.sessionManager.getSessionName(),
@@ -587,6 +666,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         description: "Show DSCode runtime diagnostics",
         handler: async (_args, ctx) => {
           const usage = ctx.getContextUsage();
+          const currentAccess = effectiveAccess();
           ctx.ui.notify(
             [
               `model: ${ctx.model?.provider ?? "?"}/${ctx.model?.id ?? "?"}`,
@@ -594,9 +674,10 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
               `thinking: ${ctx.thinkingLevel ?? pi.getThinkingLevel()}`,
               `permission: ${permission}`,
               `sandbox: ${sandboxDescription({
-                mode: permission === "plan" ? "read-only" : options.sandbox,
-                network: options.network,
+                mode: currentAccess.sandbox,
+                network: currentAccess.network,
               })}`,
+              `session grants: ${access.describeGrants().join(", ") || "none"}`,
               `workspace trusted: ${ctx.isProjectTrusted() ? "yes" : "no"}`,
               `session: ${ctx.sessionManager.getSessionFile() ?? "memory only"}`,
               `tools: ${pi.getActiveTools().join(", ")}`,
@@ -611,9 +692,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         },
       });
 
-      registerHooks(pi, options, () =>
-        permission === "plan" ? "read-only" : options.sandbox,
-      );
+      registerHooks(pi, effectiveAccess);
     },
   };
 }
@@ -672,9 +751,10 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
 
 function registerCommandTools(
   pi: ExtensionAPI,
-  options: DSCodeRuntimeOptions,
   registry: ManagedProcessRegistry,
   getPermission: () => PermissionMode,
+  accessController: SessionAccessController,
+  onAccessChanged: (ctx: ExtensionContext) => void,
 ): void {
   pi.registerTool({
     name: "exec_command",
@@ -691,14 +771,39 @@ function registerCommandTools(
     renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal, _onUpdate, ctx) {
-      const mode = getPermission() === "plan" ? "read-only" : options.sandbox;
-      const result = await registry.start(params.cmd, {
+      let commandAccess = accessController.forCommand(getPermission(), params.cmd);
+      if (!commandAccess.network && commandNeedsNetwork(params.cmd)) {
+        commandAccess = await requestCommandAccess(
+          "network",
+          params.cmd,
+          ctx,
+          getPermission(),
+          commandAccess,
+          accessController,
+          onAccessChanged,
+        );
+      }
+      const run = (current: EffectiveAccess) => registry.start(params.cmd, {
         cwd: ctx.cwd,
-        sandbox: { mode, network: options.network },
+        sandbox: { mode: current.sandbox, network: current.network },
         yieldTimeMs: params.yield_time_ms ?? 10_000,
         timeoutMs: params.timeout_ms ?? 120_000,
         ...(signal ? { signal } : {}),
       });
+      let result = await run(commandAccess);
+      const boundary = detectSandboxBoundary(params.cmd, result, commandAccess);
+      if (boundary && !(getPermission() === "plan" && boundary === "host")) {
+        commandAccess = await requestCommandAccess(
+          boundary,
+          params.cmd,
+          ctx,
+          getPermission(),
+          commandAccess,
+          accessController,
+          onAccessChanged,
+        );
+        result = await run(commandAccess);
+      }
       return {
         content: [{ type: "text", text: formatManagedResult(result) }],
         details: result,
@@ -763,6 +868,51 @@ function managedProcessSummary(result: ManagedProcessResult): string {
 function managedProcessFailed(result: ManagedProcessResult): boolean {
   return result.timedOut === true ||
     (!result.running && result.exitCode !== undefined && result.exitCode !== 0);
+}
+
+async function requestCommandAccess(
+  boundary: AccessBoundary,
+  command: string,
+  ctx: ExtensionContext,
+  permission: PermissionMode,
+  current: EffectiveAccess,
+  controller: SessionAccessController,
+  onAccessChanged: (ctx: ExtensionContext) => void,
+): Promise<EffectiveAccess> {
+  if (permission === "full") return controller.effective(permission);
+  if (permission === "plan" && boundary === "host") {
+    throw new Error("Plan mode cannot grant write access outside the read-only sandbox.");
+  }
+  const boundaryLabel =
+    boundary === "network"
+      ? "network access"
+      : "unrestricted host filesystem and network access";
+  if (!ctx.hasUI) {
+    throw new Error(
+      `Command requires ${boundaryLabel}. Re-run with ${
+        boundary === "network" ? "--network" : "--permission full"
+      } for an explicitly trusted non-interactive task.`,
+    );
+  }
+  const sandbox = sandboxDescription({ mode: current.sandbox, network: current.network });
+  ctx.ui.setWorkingVisible(false);
+  let choice: string | undefined;
+  try {
+    choice = await ctx.ui.select(
+      `${boundary === "network" ? "Allow network access?" : "Allow unrestricted host access?"}\n${oneLine(command, 100)}\nCurrent: ${sandbox}`,
+      ["Allow once", "Allow this command for this session", "Deny"],
+    );
+  } finally {
+    ctx.ui.setWorkingVisible(true);
+  }
+  if (choice === "Allow once") return controller.grantOnce(permission, boundary);
+  if (choice === "Allow this command for this session") {
+    controller.grantForSession(boundary, command);
+    onAccessChanged(ctx);
+    ctx.ui.notify(`${boundaryLabel} allowed for this command during this session.`, "warning");
+    return controller.forCommand(permission, command);
+  }
+  throw new Error(`User denied ${boundaryLabel} for: ${oneLine(command, 120)}`);
 }
 
 function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): void {
@@ -1033,10 +1183,10 @@ function formatManagedResult(result: ManagedProcessResult): string {
 }
 
 function engineeringInstructions(
-  options: DSCodeRuntimeOptions,
   projectCommands: string[],
+  access: EffectiveAccess,
 ): string {
-  const commandSandbox = sandboxDescription({ mode: options.sandbox, network: options.network });
+  const commandSandbox = sandboxDescription({ mode: access.sandbox, network: access.network });
   const instructions = [
     "# DSCode engineering contract",
     "- Work to a verified repository outcome: inspect first, make focused changes, run the narrowest relevant checks, then broaden validation in proportion to risk.",
@@ -1047,11 +1197,11 @@ function engineeringInstructions(
     "- Use update_plan for complex multi-step work. Keep at most one step in_progress and update statuses as verified work advances.",
     "- Use delegate only for genuinely independent work. The parent agent owns integration and final verification.",
     `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
-    `- Command network access is ${options.network ? "enabled" : "disabled"}; do not work around this boundary.`,
-    ...(options.network
+    `- Command network access is ${access.network ? "enabled" : "disabled until the user grants scoped access"}; do not work around this boundary.`,
+    ...(access.network
       ? []
       : [
-          "- If a command is blocked because it needs network access, name the active sandbox and tell the user to restart DSCode with --network. Do not vaguely say to run it outside a sandbox.",
+          "- DSCode handles recognized network and sandbox denials with an allow-once / allow-for-session / deny prompt and retries approved commands automatically. If the user denies access, report that decision; do not suggest bypassing the sandbox.",
         ]),
     "- Keep the final answer evidence-based: changed files, checks actually run, failures or limitations, and the shortest useful next action.",
   ];

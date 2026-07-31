@@ -1,151 +1,90 @@
-# DSCode vs Claude Code vs Codex
+# DSCode compared with Claude Code and Codex
 
-> For developers currently using Claude Code or Codex who are wondering whether
-> to switch. We address the most common objection first, then show the evidence.
+[中文](COMPARISON.md)
 
-## 0. The sharpest question first: Codex can also use DeepSeek — why DSCode?
+## Positioning
 
-True. DeepSeek even publishes an official
-[Codex integration guide](https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/codex/).
-But "can run it" and "designed for it" are different things:
+Claude Code and Codex are broad, mature coding-agent products. DSCode is a smaller, opinionated runtime
+built specifically around DeepSeek V4 Flash.
 
-**Codex + DeepSeek is a compatibility layer. DSCode + DeepSeek is a native
-implementation.**
+The case for DSCode is not that competitors lack agents, worktrees, sandboxing, or extensions—they have
+all of those. The difference is the design center:
 
-- Codex's sandbox, approval flows, several tools, and usage accounting are tied
-  to OpenAI models. Pointing it at a third-party model means downgrading or
-  bypassing features; the official guide itself is a compromise path of "set a
-  baseURL and disable incompatible features."
-- DSCode's `src/deepseek.ts` was written for the DeepSeek Responses API from
-  the first line: it strips OpenAI-only fields (`prompt_cache_key`,
-  `prompt_cache_retention`, `include`) from requests, rewrites `apply_patch` as
-  a native Responses freeform custom tool, removes sampling parameters that are
-  ignored while thinking is enabled, and injects `web_search`. That is an
-  adapter layer, not a hack.
-- DSCode's pricing and caching model (`cacheRead` pricing in `src/model.ts`,
-  per-turn cache-hit rate in `src/ui.ts`) is built around DeepSeek's **disk
-  prefix cache** — cached input costs roughly 1/10 of normal input and persists
-  across sessions. When Codex runs DeepSeek, neither its prompt structure nor
-  its usage display is optimized for that economic model, and you never see
-  cache-hit numbers.
+> DSCode optimizes the entire local runtime around DeepSeek's Responses semantics, cache economics, and
+> low-cost parallel execution.
 
-In one sentence: **Codex with DeepSeek is "making someone else's runtime run
-our model." DSCode is "runtime and model designed together."** The former saves
-configuration time; the latter saves real money on long sessions and
-parallelism.
+## Current comparison
 
-## 1. Comparison table
-
-| Dimension | DSCode | Claude Code | OpenAI Codex |
+| Dimension | DSCode | Claude Code | Codex |
 | --- | --- | --- | --- |
-| Default model | DeepSeek V4 Flash (Responses API) | Claude Sonnet/Opus | gpt-5-codex / codex-mini |
-| Third-party (DeepSeek) support | **Native**: payload cleanup, native `apply_patch` tool, reasoning-effort passthrough, `web_search` injection | Not supported (closed source) | Compatibility layer: baseURL config, degraded features |
-| Prefix-cache exploitation | **Designed around disk cache**: stable prompt prefix, cache-aware compaction, per-turn hit rate | None exposed (model-side only) | None (invisible with third-party models) |
-| Per-turn cost visibility | **Every turn**: `tokens in (x% cached) · out · reasoning · $` | End-of-session only (needs billing) | Usage display tied to OpenAI billing |
-| Parallel agents | **Four roles**: explorer / implementer / reviewer / tester, up to 4 in parallel, **implementers in isolated Git worktrees** | Task subagents run in the main workspace at Opus prices | Newer subagent support, same main workspace |
-| Cost model of parallelism | Low price + high concurrency → **parallelism is the default move** | Parallelism is a budget decision | Parallelism is a budget decision |
-| Default network policy | **Blocked by default** (Seatbelt `(deny network*)`) | Online by default, deny rules opt-in | Online by default, opt-in config |
-| Sandbox | Seatbelt / Docker, workspace-write by default | Permission system + sandbox | macOS Seatbelt / Linux Docker / Windows |
-| Open source / auditable | MIT, forkable runtime, private extensions | Closed (minified JS) | Apache 2.0, but full features tied to OpenAI |
-| Runtime replaceability | Clean DeepSeek adapter layer; swapping models or self-hosting is a designed path | Not replaceable | Swapping models is a workaround, not a design path |
-| MCP / Skills / hooks / AGENTS.md | ✅ | ✅ | ✅ |
-| Sessions | Tree-shaped JSONL, fork / resume / compact, transcript diff | resume / fork / compact | resume / continue / checkpoints |
-| Chinese-repo optimization | **Dedicated**: Chinese symbols, build logs, error explanation | None | None |
-| 1M context | ✅ | ✅ (Sonnet 4.5) | 400k |
-| Multimodal | ❌ (V4 is text-only) | ✅ | ✅ |
-| VS Code / IDE | Local thin integration + RPC + language diagnostics | Official extension (more mature) | Official extension + cloud tasks (more mature) |
-| Ecosystem maturity | Early, small community | Most mature | Mature |
+| Design center | DeepSeek V4 Flash on local repositories | General-purpose Claude coding workflows | OpenAI coding workflows across CLI, IDE, app, and cloud |
+| DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, native free-form patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
+| Context and cost | 1M context; `/status` exposes DeepSeek cache hits, tokens, reasoning, and estimated cost | Product-specific context and usage reporting | Product-specific context and usage reporting |
+| Parallel work | Four built-in roles, up to four concurrent tasks; implementers use isolated Git worktrees | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
+| Safety | Workspace sandbox and no command network by default; scoped per-command network/host approvals; durable patch checkpoints | Configurable permission and sandbox system with filesystem and network controls | OS sandbox, approvals, and no network by default for local commands |
+| Runtime ownership | MIT-licensed runtime with a focused DeepSeek adapter | Full product runtime is proprietary; Anthropic publishes its sandbox runtime separately | Open-source CLI plus broader OpenAI product surfaces |
+| Extensibility | `AGENTS.md`, `CLAUDE.md`, Skills, hooks, MCP, JSONL, RPC | Project instructions, skills, hooks, MCP, plugins | `AGENTS.md`, skills, hooks, MCP, plugins, SDK, app server |
+| Product maturity | Early project; thin local VS Code integration | Mature CLI, IDE, desktop, multimodal, and team workflows | Mature CLI, IDE, desktop, cloud, multimodal, and automation workflows |
 
-## 2. What we actually have that they don't (the point)
+## Where DSCode is differentiated
 
-### 2.1 Disk prefix cache = pricing model (structural advantage)
+### 1. A DeepSeek-specific Responses runtime
 
-DeepSeek's KV cache is a platform-level feature: **written to disk, persists
-across sessions, cached input at roughly 1/10 the price**. DSCode is built
-around it, and you can verify it in the code:
+`src/deepseek.ts` is not a generic `base_url` switch. It removes unsupported OpenAI fields, maps
+reasoning behavior, rewrites `apply_patch` as a native free-form custom tool, and optionally injects
+server-side Web Search. Local tree-shaped JSONL sessions own the replay of stateless messages, reasoning
+items, and tool results.
 
-- `src/model.ts`: cacheRead pricing enters the cost calculation;
-- `src/ui.ts`: per-turn status bar shows `tokens in (x% cached) · $`;
-- `src/compaction.ts` + `src/prompt.ts`: system prompt / tool definitions /
-  project rules keep a stable prefix; compaction timing is cache-aware.
+### 2. Cache and cost visibility
 
-The result: **the marginal cost of long sessions and parallel agents
-approaches zero.** Claude Code's and Codex's caching is implicit model-side
-behavior — not exposed, not designed around. This advantage is bound to
-DeepSeek's pricing structure; copying the UI won't copy it. Even a Codex user
-pointing at DeepSeek doesn't get this cache-aware design.
+DeepSeek's disk prefix cache makes repeated prefixes cheaper and reports cache-hit tokens. DSCode models
+the cache-read price directly and exposes current cache, token, reasoning, and cost information through
+`/status`. We avoid hard-coding price claims here because provider pricing changes; use the official
+[DeepSeek pricing page](https://api-docs.deepseek.com/quick_start/pricing/).
 
-### 2.2 Four-role worktree swarm (a usage difference, not a feature difference)
+### 3. Opinionated parallelism
 
-`src/subagents.ts`: explorer (read-only evidence) / implementer (isolated
-worktree writes) / reviewer (diff review) / tester (failure diagnosis), up to 4
-in parallel. Implementer candidate changes are write-isolated from other
-agents; the main agent owns integration.
+DSCode ships four roles instead of asking every project to invent them:
 
-Claude Code and Codex both have a "subagents" button, but they run in the main
-workspace at flagship-model prices — **parallelism is a budget decision**.
-DSCode's low unit price and high concurrency make **parallelism the default
-move**: main agent implements + reviewer checks the diff + tester diagnoses +
-two cheap candidate solutions compete. At V4 Flash prices that's free. This is
-a usage difference created by cost structure.
+- `explorer`: read-only repository investigation
+- `implementer`: candidate changes in an isolated worktree
+- `reviewer`: independent read-only review
+- `tester`: focused tests and failure diagnosis
 
-### 2.3 Network blocked by default (a defaults difference)
+Up to four tasks run concurrently, while the primary agent owns integration and final validation. Claude
+Code and Codex also support parallel agents and worktrees; DSCode's distinction is the built-in role model
+and its use of DeepSeek V4 Flash's cost and concurrency profile.
 
-`src/sandbox.ts`: the default Seatbelt profile emits `(deny network*)`.
-Claude Code / Codex are online by default; safety requires configuration.
-DSCode is safe out of the box — a real difference for finance, government, and
-any team whose code must not leave the network.
+### 4. Local, inspectable control
 
-### 2.4 Per-turn cost transparency
+DSCode keeps sessions locally, uses an OS-enforced command sandbox, blocks command network by default,
+strips the DeepSeek key from child-process environments, and creates a durable checkpoint after every
+successful patch. Conflict-safe `/undo` refuses to overwrite files changed after the checkpoint.
 
-Claude Code reports a session total only at the end; Codex's usage display is
-tied to OpenAI billing (and breaks with third-party models). DSCode shows
-tokens / cache-hit rate / reasoning / dollars every turn (`src/ui.ts`), so
-cost-sensitive teams can monitor in real time.
+### 5. A small, forkable runtime
 
-### 2.5 Replaceable runtime
+The project is MIT-licensed and keeps provider-specific behavior in a focused adapter. Teams can inspect
+and modify prompts, permissions, tools, sessions, MCP, hooks, and sandbox behavior without depending on a
+hosted control plane.
 
-Claude Code is closed; Codex is open but its full feature set is tied to
-OpenAI. DSCode: MIT-licensed, `src/deepseek.ts` is a clean adapter layer, and
-self-hosting or private extension is a designed path — not a workaround.
+## What we do not claim
 
-### 2.6 Chinese-repo optimization
+- DSCode is not universally better than Claude Code or Codex.
+- Parallel agents, worktrees, sandboxing, skills, hooks, and MCP are not unique to DSCode.
+- Low API prices do not make parallel execution free.
+- A 1M context window does not remove the need for search, focused reads, and compaction.
+- DSCode does not currently match competitor multimodal, cloud, IDE, or ecosystem maturity.
 
-Dedicated handling for Chinese symbols, build logs, and error explanation —
-neither competitor targets this market — and DeepSeek's native Chinese strength
-comes with the model.
+The right comparison is a shadow evaluation on the same repository tasks, measuring success rate, wall
+time, cost, safety, unrelated diffs, and human intervention—not a feature checklist.
 
-## 3. Honest boundaries (what we don't have yet)
+## Official references
 
-- **Multimodal**: V4 is text-only; Claude Code and Codex handle images;
-- **Ecosystem maturity**: their IDE extensions, cloud tasks, and community
-  docs are more mature;
-- **Domain-level network allowlist**: on the roadmap, not implemented;
-- **Experience claims**: until real-repo evals consistently win, we do not
-  claim to be "better" overall — see the shadow-eval methodology in
-  `PRODUCT_STRATEGY.md` (same task on all three tools, measuring success rate ×
-  time × cost × safety).
-
-## 4. The one-liner
-
-> You don't need to change your workflow — you change your cost structure:
-> cached input at a 90% discount, persistent across sessions; four-way parallel
-> agents as the default move instead of a luxury; network off by default; every
-> dollar accounted for every turn. These aren't features, they're an economic
-> structure — we're bound to a model that makes long sessions and parallelism
-> approach zero marginal cost, while Codex + DeepSeek is "making it run," not
-> "designing for it."
-
-## 5. Migration path
-
-```bash
-pnpm install && pnpm check
-export DEEPSEEK_API_KEY="sk-..."
-dscode -C /path/to/project
-```
-
-- Existing `CLAUDE.md` / `AGENTS.md` files are honored as-is — no rewriting;
-- Interaction habits carry over: TUI, plan/ask/auto/full permissions,
-  per-file diff approval, `/undo`;
-- `--continue` resumes your last session; `--fork <session-id>` branches an
-  experiment.
+- [DeepSeek V4 release](https://api-docs.deepseek.com/news/news260424/)
+- [DeepSeek models and pricing](https://api-docs.deepseek.com/quick_start/pricing/)
+- [Claude Code parallel agents](https://code.claude.com/docs/en/agents)
+- [Claude Code subagents and worktrees](https://code.claude.com/docs/en/sub-agents)
+- [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing)
+- [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+- [Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)
+- [Codex sandboxing](https://learn.chatgpt.com/docs/sandboxing)

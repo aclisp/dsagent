@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
+import type { EffectiveAccess } from "./access.js";
 import { runProcess } from "./process.js";
-import type { DSCodeRuntimeOptions, SandboxMode } from "./runtime-options.js";
 import { sandboxCommand } from "./sandbox.js";
 
 const hookSchema = z.object({
@@ -32,8 +32,7 @@ type HookConfig = z.infer<typeof hooksConfigSchema>["hooks"];
 
 export function registerHooks(
   pi: ExtensionAPI,
-  options: DSCodeRuntimeOptions,
-  getSandboxMode: () => SandboxMode,
+  getAccess: () => EffectiveAccess,
 ): void {
   let config: HookConfig = {
     sessionStart: [],
@@ -48,8 +47,7 @@ export function registerHooks(
       config.sessionStart,
       ctx,
       { event: "sessionStart" },
-      options,
-      getSandboxMode(),
+      getAccess(),
     );
   });
 
@@ -58,7 +56,7 @@ export function registerHooks(
       event: "beforeTool",
       tool: event.toolName,
       input: event.input,
-    }, options, getSandboxMode());
+    }, getAccess());
     if (result) return { block: true, reason: result };
     return undefined;
   });
@@ -68,11 +66,11 @@ export function registerHooks(
       event: "afterTool",
       tool: event.toolName,
       isError: event.isError,
-    }, options, getSandboxMode());
+    }, getAccess());
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, options, getSandboxMode());
+    await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, getAccess());
   });
 }
 
@@ -103,8 +101,7 @@ async function runHooks(
   hooks: Hook[],
   ctx: ExtensionContext,
   payload: Record<string, unknown>,
-  options: DSCodeRuntimeOptions,
-  sandboxMode: SandboxMode,
+  access: EffectiveAccess,
 ): Promise<string | undefined> {
   for (const hook of hooks) {
     const args = hook.args.map((argument) =>
@@ -116,7 +113,7 @@ async function runHooks(
     const invocation = sandboxCommand(
       [hook.command, ...args].map(shellQuote).join(" "),
       ctx.cwd,
-      { mode: sandboxMode, network: options.network },
+      { mode: access.sandbox, network: access.network },
     );
     const result = await runProcess(invocation.command, invocation.args, {
       cwd: ctx.cwd,

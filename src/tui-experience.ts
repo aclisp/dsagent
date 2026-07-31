@@ -21,13 +21,14 @@ import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
 export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
+export const HIDDEN_THINKING_LABEL = "DeepSeek V4 Flash is thinking";
 const BLINKING_BLOCK_CURSOR = "\x1b[1 q";
 const DEFAULT_CURSOR_STYLE = "\x1b[0 q";
 
 export function registerCodingTui(
   pi: ExtensionAPI,
   options: DSCodeRuntimeOptions,
-  getPermission: () => PermissionMode,
+  getAccess: () => { permission: PermissionMode; sandbox: DSCodeRuntimeOptions["sandbox"]; network: boolean },
 ): void {
   let activeTui: TUI | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
@@ -102,7 +103,7 @@ export function registerCodingTui(
         const lines = super.render(sourceWidth);
         if (lines.length < 3) return lines;
         const theme = ctx.ui.theme;
-        const permission = getPermission();
+        const access = getAccess();
         const model = ctx.model?.id ?? options.modelId;
         const effort = pi.getThinkingLevel();
         const autocompleteStart = findAutocompleteStart(lines);
@@ -135,8 +136,9 @@ export function registerCodingTui(
           {
             model,
             effort,
-            permission,
-            sandbox: options.sandbox,
+            permission: access.permission,
+            sandbox: access.sandbox,
+            network: access.network,
             cwd: ctx.cwd,
             contextPercent: ctx.getContextUsage()?.percent ?? null,
           },
@@ -212,6 +214,7 @@ export interface MinimalStatusDetails {
   effort: string;
   permission: PermissionMode;
   sandbox: DSCodeRuntimeOptions["sandbox"];
+  network: boolean;
   cwd: string;
   contextPercent: number | null;
 }
@@ -224,6 +227,7 @@ export function minimalStatusParts(details: MinimalStatusDetails): string[] {
   } else if (details.permission === "full") {
     parts.push("full permission");
   }
+  if (details.network && details.sandbox !== "danger-full-access") parts.push("network");
   if (details.contextPercent !== null && details.contextPercent >= 70) {
     parts.push(`ctx ${details.contextPercent.toFixed(0)}%`);
   }

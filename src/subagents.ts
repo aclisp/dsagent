@@ -156,7 +156,7 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     "--print",
     "--no-session",
     "--permission",
-    readOnly ? "plan" : "full",
+    readOnly ? "plan" : "auto",
     "--sandbox",
     readOnly ? "read-only" : "workspace-write",
     "--thinking",
