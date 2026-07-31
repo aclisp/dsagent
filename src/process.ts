@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { stripModelCredentialEnvironment } from "./providers.js";
 
 export interface ProcessResult {
   stdout: string;
@@ -25,8 +26,7 @@ export function runProcess(
   const timeoutMs = options.timeoutMs ?? 120_000;
 
   return new Promise((resolve, reject) => {
-    const env = { ...process.env };
-    delete env.DEEPSEEK_API_KEY;
+    const env = stripModelCredentialEnvironment({ ...process.env });
 
     const child = spawn(command, args, {
       cwd: options.cwd,

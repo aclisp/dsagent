@@ -1,7 +1,6 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { PermissionMode } from "./config.js";
-import type { ModelTransport } from "./config.js";
 import { formatCwd } from "./welcome.js";
 
 export interface SessionUsageSummary {
@@ -16,7 +15,7 @@ export interface SessionUsageSummary {
 export interface StatusReportDetails {
   provider: string;
   model: string;
-  transport: ModelTransport;
+  transport: string;
   effort: string;
   permission: PermissionMode;
   sandbox: string;

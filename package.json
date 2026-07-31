@@ -1,7 +1,7 @@
 {
   "name": "@thinkany/dscode",
-  "version": "0.3.2",
-  "description": "A local-first coding agent powered by DeepSeek V4 Flash.",
+  "version": "0.3.3",
+  "description": "A local-first coding agent with DeepSeek, OpenAI, and Codex subscription support.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/thinkany-ai/dscode#readme",

@@ -78,6 +78,7 @@ describe("command access escalation", () => {
 function options(cwd: string): DSCodeRuntimeOptions {
   return {
     cwd,
+    providerId: "deepseek",
     baseUrl: "https://api.deepseek.com",
     modelId: "deepseek-v4-flash",
     transport: "responses",

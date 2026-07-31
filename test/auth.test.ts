@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   hasStoredDeepSeekKey,
+  hasStoredProviderCredential,
+  removeStoredProviderCredential,
   removeStoredDeepSeekKey,
   saveDeepSeekKey,
   validateDeepSeekKey,
@@ -14,6 +16,27 @@ describe("DSCode authentication", () => {
 
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  it("recognizes and removes a stored Codex subscription credential", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "dscode-auth-test-"));
+    temporaryDirectories.push(directory);
+    const authPath = path.join(directory, "auth.json");
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        "openai-codex": {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 60_000,
+        },
+      }),
+    );
+
+    expect(await hasStoredProviderCredential("openai-codex", authPath)).toBe(true);
+    expect(await removeStoredProviderCredential("openai-codex", authPath)).toBe(true);
+    expect(await hasStoredProviderCredential("openai-codex", authPath)).toBe(false);
   });
 
   it("merges credentials and stores auth.json with owner-only permissions", async () => {

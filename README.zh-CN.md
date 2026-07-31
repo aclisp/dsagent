@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  围绕 DeepSeek V4 Flash 设计的本地优先 coding agent。
+  默认使用 DeepSeek，也支持 OpenAI/Codex 模型的本地优先 coding agent。
 </p>
 
 <p align="center">
@@ -14,17 +14,20 @@
   <a href="docs/COMPARISON.md">产品对比</a>
 </p>
 
-DSCode 是一套有明确取舍的 coding-agent runtime：让开发者使用 DeepSeek V4 Flash 时，不必放弃
-成熟的终端工作流。它把 DeepSeek 原生 Responses 适配、本地会话、安全 patch、并行 agent、OS
-sandbox，以及缓存和成本统计组合在一起。
+DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek V4 Flash 为默认模型，同时
+允许需要多模态能力的任务选择 OpenAI API 或 Codex 套餐模型。它把 provider-aware 路由、本地
+会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
 
-DSCode 不追求在功能数量上超过所有通用 coding agent。它只专注一件事：让 DeepSeek V4 Flash 在
-真实代码仓库里更好用、更透明，也更经济。
+DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保持 runtime 本地、透明，并允许
+每个仓库任务选择真正需要的模型能力。
 
 ## 为什么选择 DSCode
 
-- **DeepSeek 原生 runtime。** 专门处理无状态 Responses 回放、reasoning effort、DeepSeek 不支持的
-  OpenAI 字段、原生 freeform `apply_patch` 和可选的服务端 Web Search。
+- **DeepSeek 优先，但不限于 DeepSeek。** DeepSeek V4 Flash 仍是默认模型，继续使用专用 Responses
+  adapter、原生 freeform `apply_patch` 和服务端 Web Search；OpenAI API key 与符合条件的 ChatGPT
+  套餐可以使用内置 OpenAI/Codex Responses provider。
+- **模型支持时可识图。** 可在 TUI 粘贴图片或通过 `@file` 传入；GPT-5.6 等模型能检查截图，
+  text-only DeepSeek 模型会给出明确限制。
 - **围绕成本设计。** Runtime 直接利用 DeepSeek 的 1M context 和硬盘前缀缓存；`/status` 会显示
   context、缓存命中、token、reasoning 和预估费用。最新价格以
   [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing/)为准。
@@ -36,7 +39,7 @@ DSCode 不追求在功能数量上超过所有通用 coding agent。它只专注
   任务、JSONL/CI、RPC 和 VS Code 入口。
 
 与 Claude Code、Codex 的事实对比见[产品对比](docs/COMPARISON.md)。简而言之：它们的生态和通用
-能力更成熟；DSCode 更聚焦 DeepSeek、本地控制和可审计的 MIT runtime。
+能力更成熟；DSCode 更小、更偏向 DeepSeek，同时强调本地控制和可审计的 MIT runtime。
 
 ## 快速开始
 
@@ -55,10 +58,10 @@ npm install -g @thinkany/dscode
 curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
-确认 `~/.local/bin` 已加入 `PATH`，然后登录并启动：
+确认 `~/.local/bin` 已加入 `PATH`。全新安装默认使用 DeepSeek：
 
 ```bash
-dscode login
+dscode login deepseek
 dscode -C /path/to/project
 ```
 
@@ -73,12 +76,29 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 
+也可以使用符合条件的 ChatGPT 套餐登录 Codex，或使用标准 OpenAI API key：
+
+```bash
+dscode login openai-codex  # 浏览器 OAuth，使用 ChatGPT 套餐限额
+# 或
+dscode login openai        # 安全输入 OpenAI API key
+
+dscode -C /path/to/project
+```
+
+选择的 provider 和模型会保存供后续启动使用，也可以随时覆盖：
+
+```bash
+dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
+dscode --provider deepseek --model deepseek-v4-flash -C /path/to/project
+```
+
 DSCode 的全局数据统一保存在 `~/.dscode`：
 
 ```text
 ~/.dscode/settings.json    TUI 与运行时偏好
 ~/.dscode/config.json      DeepSeek endpoint
-~/.dscode/auth.json        API 凭证
+~/.dscode/auth.json        Provider 凭证
 ~/.dscode/skills/          全局 skills
 ~/.dscode/extensions/      全局 extensions
 ~/.dscode/mcp.json         全局 MCP servers
@@ -91,6 +111,8 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 不覆盖已有文件。项目 skills 建议使用可移植的 `.agents/skills/` 约定。
 
 ## 默认配置
+
+全新安装使用：
 
 ```text
 model       deepseek-v4-flash
@@ -119,6 +141,9 @@ dscode -C ./my-project --resume
 dscode -C ./my-project -p "解释认证流程"
 dscode -C ./my-project --mode json -p "修复 lint 并运行测试"
 dscode -C ./my-project --mode rpc
+
+# 使用支持视觉的模型检查截图
+dscode --provider openai-codex @screenshot.png "解释这个错误"
 ```
 
 TUI 常用命令：
@@ -130,11 +155,14 @@ TUI 常用命令：
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
 | `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |
+| `/new` / `/clear` | 清除当前 context 并开始一个新会话（两者等价） |
 | `/resume` / `/fork` / `/tree` | 导航树形本地会话 |
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |
 | `/jobs` | 查看可重连的后台命令 |
 | `/mcp` / `/agents` / `/doctor` | 查看集成、agent 和运行状态 |
-| `/effort low\|high\|max` | 切换 DeepSeek reasoning effort |
+| `/login [provider]` | 配置 `deepseek`、`openai-codex` 或 `openai` |
+| `/model` | 选择已配置的模型，并保存选择 |
+| `/effort ...` | 调整当前模型的 reasoning effort |
 
 输入 `/` 查看全部命令，输入 `/hotkeys` 查看快捷键。
 
@@ -172,6 +200,9 @@ dscode -C ./project --sandbox workspace-write
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
 - `--web` 加入 DeepSeek 服务端 Web Search，不代替本地仓库搜索。
 
+这些转换只在当前 provider 为 `deepseek` 时执行；OpenAI 和 Codex 请求使用各自原生 Responses
+实现。Provider API key 不会传给命令、hooks 或 stdio MCP server。
+
 ## 扩展与自动化
 
 - 分层读取 `AGENTS.md` 和 `CLAUDE.md`
@@ -206,7 +237,9 @@ Release 并发布 npm 包。详细流程见 [Releasing DSCode](docs/RELEASING.md
 
 ## 当前边界
 
-- DeepSeek V4 Flash Responses 当前只接受文本输入；图片任务需要外部视觉工具或 MCP server。
+- DeepSeek V4 Flash 仍只接受文本输入；截图等图片任务需要切换到支持视觉的 OpenAI/Codex 模型。
+- ChatGPT 套餐登录受账号可用模型、用量限制和 workspace 权限约束；OpenAI API key 的用量由 API
+  平台单独计费。
 - VS Code 扩展是本地集成，尚未发布到 Marketplace。
 - Linux 和 Windows 的隔离能力取决于配置的 Docker 镜像。
 - DSCode 仍是早期项目；Claude Code 和 Codex 当前拥有更广泛的 IDE、云端、多模态和生态支持。

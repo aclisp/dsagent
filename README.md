@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  A local-first coding agent designed around DeepSeek V4 Flash.
+  A local-first coding agent with DeepSeek defaults and optional OpenAI/Codex models.
 </p>
 
 <p align="center">
@@ -14,17 +14,21 @@
   <a href="docs/COMPARISON.en.md">Comparison</a>
 </p>
 
-DSCode is an opinionated coding-agent runtime for developers who want DeepSeek V4 Flash without giving
-up a capable terminal workflow. It combines a DeepSeek-native Responses adapter with local sessions,
-safe patching, parallel agents, OS sandboxing, and transparent cache and cost reporting.
+DSCode is an opinionated coding-agent runtime with DeepSeek V4 Flash as its economical default and
+optional OpenAI API or Codex subscription models for multimodal work. It combines provider-aware model
+routing with local sessions, safe patching, parallel agents, OS sandboxing, and transparent usage
+reporting.
 
-It is not trying to out-feature every general-purpose agent. It is optimized for one thing: making
-DeepSeek V4 Flash effective, inspectable, and economical on real repositories.
+It is not trying to out-feature every general-purpose agent. It keeps the runtime local and inspectable
+while letting each repository task use the model capabilities it actually needs.
 
 ## Why DSCode
 
-- **DeepSeek-native runtime.** DSCode handles stateless Responses replay, reasoning effort, unsupported
-  OpenAI fields, native free-form `apply_patch`, and optional server-side Web Search.
+- **DeepSeek-first, not DeepSeek-only.** DeepSeek V4 Flash remains the default, with its dedicated
+  Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. OpenAI API
+  keys and eligible ChatGPT plans can use the built-in OpenAI/Codex Responses providers.
+- **Vision when the model supports it.** Paste an image in the TUI or pass an image as `@file`; models
+  such as GPT-5.6 can inspect screenshots while text-only DeepSeek models fail clearly.
 - **Cost-aware by design.** DeepSeek's 1M context and disk prefix cache are reflected in the runtime;
   `/status` reports context, cache hits, tokens, reasoning, and estimated cost. See current
   [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).
@@ -39,7 +43,7 @@ DeepSeek V4 Flash effective, inspectable, and economical on real repositories.
 
 For an evidence-based comparison with Claude Code and Codex, see
 [DSCode compared](docs/COMPARISON.en.md). The short version: those products have broader and more mature
-ecosystems; DSCode is narrower, DeepSeek-specific, locally controlled, and MIT-licensed.
+ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licensed.
 
 ## Quick start
 
@@ -58,10 +62,10 @@ Alternatively, install the latest source build:
 curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
-Make sure `~/.local/bin` is on your `PATH`, then authenticate and start:
+Make sure `~/.local/bin` is on your `PATH`. A fresh installation defaults to DeepSeek:
 
 ```bash
-dscode login
+dscode login deepseek
 dscode -C /path/to/project
 ```
 
@@ -77,12 +81,29 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 
+To use Codex through an eligible ChatGPT plan, or use a standard OpenAI API key:
+
+```bash
+dscode login openai-codex  # browser OAuth; uses ChatGPT plan limits
+# or
+dscode login openai        # securely prompts for an OpenAI API key
+
+dscode -C /path/to/project
+```
+
+The selected provider and model are saved for later runs. Override them at any time:
+
+```bash
+dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
+dscode --provider deepseek --model deepseek-v4-flash -C /path/to/project
+```
+
 DSCode keeps all of its global state under `~/.dscode`:
 
 ```text
 ~/.dscode/settings.json    TUI and runtime preferences
 ~/.dscode/config.json      DeepSeek endpoint
-~/.dscode/auth.json        API credential
+~/.dscode/auth.json        Provider credentials
 ~/.dscode/skills/          Global skills
 ~/.dscode/extensions/      Global extensions
 ~/.dscode/mcp.json         Global MCP servers
@@ -96,6 +117,8 @@ copied into the new layout on first launch without deleting or overwriting anyth
 should use the portable `.agents/skills/` convention.
 
 ## Default runtime
+
+Fresh installations use:
 
 ```text
 model       deepseek-v4-flash
@@ -125,6 +148,9 @@ dscode -C ./my-project --resume
 dscode -C ./my-project -p "Explain the authentication flow"
 dscode -C ./my-project --mode json -p "Fix lint errors and run tests"
 dscode -C ./my-project --mode rpc
+
+# Inspect a screenshot with a vision-capable model
+dscode --provider openai-codex @screenshot.png "Explain this error"
 ```
 
 Inside the TUI:
@@ -136,11 +162,14 @@ Inside the TUI:
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
 | `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
+| `/new` / `/clear` | Clear the current context and start a new session (aliases) |
 | `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
 | `/compact` | Compact older context while preserving current work |
 | `/jobs` | Inspect reconnectable background commands |
 | `/mcp` / `/agents` / `/doctor` | Inspect integrations, agents, and runtime health |
-| `/effort low\|high\|max` | Change DeepSeek reasoning effort |
+| `/login [provider]` | Configure `deepseek`, `openai-codex`, or `openai` |
+| `/model` | Select a configured model; the choice is saved |
+| `/effort ...` | Change the active model's reasoning effort |
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
 
@@ -181,6 +210,10 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
 - `--web` adds DeepSeek server-side Web Search without replacing local repository search.
 
+These transformations run only when the active provider is `deepseek`; OpenAI and Codex requests use
+their native Responses implementations. Provider API keys are stripped from commands, hooks, and stdio
+MCP server environments.
+
 ## Extensibility and automation
 
 - Hierarchical `AGENTS.md` and `CLAUDE.md` project instructions
@@ -215,8 +248,10 @@ GitHub Release and publishes the npm package after CI passes. See [Releasing DSC
 
 ## Current boundaries
 
-- DeepSeek V4 Flash Responses currently accepts text input; image tasks need an external vision tool or
-  MCP server.
+- DeepSeek V4 Flash remains text-only. Select a vision-capable OpenAI/Codex model for screenshots and
+  other image inputs.
+- ChatGPT-plan access follows the models, limits, and workspace permissions available to the signed-in
+  account; OpenAI API-key usage is billed separately by the API platform.
 - The VS Code extension is a local integration and is not published to the Marketplace yet.
 - Linux and Windows isolation depends on the Docker image you configure.
 - DSCode is an early project. Claude Code and Codex currently have broader IDE, cloud, multimodal, and

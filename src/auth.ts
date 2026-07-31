@@ -1,10 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
+import type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
 import pc from "picocolors";
 import { getDSCodeHome } from "./home.js";
+import {
+  defaultModelForProvider,
+  providerDisplayName,
+  providerEnvironmentKey,
+  SUPPORTED_PROVIDER_IDS,
+  type SupportedProviderId,
+} from "./providers.js";
 import {
   getDSCodeSettingsPath,
   normalizeDeepSeekBaseUrl,
@@ -39,6 +48,14 @@ export async function hasStoredDeepSeekKey(authPath = getDSCodeAuthPath()): Prom
   return isApiKeyCredential(credential) && credential.key.trim().length > 0;
 }
 
+export async function hasStoredProviderCredential(
+  providerId: SupportedProviderId,
+  authPath = getDSCodeAuthPath(),
+): Promise<boolean> {
+  const auth = await readAuthFile(authPath);
+  return isStoredCredential(auth[providerId]);
+}
+
 export function hasDeepSeekEnvironmentKey(): boolean {
   return Boolean(process.env.DEEPSEEK_API_KEY?.trim());
 }
@@ -60,6 +77,17 @@ export async function removeStoredDeepSeekKey(
   const auth = await readAuthFile(authPath);
   if (!(PROVIDER_ID in auth)) return false;
   delete auth[PROVIDER_ID];
+  await writeAuthFile(authPath, auth);
+  return true;
+}
+
+export async function removeStoredProviderCredential(
+  providerId: SupportedProviderId,
+  authPath = getDSCodeAuthPath(),
+): Promise<boolean> {
+  const auth = await readAuthFile(authPath);
+  if (!(providerId in auth)) return false;
+  delete auth[providerId];
   await writeAuthFile(authPath, auth);
   return true;
 }
@@ -109,16 +137,13 @@ export function isInteractiveInvocation(piArgs: string[]): boolean {
   return mode === undefined || mode === "tui" || mode === "interactive";
 }
 
-export function usesDeepSeekProvider(piArgs: string[]): boolean {
-  return (optionValue(piArgs, "--provider") ?? PROVIDER_ID) === PROVIDER_ID;
-}
-
 export async function ensureFirstRunAuth(options: {
+  providerId: SupportedProviderId;
   baseUrl: string;
   modelId: string;
   piArgs: string[];
 }): Promise<string | undefined> {
-  if (!usesDeepSeekProvider(options.piArgs)) return;
+  if (options.providerId !== PROVIDER_ID) return;
   if (hasDeepSeekEnvironmentKey() || (await hasStoredDeepSeekKey())) return;
   if (!isInteractiveInvocation(options.piArgs)) {
     throw new Error(
@@ -142,33 +167,39 @@ export async function ensureFirstRunAuth(options: {
 
 export async function runAuthCommand(
   command: "login" | "logout" | "status",
-  options: { baseUrl: string; modelId: string },
+  options: { providerId: SupportedProviderId; baseUrl: string; modelId: string },
 ): Promise<void> {
   if (command === "logout") {
-    const removed = await removeStoredDeepSeekKey();
+    const removed = await removeStoredProviderCredential(options.providerId);
+    const providerName = providerDisplayName(options.providerId);
     process.stdout.write(
       removed
-        ? `${pc.green("✓")} Removed the stored DeepSeek credential.\n`
-        : "No stored DeepSeek credential was found.\n",
+        ? `${pc.green("✓")} Removed the stored ${providerName} credential.\n`
+        : `No stored ${providerName} credential was found.\n`,
     );
-    if (hasDeepSeekEnvironmentKey()) {
+    const environmentKey = providerEnvironmentKey(options.providerId);
+    if (environmentKey && process.env[environmentKey]?.trim()) {
       process.stdout.write(
-        `${pc.yellow("!")} DEEPSEEK_API_KEY is still set in this environment.\n`,
+        `${pc.yellow("!")} ${environmentKey} is still set in this environment.\n`,
       );
     }
     return;
   }
   if (command === "status") {
-    const stored = await hasStoredDeepSeekKey();
-    const environment = hasDeepSeekEnvironmentKey();
+    const auth = await readAuthFile(getDSCodeAuthPath());
+    const providers = SUPPORTED_PROVIDER_IDS.map((providerId) => {
+      const environmentKey = providerEnvironmentKey(providerId);
+      const stored = isStoredCredential(auth[providerId]);
+      const environment = Boolean(environmentKey && process.env[environmentKey]?.trim());
+      return `${providerId.padEnd(13)} ${stored || environment ? pc.green("configured") : pc.yellow("not configured")}${stored ? " · stored" : ""}${environment ? ` · ${environmentKey}` : ""}`;
+    });
     process.stdout.write(
       [
-        `DeepSeek authentication: ${stored || environment ? pc.green("configured") : pc.yellow("not configured")}`,
-        `  stored credential: ${stored ? "yes" : "no"}`,
-        `  DEEPSEEK_API_KEY: ${environment ? "set" : "not set"}`,
-        `  API base URL: ${options.baseUrl}`,
-        `  auth file: ${getDSCodeAuthPath()}`,
-        `  settings file: ${getDSCodeSettingsPath()}`,
+        `Active provider: ${options.providerId}`,
+        ...providers,
+        `DeepSeek API base URL: ${options.baseUrl}`,
+        `Auth file: ${getDSCodeAuthPath()}`,
+        `DeepSeek config file: ${getDSCodeSettingsPath()}`,
       ].join("\n") + "\n",
     );
     return;
@@ -176,7 +207,11 @@ export async function runAuthCommand(
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("`dscode login` requires an interactive terminal");
   }
-  await promptAndStoreKey(options.baseUrl, options.modelId);
+  if (options.providerId === "deepseek") {
+    await promptAndStoreKey(options.baseUrl, options.modelId);
+    return;
+  }
+  await loginWithProvider(options.providerId);
 }
 
 async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<string> {
@@ -206,9 +241,126 @@ async function promptAndStoreKey(baseUrl: string, modelId: string): Promise<stri
     }
     await saveDeepSeekKey(key);
     await saveDeepSeekBaseUrl(selectedBaseUrl);
+    await saveDefaultModelSelection("deepseek", modelId);
     process.stdout.write(`${pc.green("✓")} API key saved securely. Start coding with ${pc.bold("dscode")}.\n`);
     return selectedBaseUrl;
   }
+}
+
+async function loginWithProvider(providerId: Exclude<SupportedProviderId, "deepseek">): Promise<void> {
+  const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+  const runtime = await ModelRuntime.create({
+    authPath: getDSCodeAuthPath(),
+    modelsPath: path.join(getDSCodeAgentDir(), "models.json"),
+    allowModelNetwork: false,
+  });
+  const provider = runtime.getProvider(providerId);
+  if (!provider) throw new Error(`Provider ${providerId} is unavailable in this DSCode build`);
+  const authType = providerId === "openai-codex" ? "oauth" : "api_key";
+  process.stdout.write(`${pc.bold(providerDisplayName(providerId))}\n`);
+  await runtime.login(providerId, authType, terminalAuthInteraction());
+  const modelId = defaultModelForProvider(providerId);
+  await saveDefaultModelSelection(providerId, modelId);
+  process.stdout.write(
+    `${pc.green("✓")} Signed in securely. ${providerId}/${modelId} is now the default.\n`,
+  );
+}
+
+async function saveDefaultModelSelection(
+  providerId: SupportedProviderId,
+  modelId: string,
+): Promise<void> {
+  const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+  const settings = SettingsManager.create(process.cwd(), getDSCodeAgentDir());
+  settings.setDefaultModelAndProvider(providerId, modelId);
+  await settings.flush();
+}
+
+function terminalAuthInteraction(): AuthInteraction {
+  return {
+    prompt: promptForAuth,
+    notify: notifyAuth,
+  };
+}
+
+async function promptForAuth(prompt: AuthPrompt): Promise<string> {
+  if (prompt.signal?.aborted) throw new Error("Login cancelled");
+  if (prompt.type === "secret") {
+    return readSecret(`${prompt.message}${prompt.message.endsWith(" ") ? "" : " "}`);
+  }
+  if (prompt.type === "select") {
+    process.stdout.write(`${prompt.message}\n`);
+    prompt.options.forEach((option, index) => {
+      process.stdout.write(
+        `  ${index + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}\n`,
+      );
+    });
+    const answer = await readLine("Choose [1]: ", prompt.signal);
+    if (!answer) return prompt.options[0]?.id ?? "";
+    const numeric = Number.parseInt(answer, 10);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= prompt.options.length) {
+      return prompt.options[numeric - 1]!.id;
+    }
+    const matched = prompt.options.find((option) => option.id === answer);
+    if (matched) return matched.id;
+    throw new Error(`Unknown selection: ${answer}`);
+  }
+  return readLine(
+    `${prompt.message}${prompt.placeholder ? ` [${prompt.placeholder}]` : ""}: `,
+    prompt.signal,
+  );
+}
+
+function notifyAuth(event: AuthEvent): void {
+  if (event.type === "auth_url") {
+    process.stdout.write(`${event.instructions ?? "Complete login in your browser."}\n${event.url}\n`);
+    openExternalUrl(event.url);
+    return;
+  }
+  if (event.type === "device_code") {
+    process.stdout.write(
+      `Open ${event.verificationUri} and enter code ${pc.bold(event.userCode)}.\n`,
+    );
+    openExternalUrl(event.verificationUri);
+    return;
+  }
+  process.stdout.write(`${event.message}\n`);
+  if (event.type === "info") {
+    for (const link of event.links ?? []) {
+      process.stdout.write(`${link.label ? `${link.label}: ` : ""}${link.url}\n`);
+    }
+  }
+}
+
+async function readLine(message: string, signal?: AbortSignal): Promise<string> {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const value = signal
+      ? await readline.question(message, { signal })
+      : await readline.question(message);
+    return value.trim();
+  } catch (error) {
+    if (signal?.aborted) throw new Error("Login prompt cancelled");
+    throw error;
+  } finally {
+    readline.close();
+  }
+}
+
+function openExternalUrl(url: string): void {
+  const invocation =
+    process.platform === "darwin"
+      ? { command: "open", args: [url] }
+      : process.platform === "win32"
+        ? { command: "cmd", args: ["/c", "start", "", url] }
+        : { command: "xdg-open", args: [url] };
+  const child = spawn(invocation.command, invocation.args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.once("error", () => undefined);
+  child.unref();
 }
 
 async function promptBaseUrl(defaultBaseUrl: string): Promise<string> {
@@ -231,7 +383,7 @@ async function readSecret(prompt: string): Promise<string> {
   if (!process.stdin.isTTY) throw new Error("A TTY is required for secret input");
   const stdin = process.stdin;
   const wasRaw = stdin.isRaw;
-  const wasPaused = stdin.isPaused();
+  const wasFlowing = stdin.readableFlowing === true;
   let value = "";
   process.stdout.write(prompt);
   stdin.setRawMode(true);
@@ -241,7 +393,7 @@ async function readSecret(prompt: string): Promise<string> {
     const finish = (error?: Error): void => {
       stdin.off("data", onData);
       stdin.setRawMode(Boolean(wasRaw));
-      if (wasPaused) stdin.pause();
+      if (!wasFlowing) stdin.pause();
       process.stdout.write("\n");
       if (error) reject(error);
       else resolve(value);
@@ -324,6 +476,16 @@ function optionValue(args: string[], name: string): string | undefined {
 
 function isApiKeyCredential(value: unknown): value is ApiKeyCredential {
   return isRecord(value) && value.type === "api_key" && typeof value.key === "string";
+}
+
+function isStoredCredential(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.type === "api_key") return typeof value.key === "string" && value.key.trim().length > 0;
+  return (
+    value.type === "oauth" &&
+    typeof value.access === "string" &&
+    typeof value.refresh === "string"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

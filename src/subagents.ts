@@ -143,6 +143,8 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     ...invocation.prefix,
     "-C",
     agentCwd,
+    "--provider",
+    runtime.providerId,
     "--base-url",
     runtime.baseUrl,
     "--transport",

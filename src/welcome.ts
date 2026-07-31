@@ -7,6 +7,7 @@ import { brandBlue } from "./brand.js";
 export interface WelcomeDetails {
   cwd: string;
   modelId: string;
+  modelName?: string;
   effort: string;
   version: string;
 }
@@ -43,7 +44,10 @@ export function renderWelcome(width: number, details: WelcomeDetails, theme: The
   const logo = normalizeLogo(DSCODE_LOGO);
   const info = [
     `${theme.bold("DSCode")} ${theme.fg("muted", `v${details.version}`)}`,
-    theme.fg("muted", `${humanizeModel(details.modelId)} · ${details.effort} effort`),
+    theme.fg(
+      "muted",
+      `${details.modelName ?? humanizeModel(details.modelId)} · ${details.effort} effort`,
+    ),
     theme.fg("muted", formatCwd(details.cwd)),
   ];
   const sideBySideWidth = visibleWidth(padding) + visibleWidth(logo[0] ?? "") + gap.length + 12;

@@ -7,6 +7,7 @@ import { createDSCodeExtension } from "./dscode-extension.js";
 import { initializeDSCodeHome } from "./home.js";
 import { installPiLoginSecretMask } from "./pi-login-mask.js";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
+import { parseSupportedProviderId, type SupportedProviderId } from "./providers.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
@@ -35,10 +36,14 @@ async function run(): Promise<void> {
 
   const authCommand = parseAuthCommand(process.argv.slice(2));
   if (authCommand) {
-    await runAuthCommand(authCommand, parsed.options);
+    await runAuthCommand(authCommand.command, {
+      ...parsed.options,
+      providerId: authCommand.providerId ?? parsed.options.providerId,
+    });
     return;
   }
   const configuredBaseUrl = await ensureFirstRunAuth({
+    providerId: parsed.options.providerId,
     baseUrl: parsed.options.baseUrl,
     modelId: parsed.options.modelId,
     piArgs: parsed.piArgs,
@@ -54,10 +59,25 @@ async function run(): Promise<void> {
   });
 }
 
-function parseAuthCommand(argv: string[]): "login" | "logout" | "status" | undefined {
+interface AuthCommand {
+  command: "login" | "logout" | "status";
+  providerId?: SupportedProviderId;
+}
+
+function parseAuthCommand(argv: string[]): AuthCommand | undefined {
   const command = argv[0];
-  if (command === "login" || command === "logout") return command;
-  if (command === "auth" && argv[1] === "status") return "status";
+  if (command === "login" || command === "logout") {
+    return {
+      command,
+      ...(argv[1] ? { providerId: parseSupportedProviderId(argv[1]) } : {}),
+    };
+  }
+  if (command === "auth" && argv[1] === "status") {
+    return {
+      command: "status",
+      ...(argv[2] ? { providerId: parseSupportedProviderId(argv[2]) } : {}),
+    };
+  }
   return undefined;
 }
 

@@ -94,6 +94,8 @@ describe("DSCode Pi integration", () => {
       ],
       {
         ...process.env,
+        DSCODE_PROVIDER: "deepseek",
+        DSCODE_MODEL: "deepseek-v4-flash",
         DEEPSEEK_API_KEY: "test-only-key",
         PI_SKIP_VERSION_CHECK: "1",
         PI_TELEMETRY: "0",
@@ -135,6 +137,8 @@ describe("DSCode Pi integration", () => {
       ],
       {
         ...process.env,
+        DSCODE_PROVIDER: "deepseek",
+        DSCODE_MODEL: "deepseek-v4-flash",
         DEEPSEEK_API_KEY: "invalid-test-key",
         PI_SKIP_VERSION_CHECK: "1",
         PI_TELEMETRY: "0",

@@ -63,6 +63,21 @@ describe("DSCode welcome header", () => {
     expect(lines.every((line) => visibleWidth(line) <= 30)).toBe(true);
   });
 
+  it("shows the provider model display name when available", () => {
+    const output = renderWelcome(
+      80,
+      {
+        cwd: "/tmp/project",
+        modelId: "gpt-5.6-sol",
+        modelName: "GPT-5.6 Sol",
+        effort: "medium",
+        version: "0.3.3",
+      },
+      theme,
+    ).join("\n");
+    expect(output).toContain("GPT-5.6 Sol · medium effort");
+  });
+
   it("keeps the header in the upper-left instead of centering it in wide terminals", () => {
     const lines = renderWelcome(
       132,

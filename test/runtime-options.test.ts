@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseRuntimeArgs } from "../src/runtime-options.js";
 
 describe("parseRuntimeArgs", () => {
   const original = {
+    provider: process.env.DSCODE_PROVIDER,
     model: process.env.DSCODE_MODEL,
     effort: process.env.DSCODE_EFFORT,
     transport: process.env.DSCODE_TRANSPORT,
@@ -11,7 +12,12 @@ describe("parseRuntimeArgs", () => {
     sandbox: process.env.DSCODE_SANDBOX,
   };
 
+  beforeEach(() => {
+    process.env.DSCODE_PROVIDER = "deepseek";
+  });
+
   afterEach(() => {
+    restore("DSCODE_PROVIDER", original.provider);
     restore("DSCODE_MODEL", original.model);
     restore("DSCODE_EFFORT", original.effort);
     restore("DSCODE_TRANSPORT", original.transport);
@@ -30,6 +36,7 @@ describe("parseRuntimeArgs", () => {
     const parsed = parseRuntimeArgs(["--print", "inspect this repo"]);
 
     expect(parsed.options).toMatchObject({
+      providerId: "deepseek",
       modelId: "deepseek-v4-flash",
       transport: "responses",
       harness: "minimal",
@@ -42,6 +49,27 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.piArgs).toContain("max");
     expect(parsed.piArgs).not.toContain("--tools");
     expect(parsed.piArgs).toContain("inspect this repo");
+  });
+
+  it("selects the current Codex subscription model and a balanced default effort", () => {
+    delete process.env.DSCODE_MODEL;
+    delete process.env.DSCODE_EFFORT;
+    const parsed = parseRuntimeArgs(["--provider", "openai-codex", "inspect this image"]);
+
+    expect(parsed.options).toMatchObject({
+      providerId: "openai-codex",
+      modelId: "gpt-5.6-sol",
+    });
+    expect(parsed.piArgs).toEqual(
+      expect.arrayContaining([
+        "--provider",
+        "openai-codex",
+        "--model",
+        "gpt-5.6-sol",
+        "--thinking",
+        "medium",
+      ]),
+    );
   });
 
   it("maps DSCode flags while preserving Pi session and JSON flags", () => {
