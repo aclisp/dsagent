@@ -55,7 +55,7 @@ npm install -g @thinkany/dscode
 Alternatively, install the latest source build:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
 Make sure `~/.local/bin` is on your `PATH`, then authenticate and start:

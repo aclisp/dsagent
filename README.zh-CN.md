@@ -52,7 +52,7 @@ npm install -g @thinkany/dscode
 也可以安装最新源码版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
 确认 `~/.local/bin` 已加入 `PATH`，然后登录并启动：
