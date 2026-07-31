@@ -4,112 +4,121 @@
 
 # DSCode
 
-DSCode 是面向本地仓库的 DeepSeek V4 Flash coding agent。它把 Pi 的成熟 TUI、树形会话和扩展体系，
-与 V4 Flash 的 Responses API、1M 上下文、`max` 推理、原生 `apply_patch` 和低成本并行能力组合
-在一起。
+English | [简体中文](README.zh-CN.md)
 
-当前 `0.3.0` 已经不是简单聊天壳，而是一套完整 coding-agent runtime：
+DSCode is a DeepSeek V4 Flash coding agent built for local repositories. It combines Pi's mature TUI,
+tree-structured sessions, and extension system with the V4 Flash Responses API, a 1M-token context
+window, `max` reasoning, native `apply_patch`, and cost-effective parallel execution.
 
-- 多行编辑、输入历史、排队/打断、工具折叠、思考折叠、实时工具输出和状态栏；
-- 自动保存、resume、命名、fork、tree、compact、导入导出；
-- 原子多文件 patch、逐文件审批、持久 checkpoint、冲突保护 `/undo` 和 transcript diff；
-- `plan`、`ask`、`auto`、`full` 权限策略，以及独立的 OS sandbox 与默认禁网；
-- `AGENTS.md`/`CLAUDE.md`、Agent Skills、hooks、MCP、项目 trust；
-- 可重连后台命令、JSONL/CI、完整 RPC、VS Code 入口和语言诊断；
-- explorer / implementer / reviewer / tester 多 agent，最多四路并行，implementer 使用独立 Git
-  worktree；
-- DeepSeek Responses 无状态回放、自动前缀缓存友好的稳定 prompt、`low/high/max` thinking 和服务端
-  Web Search。
+Version `0.3.0` is no longer a simple chat wrapper. It is a complete coding-agent runtime with:
 
-完整产品取舍与竞争优势见 [产品策略](docs/PRODUCT_STRATEGY.md)。
-与 Claude Code / Codex 的逐项对比见 [对比文档](docs/COMPARISON.md)
-（[English](docs/COMPARISON.en.md)）。
+- Multiline editing, input history, queued messages and interruption, collapsible tools and reasoning,
+  live tool output, and a status bar;
+- Automatic saves, resume, naming, fork, tree, compact, import, and export;
+- Atomic multi-file patches, per-file approval, persistent checkpoints, conflict-safe `/undo`, and
+  transcript diffs;
+- `plan`, `ask`, `auto`, and `full` permission policies, plus an independent OS sandbox with network
+  access blocked by default;
+- `AGENTS.md`/`CLAUDE.md`, Agent Skills, hooks, MCP, and project trust;
+- Reconnectable background commands, JSONL/CI, full RPC, a VS Code entry point, and language diagnostics;
+- Explorer, implementer, reviewer, and tester agents with up to four concurrent tasks; implementers use
+  isolated Git worktrees;
+- Stateless DeepSeek Responses replay, a stable prompt designed for automatic prefix caching,
+  `low/high/max` thinking, and server-side Web Search.
 
-## 安装
+See the [Product Strategy](docs/PRODUCT_STRATEGY.md) for the complete product rationale and competitive
+advantages. For a feature-by-feature comparison with Claude Code and Codex, see the
+[comparison document](docs/COMPARISON.en.md) ([中文](docs/COMPARISON.md)).
 
-普通用户要求 Node.js 22.19+ 和 `rg`。macOS 直接使用 Seatbelt 沙箱；Linux/Windows 的隔离执行需要
-Docker，并设置可信镜像。
+## Installation
 
-### 方式一：curl 一键安装（自动获取依赖）
+DSCode requires Node.js 22.19+ and `rg`. macOS uses the native Seatbelt sandbox. Isolated execution on
+Linux and Windows requires Docker and a trusted image.
 
-用类似 Claude Code 的 curl 管道方式安装（自动检测 Node、通过 corepack 准备 pnpm、用 Homebrew
-补装 ripgrep，源码装到 `~/.local/share/dscode`，`dscode` 命令装到 `~/.local/bin`）：
+### Option 1: one-line curl install (dependencies included)
+
+Install through a Claude Code-style curl pipeline. The script detects Node, prepares pnpm through
+Corepack, installs ripgrep through Homebrew when needed, places the source in
+`~/.local/share/dscode`, and installs the `dscode` command in `~/.local/bin`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thinkany/dscode/main/scripts/install.sh | sh
 ```
 
-只要求已有 Node.js 22.19+ 和 `git`；脚本会顺带准备 pnpm 和 ripgrep。卸载：
+Only Node.js 22.19+ and `git` must already be installed; the script also prepares pnpm and ripgrep.
+To uninstall:
 
 ```bash
 rm -rf ~/.local/share/dscode ~/.local/bin/dscode
 ```
 
-### 方式二：npm 全局安装
+### Option 2: global npm install
 
 ```bash
 npm install -g @thinkany/dscode
 dscode -C /path/to/project
 ```
 
-### 首次启动与密钥
+### First launch and API key
 
-第一次启动会自动引导输入 DeepSeek API key：输入内容只显示圆点，DSCode 使用官方 `/models`
-接口验证后，保存到 `~/.dscode/agent/auth.json`，文件权限为 `0600`。也可以提前配置：
+On first launch, DSCode prompts for a DeepSeek API key. Input is masked with dots. DSCode validates the
+key through the official `/models` endpoint, then stores it in `~/.dscode/agent/auth.json` with `0600`
+permissions. You can also configure it in advance:
 
 ```bash
-# 推荐：安全输入、在线验证并保存
+# Recommended: securely enter, validate online, and save the key
 dscode login
 
-# 或者仅对当前 shell 生效；不会写入磁盘
+# Or set it only for the current shell without writing it to disk
 export DEEPSEEK_API_KEY="sk-..."
 ```
 
-进入 TUI 后可用 `/login`（兼容 `/login deepseek`）直接替换 DeepSeek API key；不会显示 Pi 的其他
-provider 或账号登录入口，输入和提交记录同样会被遮罩。`dscode auth status`
-只显示配置来源，不显示密钥；`dscode logout` 删除本地保存的凭据。
+Inside the TUI, use `/login` (or `/login deepseek`) to replace the DeepSeek API key. DSCode does not show
+Pi's other provider or account login options, and both input and submission history remain masked.
+`dscode auth status` shows only the credential source, never the key. `dscode logout` removes the saved
+credential.
 
-从源码开发或本地验证：
+For source development or local validation:
 
 ```bash
-# 首次安装并构建
+# Install dependencies and build for the first time
 pnpm install
 pnpm build
 
-# 运行上一次 build 的产物
+# Run the output from the latest build
 pnpm start
 
-# 传参数时，pnpm 会把参数直接转发给 DSCode；不要再插入单独的 `--`
+# pnpm forwards arguments directly to DSCode; do not add a separate `--`
 pnpm start -C /path/to/project
 
-# 直接运行最新源码，改代码后无需先 build
+# Run the latest source directly; no build is required after code changes
 pnpm dev -C /path/to/project
 
-# 发布前完整检查
+# Complete pre-release validation
 pnpm check
 ```
 
-## 最常用的启动方式
+## Common launch modes
 
 ```bash
-# 新的交互会话
+# Start a new interactive session
 dscode -C ./my-project
 
-# 继续当前工作区最近的会话
+# Continue the most recent session in the current workspace
 dscode -C ./my-project --continue
 
-# 选择、命名或 fork 会话
+# Select, name, or fork a session
 dscode -C ./my-project --resume
 dscode -C ./my-project --name "fix auth race"
 dscode -C ./my-project --fork <session-id>
 
-# 一次性输出 / JSONL CI / IDE RPC
-dscode -C ./my-project -p "解释认证流程"
-dscode -C ./my-project --mode json -p "修复 lint 并运行测试"
+# One-shot output / JSONL CI / IDE RPC
+dscode -C ./my-project -p "Explain the authentication flow"
+dscode -C ./my-project --mode json -p "Fix lint errors and run tests"
 dscode -C ./my-project --mode rpc
 ```
 
-默认配置是：
+The defaults are:
 
 ```text
 model       deepseek-v4-flash
@@ -121,78 +130,87 @@ sandbox     workspace-write
 network     blocked
 ```
 
-`minimal` 只给 V4 Flash 暴露高杠杆工具：沙箱命令、后台进程交互、freeform patch 和并行
-delegation。`--harness safe` 额外提供文件读取、文件搜索和自动语言诊断，适合更强审计需求。
+The `minimal` harness exposes only high-leverage tools to V4 Flash: sandboxed commands, background
+process interaction, free-form patches, and parallel delegation. `--harness safe` also provides file
+reading, file search, and automatic language diagnostics for stricter auditing requirements.
 
-## 交互体验
+## Interactive experience
 
-新会话会显示使用 DeepSeek 蓝（`#4E6BFE`）的方块鲸 Logo 和 DSCode 欢迎卡。终端中会自动使用同轮廓的像素字符版；输入区采用无边框面板和原生闪烁块状光标，空输入时光标覆盖占位文字的首字符。默认状态行只保留模型、
-thinking effort 和当前目录；权限放大或上下文超过 70% 时才追加警示。累计 token、
-缓存命中率和费用不常驻占空间，需要时用 `/status` 查看。
+New sessions display a block-whale logo in DeepSeek blue (`#4E6BFE`) and a DSCode welcome card. The
+terminal automatically uses a matching pixel-art outline. The input area uses a borderless panel and a
+native blinking block cursor; when the input is empty, the cursor covers the first character of the
+placeholder. The default status line shows only the model, thinking effort, and current directory. It
+adds warnings only when permissions are elevated or context usage exceeds 70%. Cumulative tokens, cache
+hit rate, and cost stay out of the way and remain available through `/status`.
 
-在输入框键入 `/` 可查看全部命令，`/hotkeys` 可查看快捷键。常用操作：
+Type `/` in the editor to see every command, or use `/hotkeys` for keyboard shortcuts. Common actions:
 
-| 操作 | 作用 |
+| Action | Behavior |
 | --- | --- |
-| `Enter` / `Alt+Enter` | 工作中追加 steering / follow-up 消息 |
-| `Escape` | 中断当前执行 |
-| `quit` / `exit` / `退出` / `/quit` / `Ctrl+D` | 不调用模型，直接安全退出 DSCode |
-| `Ctrl+O` / `Ctrl+T` | 折叠工具输出 / 思考内容 |
-| `Ctrl+G` | 使用外部编辑器编辑长 prompt |
-| `Shift+Tab` | 切换 thinking level |
-| `/resume` `/name` `/fork` `/tree` | 恢复、命名、分支和时间线导航 |
-| `/compact [prompt]` | 手动压缩上下文 |
-| `/status` | 查看模型、权限、上下文、缓存命中、token、费用和会话信息 |
-| `/session` | 查看 Pi 的底层会话统计与会话文件 |
-| `/plan` `/permissions` | 切换结构化规划模式或权限策略；`/plan show` 查看当前计划 |
-| `/effort low\|high\|max` | 切换 DeepSeek thinking effort |
-| `/diff` `/checkpoints` `/undo` | 查看改动、checkpoint 和安全撤销 |
-| `/jobs` | 查看仍在运行或等待收取结果的后台命令 |
-| `/mcp` `/agents` `/doctor` | 查看扩展、子 agent 和运行诊断 |
+| `Enter` / `Alt+Enter` | Queue a steering or follow-up message while the agent is working |
+| `Escape` | Interrupt the current run |
+| `quit` / `exit` / `退出` / `/quit` / `Ctrl+D` | Exit DSCode safely without calling the model |
+| `Ctrl+O` / `Ctrl+T` | Collapse tool output / reasoning |
+| `Ctrl+G` | Edit a long prompt in an external editor |
+| `Shift+Tab` | Change the thinking level |
+| `/resume` `/name` `/fork` `/tree` | Resume, name, branch, and navigate session timelines |
+| `/compact [prompt]` | Compact context manually |
+| `/status` | Show model, permissions, context, cache hits, tokens, cost, and session details |
+| `/session` | Show Pi's underlying session statistics and session file |
+| `/plan` `/permissions` | Change structured planning mode or permission policy; `/plan show` displays the current plan |
+| `/effort low\|high\|max` | Change DeepSeek thinking effort |
+| `/diff` `/checkpoints` `/undo` | Inspect changes and checkpoints or perform a safe rollback |
+| `/jobs` | Show background commands that are running or waiting for results |
+| `/mcp` `/agents` `/doctor` | Inspect extensions, subagents, and runtime diagnostics |
 
-`apply_patch` 成功后会立即生成持久 checkpoint。`/undo` 只在文件仍与 checkpoint 的 after
-快照一致时恢复；如果用户随后改过文件，会拒绝覆盖。确认确实要覆盖时才使用 `/undo --force`。
+Every successful `apply_patch` immediately creates a persistent checkpoint. `/undo` restores a file only
+when it still matches the checkpoint's after snapshot. If the user changed it afterward, DSCode refuses
+to overwrite it. Use `/undo --force` only when replacement is intentional.
 
-`/plan` 会进入真正的只读规划模式。模型完成仓库调查后必须调用 `update_plan`，TUI 会显示
-`pending / in_progress / completed` 步骤卡片，并让用户选择“执行计划 / 保持规划 / 继续细化”。
-执行时写工具和原权限恢复，计划状态会随验证结果更新并随会话持久化；`/plan clear` 可清空它。
+`/plan` enters a genuinely read-only planning mode. After repository investigation, the model must call
+`update_plan`. The TUI displays a card with `pending / in_progress / completed` steps and lets the user
+choose whether to execute, remain in planning mode, or keep refining the plan. During execution, write
+tools and the previous permission policy return, plan state follows validation results, and the plan is
+persisted with the session. Use `/plan clear` to remove it.
 
-## 权限与沙箱不是一回事
+## Permissions and sandboxing are different
 
-权限决定“是否需要人批准”，沙箱决定“即使批准后，进程实际能访问什么”。
+Permissions decide whether an action needs human approval. The sandbox decides what a process can
+actually access even after approval.
 
-| 权限 | 行为 |
+| Permission | Behavior |
 | --- | --- |
-| `plan` | 隐藏写入、delegate 和 MCP；命令强制降为只读 sandbox |
-| `ask` | 读取自动；命令、delegate、MCP 和写入要确认；patch 按文件逐一 review |
-| `auto` | 工作区 patch 和沙箱命令自动；外部 MCP 仍确认 |
-| `full` | 不弹审批；不会自动关闭 OS sandbox |
+| `plan` | Hides write, delegate, and MCP tools; commands are forced into a read-only sandbox |
+| `ask` | Reads run automatically; commands, delegation, MCP, and writes require approval; patches are reviewed per file |
+| `auto` | Workspace patches and sandboxed commands run automatically; external MCP calls still require approval |
+| `full` | Disables approval prompts; it does not automatically disable the OS sandbox |
 
-| sandbox | 行为 |
+| Sandbox | Behavior |
 | --- | --- |
-| `read-only` | 命令不能写文件 |
-| `workspace-write` | 只能写工作区、系统临时目录和必要设备；默认值 |
-| `danger-full-access` | 使用当前用户的宿主机权限，仅用于可信环境 |
+| `read-only` | Commands cannot write files |
+| `workspace-write` | Commands can write only to the workspace, system temporary directories, and required devices; this is the default |
+| `danger-full-access` | Commands use the current user's host permissions; use only in trusted environments |
 
-命令和 `!` 用户 shell 默认禁网；显式传 `--network` 才开放。`DEEPSEEK_API_KEY` 会从命令、
-hooks 和 MCP stdio 子进程的默认环境删除。模型 API 和显式配置的远程 MCP transport 不受命令
-沙箱网络规则约束。
+Commands and the `!` user shell have no network access by default; pass `--network` explicitly to enable
+it. `DEEPSEEK_API_KEY` is removed from the default environment of commands, hooks, and MCP stdio child
+processes. Model API calls and explicitly configured remote MCP transports are not subject to the command
+sandbox's network policy.
 
-macOS 使用系统 Seatbelt。其他平台设置 Docker 后端：
+macOS uses the system Seatbelt sandbox. On other platforms, configure the Docker backend:
 
 ```bash
 export DSCODE_SANDBOX_IMAGE="your-reviewed-image:tag"
 dscode -C ./project --sandbox workspace-write
 ```
 
-如果没有可用后端，DSCode 会 fail closed，不会悄悄退化为宿主机执行。
+If no supported backend is available, DSCode fails closed instead of silently running on the host.
 
-## 项目规则与 Skills
+## Project rules and Skills
 
-Pi 会分层读取当前目录及父目录中的 `AGENTS.md` 或 `CLAUDE.md`。DSCode 还要求 agent 在修改
-更深目录前发现并遵守更具体的嵌套规则。
+Pi reads `AGENTS.md` or `CLAUDE.md` hierarchically from the current directory and its parents. DSCode also
+requires the agent to discover and follow more specific nested rules before modifying deeper directories.
 
-Skills 可放在：
+Skills can be stored in:
 
 ```text
 ~/.dscode/agent/skills/
@@ -201,12 +219,14 @@ Skills 可放在：
 <project>/.agents/skills/
 ```
 
-使用 `/skill:name` 显式调用，或让模型按描述自动加载。项目 skills、settings、extensions、hooks
-和 MCP 只应在信任仓库后启用；交互模式使用 `/trust`，非交互模式显式传 `--approve`。
+Invoke a skill explicitly with `/skill:name`, or let the model load one based on its description. Project
+skills, settings, extensions, hooks, and MCP should be enabled only after trusting the repository. Use
+`/trust` in interactive mode or pass `--approve` explicitly in non-interactive mode.
 
 ## Hooks
 
-全局配置在 `~/.dscode/hooks.json`，可信项目配置在 `.dscode/hooks.json`。项目配置追加到全局配置：
+Global configuration lives in `~/.dscode/hooks.json`; trusted-project configuration lives in
+`.dscode/hooks.json` and is appended to the global configuration:
 
 ```json
 {
@@ -223,12 +243,13 @@ Skills 可放在：
 }
 ```
 
-`beforeTool` 非零退出会阻止工具。可用占位符为 `{cwd}`、`{tool}`、`{payload}`。Hook 同样运行在
-所选 OS sandbox 内并遵守 `--network`。
+A non-zero `beforeTool` exit blocks the tool. Available placeholders are `{cwd}`, `{tool}`, and
+`{payload}`. Hooks also run inside the selected OS sandbox and follow the `--network` setting.
 
 ## MCP
 
-全局配置在 `~/.dscode/mcp.json`，可信项目配置在 `.dscode/mcp.json`：
+Global configuration lives in `~/.dscode/mcp.json`; trusted-project configuration lives in
+`.dscode/mcp.json`:
 
 ```json
 {
@@ -246,87 +267,92 @@ Skills 可放在：
 }
 ```
 
-工具会注册为 `mcp__<server>__<tool>`。使用 `/mcp` 查看连接与错误。`auto` 和 `ask` 模式下，
-每次外部 MCP 调用都需要批准；无 UI 的自动化若需要 MCP，应在可信环境明确使用 `full`。
+Tools are registered as `mcp__<server>__<tool>`. Use `/mcp` to inspect connections and errors. Every
+external MCP call requires approval in `auto` and `ask` modes. Headless automation that needs MCP should
+explicitly use `full` in a trusted environment.
 
-## 多 agent 与后台任务
+## Multiple agents and background tasks
 
-模型可通过 `delegate` 一次运行最多八个任务，同时最多四个：
+The model can submit up to eight `delegate` tasks at once, with up to four running concurrently:
 
-- `explorer`：只读仓库调查；
-- `reviewer`：只读独立审查；
-- `tester`：沙箱化测试和故障诊断；
-- `implementer`：从当前 `HEAD` 创建 detached worktree，返回候选 diff。
+- `explorer`: read-only repository investigation;
+- `reviewer`: independent read-only review;
+- `tester`: sandboxed testing and failure diagnosis;
+- `implementer`: creates a detached worktree from the current `HEAD` and returns a candidate diff.
 
-主 agent 始终负责集成和最终验证。Implementer worktree 默认保留，输出中会给出路径，避免在用户
-尚未 review 时自动删除或合并。
+The primary agent always owns integration and final validation. Implementer worktrees are preserved by
+default, and their paths are included in the output so they are not deleted or merged before user review.
 
-`exec_command` 在 10 秒后仍未结束会返回 `process_id`，模型可用 `write_stdin` 轮询、输入或终止；
-`/jobs` 显示当前 registry。
+When `exec_command` is still running after 10 seconds, it returns a `process_id`. The model can poll,
+write input, or terminate it with `write_stdin`; `/jobs` displays the current registry.
 
-## IDE 与自动化
+## IDE and automation
 
-VS Code 扩展位于 [editors/vscode](editors/vscode/README.md)，支持打开集成 TUI、发送当前选区和
-把 VS Code language diagnostics 交给 agent 修复。`safe` harness 的
-`language_diagnostics` 还会自动发现本地已安装的 TypeScript、Pyright、Rust、Go 和 Swift checker。
+The VS Code extension lives in [editors/vscode](editors/vscode/README.md). It can open the integrated TUI,
+send the current selection, and pass VS Code language diagnostics to the agent for fixes. The `safe`
+harness's `language_diagnostics` tool also discovers locally installed TypeScript, Pyright, Rust, Go, and
+Swift checkers automatically.
 
-更深的 IDE 集成使用：
+For deeper IDE integration, use:
 
 ```bash
 dscode -C ./project --mode rpc
 ```
 
-RPC 是 stdin/stdout JSONL，支持流式事件、状态查询、prompt/steer/follow-up、会话操作、模型和
-thinking 切换、扩展 UI 审批。普通 CI 使用 `--mode json --print --no-session`，需要项目资源时加
-`--approve`。
+RPC uses JSONL over stdin/stdout and supports streaming events, status queries, prompts, steering,
+follow-ups, session operations, model and thinking changes, and extension UI approvals. For regular CI,
+use `--mode json --print --no-session`; add `--approve` when project resources are required.
 
-## 怎么验收
+## Validation
 
-不消耗模型额度的发布检查：
+Run the release checks without spending model credits:
 
 ```bash
 pnpm check
 ```
 
-它会执行类型检查、完整测试套件和生产构建；其中包括真实 Pi JSONL 启动、模拟 DeepSeek Responses
-SSE、请求 payload 检查、Seatbelt 写入边界、checkpoint 冲突保护和后台任务重连。
+This runs type checking, the complete test suite, and a production build. Coverage includes a real Pi
+JSONL launch, simulated DeepSeek Responses SSE, request-payload validation, Seatbelt write boundaries,
+checkpoint conflict protection, and background-task reconnection.
 
-使用真实 DeepSeek API 做完整“发现规则 → 修改 → 跑测试 → 验证”：
+Run the full “discover rules → modify → test → verify” flow against the real DeepSeek API:
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
 pnpm smoke:live
 ```
 
-失败时临时 fixture 会保留并打印路径；成功后默认清理。设置 `DSCODE_KEEP_SMOKE=1` 可始终保留。
+On failure, the temporary fixture is preserved and its path is printed. It is removed after a successful
+run by default. Set `DSCODE_KEEP_SMOKE=1` to preserve it every time.
 
-发布前的真实 API 全量验收还会验证会话命名/恢复、模型驱动 MCP、密钥隔离，以及 explorer +
-implementer 并行 delegation 和独立 Git worktree：
+The complete real-API pre-release acceptance suite also validates session naming and resume, model-driven
+MCP, credential isolation, explorer + implementer parallel delegation, and isolated Git worktrees:
 
 ```bash
 pnpm acceptance:live
 ```
 
-`features:live` 可只运行上述真实功能验收；完整 TUI 仍建议在 PTY 中人工确认输入、流式渲染、
-状态栏、审批弹窗、工具/思考折叠和退出行为。
+Use `features:live` to run only those real feature checks. The complete TUI should still be inspected
+manually in a PTY for input, streaming rendering, the status bar, approval dialogs, collapsed tools and
+reasoning, and exit behavior.
 
-人工验收建议在一个干净 Git 仓库依次测试：
+For manual acceptance, use a clean Git repository and test these scenarios in order:
 
 ```text
-1. /plan 后要求修改文件，确认出现 Updated Plan 卡片、写工具不可用，并选择 Execute the plan
-2. 执行过程中确认只有一个 in_progress，验证通过后步骤才变为 completed
-3. /diff、/checkpoints、/undo，随后手改文件再验证冲突保护
-4. 运行超过 10 秒的测试并观察 process_id、/jobs、write_stdin
-5. /name、退出、--continue、/fork、/tree、/compact
-6. 配置一个 MCP 和 hook，分别测试 trusted / untrusted 项目
-7. 让 explorer、reviewer、tester、implementer 并行处理独立任务
-8. 用 --mode json 跑 CI，再用 --mode rpc 接一个最小客户端
+1. After /plan, request a file change. Confirm that an Updated Plan card appears, write tools are unavailable, and select Execute the plan.
+2. During execution, confirm that only one step is in_progress and steps become completed only after validation.
+3. Use /diff, /checkpoints, and /undo; then edit a file manually and verify conflict protection.
+4. Run a test longer than 10 seconds and inspect process_id, /jobs, and write_stdin.
+5. Use /name, exit, --continue, /fork, /tree, and /compact.
+6. Configure an MCP server and a hook, then test trusted and untrusted projects.
+7. Let explorer, reviewer, tester, and implementer handle independent tasks concurrently.
+8. Run CI with --mode json, then connect a minimal client with --mode rpc.
 ```
 
-## 打包与发布
+## Packaging and release
 
-包名和 CLI 入口已经配置为 `@thinkany/dscode` / `dscode`。发布账号需要拥有 npm 的 `thinkany`
-scope，然后执行：
+The package name and CLI entry point are configured as `@thinkany/dscode` and `dscode`. The release
+account must have access to the npm `thinkany` scope. Then run:
 
 ```bash
 pnpm check
@@ -334,24 +360,31 @@ npm pack --dry-run
 npm publish --access public
 ```
 
-`prepack` 会重新构建 `dist`，`prepublishOnly` 会阻止测试或类型检查失败的版本发布。发布后可在一个
-干净目录验证 `npm install -g @thinkany/dscode`、`dscode --version`、`dscode login` 和首次启动引导。
+`prepack` rebuilds `dist`, while `prepublishOnly` blocks releases when tests or type checking fail. After
+publishing, verify `npm install -g @thinkany/dscode`, `dscode --version`, `dscode login`, and the first-run
+flow in a clean directory.
 
-## V4 Flash 专用适配
+## V4 Flash-specific adaptations
 
-- Responses API 无状态：完整会话、reasoning item 和工具结果由本地 JSONL 树回放；
-- system prompt、工具顺序和工程约定保持稳定，尽量提高 DeepSeek 自动前缀缓存命中；
-- thinking 开启时移除无效 `temperature`/`top_p`，默认 `max`，也可切换 `low/high`；
-- 去掉 DeepSeek 不支持的 OpenAI store、cache retention 和 include 语义；
-- `apply_patch` 使用 V4 Flash 的 freeform custom-tool 形态，避免大 patch JSON 转义；
-- 1M context 仍按“先 rg 定位、再定点读取、接近预算时 compact”使用，而不是盲目灌入仓库；
-- `--web` 加入 DeepSeek 服务端 Web Search；它适合需要最新资料的任务，不代替本地代码搜索。
+- Stateless Responses API: the complete session, reasoning items, and tool results are replayed from the
+  local JSONL tree;
+- The system prompt, tool order, and engineering conventions remain stable to maximize DeepSeek automatic
+  prefix-cache hits;
+- Invalid `temperature`/`top_p` parameters are removed when thinking is enabled; the default is `max`, with
+  `low` and `high` also available;
+- Unsupported OpenAI store, cache-retention, and include semantics are removed;
+- `apply_patch` uses V4 Flash's free-form custom-tool format to avoid JSON escaping for large patches;
+- The 1M-token context still follows “locate with rg, read only what matters, compact near the budget”
+  instead of blindly loading the repository;
+- `--web` enables DeepSeek server-side Web Search for tasks requiring current information; it does not
+  replace local code search.
 
-## 已知边界
+## Known limitations
 
-- V4 Flash Responses 当前是文本输入，图片任务需要外部视觉工具或 MCP；
-- `danger-full-access`、项目 extensions 和用户安装的 skills 本质上可执行任意代码；
-- Docker 后端的工具链取决于你选择的镜像；
-- VS Code 扩展是本地薄集成，尚未发布到 Marketplace；
-- “和 Claude Code/Codex 完美对齐”只能通过你们真实任务集的成功率、耗时、成本和人工接管率证明，
-  不能由功能清单证明。仓库已经具备跑这种对比评测所需的 JSONL、隔离和可重复会话基础。
+- V4 Flash Responses currently accepts text input; image tasks require an external vision tool or MCP;
+- `danger-full-access`, project extensions, and user-installed skills can execute arbitrary code by design;
+- Tooling available in the Docker backend depends on the selected image;
+- The VS Code extension is a local thin integration and has not been published to the Marketplace;
+- “Perfect parity with Claude Code/Codex” can be demonstrated only through success rate, duration, cost,
+  and human-intervention rate on real task suites—not through a feature checklist. The repository already
+  provides the JSONL, isolation, and repeatable-session foundation required for that evaluation.
