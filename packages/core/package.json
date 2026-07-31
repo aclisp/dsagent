@@ -1,7 +1,7 @@
 {
   "name": "@thinkany/dscode-core",
   "version": "0.3.3",
-  "description": "Reusable DSCode agent runtime powered by DeepSeek and Pi Agent.",
+  "description": "Reusable DSCode agent runtime with DeepSeek, OpenAI API, and Codex subscription support.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/thinkany-ai/dscode#readme",

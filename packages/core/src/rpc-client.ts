@@ -3,8 +3,12 @@ import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
+import type { SupportedProviderId } from "./providers.js";
 
-export type DSCodeRpcClientOptions = Omit<RpcClientOptions, "cliPath" | "provider">;
+export type DSCodeRpcClientOptions = Omit<RpcClientOptions, "cliPath" | "provider"> & {
+  /** Model provider for this session. Defaults to DeepSeek. */
+  provider?: SupportedProviderId;
+};
 
 /**
  * Create a typed client backed by the bundled DSCode RPC worker.
@@ -14,7 +18,7 @@ export function createDSCodeRpcClient(options: DSCodeRpcClientOptions = {}): Rpc
   return new RpcClient({
     ...options,
     cliPath: getDSCodeRpcEntryPath(),
-    provider: "deepseek",
+    provider: options.provider ?? "deepseek",
   });
 }
 

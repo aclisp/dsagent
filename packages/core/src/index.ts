@@ -16,7 +16,10 @@ export {
   getDSCodeAuthPath,
   hasDeepSeekEnvironmentKey,
   hasStoredDeepSeekKey,
+  hasStoredProviderCredential,
   removeStoredDeepSeekKey,
+  removeStoredProviderCredential,
+  runAuthCommand,
   saveDeepSeekKey,
   validateDeepSeekKey,
   type KeyValidation,
@@ -34,6 +37,20 @@ export {
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
 } from "./settings.js";
+export {
+  MODEL_CREDENTIAL_ENV_KEYS,
+  SUPPORTED_PROVIDER_IDS,
+  defaultEffortForProvider,
+  defaultModelForProvider,
+  getStoredModelSelection,
+  isSupportedProviderId,
+  parseSupportedProviderId,
+  providerDisplayName,
+  providerEnvironmentKey,
+  stripModelCredentialEnvironment,
+  type StoredModelSelection,
+  type SupportedProviderId,
+} from "./providers.js";
 export {
   parseRuntimeArgs,
   printDSCodeHelp,

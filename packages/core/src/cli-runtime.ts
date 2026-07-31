@@ -5,6 +5,7 @@ import { createDSCodeExtension } from "./dscode-extension.js";
 import { initializeDSCodeHome } from "./home.js";
 import { installPiLoginSecretMask } from "./pi-login-mask.js";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
+import { parseSupportedProviderId, type SupportedProviderId } from "./providers.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
@@ -29,10 +30,14 @@ export async function runDSCode(argv: string[]): Promise<void> {
 
   const authCommand = parseAuthCommand(argv);
   if (authCommand) {
-    await runAuthCommand(authCommand, parsed.options);
+    await runAuthCommand(authCommand.command, {
+      ...parsed.options,
+      providerId: authCommand.providerId ?? parsed.options.providerId,
+    });
     return;
   }
   const configuredBaseUrl = await ensureFirstRunAuth({
+    providerId: parsed.options.providerId,
     baseUrl: parsed.options.baseUrl,
     modelId: parsed.options.modelId,
     piArgs: parsed.piArgs,
@@ -59,12 +64,31 @@ export async function runDSCodeProcess(argv: string[]): Promise<void> {
 }
 
 export function formatDSCodeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    if (error.name === "ZodError") return error.message;
+    return error.message;
+  }
+  return String(error);
 }
 
-function parseAuthCommand(argv: string[]): "login" | "logout" | "status" | undefined {
+interface AuthCommand {
+  command: "login" | "logout" | "status";
+  providerId?: SupportedProviderId;
+}
+
+function parseAuthCommand(argv: string[]): AuthCommand | undefined {
   const command = argv[0];
-  if (command === "login" || command === "logout") return command;
-  if (command === "auth" && argv[1] === "status") return "status";
+  if (command === "login" || command === "logout") {
+    return {
+      command,
+      ...(argv[1] ? { providerId: parseSupportedProviderId(argv[1]) } : {}),
+    };
+  }
+  if (command === "auth" && argv[1] === "status") {
+    return {
+      command: "status",
+      ...(argv[2] ? { providerId: parseSupportedProviderId(argv[2]) } : {}),
+    };
+  }
   return undefined;
 }
