@@ -26,6 +26,13 @@ export interface LocalImageInputResult {
 export interface LocalImageInputOptions {
   maxImageBytes?: number;
   maxImages?: number;
+  imageNumberOffset?: number;
+  emptyPrompt?: string;
+}
+
+export interface EditorImageAttachment {
+  index: number;
+  path: string;
 }
 
 export function registerLocalImageInput(pi: ExtensionAPI): void {
@@ -64,6 +71,7 @@ export async function extractLocalImageInput(
 ): Promise<LocalImageInputResult> {
   const maxImageBytes = options.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
+  const imageNumberOffset = Math.max(0, options.imageNumberOffset ?? 0);
   const images: ImageContent[] = [];
   const paths: string[] = [];
   const errors: string[] = [];
@@ -114,13 +122,36 @@ export async function extractLocalImageInput(
 
   if (consumed.length === 0) return { text, images, paths, errors };
   const remainingText = removeCandidates(text, consumed).trim();
-  const references = paths.map((_imagePath, index) => `[Image #${index + 1}]`);
+  const references = paths.map((_imagePath, index) =>
+    formatImageMarker(imageNumberOffset + index + 1),
+  );
+  const emptyPrompt = options.emptyPrompt ?? "Describe the attached image.";
   return {
-    text: [...references, remainingText || "Describe the attached image."].join("\n"),
+    text: [...references, ...(remainingText ? [remainingText] : emptyPrompt ? [emptyPrompt] : [])].join(
+      "\n",
+    ),
     images,
     paths,
     errors,
   };
+}
+
+export function formatImageMarker(index: number): string {
+  return `[Image #${index}]`;
+}
+
+export function expandEditorImageMarkers(
+  text: string,
+  attachments: readonly EditorImageAttachment[],
+): string {
+  let expanded = text;
+  for (const attachment of attachments) {
+    expanded = expanded.replaceAll(
+      formatImageMarker(attachment.index),
+      quoteImagePath(attachment.path),
+    );
+  }
+  return expanded;
 }
 
 export function detectImageMimeType(bytes: Uint8Array): string | undefined {
@@ -155,6 +186,12 @@ function unwrapPath(raw: string): string {
   return (first === '"' || first === "'") && withoutAt.at(-1) === first
     ? withoutAt.slice(1, -1)
     : withoutAt;
+}
+
+function quoteImagePath(imagePath: string): string {
+  if (!imagePath.includes('"')) return `@"${imagePath}"`;
+  if (!imagePath.includes("'")) return `@'${imagePath}'`;
+  return `@${imagePath}`;
 }
 
 function resolveImagePath(value: string, cwd: string): string {

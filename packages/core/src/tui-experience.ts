@@ -19,6 +19,12 @@ import { getDSCodeAuthPath } from "./auth.js";
 import { brandBlue } from "./brand.js";
 import type { PermissionMode } from "./config.js";
 import {
+  expandEditorImageMarkers,
+  extractLocalImageInput,
+  formatImageMarker,
+  type EditorImageAttachment,
+} from "./image-input.js";
+import {
   LOGIN_PROVIDER_CHOICES,
   routeDSCodeLogin,
   scopeLoginSuggestions,
@@ -122,12 +128,87 @@ export function registerCodingTui(
 
     class DSCodeEditor extends CustomEditor {
       private readonly dscodeTui: TUI;
+      private imageAttachments: EditorImageAttachment[] = [];
+      private imagePasteQueue = Promise.resolve();
+      private nextImageIndex = 1;
+      private pendingImagePastes = 0;
 
       constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
         super(tui, theme, keybindings, { paddingX: 0 });
         this.dscodeTui = tui;
         activeTui = tui;
         tui.terminal.write(BLINKING_BLOCK_CURSOR);
+      }
+
+      override handleInput(data: string): void {
+        const pastedText = unwrapBracketedPaste(data);
+        if (pastedText !== undefined) {
+          this.queuePastedText(pastedText, true);
+          return;
+        }
+        super.handleInput(data);
+      }
+
+      override insertTextAtCursor(text: string): void {
+        this.queuePastedText(text, false);
+      }
+
+      expandImageAttachments(text: string): string {
+        return expandEditorImageMarkers(text, this.imageAttachments);
+      }
+
+      clearImageAttachments(): void {
+        this.imageAttachments = [];
+        this.nextImageIndex = 1;
+      }
+
+      private queuePastedText(text: string, bracketed: boolean): void {
+        this.pendingImagePastes += 1;
+        this.disableSubmit = true;
+        this.imagePasteQueue = this.imagePasteQueue
+          .then(() => this.insertPastedText(text, bracketed))
+          .catch((error) => {
+            ctx.ui.notify(
+              `Could not attach pasted image: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+            this.insertPastedTextWithoutImages(text, bracketed);
+          })
+          .finally(() => {
+            this.pendingImagePastes -= 1;
+            this.disableSubmit = this.pendingImagePastes > 0;
+            this.dscodeTui.requestRender();
+          });
+      }
+
+      private async insertPastedText(text: string, bracketed: boolean): Promise<void> {
+        const result = await extractLocalImageInput(text, ctx.cwd, {
+          imageNumberOffset: this.nextImageIndex - 1,
+          emptyPrompt: "",
+        });
+        if (result.errors.length > 0) {
+          ctx.ui.notify(result.errors.join("\n"), result.paths.length > 0 ? "warning" : "error");
+        }
+        if (result.paths.length === 0) {
+          this.insertPastedTextWithoutImages(text, bracketed);
+          return;
+        }
+        this.imageAttachments.push(
+          ...result.paths.map((imagePath, index) => ({
+            index: this.nextImageIndex + index,
+            path: imagePath,
+          })),
+        );
+        this.nextImageIndex += result.paths.length;
+        this.insertPastedTextWithoutImages(result.text, bracketed);
+      }
+
+      private insertPastedTextWithoutImages(text: string, bracketed: boolean): void {
+        if (bracketed) {
+          super.handleInput(`\x1b[200~${text}\x1b[201~`);
+        } else {
+          super.insertTextAtCursor(text);
+        }
       }
 
       render(width: number): string[] {
@@ -146,7 +227,8 @@ export function registerCodingTui(
         const hardwareCursor = this.dscodeTui.getShowHardwareCursor();
         const content = lines
           .slice(1, bottomIndex)
-          .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line));
+          .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line))
+          .map((line) => highlightImageMarkers(line, this.imageAttachments, theme));
         if (this.getText().length === 0 && content.length > 0) {
           content[0] = renderEditorPlaceholder(theme, hardwareCursor);
         }
@@ -224,7 +306,9 @@ export function registerCodingTui(
         })();
       };
       editor.onSubmit = (text) => {
-        const route = routeDSCodeLogin(text);
+        const submittedText = editor?.expandImageAttachments(text) ?? text;
+        editor?.clearImageAttachments();
+        const route = routeDSCodeLogin(submittedText);
         if (route.action === "reject") {
           editor?.setText("");
           ctx.ui.notify(
@@ -261,6 +345,26 @@ export function registerCodingTui(
       };
     }
   });
+}
+
+function unwrapBracketedPaste(data: string): string | undefined {
+  const start = "\x1b[200~";
+  const end = "\x1b[201~";
+  if (!data.startsWith(start) || !data.endsWith(end)) return undefined;
+  return data.slice(start.length, -end.length);
+}
+
+export function highlightImageMarkers(
+  line: string,
+  attachments: readonly EditorImageAttachment[],
+  theme: Theme,
+): string {
+  let highlighted = line;
+  for (const attachment of attachments) {
+    const marker = formatImageMarker(attachment.index);
+    highlighted = highlighted.replaceAll(marker, theme.fg("accent", marker));
+  }
+  return highlighted;
 }
 
 async function switchToProviderAfterLogin(

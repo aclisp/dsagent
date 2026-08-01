@@ -5,6 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { afterEach, describe, expect, it } from "vitest";
 import {
   detectImageMimeType,
+  expandEditorImageMarkers,
   extractLocalImageInput,
   registerLocalImageInput,
 } from "../packages/core/src/image-input.js";
@@ -71,6 +72,24 @@ describe("DSCode TUI image input", () => {
     expect(result.images).toHaveLength(2);
     expect(result.text).toBe("[Image #1]\n[Image #2]\ncompare");
     expect(result.text).not.toContain(directory);
+  });
+
+  it("builds editor markers immediately and restores hidden paths on submit", async () => {
+    const directory = await createTemporaryDirectory();
+    const imagePath = path.join(directory, "screen shot.png");
+    await writeFile(imagePath, ONE_PIXEL_PNG);
+
+    const preview = await extractLocalImageInput(`@"${imagePath}"`, directory, {
+      imageNumberOffset: 2,
+      emptyPrompt: "",
+    });
+
+    expect(preview.text).toBe("[Image #3]");
+    expect(
+      expandEditorImageMarkers(`${preview.text}\nwhat is this?`, [
+        { index: 3, path: imagePath },
+      ]),
+    ).toBe(`@"${imagePath}"\nwhat is this?`);
   });
 
   it("leaves nonexistent image-looking paths as ordinary text", async () => {

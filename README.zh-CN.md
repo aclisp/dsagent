@@ -162,8 +162,9 @@ dscode -C ./my-project --mode rpc
 dscode --provider openai-codex @screenshot.png "解释这个错误"
 ```
 
-在 TUI 中粘贴 PNG、JPEG、GIF 或 WebP 图片并输入问题即可。DSCode 会识别终端插入的本地图片
-路径，把图片数据作为 attachment 随消息发送；每轮最多支持 8 张图片，每张最大 20 MB。
+在 TUI 中粘贴 PNG、JPEG、GIF 或 WebP 图片并输入问题即可。DSCode 会立即把终端插入的本地路径
+替换为 `[Image #N]`，并把图片数据作为 attachment 随消息发送；每轮最多支持 8 张图片，每张最大
+20 MB。
 
 TUI 常用命令：
 

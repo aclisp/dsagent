@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
+  highlightImageMarkers,
   minimalStatusParts,
   panelLine,
   renderEditorPlaceholder,
@@ -10,7 +11,8 @@ import {
 } from "../packages/core/src/tui-experience.js";
 
 const theme = {
-  fg: (_color: string, text: string) => text,
+  fg: (color: string, text: string) =>
+    color === "accent" ? `<accent>${text}</accent>` : text,
   inverse: (text: string) => `<inverse>${text}</inverse>`,
   getBgAnsi: () => "\x1b[48;5;254m",
   getColorMode: () => "256color",
@@ -80,6 +82,12 @@ describe("DSCode Codex-style input presentation", () => {
     expect(visibleWidth(rendered)).toBe(28);
     expect(rendered).toContain("\x1b[48;5;254m");
     expect(rendered).not.toContain("─");
+  });
+
+  it("renders pasted image markers as compact accent tokens", () => {
+    expect(
+      highlightImageMarkers("> [Image #1] explain", [{ index: 1, path: "/tmp/image.png" }], theme),
+    ).toBe("> <accent>[Image #1]</accent> explain");
   });
 
   it("truncates the compact status safely", () => {

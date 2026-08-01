@@ -170,9 +170,9 @@ dscode -C ./my-project --mode rpc
 dscode --provider openai-codex @screenshot.png "Explain this error"
 ```
 
-Inside the TUI, paste a PNG, JPEG, GIF, or WebP image and add your question. DSCode recognizes the
-local image path inserted by the terminal, attaches the image bytes to the message, and supports up to
-eight images of 20 MB each per turn.
+Inside the TUI, paste a PNG, JPEG, GIF, or WebP image and add your question. DSCode immediately replaces
+the terminal's local path with an `[Image #N]` marker, attaches the image bytes to the message, and
+supports up to eight images of 20 MB each per turn.
 
 Inside the TUI:
 
