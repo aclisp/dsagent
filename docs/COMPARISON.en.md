@@ -5,20 +5,21 @@
 ## Positioning
 
 Claude Code and Codex are broad, mature coding-agent products. DSCode is a smaller, opinionated runtime
-built specifically around DeepSeek V4 Flash.
+built around DeepSeek V4 Flash by default, with optional OpenAI API and Codex subscription models.
 
 The case for DSCode is not that competitors lack agents, worktrees, sandboxing, or extensions—they have
 all of those. The difference is the design center:
 
-> DSCode optimizes the entire local runtime around DeepSeek's Responses semantics, cache economics, and
-> low-cost parallel execution.
+> DSCode keeps a DeepSeek-optimized local runtime while allowing vision-capable OpenAI/Codex models when
+> a task needs capabilities that DeepSeek V4 Flash does not provide.
 
 ## Current comparison
 
 | Dimension | DSCode | Claude Code | Codex |
 | --- | --- | --- | --- |
-| Design center | DeepSeek V4 Flash on local repositories | General-purpose Claude coding workflows | OpenAI coding workflows across CLI, IDE, app, and cloud |
+| Design center | Local repositories with DeepSeek defaults and provider choice | General-purpose Claude coding workflows | OpenAI coding workflows across CLI, IDE, app, and cloud |
 | DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, native free-form patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
+| Model access and images | DeepSeek API key, OpenAI API key, or eligible ChatGPT plan; image input on models that advertise vision support | Claude account/API access with multimodal support | ChatGPT plan or OpenAI API access with multimodal support |
 | Context and cost | 1M context; `/status` exposes DeepSeek cache hits, tokens, reasoning, and estimated cost | Product-specific context and usage reporting | Product-specific context and usage reporting |
 | Parallel work | Four built-in roles, up to four concurrent tasks; implementers use isolated Git worktrees | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
 | Safety | Workspace sandbox and no command network by default; scoped per-command network/host approvals; durable patch checkpoints | Configurable permission and sandbox system with filesystem and network controls | OS sandbox, approvals, and no network by default for local commands |
@@ -58,7 +59,7 @@ and its use of DeepSeek V4 Flash's cost and concurrency profile.
 ### 4. Local, inspectable control
 
 DSCode keeps sessions locally, uses an OS-enforced command sandbox, blocks command network by default,
-strips the DeepSeek key from child-process environments, and creates a durable checkpoint after every
+strips model-provider API keys from child-process environments, and creates a durable checkpoint after every
 successful patch. Conflict-safe `/undo` refuses to overwrite files changed after the checkpoint.
 
 ### 5. A small, forkable runtime
@@ -73,7 +74,8 @@ hosted control plane.
 - Parallel agents, worktrees, sandboxing, skills, hooks, and MCP are not unique to DSCode.
 - Low API prices do not make parallel execution free.
 - A 1M context window does not remove the need for search, focused reads, and compaction.
-- DSCode does not currently match competitor multimodal, cloud, IDE, or ecosystem maturity.
+- DSCode supports image input on compatible models, but does not match competitor cloud, IDE,
+  multimodal-workflow, or ecosystem maturity.
 
 The right comparison is a shadow evaluation on the same repository tasks, measuring success rate, wall
 time, cost, safety, unrelated diffs, and human intervention—not a feature checklist.
@@ -88,3 +90,5 @@ time, cost, safety, unrelated diffs, and human intervention—not a feature chec
 - [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)
 - [Codex sandboxing](https://learn.chatgpt.com/docs/sandboxing)
+- [Codex authentication](https://learn.chatgpt.com/docs/auth)
+- [Codex image inputs](https://learn.chatgpt.com/docs/image-inputs)

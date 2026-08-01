@@ -7,17 +7,18 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { MCPManager } from "../src/mcp.js";
+import { MCPManager } from "../packages/core/src/mcp.js";
 
 describe("MCPManager", () => {
   let root: string | undefined;
-  const originalKey = process.env.DEEPSEEK_API_KEY;
+  const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+  const originalOpenAIKey = process.env.OPENAI_API_KEY;
 
   afterEach(async () => {
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
-    if (originalKey === undefined) delete process.env.DEEPSEEK_API_KEY;
-    else process.env.DEEPSEEK_API_KEY = originalKey;
+    restore("DEEPSEEK_API_KEY", originalDeepSeekKey);
+    restore("OPENAI_API_KEY", originalOpenAIKey);
   });
 
   it("loads trusted project tools and strips the model key from stdio", async () => {
@@ -35,6 +36,7 @@ describe("MCPManager", () => {
       }),
     );
     process.env.DEEPSEEK_API_KEY = "must-not-leak";
+    process.env.OPENAI_API_KEY = "must-not-leak";
 
     const tools = new Map<string, ToolDefinition>();
     let active: string[] = [];
@@ -62,10 +64,15 @@ describe("MCPManager", () => {
       expect(tool).toBeDefined();
       const result = await tool!.execute("call-1", { text: "hello" }, undefined, undefined, ctx);
       expect(result.content).toEqual([
-        { type: "text", text: "hello|key=unset" },
+        { type: "text", text: "hello|deepseek=unset|openai=unset" },
       ]);
     } finally {
       await manager.close();
     }
   });
 });
+
+function restore(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}

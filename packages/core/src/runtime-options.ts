@@ -14,12 +14,20 @@ import {
   getStoredDeepSeekBaseUrl,
   normalizeDeepSeekBaseUrl,
 } from "./settings.js";
+import {
+  defaultEffortForProvider,
+  defaultModelForProvider,
+  getStoredModelSelection,
+  parseSupportedProviderId,
+  type SupportedProviderId,
+} from "./providers.js";
 
 export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;
 
 export interface DSCodeRuntimeOptions {
   cwd: string;
+  providerId: SupportedProviderId;
   baseUrl: string;
   modelId: string;
   transport: ModelTransport;
@@ -41,13 +49,21 @@ export interface ParsedRuntimeArgs {
 
 export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   const forwarded: string[] = [];
+  const storedSelection = getStoredModelSelection();
   let cwd = process.cwd();
   let baseUrl =
     process.env.DEEPSEEK_BASE_URL ??
     getStoredDeepSeekBaseUrl() ??
     DEFAULT_DEEPSEEK_BASE_URL;
-  let modelId = process.env.DSCODE_MODEL ?? "deepseek-v4-flash";
-  let effort = process.env.DSCODE_EFFORT ?? "max";
+  let providerId = parseSupportedProviderId(
+    process.env.DSCODE_PROVIDER ?? storedSelection?.providerId ?? "deepseek",
+  );
+  let modelExplicit = process.env.DSCODE_MODEL !== undefined;
+  let modelId =
+    process.env.DSCODE_MODEL ??
+    (storedSelection?.providerId === providerId ? storedSelection.modelId : undefined);
+  let effortExplicit = process.env.DSCODE_EFFORT !== undefined;
+  let effort = process.env.DSCODE_EFFORT;
   let transport = transportSchema.parse(process.env.DSCODE_TRANSPORT ?? "responses");
   let harness = harnessSchema.parse(process.env.DSCODE_HARNESS ?? "minimal");
   let permission = permissionSchema.parse(process.env.DSCODE_PERMISSION ?? "auto");
@@ -73,6 +89,10 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
 
     if (flag === "-C" || flag === "--cwd") {
       cwd = path.resolve(takeValue());
+    } else if (flag === "--provider") {
+      providerId = parseSupportedProviderId(takeValue());
+      if (!modelExplicit) modelId = undefined;
+      if (!effortExplicit) effort = undefined;
     } else if (flag === "--base-url") {
       baseUrl = takeValue();
     } else if (flag === "--transport") {
@@ -92,8 +112,10 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       yolo = true;
     } else if (flag === "--effort") {
       effort = takeValue();
+      effortExplicit = true;
     } else if (flag === "--model") {
       modelId = takeValue();
+      modelExplicit = true;
     } else if (flag === "--tools") {
       activeTools = takeValue()
         .split(",")
@@ -124,7 +146,9 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   ) {
     forwarded.unshift("--approve");
   }
-  if (!hasFlag(forwarded, "--provider")) forwarded.unshift("--provider", "deepseek");
+  modelId ??= defaultModelForProvider(providerId);
+  effort ??= defaultEffortForProvider(providerId);
+  forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (!hasFlag(forwarded, "--thinking")) forwarded.unshift("--thinking", effort);
   activeTools ??= defaultActiveTools(harness);
@@ -132,6 +156,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   return {
     options: {
       cwd,
+      providerId,
       baseUrl: normalizeDeepSeekBaseUrl(baseUrl),
       modelId,
       transport,
@@ -167,7 +192,7 @@ function defaultActiveTools(harness: HarnessMode): string[] {
 }
 
 export function printDSCodeHelp(): void {
-  process.stdout.write(`DSCode ${DSCODE_VERSION} — DeepSeek V4 Flash coding agent
+  process.stdout.write(`DSCode ${DSCODE_VERSION} — local-first coding agent
 
 Usage:
   dscode [options] [prompt]
@@ -179,9 +204,10 @@ Usage:
 
 DSCode options:
   -C, --cwd <dir>                  Workspace directory
+  --provider <id>                 deepseek|openai-codex|openai
   --base-url <url>                 DeepSeek API base URL
-  --model <id>                     Model ID (default: deepseek-v4-flash)
-  --effort <level>                 Alias for --thinking low|high|max
+  --model <id>                     Model ID (provider default when omitted)
+  --effort <level>                 Alias for --thinking; defaults by provider
   --transport <responses|chat>     API transport (default: responses)
   --harness <minimal|safe>         Tool harness (default: minimal)
   --permission <mode>              plan|ask|auto|full (full grants host + network)
@@ -191,7 +217,7 @@ DSCode options:
   -y, --yes                        YOLO: trust project, skip approvals, allow host + network
 
 Session and editor features:
-  /help /settings /name /resume /tree /compact /reload /export
+  /help /settings /new /clear /name /resume /tree /compact /reload /export
   Ctrl+O tool folding, Ctrl+G external editor, Ctrl+P model cycle
   --name, --fork, --session, --session-dir, --skills, --extension
   --mode text|json|rpc, --print, --no-session, --continue, --resume
@@ -200,10 +226,12 @@ DSCode commands:
   /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
 
 Authentication:
-  dscode login                      Mask, validate, and securely store an API key
-  dscode logout                     Remove the stored DeepSeek credential
+  dscode login [provider]           Sign in to DeepSeek, a ChatGPT plan, or OpenAI API
+  dscode logout [provider]          Remove the selected provider credential
   dscode auth status                Show credential sources without revealing secrets
-  /login deepseek                   Replace the key from inside the TUI
+  /login deepseek                   Configure a DeepSeek API key
+  /login openai-codex               Sign in with an eligible ChatGPT plan
+  /login openai                     Configure an OpenAI API key
 `);
 }
 

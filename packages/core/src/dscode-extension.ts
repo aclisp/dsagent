@@ -39,8 +39,10 @@ import {
 } from "./plan.js";
 import { discoverProjectCommands } from "./project-profile.js";
 import { registerDSCodeProjectTrust } from "./project-trust.js";
+import { defaultModelForProvider } from "./providers.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
+import { registerSessionCommands } from "./session-commands.js";
 import { formatStatusReport } from "./status.js";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.js";
 import { registerSubagentTools } from "./subagents.js";
@@ -51,7 +53,7 @@ import {
   type ToolPresentationContext,
 } from "./tool-ui.js";
 import { createCodingTools } from "./tools.js";
-import { HIDDEN_THINKING_LABEL, registerCodingTui } from "./tui-experience.js";
+import { formatThinkingLabel, registerCodingTui } from "./tui-experience.js";
 import { Workspace } from "./workspace.js";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
@@ -155,6 +157,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
 
       registerDeepSeekProvider(pi, options);
       registerNaturalExit(pi);
+      registerSessionCommands(pi);
       registerCommandTools(
         pi,
         processes,
@@ -215,7 +218,9 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         planState = restorePlanState(ctx.sessionManager.getBranch());
         lastOfferedPlanRevision = planState?.revision ?? 0;
         updateStatus(ctx);
-        ctx.ui.setHiddenThinkingLabel(HIDDEN_THINKING_LABEL);
+        ctx.ui.setHiddenThinkingLabel(
+          formatThinkingLabel(ctx.model?.name ?? ctx.model?.id ?? options.modelId),
+        );
         const staleMcpTools = new Set(mcp.toolNames());
         if (staleMcpTools.size > 0) {
           pi.setActiveTools(
@@ -516,15 +521,18 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       });
 
       pi.registerCommand("effort", {
-        description: "Show or set DeepSeek thinking effort: low|high|max",
+        description: "Show or set model thinking effort",
         handler: async (args, ctx) => {
           const value = args.trim();
           if (!value) {
             ctx.ui.notify(`Thinking effort: ${pi.getThinkingLevel()}`, "info");
             return;
           }
-          if (!["low", "high", "max"].includes(value)) {
-            ctx.ui.notify("Expected /effort low|high|max", "warning");
+          if (!["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value)) {
+            ctx.ui.notify(
+              "Expected /effort off|minimal|low|medium|high|xhigh|max",
+              "warning",
+            );
             return;
           }
           pi.setThinkingLevel(value as ThinkingLevel);
@@ -658,9 +666,9 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
             .catch(() => undefined);
           ctx.ui.notify(
             formatStatusReport({
-              provider: ctx.model?.provider ?? "deepseek",
+              provider: ctx.model?.provider ?? options.providerId,
               model: ctx.model?.id ?? options.modelId,
-              transport: options.transport,
+              transport: ctx.model?.api ?? options.transport,
               effort: ctx.thinkingLevel ?? pi.getThinkingLevel(),
               permission,
               sandbox: sandboxDescription({
@@ -694,7 +702,8 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
           ctx.ui.notify(
             [
               `model: ${ctx.model?.provider ?? "?"}/${ctx.model?.id ?? "?"}`,
-              `transport: ${options.transport}`,
+              `transport: ${ctx.model?.api ?? options.transport}`,
+              `image input: ${ctx.model?.input.includes("image") ? "supported" : "not supported"}`,
               `thinking: ${ctx.thinkingLevel ?? pi.getThinkingLevel()}`,
               `permission: ${permission}`,
               `sandbox: ${sandboxDescription({
@@ -723,6 +732,8 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
 
 function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOptions): void {
   const api = options.transport === "responses" ? "openai-responses" : "openai-completions";
+  const modelId =
+    options.providerId === "deepseek" ? options.modelId : defaultModelForProvider("deepseek");
   pi.registerProvider("deepseek", {
     name: "DeepSeek",
     baseUrl: options.baseUrl,
@@ -731,8 +742,8 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
     authHeader: true,
     models: [
       {
-        id: options.modelId,
-        name: "DeepSeek V4 Flash",
+        id: modelId,
+        name: modelId === "deepseek-v4-flash" ? "DeepSeek V4 Flash" : modelId,
         api,
         reasoning: true,
         input: ["text"],

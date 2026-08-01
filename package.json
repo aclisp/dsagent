@@ -1,7 +1,7 @@
 {
   "name": "@thinkany/dscode",
-  "version": "0.3.2",
-  "description": "A local-first coding agent powered by DeepSeek V4 Flash.",
+  "version": "0.3.3",
+  "description": "A local-first coding agent with DeepSeek, OpenAI, and Codex subscription support.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/thinkany-ai/dscode#readme",
@@ -19,6 +19,10 @@
   "files": [
     "assets",
     "dist",
+    "packages/core/dist",
+    "packages/core/package.json",
+    "packages/core/README.md",
+    "packages/core/LICENSE",
     "docs",
     "editors",
     "scripts/postinstall.mjs",
@@ -31,16 +35,19 @@
     "dscode": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build:core": "pnpm --dir packages/core build",
+    "build": "pnpm build:core && tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "pnpm build",
     "prepublishOnly": "pnpm check",
+    "predev": "pnpm build:core",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "package:check": "node scripts/package-smoke.mjs",
+    "typecheck": "pnpm build:core && tsc -p tsconfig.json --noEmit",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm package:check",
     "smoke:live": "pnpm build && node scripts/live-smoke.mjs",
     "features:live": "pnpm build && node scripts/live-features.mjs",
     "acceptance:live": "pnpm check && node scripts/live-smoke.mjs && node scripts/live-features.mjs"

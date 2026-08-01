@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNaturalExitInput } from "../src/exit.js";
+import { isNaturalExitInput } from "../packages/core/src/exit.js";
 
 describe("natural terminal exit", () => {
   it.each(["quit", "QUIT", " exit ", "退出"])("recognizes %j as a local exit", (input) => {

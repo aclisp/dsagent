@@ -1,10 +1,13 @@
 import fs from "node:fs";
 
 const globalInstall = process.env.npm_config_global;
+const { version } = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
 
 if (globalInstall === "true" || globalInstall === "1") {
   writeToTerminal(`
-DSCode installed successfully.
+DSCode v${version} installed successfully.
 
 Get started:
   cd your-project

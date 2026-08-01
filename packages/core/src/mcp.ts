@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { z } from "zod";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 import { getDSCodeHome } from "./home.js";
+import { stripModelCredentialEnvironment } from "./providers.js";
 
 const stdioServerSchema = z.object({
   command: z.string().min(1),
@@ -177,11 +178,11 @@ function expandEnvironment(values: Record<string, string>): Record<string, strin
 }
 
 function defaultStringEnvironment(): Record<string, string> {
-  const environment = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  return stripModelCredentialEnvironment(
+    Object.fromEntries(
+      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ),
   );
-  delete environment.DEEPSEEK_API_KEY;
-  return environment;
 }
 
 function sanitizeName(value: string): string {
@@ -200,7 +201,7 @@ function formatMcpResult(result: Awaited<ReturnType<Client["callTool"]>>): strin
     } else if (item.type === "resource_link") {
       parts.push(`[resource: ${item.name}](${item.uri})`);
     } else {
-      parts.push(`[${item.type} content omitted: DeepSeek V4 Flash Responses is text-only]`);
+      parts.push(`[${item.type} content omitted from this text MCP tool result]`);
     }
   }
   if (result.structuredContent !== undefined) {

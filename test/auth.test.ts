@@ -4,16 +4,40 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   hasStoredDeepSeekKey,
+  hasStoredProviderCredential,
+  removeStoredProviderCredential,
   removeStoredDeepSeekKey,
   saveDeepSeekKey,
+  saveProviderApiKey,
   validateDeepSeekKey,
-} from "../src/auth.js";
+} from "../packages/core/src/auth.js";
 
 describe("DSCode authentication", () => {
   const temporaryDirectories: string[] = [];
 
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  it("recognizes and removes a stored Codex subscription credential", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "dscode-auth-test-"));
+    temporaryDirectories.push(directory);
+    const authPath = path.join(directory, "auth.json");
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        "openai-codex": {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 60_000,
+        },
+      }),
+    );
+
+    expect(await hasStoredProviderCredential("openai-codex", authPath)).toBe(true);
+    expect(await removeStoredProviderCredential("openai-codex", authPath)).toBe(true);
+    expect(await hasStoredProviderCredential("openai-codex", authPath)).toBe(false);
   });
 
   it("merges credentials and stores auth.json with owner-only permissions", async () => {
@@ -30,6 +54,18 @@ describe("DSCode authentication", () => {
 
     expect(await removeStoredDeepSeekKey(authPath)).toBe(true);
     expect(await hasStoredDeepSeekKey(authPath)).toBe(false);
+  });
+
+  it("stores API credentials for a graphical provider login flow", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "dscode-auth-test-"));
+    temporaryDirectories.push(directory);
+    const authPath = path.join(directory, "auth.json");
+
+    await saveProviderApiKey("openai", "  sk-openai-test  ", authPath);
+
+    expect(await hasStoredProviderCredential("openai", authPath)).toBe(true);
+    const parsed = JSON.parse(await readFile(authPath, "utf8")) as Record<string, unknown>;
+    expect(parsed.openai).toEqual({ type: "api_key", key: "sk-openai-test" });
   });
 
   it("distinguishes valid, rejected, and temporarily unverifiable keys", async () => {

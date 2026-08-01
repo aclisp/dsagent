@@ -5,19 +5,21 @@
 ## 产品定位
 
 Claude Code 和 Codex 是覆盖面更广、成熟度更高的 coding-agent 产品。DSCode 是规模更小、取舍更
-明确，并且专门围绕 DeepSeek V4 Flash 构建的 runtime。
+明确，默认围绕 DeepSeek V4 Flash 构建、同时可选 OpenAI API 和 Codex 套餐模型的 runtime。
 
 DSCode 的价值并不是“竞品没有 agent、worktree、sandbox 或扩展”——这些能力它们都有。真正的
 区别是设计中心：
 
-> DSCode 把整个本地 runtime 围绕 DeepSeek 的 Responses 语义、缓存经济和低成本并行进行优化。
+> DSCode 保留围绕 DeepSeek 优化的本地 runtime，同时允许需要视觉能力的任务切换到
+> OpenAI/Codex 模型。
 
 ## 当前对比
 
 | 维度 | DSCode | Claude Code | Codex |
 | --- | --- | --- | --- |
-| 设计中心 | 本地仓库中的 DeepSeek V4 Flash | 面向 Claude 的通用 coding 工作流 | 覆盖 CLI、IDE、桌面和云端的 OpenAI coding 工作流 |
+| 设计中心 | 本地仓库、DeepSeek 默认与 provider 选择 | 面向 Claude 的通用 coding 工作流 | 覆盖 CLI、IDE、桌面和云端的 OpenAI coding 工作流 |
 | DeepSeek 接入 | 专用 Responses adapter、无状态回放、effort 映射、payload 清理、原生 freeform patch tool | DeepSeek 提供 Anthropic 兼容接口，并公开了 Claude Code 集成方式 | 通用 runtime；DSCode 不对第三方 provider 下的功能对齐做未经验证的断言 |
+| 模型接入与图片 | DeepSeek API key、OpenAI API key 或符合条件的 ChatGPT 套餐；支持视觉的模型可接收图片 | Claude 账号/API 接入与多模态能力 | ChatGPT 套餐或 OpenAI API 接入与多模态能力 |
 | Context 与成本 | 1M context；`/status` 展示 DeepSeek 缓存命中、token、reasoning 和预估费用 | 产品自己的 context 与用量统计 | 产品自己的 context 与用量统计 |
 | 并行工作 | 内置四角色，最多四路并行；implementer 使用独立 Git worktree | subagent、后台 agent、agent team 和 worktree 隔离 | subagent，以及部分产品界面的 worktree |
 | 安全 | 默认工作区 sandbox、命令禁网、按命令批准网络/宿主机访问、持久 patch checkpoint | 可配置的权限与 sandbox，支持文件系统和网络控制 | OS sandbox、审批，以及本地命令默认禁网 |
@@ -54,7 +56,7 @@ worktree；DSCode 的区别是开箱角色模型，以及利用 DeepSeek V4 Flas
 ### 4. 本地、可检查的控制
 
 DSCode 将会话保存在本地，命令使用 OS 强制 sandbox，默认禁止命令联网，从子进程环境中删除
-DeepSeek key，并在每次成功 patch 后创建持久 checkpoint。带冲突保护的 `/undo` 不会覆盖
+模型 provider API key，并在每次成功 patch 后创建持久 checkpoint。带冲突保护的 `/undo` 不会覆盖
 checkpoint 之后被再次修改的文件。
 
 ### 5. 小而可 fork 的 runtime
@@ -68,7 +70,7 @@ checkpoint 之后被再次修改的文件。
 - 不把并行 agent、worktree、sandbox、skills、hooks 或 MCP 说成 DSCode 独有。
 - 不把低 API 价格描述成“并行免费”。
 - 不把 1M context 描述成无需搜索、定点读取和 compact。
-- 不宣称已经追平竞品的多模态、云端、IDE 或生态成熟度。
+- 支持兼容模型的图片输入，但不宣称已经追平竞品的云端、IDE、多模态工作流或生态成熟度。
 
 正确的比较方式，是在相同真实仓库任务上做 shadow eval，记录成功率、耗时、成本、安全、无关
 diff 和人工接管率，而不是比较功能清单。
@@ -83,3 +85,5 @@ diff 和人工接管率，而不是比较功能清单。
 - [Codex subagent](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Codex worktree](https://learn.chatgpt.com/docs/environments/git-worktrees)
 - [Codex sandbox](https://learn.chatgpt.com/docs/sandboxing)
+- [Codex 认证](https://learn.chatgpt.com/docs/auth)
+- [Codex 图片输入](https://learn.chatgpt.com/docs/image-inputs)

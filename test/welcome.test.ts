@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { DSCODE_LOGO, renderWelcome } from "../src/welcome.js";
+import { DSCODE_LOGO, renderWelcome } from "../packages/core/src/welcome.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -61,6 +61,21 @@ describe("DSCode welcome header", () => {
     );
     expect(lines.join("\n")).toContain("███████ █");
     expect(lines.every((line) => visibleWidth(line) <= 30)).toBe(true);
+  });
+
+  it("shows the provider model display name when available", () => {
+    const output = renderWelcome(
+      80,
+      {
+        cwd: "/tmp/project",
+        modelId: "gpt-5.6-sol",
+        modelName: "GPT-5.6 Sol",
+        effort: "medium",
+        version: "0.3.3",
+      },
+      theme,
+    ).join("\n");
+    expect(output).toContain("GPT-5.6 Sol · medium effort");
   });
 
   it("keeps the header in the upper-left instead of centering it in wide terminals", () => {

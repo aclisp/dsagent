@@ -18,11 +18,12 @@ import { brandBlue } from "./brand.js";
 import type { PermissionMode } from "./config.js";
 import { routeDSCodeLogin, scopeLoginSuggestions } from "./login-scope.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
+import { isSupportedProviderId } from "./providers.js";
 import { DSCODE_VERSION } from "./version.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
 export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
-export const HIDDEN_THINKING_LABEL = "DeepSeek V4 Flash is thinking";
+export const HIDDEN_THINKING_LABEL = "DSCode is thinking";
 const BLINKING_BLOCK_CURSOR = "\x1b[1 q";
 const DEFAULT_CURSOR_STYLE = "\x1b[0 q";
 
@@ -35,6 +36,29 @@ export function registerCodingTui(
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let workingStartedAt = 0;
   let loginAutocompleteInstalled = false;
+
+  const updateModelPresentation = (
+    ctx: ExtensionContext,
+    model: ExtensionContext["model"] = ctx.model,
+  ): void => {
+    if (ctx.mode !== "tui") return;
+    const modelId = model?.id ?? options.modelId;
+    const modelName = model?.name;
+    ctx.ui.setHiddenThinkingLabel(formatThinkingLabel(modelName ?? modelId));
+    ctx.ui.setHeader(
+      (_tui, theme) =>
+        new DSCodeWelcomeHeader(
+          {
+            cwd: ctx.cwd,
+            modelId,
+            ...(modelName ? { modelName } : {}),
+            effort: pi.getThinkingLevel(),
+            version: DSCODE_VERSION,
+          },
+          theme,
+        ),
+    );
+  };
 
   const stopWorkingTimer = (): void => {
     if (workingTimer) clearInterval(workingTimer);
@@ -58,6 +82,9 @@ export function registerCodingTui(
     ctx.ui.setWorkingMessage();
   });
 
+  pi.on("model_select", (event, ctx) => updateModelPresentation(ctx, event.model));
+  pi.on("thinking_level_select", (_event, ctx) => updateModelPresentation(ctx));
+
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
     activeTui?.terminal.write(DEFAULT_CURSOR_STYLE);
@@ -72,21 +99,10 @@ export function registerCodingTui(
       intervalMs: 140,
     });
     ctx.ui.setFooter(() => new EmptyFooter());
-    ctx.ui.setHeader(
-      (_tui, theme) =>
-        new DSCodeWelcomeHeader(
-          {
-            cwd: ctx.cwd,
-            modelId: ctx.model?.id ?? options.modelId,
-            effort: pi.getThinkingLevel(),
-            version: DSCODE_VERSION,
-          },
-          theme,
-        ),
-    );
+    updateModelPresentation(ctx);
     if (!loginAutocompleteInstalled) {
       loginAutocompleteInstalled = true;
-      ctx.ui.addAutocompleteProvider((current) => deepSeekOnlyAutocomplete(current));
+      ctx.ui.addAutocompleteProvider((current) => providerAutocomplete(current));
     }
 
     class DSCodeEditor extends CustomEditor {
@@ -158,16 +174,30 @@ export function registerCodingTui(
     if (editor?.onSubmit) {
       const submit = editor.onSubmit;
       editor.onSubmit = (text) => {
-        const route = routeDSCodeLogin(text);
+        const currentProvider = ctx.model?.provider;
+        const route = routeDSCodeLogin(
+          text,
+          currentProvider && isSupportedProviderId(currentProvider)
+            ? currentProvider
+            : options.providerId,
+        );
         if (route.action === "reject") {
           editor?.setText("");
-          ctx.ui.notify("DSCode only supports DeepSeek API keys. Use /login.", "warning");
+          ctx.ui.notify(
+            "Supported providers: deepseek, openai-codex, and openai. Use /login.",
+            "warning",
+          );
           return;
         }
         submit(route.text);
       };
     }
   });
+}
+
+export function formatThinkingLabel(modelName?: string): string {
+  const name = modelName?.trim();
+  return name ? `${name} is thinking` : HIDDEN_THINKING_LABEL;
 }
 
 export function renderEditorPlaceholder(theme: Theme, hardwareCursor: boolean): string {
@@ -191,7 +221,7 @@ export function stripFakeCursorHighlight(line: string): string {
   )}`;
 }
 
-function deepSeekOnlyAutocomplete(current: AutocompleteProvider): AutocompleteProvider {
+function providerAutocomplete(current: AutocompleteProvider): AutocompleteProvider {
   return {
     ...(current.triggerCharacters ? { triggerCharacters: current.triggerCharacters } : {}),
     async getSuggestions(lines, cursorLine, cursorCol, options) {

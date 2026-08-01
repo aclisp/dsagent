@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { discoverProjectCommands } from "../src/project-profile.js";
+import { discoverProjectCommands } from "../packages/core/src/project-profile.js";
 
 describe("discoverProjectCommands", () => {
   let root: string | undefined;

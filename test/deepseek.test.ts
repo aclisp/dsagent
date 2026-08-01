@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optimizeDeepSeekResponsesPayload } from "../src/deepseek.js";
+import { optimizeDeepSeekResponsesPayload } from "../packages/core/src/deepseek.js";
 
 describe("optimizeDeepSeekResponsesPayload", () => {
   it("uses DeepSeek's stateless Responses subset and freeform patch tool", () => {

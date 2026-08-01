@@ -3,7 +3,7 @@ import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import {
   installDSCodeRuntimeBranding,
   sanitizeDSCodeRuntimeText,
-} from "../src/runtime-branding.js";
+} from "../packages/core/src/runtime-branding.js";
 
 describe("DSCode runtime branding", () => {
   it("removes implementation branding from user-facing messages", () => {

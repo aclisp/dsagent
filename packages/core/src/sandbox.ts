@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { stripModelCredentialEnvironment } from "./providers.js";
 import type { SandboxMode } from "./runtime-options.js";
 
 export interface SandboxOptions {
@@ -122,8 +123,7 @@ export function executeSandboxedCommand(
 ): Promise<{ exitCode: number | null }> {
   const invocation = sandboxCommand(shellCommand, cwd, sandbox);
   return new Promise((resolve, reject) => {
-    const environment = { ...(options.env ?? process.env) };
-    delete environment.DEEPSEEK_API_KEY;
+    const environment = stripModelCredentialEnvironment({ ...(options.env ?? process.env) });
     const child = spawn(invocation.command, invocation.args, {
       cwd,
       env: environment,

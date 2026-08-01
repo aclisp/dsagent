@@ -3,7 +3,7 @@ import {
   commandNeedsNetwork,
   detectSandboxBoundary,
   SessionAccessController,
-} from "../src/access.js";
+} from "../packages/core/src/access.js";
 
 describe("Codex-style scoped access escalation", () => {
   it("maps full permission to host and network access", () => {

@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDSCodeExtension } from "../src/dscode-extension.js";
-import type { DSCodeRuntimeOptions } from "../src/runtime-options.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
+import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
 
 describe("command access escalation", () => {
   let root: string | undefined;
@@ -78,6 +78,7 @@ describe("command access escalation", () => {
 function options(cwd: string): DSCodeRuntimeOptions {
   return {
     cwd,
+    providerId: "deepseek",
     baseUrl: "https://api.deepseek.com",
     modelId: "deepseek-v4-flash",
     transport: "responses",

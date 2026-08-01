@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCodingTools } from "../src/tools.js";
-import { Workspace } from "../src/workspace.js";
+import { createCodingTools } from "../packages/core/src/tools.js";
+import { Workspace } from "../packages/core/src/workspace.js";
 
 describe("coding tools", () => {
   let root: string;

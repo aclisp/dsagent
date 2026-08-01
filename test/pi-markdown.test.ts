@@ -1,6 +1,6 @@
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { codexStyleMarkdownTheme } from "../src/pi-markdown.js";
+import { codexStyleMarkdownTheme } from "../packages/core/src/pi-markdown.js";
 
 const identity = (text: string): string => text;
 const baseTheme: MarkdownTheme = {

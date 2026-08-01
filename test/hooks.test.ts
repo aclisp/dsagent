@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { registerHooks } from "../src/hooks.js";
+import { registerHooks } from "../packages/core/src/hooks.js";
 
 describe("DSCode hooks", () => {
   let root: string | undefined;

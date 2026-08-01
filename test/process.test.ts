@@ -1,28 +1,30 @@
 import os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { runProcess } from "../src/process.js";
+import { runProcess } from "../packages/core/src/process.js";
 
 describe("runProcess", () => {
-  const originalKey = process.env.DEEPSEEK_API_KEY;
+  const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+  const originalOpenAIKey = process.env.OPENAI_API_KEY;
 
   afterEach(() => {
-    if (originalKey === undefined) {
-      delete process.env.DEEPSEEK_API_KEY;
-    } else {
-      process.env.DEEPSEEK_API_KEY = originalKey;
-    }
+    restore("DEEPSEEK_API_KEY", originalDeepSeekKey);
+    restore("OPENAI_API_KEY", originalOpenAIKey);
   });
 
-  it("does not expose the model API key to child commands", async () => {
-    process.env.DEEPSEEK_API_KEY = "must-not-leak";
+  it("does not expose model API keys to child commands", async () => {
+    process.env.DEEPSEEK_API_KEY = "deepseek-must-not-leak";
+    process.env.OPENAI_API_KEY = "openai-must-not-leak";
     const result = await runProcess(
       process.execPath,
-      ["-e", "process.stdout.write(process.env.DEEPSEEK_API_KEY ?? 'unset')"],
+      [
+        "-e",
+        "process.stdout.write(`${process.env.DEEPSEEK_API_KEY ?? 'unset'}|${process.env.OPENAI_API_KEY ?? 'unset'}`)",
+      ],
       { cwd: os.tmpdir() },
     );
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("unset");
+    expect(result.stdout).toBe("unset|unset");
   });
 
   it("keeps both the head and tail when output is truncated", async () => {
@@ -37,3 +39,8 @@ describe("runProcess", () => {
     expect(result.stdout).toContain("tail follows");
   });
 });
+
+function restore(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
