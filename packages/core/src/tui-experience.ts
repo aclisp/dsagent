@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import {
   CustomEditor,
   type ExtensionAPI,
@@ -14,11 +15,22 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { getDSCodeAuthPath } from "./auth.js";
 import { brandBlue } from "./brand.js";
 import type { PermissionMode } from "./config.js";
-import { routeDSCodeLogin, scopeLoginSuggestions } from "./login-scope.js";
+import {
+  expandEditorImageMarkers,
+  extractLocalImageInput,
+  formatImageMarker,
+  type EditorImageAttachment,
+} from "./image-input.js";
+import {
+  LOGIN_PROVIDER_CHOICES,
+  routeDSCodeLogin,
+  scopeLoginSuggestions,
+} from "./login-scope.js";
+import { defaultModelForProvider } from "./providers.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { isSupportedProviderId } from "./providers.js";
 import { DSCODE_VERSION } from "./version.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
@@ -36,6 +48,7 @@ export function registerCodingTui(
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let workingStartedAt = 0;
   let loginAutocompleteInstalled = false;
+  let providerLoginWatch: AbortController | undefined;
 
   const updateModelPresentation = (
     ctx: ExtensionContext,
@@ -87,6 +100,8 @@ export function registerCodingTui(
 
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
+    providerLoginWatch?.abort();
+    providerLoginWatch = undefined;
     activeTui?.terminal.write(DEFAULT_CURSOR_STYLE);
     activeTui = undefined;
   });
@@ -100,6 +115,12 @@ export function registerCodingTui(
     });
     ctx.ui.setFooter(() => new EmptyFooter());
     updateModelPresentation(ctx);
+    if (!ctx.model || !ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
+      ctx.ui.notify(
+        "No model provider is configured. Enter /login to choose a provider.",
+        "info",
+      );
+    }
     if (!loginAutocompleteInstalled) {
       loginAutocompleteInstalled = true;
       ctx.ui.addAutocompleteProvider((current) => providerAutocomplete(current));
@@ -107,12 +128,87 @@ export function registerCodingTui(
 
     class DSCodeEditor extends CustomEditor {
       private readonly dscodeTui: TUI;
+      private imageAttachments: EditorImageAttachment[] = [];
+      private imagePasteQueue = Promise.resolve();
+      private nextImageIndex = 1;
+      private pendingImagePastes = 0;
 
       constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
         super(tui, theme, keybindings, { paddingX: 0 });
         this.dscodeTui = tui;
         activeTui = tui;
         tui.terminal.write(BLINKING_BLOCK_CURSOR);
+      }
+
+      override handleInput(data: string): void {
+        const pastedText = unwrapBracketedPaste(data);
+        if (pastedText !== undefined) {
+          this.queuePastedText(pastedText, true);
+          return;
+        }
+        super.handleInput(data);
+      }
+
+      override insertTextAtCursor(text: string): void {
+        this.queuePastedText(text, false);
+      }
+
+      expandImageAttachments(text: string): string {
+        return expandEditorImageMarkers(text, this.imageAttachments);
+      }
+
+      clearImageAttachments(): void {
+        this.imageAttachments = [];
+        this.nextImageIndex = 1;
+      }
+
+      private queuePastedText(text: string, bracketed: boolean): void {
+        this.pendingImagePastes += 1;
+        this.disableSubmit = true;
+        this.imagePasteQueue = this.imagePasteQueue
+          .then(() => this.insertPastedText(text, bracketed))
+          .catch((error) => {
+            ctx.ui.notify(
+              `Could not attach pasted image: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+            this.insertPastedTextWithoutImages(text, bracketed);
+          })
+          .finally(() => {
+            this.pendingImagePastes -= 1;
+            this.disableSubmit = this.pendingImagePastes > 0;
+            this.dscodeTui.requestRender();
+          });
+      }
+
+      private async insertPastedText(text: string, bracketed: boolean): Promise<void> {
+        const result = await extractLocalImageInput(text, ctx.cwd, {
+          imageNumberOffset: this.nextImageIndex - 1,
+          emptyPrompt: "",
+        });
+        if (result.errors.length > 0) {
+          ctx.ui.notify(result.errors.join("\n"), result.paths.length > 0 ? "warning" : "error");
+        }
+        if (result.paths.length === 0) {
+          this.insertPastedTextWithoutImages(text, bracketed);
+          return;
+        }
+        this.imageAttachments.push(
+          ...result.paths.map((imagePath, index) => ({
+            index: this.nextImageIndex + index,
+            path: imagePath,
+          })),
+        );
+        this.nextImageIndex += result.paths.length;
+        this.insertPastedTextWithoutImages(result.text, bracketed);
+      }
+
+      private insertPastedTextWithoutImages(text: string, bracketed: boolean): void {
+        if (bracketed) {
+          super.handleInput(`\x1b[200~${text}\x1b[201~`);
+        } else {
+          super.insertTextAtCursor(text);
+        }
       }
 
       render(width: number): string[] {
@@ -131,7 +227,8 @@ export function registerCodingTui(
         const hardwareCursor = this.dscodeTui.getShowHardwareCursor();
         const content = lines
           .slice(1, bottomIndex)
-          .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line));
+          .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line))
+          .map((line) => highlightImageMarkers(line, this.imageAttachments, theme));
         if (this.getText().length === 0 && content.length > 0) {
           content[0] = renderEditorPlaceholder(theme, hardwareCursor);
         }
@@ -173,25 +270,151 @@ export function registerCodingTui(
     });
     if (editor?.onSubmit) {
       const submit = editor.onSubmit;
+      const submitProviderLogin = (
+        providerId: (typeof LOGIN_PROVIDER_CHOICES)[number]["providerId"],
+      ): void => {
+        providerLoginWatch?.abort();
+        const loginWatch = new AbortController();
+        providerLoginWatch = loginWatch;
+        void (async () => {
+          try {
+            const previousAuthMtime = await getAuthFileMtime();
+            submit(`/login ${providerId}`);
+            const switched = await switchToProviderAfterLogin(
+              pi,
+              ctx,
+              providerId,
+              previousAuthMtime,
+              loginWatch.signal,
+            );
+            if (switched) {
+              ctx.ui.notify(
+                `Now using ${providerId}/${defaultModelForProvider(providerId)}.`,
+                "info",
+              );
+            }
+          } catch (error) {
+            if (!loginWatch.signal.aborted) {
+              ctx.ui.notify(
+                `Provider login failed: ${error instanceof Error ? error.message : String(error)}`,
+                "error",
+              );
+            }
+          } finally {
+            if (providerLoginWatch === loginWatch) providerLoginWatch = undefined;
+          }
+        })();
+      };
       editor.onSubmit = (text) => {
-        const currentProvider = ctx.model?.provider;
-        const route = routeDSCodeLogin(
-          text,
-          currentProvider && isSupportedProviderId(currentProvider)
-            ? currentProvider
-            : options.providerId,
-        );
+        const submittedText = editor?.expandImageAttachments(text) ?? text;
+        editor?.clearImageAttachments();
+        const route = routeDSCodeLogin(submittedText);
         if (route.action === "reject") {
           editor?.setText("");
           ctx.ui.notify(
-            "Supported providers: deepseek, openai-codex, and openai. Use /login.",
+            "Unsupported provider. Enter /login to choose a supported provider.",
             "warning",
           );
+          return;
+        }
+        if (route.action === "select") {
+          editor?.setText("");
+          void ctx.ui
+            .select(
+              "Select a model provider",
+              LOGIN_PROVIDER_CHOICES.map((choice) => choice.label),
+            )
+            .then((selected) => {
+              const choice = LOGIN_PROVIDER_CHOICES.find((item) => item.label === selected);
+              if (!choice) return;
+              submitProviderLogin(choice.providerId);
+            })
+            .catch((error) => {
+              ctx.ui.notify(
+                `Provider selection failed: ${error instanceof Error ? error.message : String(error)}`,
+                "error",
+              );
+            });
+          return;
+        }
+        if (route.action === "provider") {
+          submitProviderLogin(route.providerId);
           return;
         }
         submit(route.text);
       };
     }
+  });
+}
+
+function unwrapBracketedPaste(data: string): string | undefined {
+  const start = "\x1b[200~";
+  const end = "\x1b[201~";
+  if (!data.startsWith(start) || !data.endsWith(end)) return undefined;
+  return data.slice(start.length, -end.length);
+}
+
+export function highlightImageMarkers(
+  line: string,
+  attachments: readonly EditorImageAttachment[],
+  theme: Theme,
+): string {
+  let highlighted = line;
+  for (const attachment of attachments) {
+    const marker = formatImageMarker(attachment.index);
+    highlighted = highlighted.replaceAll(marker, theme.fg("accent", marker));
+  }
+  return highlighted;
+}
+
+async function switchToProviderAfterLogin(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  providerId: (typeof LOGIN_PROVIDER_CHOICES)[number]["providerId"],
+  previousAuthMtime: number | undefined,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const deadline = Date.now() + 10 * 60_000;
+  let credentialUpdated = false;
+  while (!signal.aborted && Date.now() < deadline) {
+    const authMtime = await getAuthFileMtime();
+    credentialUpdated =
+      authMtime !== undefined &&
+      (previousAuthMtime === undefined || authMtime !== previousAuthMtime);
+    if (credentialUpdated) {
+      const model = ctx.modelRegistry.find(providerId, defaultModelForProvider(providerId));
+      if (model && (await pi.setModel(model))) return true;
+    }
+    await waitForLoginPoll(signal);
+  }
+  return false;
+}
+
+async function getAuthFileMtime(): Promise<number | undefined> {
+  try {
+    return (await stat(getDSCodeAuthPath())).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function waitForLoginPoll(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const finish = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      finish();
+    };
+    const timer = setTimeout(finish, 250);
+    timer.unref();
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

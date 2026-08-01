@@ -4,7 +4,13 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promi
 import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
+import type {
+  AuthEvent,
+  AuthInteraction,
+  AuthPrompt,
+  AuthType,
+  Provider,
+} from "@earendil-works/pi-ai";
 import pc from "picocolors";
 import { getDSCodeHome } from "./home.js";
 import {
@@ -27,7 +33,7 @@ interface ApiKeyCredential {
   key: string;
 }
 
-export type ApiKeyProviderId = Extract<SupportedProviderId, "deepseek" | "openai">;
+export type ApiKeyProviderId = Exclude<SupportedProviderId, "openai-codex">;
 
 export interface ProviderLoginResult {
   providerId: Exclude<SupportedProviderId, "deepseek">;
@@ -154,30 +160,18 @@ export function isInteractiveInvocation(piArgs: string[]): boolean {
 
 export async function ensureFirstRunAuth(options: {
   providerId: SupportedProviderId;
-  baseUrl: string;
-  modelId: string;
   piArgs: string[];
-}): Promise<string | undefined> {
-  if (options.providerId !== PROVIDER_ID) return;
-  if (hasDeepSeekEnvironmentKey() || (await hasStoredDeepSeekKey())) return;
-  if (!isInteractiveInvocation(options.piArgs)) {
-    throw new Error(
-      "DeepSeek API key is not configured. Run `dscode login` or set DEEPSEEK_API_KEY.",
-    );
-  }
+}): Promise<void> {
+  const environmentKey = providerEnvironmentKey(options.providerId);
+  const configured =
+    Boolean(environmentKey && process.env[environmentKey]?.trim()) ||
+    (await hasStoredProviderCredential(options.providerId));
+  if (configured || isInteractiveInvocation(options.piArgs)) return;
 
-  process.stdout.write(
-    [
-      "",
-      pc.bold(pc.cyan("Welcome to DSCode")),
-      pc.dim("Local-first coding with DeepSeek V4 Flash"),
-      "",
-      "Configure your DeepSeek API key to continue.",
-      pc.dim("The key is masked, validated, and stored locally with mode 0600."),
-      "",
-    ].join("\n"),
+  const environmentHint = environmentKey ? ` or set ${environmentKey}` : "";
+  throw new Error(
+    `${providerDisplayName(options.providerId)} is not configured. Run \`dscode login ${options.providerId}\`${environmentHint}.`,
   );
-  return promptAndStoreKey(options.baseUrl, options.modelId);
 }
 
 export async function runAuthCommand(
@@ -283,11 +277,48 @@ export async function authenticateProvider(
   });
   const provider = runtime.getProvider(providerId);
   if (!provider) throw new Error(`Provider ${providerId} is unavailable in this DSCode build`);
-  const authType = providerId === "openai-codex" ? "oauth" : "api_key";
+  const authType = await selectProviderAuthType(provider, interaction);
   await runtime.login(providerId, authType, interaction);
   const modelId = defaultModelForProvider(providerId);
   await saveDefaultModelSelection(providerId, modelId);
   return { providerId, modelId };
+}
+
+async function selectProviderAuthType(
+  provider: Provider,
+  interaction: AuthInteraction,
+): Promise<AuthType> {
+  const methods: Array<{
+    id: AuthType;
+    label: string;
+    description: string;
+  }> = [];
+  if (provider.auth.oauth) {
+    methods.push({
+      id: "oauth",
+      label: provider.auth.oauth.loginLabel ?? "Sign in with an account",
+      description: provider.auth.oauth.name,
+    });
+  }
+  if (provider.auth.apiKey?.login) {
+    methods.push({
+      id: "api_key",
+      label: "Sign in with an API key",
+      description: provider.auth.apiKey.name,
+    });
+  }
+  if (methods.length === 0) {
+    throw new Error(`Provider ${provider.id} has no interactive login method`);
+  }
+  if (methods.length === 1) return methods[0]!.id;
+  const selected = await interaction.prompt({
+    type: "select",
+    message: `Select authentication method for ${provider.name}`,
+    options: methods,
+  });
+  const method = methods.find((candidate) => candidate.id === selected);
+  if (!method) throw new Error(`Unknown authentication method: ${selected}`);
+  return method.id;
 }
 
 async function saveDefaultModelSelection(
@@ -391,7 +422,7 @@ async function promptBaseUrl(defaultBaseUrl: string): Promise<string> {
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
     while (true) {
-      const value = (await readline.question(`API base URL [${defaultBaseUrl}]: `)).trim();
+      const value = (await readline.question(formatBaseUrlPrompt(defaultBaseUrl))).trim();
       try {
         return normalizeDeepSeekBaseUrl(value || defaultBaseUrl);
       } catch (error) {
@@ -401,6 +432,10 @@ async function promptBaseUrl(defaultBaseUrl: string): Promise<string> {
   } finally {
     readline.close();
   }
+}
+
+export function formatBaseUrlPrompt(defaultBaseUrl: string): string {
+  return `API base URL (optional, press Enter to use default) [${defaultBaseUrl}]: `;
 }
 
 async function readSecret(prompt: string): Promise<string> {

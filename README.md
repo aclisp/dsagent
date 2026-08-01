@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  A local-first coding agent with DeepSeek defaults and optional OpenAI/Codex models.
+  A local-first, multi-provider coding agent with DeepSeek defaults.
 </p>
 
 <p align="center">
@@ -15,9 +15,9 @@
 </p>
 
 DSCode is an opinionated coding-agent runtime with DeepSeek V4 Flash as its economical default and
-optional OpenAI API or Codex subscription models for multimodal work. It combines provider-aware model
-routing with local sessions, safe patching, parallel agents, OS sandboxing, and transparent usage
-reporting.
+built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, and xAI. It combines
+provider-aware model routing with local sessions, safe patching, parallel agents, OS sandboxing, and
+transparent usage reporting.
 
 It is not trying to out-feature every general-purpose agent. It keeps the runtime local and inspectable
 while letting each repository task use the model capabilities it actually needs.
@@ -25,10 +25,10 @@ while letting each repository task use the model capabilities it actually needs.
 ## Why DSCode
 
 - **DeepSeek-first, not DeepSeek-only.** DeepSeek V4 Flash remains the default, with its dedicated
-  Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. OpenAI API
-  keys and eligible ChatGPT plans can use the built-in OpenAI/Codex Responses providers.
+  Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. Switch to
+  Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, or Grok without changing tools or sessions.
 - **Vision when the model supports it.** Paste an image in the TUI or pass an image as `@file`; models
-  such as GPT-5.6 can inspect screenshots while text-only DeepSeek models fail clearly.
+  such as GPT-5.6 receive the actual image attachment while text-only DeepSeek models fail clearly.
 - **Cost-aware by design.** DeepSeek's 1M context and disk prefix cache are reflected in the runtime;
   `/status` reports context, cache hits, tokens, reasoning, and estimated cost. See current
   [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).
@@ -62,14 +62,31 @@ Alternatively, install the latest source build:
 curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
-Make sure `~/.local/bin` is on your `PATH`. A fresh installation defaults to DeepSeek:
+Make sure `~/.local/bin` is on your `PATH`, then start DSCode:
 
 ```bash
-dscode login deepseek
 dscode -C /path/to/project
 ```
 
-DSCode masks the API key, then offers an optional API base URL. Press Enter to use
+On a fresh installation, enter `/login` in the TUI and choose a provider. DSCode completes
+authentication and selects that provider's default model. DeepSeek remains the default for
+non-interactive commands and explicit provider-free configuration.
+
+| Provider | ID | Authentication |
+| --- | --- | --- |
+| DeepSeek | `deepseek` | API key |
+| OpenAI Codex | `openai-codex` | Eligible ChatGPT plan |
+| OpenAI | `openai` | API key |
+| Anthropic | `anthropic` | Claude account or API key |
+| OpenRouter | `openrouter` | OpenRouter account or API key |
+| Z.AI Coding Plan | `zai` | API key |
+| Kimi For Coding | `kimi-coding` | Kimi Code account or API key |
+| MiniMax | `minimax` | API key |
+| xAI / Grok | `xai` | Grok/X account or API key |
+
+The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
+
+When configuring DeepSeek, DSCode masks the API key, then offers an optional API base URL. Press Enter to use
 `https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. The key is stored in
 `~/.dscode/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
 permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
@@ -81,14 +98,14 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 
-To use Codex through an eligible ChatGPT plan, or use a standard OpenAI API key:
+You can also authenticate before opening the TUI:
 
 ```bash
+dscode login deepseek      # DeepSeek API key
 dscode login openai-codex  # browser OAuth; uses ChatGPT plan limits
-# or
 dscode login openai        # securely prompts for an OpenAI API key
-
-dscode -C /path/to/project
+dscode login anthropic     # Claude account or Anthropic API key
+dscode login openrouter    # OpenRouter account or API key
 ```
 
 The selected provider and model are saved for later runs. Override them at any time:
@@ -153,6 +170,10 @@ dscode -C ./my-project --mode rpc
 dscode --provider openai-codex @screenshot.png "Explain this error"
 ```
 
+Inside the TUI, paste a PNG, JPEG, GIF, or WebP image and add your question. DSCode immediately replaces
+the terminal's local path with an `[Image #N]` marker, attaches the image bytes to the message, and
+supports up to eight images of 20 MB each per turn.
+
 Inside the TUI:
 
 | Command | Purpose |
@@ -167,7 +188,7 @@ Inside the TUI:
 | `/compact` | Compact older context while preserving current work |
 | `/jobs` | Inspect reconnectable background commands |
 | `/mcp` / `/agents` / `/doctor` | Inspect integrations, agents, and runtime health |
-| `/login [provider]` | Configure `deepseek`, `openai-codex`, or `openai` |
+| `/login [provider]` | Choose and authenticate a supported model provider |
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
 
@@ -210,9 +231,9 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
 - `--web` adds DeepSeek server-side Web Search without replacing local repository search.
 
-These transformations run only when the active provider is `deepseek`; OpenAI and Codex requests use
-their native Responses implementations. Provider API keys are stripped from commands, hooks, and stdio
-MCP server environments.
+These transformations run only when the active provider is `deepseek`; other providers use their
+native runtime implementations. Provider API keys are stripped from commands, hooks, and stdio MCP
+server environments.
 
 ## Extensibility and automation
 
@@ -265,8 +286,8 @@ GitHub Release and publishes the npm package after CI passes. See [Releasing DSC
 
 ## Current boundaries
 
-- DeepSeek V4 Flash remains text-only. Select a vision-capable OpenAI/Codex model for screenshots and
-  other image inputs.
+- DeepSeek V4 Flash remains text-only. Select a vision-capable model for screenshots and other image
+  inputs.
 - ChatGPT-plan access follows the models, limits, and workspace permissions available to the signed-in
   account; OpenAI API-key usage is billed separately by the API platform.
 - The VS Code extension is a local integration and is not published to the Marketplace yet.

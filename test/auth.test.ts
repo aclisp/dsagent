@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  formatBaseUrlPrompt,
   hasStoredDeepSeekKey,
   hasStoredProviderCredential,
   removeStoredProviderCredential,
@@ -17,6 +18,12 @@ describe("DSCode authentication", () => {
 
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  it("labels the custom DeepSeek API base URL as optional", () => {
+    expect(formatBaseUrlPrompt("https://api.deepseek.com")).toBe(
+      "API base URL (optional, press Enter to use default) [https://api.deepseek.com]: ",
+    );
   });
 
   it("recognizes and removes a stored Codex subscription credential", async () => {
@@ -66,6 +73,10 @@ describe("DSCode authentication", () => {
     expect(await hasStoredProviderCredential("openai", authPath)).toBe(true);
     const parsed = JSON.parse(await readFile(authPath, "utf8")) as Record<string, unknown>;
     expect(parsed.openai).toEqual({ type: "api_key", key: "sk-openai-test" });
+
+    await saveProviderApiKey("openrouter", "  sk-openrouter-test  ", authPath);
+    const updated = JSON.parse(await readFile(authPath, "utf8")) as Record<string, unknown>;
+    expect(updated.openrouter).toEqual({ type: "api_key", key: "sk-openrouter-test" });
   });
 
   it("distinguishes valid, rejected, and temporarily unverifiable keys", async () => {

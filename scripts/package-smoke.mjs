@@ -25,6 +25,18 @@ try {
   for (const directory of [artifacts, cliInstall, coreInstall, dscodeHome]) {
     fs.mkdirSync(directory, { recursive: true });
   }
+  fs.writeFileSync(
+    path.join(dscodeHome, "auth.json"),
+    JSON.stringify({
+      "openai-codex": {
+        type: "oauth",
+        access: "package-check-only",
+        refresh: "package-check-only",
+        expires: Date.now() + 60_000,
+      },
+    }),
+    { mode: 0o600 },
+  );
 
   run("npm", ["pack", "--pack-destination", artifacts], projectRoot);
   run("npm", ["pack", "./packages/core", "--pack-destination", artifacts], projectRoot);

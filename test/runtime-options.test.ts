@@ -72,6 +72,16 @@ describe("parseRuntimeArgs", () => {
     );
   });
 
+  it("accepts friendly Kimi and Grok provider aliases", () => {
+    const kimi = parseRuntimeArgs(["--provider", "kimi"]);
+    expect(kimi.options).toMatchObject({
+      providerId: "kimi-coding",
+      modelId: "kimi-for-coding",
+    });
+    const grok = parseRuntimeArgs(["--provider", "grok"]);
+    expect(grok.options).toMatchObject({ providerId: "xai", modelId: "grok-4.5" });
+  });
+
   it("maps DSCode flags while preserving Pi session and JSON flags", () => {
     const parsed = parseRuntimeArgs([
       "--harness",

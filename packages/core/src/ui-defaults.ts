@@ -2,10 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 interface DSCodePiSettings {
+  theme?: string;
   quietStartup?: boolean;
   showHardwareCursor?: boolean;
+  dscodeUiDefaultsVersion?: number;
   [key: string]: unknown;
 }
+
+const CURRENT_UI_DEFAULTS_VERSION = 1;
+const ADAPTIVE_THEME = "light/dark";
 
 /** Apply DSCode's startup surface and native blinking-cursor defaults without replacing preferences. */
 export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<void> {
@@ -17,6 +22,16 @@ export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<vo
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
   }
   let changed = false;
+  if ((settings.dscodeUiDefaultsVersion ?? 0) < CURRENT_UI_DEFAULTS_VERSION) {
+    // Older Pi versions persisted the theme detected at first launch. Migrate
+    // built-in light/dark choices once so the UI follows the terminal again;
+    // custom themes and later explicit choices remain untouched.
+    if (settings.theme === undefined || settings.theme === "light" || settings.theme === "dark") {
+      settings.theme = ADAPTIVE_THEME;
+    }
+    settings.dscodeUiDefaultsVersion = CURRENT_UI_DEFAULTS_VERSION;
+    changed = true;
+  }
   if (settings.quietStartup === undefined) {
     settings.quietStartup = true;
     changed = true;
