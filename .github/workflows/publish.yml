@@ -1,9 +1,6 @@
 name: Publish npm package
 
 on:
-  release:
-    types:
-      - published
   workflow_call:
     inputs:
       tag:
@@ -12,23 +9,12 @@ on:
       sha:
         required: true
         type: string
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: GitHub Release tag, for example v0.3.2
-        required: true
-        type: string
-      sha:
-        description: Commit SHA belonging to main
-        required: true
-        type: string
-
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: npm-publish-${{ inputs.tag || github.event.release.tag_name }}
+  group: npm-publish-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -40,15 +26,15 @@ jobs:
       - name: Check out release
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.sha || github.sha }}
+          ref: ${{ inputs.sha }}
           fetch-depth: 0
 
       - name: Verify release source and version
         id: metadata
         shell: bash
         env:
-          RELEASE_SHA: ${{ inputs.sha || github.sha }}
-          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           git fetch origin main
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
@@ -76,6 +62,9 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+
+      - name: Set up npm Trusted Publishing
+        run: npm install --global npm@11.19.0
 
       - name: Check for existing npm versions
         id: registry
@@ -143,11 +132,7 @@ jobs:
       - name: Publish CLI to npm
         if: steps.registry.outputs.cli_already_published != 'true'
         run: npm publish "./package-artifacts/thinkany-dscode-${{ steps.metadata.outputs.package_version }}.tgz" --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Core to npm
         if: steps.registry.outputs.core_already_published != 'true'
         run: npm publish "./package-artifacts/thinkany-dscode-core-${{ steps.metadata.outputs.core_package_version }}.tgz" --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

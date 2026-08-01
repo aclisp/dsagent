@@ -58,8 +58,14 @@ jobs:
             exit 1
           fi
           if [ "$package_version" = "$base_version" ]; then
-            echo "::error::Bump package.json version before merging a release to main."
-            exit 1
+            release_source_changes="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD" | grep -Ev '^(\.github/|docs/)' || true)"
+            if [ -n "$release_source_changes" ]; then
+              echo "::error::Bump package.json version before merging a release to main."
+              printf '%s\n' "$release_source_changes"
+              exit 1
+            fi
+            echo "Workflow/documentation-only change; keeping $package_name@$package_version."
+            exit 0
           fi
           if published_version="$(npm view "$package_name@$package_version" version 2>"$npm_error")"; then
             echo "::error::$package_name@$published_version is already published."
