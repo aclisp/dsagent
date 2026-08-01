@@ -1,7 +1,7 @@
 {
   "name": "@thinkany/dscode",
-  "version": "0.3.3",
-  "description": "A local-first coding agent with DeepSeek, OpenAI, and Codex subscription support.",
+  "version": "0.3.4",
+  "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/thinkany-ai/dscode#readme",

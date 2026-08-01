@@ -19,6 +19,7 @@ import {
   defaultModelForProvider,
   getStoredModelSelection,
   parseSupportedProviderId,
+  SUPPORTED_PROVIDER_IDS,
   type SupportedProviderId,
 } from "./providers.js";
 
@@ -204,7 +205,7 @@ Usage:
 
 DSCode options:
   -C, --cwd <dir>                  Workspace directory
-  --provider <id>                 deepseek|openai-codex|openai
+  --provider <id>                 ${SUPPORTED_PROVIDER_IDS.join("|")}
   --base-url <url>                 DeepSeek API base URL
   --model <id>                     Model ID (provider default when omitted)
   --effort <level>                 Alias for --thinking; defaults by provider
@@ -226,12 +227,11 @@ DSCode commands:
   /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
 
 Authentication:
-  dscode login [provider]           Sign in to DeepSeek, a ChatGPT plan, or OpenAI API
+  dscode login [provider]           Sign in to a supported model provider
   dscode logout [provider]          Remove the selected provider credential
   dscode auth status                Show credential sources without revealing secrets
-  /login deepseek                   Configure a DeepSeek API key
-  /login openai-codex               Sign in with an eligible ChatGPT plan
-  /login openai                     Configure an OpenAI API key
+  /login                            Choose a provider interactively
+  /login <provider>                 Authenticate a specific provider
 `);
 }
 

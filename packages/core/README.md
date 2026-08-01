@@ -4,7 +4,8 @@ Reusable DSCode agent runtime for graphical clients, IDE integrations, and other
 
 The package owns the same provider routing, tools, permissions, sessions, Skills, MCP, hooks,
 checkpoints, and RPC behavior used by the `@thinkany/dscode` terminal client. DeepSeek remains the
-default; OpenAI API and eligible ChatGPT/Codex subscriptions are supported by the same runtime.
+default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, and xAI are supported by the same
+runtime.
 
 ```ts
 import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
@@ -30,4 +31,4 @@ use the exported credential and settings functions to build their own login inte
 showing a terminal prompt.
 
 For graphical authentication, use `saveProviderApiKey()` for API-key providers or pass UI callbacks
-to `authenticateProvider()` for OpenAI API/Codex OAuth. No terminal rendering is required.
+to `authenticateProvider()` for provider OAuth and API-key flows. No terminal rendering is required.

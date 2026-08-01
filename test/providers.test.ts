@@ -9,6 +9,7 @@ import {
   defaultEffortForProvider,
   defaultModelForProvider,
   getStoredModelSelection,
+  parseSupportedProviderId,
   stripModelCredentialEnvironment,
 } from "../packages/core/src/providers.js";
 
@@ -29,6 +30,33 @@ describe("DSCode model providers", () => {
     expect(defaultModelForProvider("openai-codex")).toBe("gpt-5.6-sol");
     expect(defaultEffortForProvider("openai-codex")).toBe("medium");
     expect(defaultModelForProvider("openai")).toBe("gpt-5.6-sol");
+    expect(defaultModelForProvider("anthropic")).toBe("claude-opus-4-8");
+    expect(defaultModelForProvider("openrouter")).toBe("moonshotai/kimi-k2.6");
+    expect(defaultModelForProvider("zai")).toBe("glm-5.1");
+    expect(defaultModelForProvider("kimi-coding")).toBe("kimi-for-coding");
+    expect(defaultModelForProvider("minimax")).toBe("MiniMax-M2.7");
+    expect(defaultModelForProvider("xai")).toBe("grok-4.5");
+  });
+
+  it("ships every configured provider default in the built-in model catalog", () => {
+    for (const providerId of [
+      "deepseek",
+      "openai-codex",
+      "openai",
+      "anthropic",
+      "openrouter",
+      "zai",
+      "kimi-coding",
+      "minimax",
+      "xai",
+    ] as const) {
+      expect(getBuiltinModel(providerId, defaultModelForProvider(providerId))).toBeDefined();
+    }
+  });
+
+  it("normalizes the familiar Kimi and Grok provider names", () => {
+    expect(parseSupportedProviderId("kimi")).toBe("kimi-coding");
+    expect(parseSupportedProviderId("grok")).toBe("xai");
   });
 
   it("ships the default OpenAI models with image input support", () => {
@@ -65,6 +93,12 @@ describe("DSCode model providers", () => {
       PATH: "/bin",
       DEEPSEEK_API_KEY: "deepseek-secret",
       OPENAI_API_KEY: "openai-secret",
+      ANTHROPIC_API_KEY: "anthropic-secret",
+      OPENROUTER_API_KEY: "openrouter-secret",
+      ZAI_API_KEY: "zai-secret",
+      KIMI_API_KEY: "kimi-secret",
+      MINIMAX_API_KEY: "minimax-secret",
+      XAI_API_KEY: "xai-secret",
     });
     expect(environment).toEqual({ PATH: "/bin" });
   });

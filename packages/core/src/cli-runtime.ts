@@ -36,13 +36,10 @@ export async function runDSCode(argv: string[]): Promise<void> {
     });
     return;
   }
-  const configuredBaseUrl = await ensureFirstRunAuth({
+  await ensureFirstRunAuth({
     providerId: parsed.options.providerId,
-    baseUrl: parsed.options.baseUrl,
-    modelId: parsed.options.modelId,
     piArgs: parsed.piArgs,
   });
-  if (configuredBaseUrl) parsed.options.baseUrl = configuredBaseUrl;
   installPiLoginSecretMask();
   installPiMarkdownCodeBlocks();
   installDSCodeRuntimeBranding();

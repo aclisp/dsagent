@@ -26,6 +26,7 @@ import { optimizeDeepSeekResponsesPayload } from "./deepseek.js";
 import { registerDiagnosticsTool } from "./diagnostics.js";
 import { registerNaturalExit } from "./exit.js";
 import { registerHooks } from "./hooks.js";
+import { registerLocalImageInput } from "./image-input.js";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.js";
 import { MCPManager } from "./mcp.js";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.js";
@@ -156,6 +157,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       };
 
       registerDeepSeekProvider(pi, options);
+      registerLocalImageInput(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
       registerCommandTools(

@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import {
   CustomEditor,
   type ExtensionAPI,
@@ -14,11 +15,16 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { getDSCodeAuthPath } from "./auth.js";
 import { brandBlue } from "./brand.js";
 import type { PermissionMode } from "./config.js";
-import { routeDSCodeLogin, scopeLoginSuggestions } from "./login-scope.js";
+import {
+  LOGIN_PROVIDER_CHOICES,
+  routeDSCodeLogin,
+  scopeLoginSuggestions,
+} from "./login-scope.js";
+import { defaultModelForProvider } from "./providers.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { isSupportedProviderId } from "./providers.js";
 import { DSCODE_VERSION } from "./version.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
@@ -36,6 +42,7 @@ export function registerCodingTui(
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let workingStartedAt = 0;
   let loginAutocompleteInstalled = false;
+  let providerLoginWatch: AbortController | undefined;
 
   const updateModelPresentation = (
     ctx: ExtensionContext,
@@ -87,6 +94,8 @@ export function registerCodingTui(
 
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
+    providerLoginWatch?.abort();
+    providerLoginWatch = undefined;
     activeTui?.terminal.write(DEFAULT_CURSOR_STYLE);
     activeTui = undefined;
   });
@@ -100,6 +109,12 @@ export function registerCodingTui(
     });
     ctx.ui.setFooter(() => new EmptyFooter());
     updateModelPresentation(ctx);
+    if (!ctx.model || !ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
+      ctx.ui.notify(
+        "No model provider is configured. Enter /login to choose a provider.",
+        "info",
+      );
+    }
     if (!loginAutocompleteInstalled) {
       loginAutocompleteInstalled = true;
       ctx.ui.addAutocompleteProvider((current) => providerAutocomplete(current));
@@ -173,25 +188,129 @@ export function registerCodingTui(
     });
     if (editor?.onSubmit) {
       const submit = editor.onSubmit;
+      const submitProviderLogin = (
+        providerId: (typeof LOGIN_PROVIDER_CHOICES)[number]["providerId"],
+      ): void => {
+        providerLoginWatch?.abort();
+        const loginWatch = new AbortController();
+        providerLoginWatch = loginWatch;
+        void (async () => {
+          try {
+            const previousAuthMtime = await getAuthFileMtime();
+            submit(`/login ${providerId}`);
+            const switched = await switchToProviderAfterLogin(
+              pi,
+              ctx,
+              providerId,
+              previousAuthMtime,
+              loginWatch.signal,
+            );
+            if (switched) {
+              ctx.ui.notify(
+                `Now using ${providerId}/${defaultModelForProvider(providerId)}.`,
+                "info",
+              );
+            }
+          } catch (error) {
+            if (!loginWatch.signal.aborted) {
+              ctx.ui.notify(
+                `Provider login failed: ${error instanceof Error ? error.message : String(error)}`,
+                "error",
+              );
+            }
+          } finally {
+            if (providerLoginWatch === loginWatch) providerLoginWatch = undefined;
+          }
+        })();
+      };
       editor.onSubmit = (text) => {
-        const currentProvider = ctx.model?.provider;
-        const route = routeDSCodeLogin(
-          text,
-          currentProvider && isSupportedProviderId(currentProvider)
-            ? currentProvider
-            : options.providerId,
-        );
+        const route = routeDSCodeLogin(text);
         if (route.action === "reject") {
           editor?.setText("");
           ctx.ui.notify(
-            "Supported providers: deepseek, openai-codex, and openai. Use /login.",
+            "Unsupported provider. Enter /login to choose a supported provider.",
             "warning",
           );
+          return;
+        }
+        if (route.action === "select") {
+          editor?.setText("");
+          void ctx.ui
+            .select(
+              "Select a model provider",
+              LOGIN_PROVIDER_CHOICES.map((choice) => choice.label),
+            )
+            .then((selected) => {
+              const choice = LOGIN_PROVIDER_CHOICES.find((item) => item.label === selected);
+              if (!choice) return;
+              submitProviderLogin(choice.providerId);
+            })
+            .catch((error) => {
+              ctx.ui.notify(
+                `Provider selection failed: ${error instanceof Error ? error.message : String(error)}`,
+                "error",
+              );
+            });
+          return;
+        }
+        if (route.action === "provider") {
+          submitProviderLogin(route.providerId);
           return;
         }
         submit(route.text);
       };
     }
+  });
+}
+
+async function switchToProviderAfterLogin(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  providerId: (typeof LOGIN_PROVIDER_CHOICES)[number]["providerId"],
+  previousAuthMtime: number | undefined,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const deadline = Date.now() + 10 * 60_000;
+  let credentialUpdated = false;
+  while (!signal.aborted && Date.now() < deadline) {
+    const authMtime = await getAuthFileMtime();
+    credentialUpdated =
+      authMtime !== undefined &&
+      (previousAuthMtime === undefined || authMtime !== previousAuthMtime);
+    if (credentialUpdated) {
+      const model = ctx.modelRegistry.find(providerId, defaultModelForProvider(providerId));
+      if (model && (await pi.setModel(model))) return true;
+    }
+    await waitForLoginPoll(signal);
+  }
+  return false;
+}
+
+async function getAuthFileMtime(): Promise<number | undefined> {
+  try {
+    return (await stat(getDSCodeAuthPath())).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function waitForLoginPoll(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const finish = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      finish();
+    };
+    const timer = setTimeout(finish, 250);
+    timer.unref();
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

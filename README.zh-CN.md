@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  默认使用 DeepSeek，也支持 OpenAI/Codex 模型的本地优先 coding agent。
+  默认使用 DeepSeek、支持多个模型供应商的本地优先 coding agent。
 </p>
 
 <p align="center">
@@ -14,9 +14,9 @@
   <a href="docs/COMPARISON.md">产品对比</a>
 </p>
 
-DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek V4 Flash 为默认模型，同时
-允许需要多模态能力的任务选择 OpenAI API 或 Codex 套餐模型。它把 provider-aware 路由、本地
-会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
+DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek V4 Flash 为默认模型，并
+内置支持 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax 和 xAI。它把
+provider-aware 路由、本地会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
 
 DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保持 runtime 本地、透明，并允许
 每个仓库任务选择真正需要的模型能力。
@@ -24,10 +24,10 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 ## 为什么选择 DSCode
 
 - **DeepSeek 优先，但不限于 DeepSeek。** DeepSeek V4 Flash 仍是默认模型，继续使用专用 Responses
-  adapter、原生 freeform `apply_patch` 和服务端 Web Search；OpenAI API key 与符合条件的 ChatGPT
-  套餐可以使用内置 OpenAI/Codex Responses provider。
+  adapter、原生 freeform `apply_patch` 和服务端 Web Search；也可以在不改变工具与会话的情况下
+  切换到 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax 或 Grok。
 - **模型支持时可识图。** 可在 TUI 粘贴图片或通过 `@file` 传入；GPT-5.6 等模型能检查截图，
-  text-only DeepSeek 模型会给出明确限制。
+  会收到真正的图片 attachment，text-only DeepSeek 模型则会给出明确限制。
 - **围绕成本设计。** Runtime 直接利用 DeepSeek 的 1M context 和硬盘前缀缓存；`/status` 会显示
   context、缓存命中、token、reasoning 和预估费用。最新价格以
   [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing/)为准。
@@ -58,14 +58,30 @@ npm install -g @thinkany/dscode
 curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
 ```
 
-确认 `~/.local/bin` 已加入 `PATH`。全新安装默认使用 DeepSeek：
+确认 `~/.local/bin` 已加入 `PATH`，然后启动 DSCode：
 
 ```bash
-dscode login deepseek
 dscode -C /path/to/project
 ```
 
-DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
+全新安装进入 TUI 后输入 `/login` 选择供应商。认证成功后 DSCode 会选择该 provider 的默认模型；
+非交互命令和未显式指定 provider 的配置仍默认使用 DeepSeek。
+
+| 供应商 | ID | 认证方式 |
+| --- | --- | --- |
+| DeepSeek | `deepseek` | API key |
+| OpenAI Codex | `openai-codex` | 符合条件的 ChatGPT 套餐 |
+| OpenAI | `openai` | API key |
+| Anthropic | `anthropic` | Claude 账号或 API key |
+| OpenRouter | `openrouter` | OpenRouter 账号或 API key |
+| Z.AI Coding Plan | `zai` | API key |
+| Kimi For Coding | `kimi-coding` | Kimi Code 账号或 API key |
+| MiniMax | `minimax` | API key |
+| xAI / Grok | `xai` | Grok/X 账号或 API key |
+
+`/login` 和 `--provider` 也接受 `kimi`、`grok` 这两个易记别名。
+
+配置 DeepSeek 时，DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
 `https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。密钥保存到
 `~/.dscode/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
 优先级为 `--base-url`、`DEEPSEEK_BASE_URL`、本地保存值、DeepSeek 官方地址。如果不希望保存密钥：
@@ -76,14 +92,14 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 dscode -C /path/to/project
 ```
 
-也可以使用符合条件的 ChatGPT 套餐登录 Codex，或使用标准 OpenAI API key：
+也可以在进入 TUI 前完成认证：
 
 ```bash
+dscode login deepseek      # DeepSeek API key
 dscode login openai-codex  # 浏览器 OAuth，使用 ChatGPT 套餐限额
-# 或
 dscode login openai        # 安全输入 OpenAI API key
-
-dscode -C /path/to/project
+dscode login anthropic     # Claude 账号或 Anthropic API key
+dscode login openrouter    # OpenRouter 账号或 API key
 ```
 
 选择的 provider 和模型会保存供后续启动使用，也可以随时覆盖：
@@ -146,6 +162,9 @@ dscode -C ./my-project --mode rpc
 dscode --provider openai-codex @screenshot.png "解释这个错误"
 ```
 
+在 TUI 中粘贴 PNG、JPEG、GIF 或 WebP 图片并输入问题即可。DSCode 会识别终端插入的本地图片
+路径，把图片数据作为 attachment 随消息发送；每轮最多支持 8 张图片，每张最大 20 MB。
+
 TUI 常用命令：
 
 | 命令 | 作用 |
@@ -160,7 +179,7 @@ TUI 常用命令：
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |
 | `/jobs` | 查看可重连的后台命令 |
 | `/mcp` / `/agents` / `/doctor` | 查看集成、agent 和运行状态 |
-| `/login [provider]` | 配置 `deepseek`、`openai-codex` 或 `openai` |
+| `/login [provider]` | 选择并认证支持的模型供应商 |
 | `/model` | 选择已配置的模型，并保存选择 |
 | `/effort ...` | 调整当前模型的 reasoning effort |
 
@@ -200,8 +219,8 @@ dscode -C ./project --sandbox workspace-write
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
 - `--web` 加入 DeepSeek 服务端 Web Search，不代替本地仓库搜索。
 
-这些转换只在当前 provider 为 `deepseek` 时执行；OpenAI 和 Codex 请求使用各自原生 Responses
-实现。Provider API key 不会传给命令、hooks 或 stdio MCP server。
+这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。
+Provider API key 不会传给命令、hooks 或 stdio MCP server。
 
 ## 扩展与自动化
 
@@ -253,7 +272,7 @@ Release 并发布 npm 包。详细流程见 [Releasing DSCode](docs/RELEASING.md
 
 ## 当前边界
 
-- DeepSeek V4 Flash 仍只接受文本输入；截图等图片任务需要切换到支持视觉的 OpenAI/Codex 模型。
+- DeepSeek V4 Flash 仍只接受文本输入；截图等图片任务需要切换到支持视觉的模型。
 - ChatGPT 套餐登录受账号可用模型、用量限制和 workspace 权限约束；OpenAI API key 的用量由 API
   平台单独计费。
 - VS Code 扩展是本地集成，尚未发布到 Marketplace。
