@@ -25,7 +25,7 @@ jobs:
     outputs:
       ready: ${{ steps.result.outputs.ready }}
       tag: ${{ steps.metadata.outputs.tag }}
-      sha: ${{ github.event.workflow_run.head_sha }}
+      sha: ${{ steps.state.outputs.release_sha }}
     steps:
       - name: Check out the validated main commit
         uses: actions/checkout@v6
@@ -66,8 +66,12 @@ jobs:
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            tag_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
+            git merge-base --is-ancestor "$tag_sha" origin/main
             echo "mode=skip" >> "$GITHUB_OUTPUT"
-            echo "$RELEASE_TAG already has a GitHub Release."
+            echo "release_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+            echo "$RELEASE_TAG already has a GitHub Release; retrying npm from $tag_sha."
             exit 0
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
@@ -78,9 +82,11 @@ jobs:
               exit 1
             fi
             echo "mode=existing_tag" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "mode=create_tag" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Create a release from the existing tag
         if: steps.state.outputs.mode == 'existing_tag'
@@ -109,4 +115,3 @@ jobs:
     with:
       tag: ${{ needs.release.outputs.tag }}
       sha: ${{ needs.release.outputs.sha }}
-    secrets: inherit

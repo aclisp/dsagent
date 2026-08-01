@@ -24,29 +24,30 @@ DSCode uses two long-lived branches:
    versions.
 
 After creating the GitHub Release, `.github/workflows/release.yml` directly calls
-`.github/workflows/publish.yml`; manually published GitHub Releases and manual workflow dispatches are
-also supported. The publishing workflow verifies that the tagged commit belongs to `main`, checks that
-`vX.Y.Z` matches both package manifests, runs the complete test and packed-install suite, creates the
-`@thinkany/dscode` and `@thinkany/dscode-core` tarballs, uploads them as workflow artifacts, and
-publishes those exact tarballs to npm. The CLI tarball embeds the matching Core build, so CLI users do
-not depend on a separate Core registry download. Existing npm versions are detected independently and
-skipped so retries can recover if only one package was published.
+`.github/workflows/publish.yml`. The publishing workflow verifies that the tagged commit belongs to
+`main`, checks that `vX.Y.Z` matches both package manifests, runs the complete test and packed-install
+suite, creates the `@thinkany/dscode` and `@thinkany/dscode-core` tarballs, uploads them as workflow
+artifacts, and publishes those exact tarballs to npm. The CLI tarball embeds the matching Core build,
+so CLI users do not depend on a separate Core registry download. Existing npm versions are detected
+independently and skipped so retries can recover if only one package was published.
 
 ## npm authentication
 
-Use npm Trusted Publishing instead of keeping a long-lived write token:
+Both npm packages use Trusted Publishing; no `NPM_TOKEN` repository secret is required. The one-time
+publisher configuration for each package is:
 
-1. Publish each package once manually, or temporarily add a granular npm publishing token as the GitHub
-   Actions secret `NPM_TOKEN` for the first release of `@thinkany/dscode-core`.
-2. In both package settings pages on npmjs.com, add a GitHub Actions trusted publisher:
+1. In both package settings pages on npmjs.com, add a GitHub Actions trusted publisher:
    - Organization: `thinkany-ai`
    - Repository: `dscode`
-   - Workflow filename: `publish.yml`
+   - Workflow filename: `release.yml`
    - Allowed action: `npm publish`
-3. Remove the `NPM_TOKEN` repository secret after OIDC publishing succeeds.
+2. Keep `id-token: write` on both `release.yml` and the reusable `publish.yml` workflow. Because npm
+   validates the calling workflow for reusable workflows, the trusted publisher must name
+   `release.yml`.
+3. Use npm 11.5.1 or newer in the runner. The workflow pins npm 11.19.0.
 
-The workflow grants only `contents: read` and `id-token: write`. npm Trusted Publishing uses the OIDC
-token and automatically adds provenance for a public package published from this public repository.
+Trusted Publishing exchanges GitHub's short-lived OIDC identity directly with npm and automatically
+adds provenance. Future releases do not require an npm token or a one-time password.
 
 ## Recommended GitHub settings
 
