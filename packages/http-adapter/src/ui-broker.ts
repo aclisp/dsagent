@@ -42,6 +42,18 @@ export type HttpUiResponse =
   | { requestId: string; value: string }
   | { requestId: string; cancelled: true };
 
+export type HttpUiResponseErrorCode = "not_found" | "invalid_response";
+
+export class HttpUiResponseError extends Error {
+  readonly code: HttpUiResponseErrorCode;
+
+  constructor(code: HttpUiResponseErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "HttpUiResponseError";
+    this.code = code;
+  }
+}
+
 export type HttpUiEvent =
   | { method: "notify"; message: string; level?: "info" | "warning" | "error" }
   | { method: "status"; key: string; text?: string }
@@ -389,8 +401,21 @@ export function createHttpUiBroker(): HttpUiBroker {
     respond(response) {
       if (disposed) throw new Error("HTTP UI broker is disposed");
       const entry = pending.get(response.requestId);
-      if (!entry) throw new Error(`Unknown UI request: ${response.requestId}`);
-      entry.resolve(response);
+      if (!entry) {
+        throw new HttpUiResponseError(
+          "not_found",
+          `Unknown UI request: ${response.requestId}`,
+        );
+      }
+      try {
+        entry.resolve(response);
+      } catch (error) {
+        throw new HttpUiResponseError(
+          "invalid_response",
+          error instanceof Error ? error.message : "Invalid UI response",
+          { cause: error },
+        );
+      }
     },
     dispose() {
       if (disposed) return;

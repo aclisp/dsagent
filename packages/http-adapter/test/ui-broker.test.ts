@@ -1,6 +1,10 @@
 import type { AgentSessionEvent, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createHttpUiBroker, type HttpUiBrokerEvent } from "../src/ui-broker.js";
+import {
+  HttpUiResponseError,
+  createHttpUiBroker,
+  type HttpUiBrokerEvent,
+} from "../src/ui-broker.js";
 
 const fallback = {} as ExtensionUIContext;
 
@@ -21,14 +25,25 @@ describe("createHttpUiBroker", () => {
       message: "src/auth.ts",
     });
 
-    expect(() =>
-      broker.respond({ requestId: requestEvent.request.id, value: "yes" }),
-    ).toThrow("requires a confirmation response");
+    let responseError: unknown;
+    try {
+      broker.respond({ requestId: requestEvent.request.id, value: "yes" });
+    } catch (error) {
+      responseError = error;
+    }
+    expect(responseError).toBeInstanceOf(HttpUiResponseError);
+    expect(responseError).toMatchObject({ code: "invalid_response" });
     broker.respond({ requestId: requestEvent.request.id, confirmed: true });
     await expect(confirmation).resolves.toBe(true);
-    expect(() =>
-      broker.respond({ requestId: requestEvent.request.id, confirmed: true }),
-    ).toThrow("Unknown UI request");
+
+    let missingError: unknown;
+    try {
+      broker.respond({ requestId: requestEvent.request.id, confirmed: true });
+    } catch (error) {
+      missingError = error;
+    }
+    expect(missingError).toBeInstanceOf(HttpUiResponseError);
+    expect(missingError).toMatchObject({ code: "not_found" });
 
     broker.dispose();
   });
