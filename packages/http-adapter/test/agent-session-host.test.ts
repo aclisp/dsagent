@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAgentSessionHost } from "../src/agent-session-host.js";
+import {
+  PersistedSessionAlreadyExistsError,
+  PersistedSessionNotFoundError,
+  createAgentSessionHost,
+} from "../src/agent-session-host.js";
 import { createHttpUiBroker, type HttpUiBrokerEvent } from "../src/ui-broker.js";
 
 const ENV_KEYS = [
@@ -86,6 +90,97 @@ describe.sequential("createAgentSessionHost", () => {
     } finally {
       await host.dispose();
     }
+  });
+
+  it("creates and resumes a persistent session without changing process cwd", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-adapter-"));
+    temporaryRoots.push(root);
+    const workspace = path.join(root, "workspace");
+    const sessionsDir = path.join(root, "sessions");
+    await fs.mkdir(workspace);
+    process.env.DSCODE_HOME = path.join(root, "home");
+    process.env.DSCODE_SESSIONS_DIR = sessionsDir;
+    const originalCwd = process.cwd();
+    const sessionId = "0193f4ca-7d8b-7000-8000-000000000001";
+
+    const first = await createAgentSessionHost({
+      cwd: workspace,
+      session: { type: "persistent", id: sessionId },
+    });
+    try {
+      const manager = first.session.sessionManager;
+      const model = first.session.model;
+      if (!model) throw new Error("Missing session model");
+      expect(manager.isPersisted()).toBe(true);
+      expect(manager.getSessionId()).toBe(sessionId);
+      expect(manager.getSessionDir()).toBe(sessionsDir);
+      manager.appendMessage({ role: "user", content: "Remember this", timestamp: 1 });
+      manager.appendMessage({
+        role: "assistant",
+        content: [{ type: "text", text: "Remembered" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: 2,
+      });
+      expect((await fs.stat(manager.getSessionFile()!)).isFile()).toBe(true);
+    } finally {
+      await first.dispose();
+    }
+
+    await expect(
+      createAgentSessionHost({
+        cwd: workspace,
+        session: { type: "persistent", id: sessionId },
+      }),
+    ).rejects.toBeInstanceOf(PersistedSessionAlreadyExistsError);
+
+    const resumed = await createAgentSessionHost({
+      cwd: workspace,
+      session: { type: "resume", id: sessionId },
+    });
+    try {
+      expect(resumed.session.sessionManager.getSessionId()).toBe(sessionId);
+      expect(
+        resumed.session.sessionManager
+          .getEntries()
+          .filter((entry) => entry.type === "message"),
+      ).toHaveLength(2);
+      expect(resumed.session.sessionManager.buildSessionContext().messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "Remember this" }),
+          expect.objectContaining({ role: "assistant" }),
+        ]),
+      );
+      expect(process.cwd()).toBe(originalCwd);
+    } finally {
+      await resumed.dispose();
+    }
+  });
+
+  it("rejects an unknown persistent session ID", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-adapter-"));
+    temporaryRoots.push(root);
+    const workspace = path.join(root, "workspace");
+    await fs.mkdir(workspace);
+    process.env.DSCODE_HOME = path.join(root, "home");
+    process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
+
+    await expect(
+      createAgentSessionHost({
+        cwd: workspace,
+        session: { type: "resume", id: "missing" },
+      }),
+    ).rejects.toBeInstanceOf(PersistedSessionNotFoundError);
   });
 
   it("rejects CLI-only arguments", async () => {

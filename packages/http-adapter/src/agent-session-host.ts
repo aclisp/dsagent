@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   createDSCodeExtension,
+  getDSCodeSessionsDir,
   initializeDSCodeHome,
   parseRuntimeArgs,
 } from "@thinkany/dscode-core";
@@ -23,10 +24,36 @@ import {
   type HttpUiBrokerListener,
 } from "./ui-broker.js";
 
+export type AgentSessionStorage =
+  | { type: "memory" }
+  | { type: "persistent"; id?: string }
+  | { type: "resume"; id: string };
+
+export class PersistedSessionAlreadyExistsError extends Error {
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    super(`Persisted session already exists: ${sessionId}`);
+    this.name = "PersistedSessionAlreadyExistsError";
+    this.sessionId = sessionId;
+  }
+}
+
+export class PersistedSessionNotFoundError extends Error {
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    super(`Persisted session not found: ${sessionId}`);
+    this.name = "PersistedSessionNotFoundError";
+    this.sessionId = sessionId;
+  }
+}
+
 export interface CreateAgentSessionHostOptions {
   cwd: string;
   runtimeArgs?: readonly string[];
   uiBroker?: HttpUiBroker;
+  session?: AgentSessionStorage;
 }
 
 export interface AgentSessionHost {
@@ -54,7 +81,7 @@ export async function createAgentSessionHost(
   const agentDir = await initializeDSCodeHome();
   ensureThemeInitialized();
   const uiBroker = options.uiBroker ?? createHttpUiBroker();
-  const sessionManager = SessionManager.inMemory(cwd);
+  const sessionManager = await createSessionManager(cwd, options.session);
 
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({
     cwd: runtimeCwd,
@@ -131,9 +158,11 @@ function createHost(
   unsubscribe: () => void,
 ): AgentSessionHost {
   let disposePromise: Promise<void> | undefined;
+  let disposalStarted = false;
+  let unsubscribed = false;
 
   const assertActive = (): void => {
-    if (disposePromise) throw new Error("Agent session host is disposed");
+    if (disposalStarted) throw new Error("Agent session host is disposed");
   };
 
   return {
@@ -162,12 +191,22 @@ function createHost(
       return uiBroker.subscribe(listener);
     },
     dispose() {
-      disposePromise ??= (async () => {
+      disposalStarted = true;
+      if (disposePromise) return disposePromise;
+
+      const attempt = (async () => {
         uiBroker.dispose();
-        unsubscribe();
+        if (!unsubscribed) {
+          unsubscribe();
+          unsubscribed = true;
+        }
         await runtime.dispose();
       })();
-      return disposePromise;
+      disposePromise = attempt;
+      void attempt.catch(() => {
+        if (disposePromise === attempt) disposePromise = undefined;
+      });
+      return attempt;
     },
   };
 }
@@ -188,6 +227,37 @@ function assertPromptSupported(message: string): void {
   if (command && UNSUPPORTED_SESSION_COMMANDS.has(command)) {
     throw new Error(`Session command /${command} is not supported by this host`);
   }
+}
+
+async function createSessionManager(
+  cwd: string,
+  storage: AgentSessionStorage | undefined,
+): Promise<SessionManager> {
+  if (!storage || storage.type === "memory") return SessionManager.inMemory(cwd);
+
+  const sessionDir = getDSCodeSessionsDir();
+  if (storage.type === "persistent") {
+    if (storage.id !== undefined) {
+      const existing = (await SessionManager.list(cwd, sessionDir)).some(
+        (session) => session.id === storage.id,
+      );
+      if (existing) throw new PersistedSessionAlreadyExistsError(storage.id);
+    }
+    return SessionManager.create(
+      cwd,
+      sessionDir,
+      storage.id !== undefined ? { id: storage.id } : undefined,
+    );
+  }
+
+  const matches = (await SessionManager.list(cwd, sessionDir)).filter(
+    (session) => session.id === storage.id,
+  );
+  if (matches.length === 0) throw new PersistedSessionNotFoundError(storage.id);
+  if (matches.length > 1) {
+    throw new Error(`Multiple persisted sessions found with ID: ${storage.id}`);
+  }
+  return SessionManager.open(matches[0]!.path, sessionDir, cwd);
 }
 
 let themeInitialized = false;
