@@ -7,7 +7,7 @@ describe("ManagedProcessRegistry", () => {
     const registry = new ManagedProcessRegistry();
     try {
       const started = await registry.start(
-        `${process.execPath} -e "setTimeout(() => process.stdout.write('done'), 100)"`,
+        backgroundCommand(),
         {
           cwd: os.tmpdir(),
           sandbox: { mode: "danger-full-access", network: false },
@@ -25,3 +25,11 @@ describe("ManagedProcessRegistry", () => {
     }
   });
 });
+
+function backgroundCommand(): string {
+  const script = "setTimeout(() => process.stdout.write('done'), 100)";
+  if (process.platform === "win32") {
+    return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
+  }
+  return `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script}'`;
+}
