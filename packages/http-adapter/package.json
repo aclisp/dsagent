@@ -18,7 +18,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.83.0",
-    "@thinkany/dscode-core": "workspace:*"
+    "@thinkany/dscode-core": "workspace:*",
+    "fastify": "^5.11.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
