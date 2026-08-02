@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { stripModelCredentialEnvironment } from "./providers.js";
 import type { SandboxMode } from "./runtime-options.js";
+import { hostShellCommand } from "./shell.js";
 
 export interface SandboxOptions {
   mode: SandboxMode;
@@ -21,12 +22,12 @@ export function sandboxCommand(
   cwd: string,
   options: SandboxOptions,
 ): SandboxedCommand {
-  const shell = process.env.SHELL ?? "/bin/sh";
   if (options.mode === "danger-full-access") {
-    return { command: shell, args: ["-lc", shellCommand], description: "host" };
+    return hostShellCommand(shellCommand);
   }
 
   if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
+    const shell = process.env.SHELL ?? "/bin/sh";
     const workspace = fs.realpathSync(cwd);
     const temporary = fs.realpathSync(os.tmpdir());
     const writable =
