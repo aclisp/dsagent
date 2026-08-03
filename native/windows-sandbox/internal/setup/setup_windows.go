@@ -91,6 +91,8 @@ func LoadAccount(statePath, mode string, network bool) (Account, error) {
 	switch mode {
 	case "read-only":
 		role = "ROOff"
+	case "workspace-write":
+		role = "RWOff"
 	default:
 		return Account{}, fmt.Errorf("unsupported sandbox mode: %s", mode)
 	}

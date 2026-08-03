@@ -182,6 +182,28 @@ func TestSandboxFilesystemModes(t *testing.T) {
 	}
 	assertNoWorkspaceACE(t, workspace, readAccount.SID)
 
+	writeAccount := accountByRole(t, state, "RWOff")
+	writeResult := filepath.Join(writeAccount.TempDir, "write-result.json")
+	result = runFilesystemProbe(t, Request{
+		Version:   ProtocolVersion,
+		StatePath: statePath,
+		Mode:      "workspace-write",
+		Command:   "powershell.exe",
+		Cwd:       workspace,
+		Env: map[string]string{
+			"DSCODE_TEST_INPUT":     input,
+			"DSCODE_TEST_WORKSPACE": filepath.Join(workspace, "write.txt"),
+			"DSCODE_TEST_OUTSIDE":   filepath.Join(outsideDir, "outside.txt"),
+			"DSCODE_TEST_ESCAPE":    filepath.Join(junction, "escape.txt"),
+			"DSCODE_TEST_RESULT":    writeResult,
+		},
+		HelperCommand: helper,
+		HelperArgs:    helperArgs,
+	})
+	if result.Read != "read-ok" || result.Workspace != "allowed" || result.Outside != "denied" || result.Escape != "denied" || result.Temp != "allowed" {
+		t.Fatalf("unexpected workspace-write result: %+v", result)
+	}
+	assertNoWorkspaceACE(t, workspace, writeAccount.SID)
 }
 
 type filesystemProbeResult struct {

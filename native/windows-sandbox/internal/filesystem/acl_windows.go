@@ -22,13 +22,16 @@ type Grant struct {
 	sid   string
 }
 
-func GrantWorkspace(root string, sid *windows.SID) (*Grant, error) {
+func GrantWorkspace(root string, sid *windows.SID, writable bool) (*Grant, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace: %w", err)
 	}
 	grant := &Grant{sid: sid.String()}
 	permission := "(OI)(CI)(RX)"
+	if writable {
+		permission = "(OI)(CI)(M)"
+	}
 	if err := icacls(abs, "/grant", "*"+grant.sid+":"+permission, "/T", "/C", "/Q"); err != nil {
 		_ = grant.Revoke()
 		return nil, fmt.Errorf("grant workspace access: %w", err)

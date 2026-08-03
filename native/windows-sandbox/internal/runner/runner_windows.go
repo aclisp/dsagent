@@ -47,7 +47,7 @@ func Run(request Request) (exitCode uint32, runErr error) {
 	if err != nil {
 		return 0, fmt.Errorf("decode sandbox SID: %w", err)
 	}
-	workspaceGrant, err := filesystem.GrantWorkspace(cwd, sid)
+	workspaceGrant, err := filesystem.GrantWorkspace(cwd, sid, request.Mode == "workspace-write")
 	if err != nil {
 		return 0, err
 	}
