@@ -307,6 +307,8 @@ func launchProcess(
 	}
 	startupPointer := &startup
 	var extended *windows.StartupInfoEx
+	// CreateProcessWithTokenW rejects PROC_THREAD_ATTRIBUTE_HANDLE_LIST. That path starts only the
+	// trusted broker; the broker's launchRestricted child is the untrusted process and uses this list.
 	if inheritStandardHandles && kind != launchWithToken {
 		attributes, err := windows.NewProcThreadAttributeList(1)
 		if err != nil {
@@ -335,7 +337,7 @@ func launchProcess(
 			commandLine,
 			nil,
 			nil,
-			true,
+			inheritStandardHandles,
 			flags,
 			&environment[0],
 			currentDirectory,

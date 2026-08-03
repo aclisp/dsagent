@@ -98,8 +98,25 @@ func TestNetworkProbeHelper(t *testing.T) {
 	inbound := "blocked"
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err == nil {
-		inbound = "allowed"
-		_ = listener.Close()
+		defer listener.Close()
+		if tcp, ok := listener.(*net.TCPListener); ok {
+			_ = tcp.SetDeadline(time.Now().Add(3 * time.Second))
+		}
+		if err := os.WriteFile(os.Getenv("DSCODE_TEST_INBOUND_ADDRESS"), []byte(listener.Addr().String()), 0o600); err != nil {
+			os.Exit(125)
+		}
+		connection, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			defer connection.Close()
+			_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
+			nonce := os.Getenv("DSCODE_TEST_INBOUND_NONCE")
+			buffer := make([]byte, len(nonce))
+			if _, readErr := io.ReadFull(connection, buffer); readErr == nil && string(buffer) == nonce {
+				if _, writeErr := io.WriteString(connection, nonce); writeErr == nil {
+					inbound = "allowed"
+				}
+			}
+		}
 	}
 	result := fmt.Sprintf("outbound:%s,inbound:%s", outbound, inbound)
 	if err := os.WriteFile(os.Getenv("DSCODE_TEST_RESULT"), []byte(result), 0o600); err != nil {
@@ -299,6 +316,8 @@ func TestSandboxNetworkModes(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			account := accountByRole(t, state, testCase.role)
 			resultPath := filepath.Join(account.TempDir, "network-result.txt")
+			addressPath := filepath.Join(account.TempDir, "inbound-address.txt")
+			_ = os.Remove(addressPath)
 			if err := os.WriteFile(resultPath, nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -312,6 +331,12 @@ func TestSandboxNetworkModes(t *testing.T) {
 			}
 			defer grant.Revoke()
 
+			nonce := fmt.Sprintf("dscode-%d", time.Now().UnixNano())
+			stopProbe := make(chan struct{})
+			probeResult := make(chan bool, 1)
+			go func() {
+				probeResult <- connectToSandboxListener(addressPath, nonce, stopProbe)
+			}()
 			exitCode, err := Run(Request{
 				Version:   ProtocolVersion,
 				StatePath: statePath,
@@ -321,14 +346,18 @@ func TestSandboxNetworkModes(t *testing.T) {
 				Args:      []string{"-test.run=TestNetworkProbeHelper"},
 				Cwd:       workspace,
 				Env: map[string]string{
-					"DSCODE_NETWORK_PROBE": "1",
-					"DSCODE_TEST_ADDRESS":  testAddress,
-					"DSCODE_TEST_RESULT":   resultPath,
+					"DSCODE_NETWORK_PROBE":        "1",
+					"DSCODE_TEST_ADDRESS":         testAddress,
+					"DSCODE_TEST_INBOUND_ADDRESS": addressPath,
+					"DSCODE_TEST_INBOUND_NONCE":   nonce,
+					"DSCODE_TEST_RESULT":          resultPath,
 				},
-				TimeoutMS:     5000,
+				TimeoutMS:     8000,
 				HelperCommand: helper,
 				HelperArgs:    helperArgs,
 			})
+			close(stopProbe)
+			connected := <-probeResult
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -342,8 +371,42 @@ func TestSandboxNetworkModes(t *testing.T) {
 			if got := string(data); got != testCase.want {
 				t.Fatalf("network access = %s, want %s", got, testCase.want)
 			}
+			if connected != testCase.network {
+				t.Fatalf("host-to-sandbox handshake = %v, want %v", connected, testCase.network)
+			}
 		})
 	}
+}
+
+func connectToSandboxListener(addressPath, nonce string, stop <-chan struct{}) bool {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-stop:
+			return false
+		default:
+		}
+		data, err := os.ReadFile(addressPath)
+		if err != nil || len(data) == 0 {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		connection, err := net.DialTimeout("tcp", string(data), 2*time.Second)
+		if err != nil {
+			return false
+		}
+		defer connection.Close()
+		_ = connection.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := io.WriteString(connection, nonce); err != nil {
+			return false
+		}
+		buffer := make([]byte, len(nonce))
+		if _, err := io.ReadFull(connection, buffer); err != nil {
+			return false
+		}
+		return string(buffer) == nonce
+	}
+	return false
 }
 
 type filesystemProbeResult struct {

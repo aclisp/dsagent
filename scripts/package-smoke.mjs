@@ -150,6 +150,15 @@ function verifyWindowsSandboxHelpers(nativeRoot) {
   const nativeManifest = JSON.parse(
     fs.readFileSync(path.join(nativeRoot, "manifest.json"), "utf8"),
   );
+  if (
+    nativeManifest?.version !== 1 ||
+    nativeManifest?.protocol !== 1 ||
+    !nativeManifest.files ||
+    typeof nativeManifest.files !== "object" ||
+    Array.isArray(nativeManifest.files)
+  ) {
+    throw new Error("Windows sandbox manifest is missing or incompatible");
+  }
   for (const relative of [
     "win32-x64/dscode-windows-sandbox.exe",
     "win32-arm64/dscode-windows-sandbox.exe",

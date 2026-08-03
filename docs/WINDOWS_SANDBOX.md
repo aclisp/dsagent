@@ -1,6 +1,6 @@
 # Windows Native Sandbox Security Contract
 
-Status: design contract; no native Windows backend is shipped yet.
+Status: experimental; the native Windows backend is opt-in and disabled by default.
 
 This document defines the security boundary that a DSCode Windows sandbox must satisfy before it can
 be selected for `read-only` or `workspace-write` command execution. An implementation must fail closed
