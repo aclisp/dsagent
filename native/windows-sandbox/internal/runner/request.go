@@ -15,6 +15,7 @@ type Request struct {
 	Child         bool              `json:"child,omitempty"`
 	SandboxSID    string            `json:"sandbox_sid,omitempty"`
 	ResultPath    string            `json:"result_path,omitempty"`
+	Desktop       string            `json:"desktop,omitempty"`
 	HelperCommand string            `json:"-"`
 	HelperArgs    []string          `json:"-"`
 }

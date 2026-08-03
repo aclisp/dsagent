@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -24,7 +25,8 @@ const timeoutExitCode = 124
 var procCreateProcessWithToken = windows.NewLazySystemDLL("advapi32.dll").NewProc("CreateProcessWithTokenW")
 var procCreateRestrictedToken = windows.NewLazySystemDLL("advapi32.dll").NewProc("CreateRestrictedToken")
 var procGetProcessWindowStation = windows.NewLazySystemDLL("user32.dll").NewProc("GetProcessWindowStation")
-var procGetThreadDesktop = windows.NewLazySystemDLL("user32.dll").NewProc("GetThreadDesktop")
+var procCreateDesktop = windows.NewLazySystemDLL("user32.dll").NewProc("CreateDesktopW")
+var procCloseDesktop = windows.NewLazySystemDLL("user32.dll").NewProc("CloseDesktop")
 
 func Run(request Request) (exitCode uint32, runErr error) {
 	command, cwd, err := validateRequest(request)
@@ -72,7 +74,7 @@ func RunChild(request Request) (exitCode uint32, runErr error) {
 			_ = os.WriteFile(request.ResultPath, data, 0o600)
 		}
 	}()
-	if !request.Child || request.SandboxSID == "" || request.StatePath != "" {
+	if !request.Child || request.SandboxSID == "" || request.StatePath != "" || !strings.HasPrefix(request.Desktop, `Winsta0\DSCodeSandbox-`) {
 		return 0, fmt.Errorf("invalid child runner request")
 	}
 	command, cwd, err := validateRequest(request)
@@ -86,7 +88,7 @@ func RunChild(request Request) (exitCode uint32, runErr error) {
 	var primary windows.Token
 	if err := windows.OpenProcessToken(
 		windows.CurrentProcess(),
-		windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_ADJUST_PRIVILEGES,
+		windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_ADJUST_DEFAULT|windows.TOKEN_ADJUST_PRIVILEGES,
 		&primary,
 	); err != nil {
 		return 0, fmt.Errorf("open child runner token: %w", err)
@@ -110,11 +112,11 @@ func RunChild(request Request) (exitCode uint32, runErr error) {
 			baseEnvironment = append(baseEnvironment, entry)
 		}
 	}
-	return launchProcess(request, command, cwd, baseEnvironment, restricted, launchRestricted, false)
+	return launchProcess(request, command, cwd, baseEnvironment, restricted, launchRestricted, true)
 }
 
 func runBroker(request Request, account setup.Account, sid *windows.SID) (exitCode uint32, runErr error) {
-	restoreDesktopAccess, err := grantDesktopAccess(sid)
+	desktop, restoreDesktopAccess, err := grantDesktopAccess(sid)
 	if err != nil {
 		return 0, fmt.Errorf("grant sandbox desktop access: %w", err)
 	}
@@ -152,6 +154,7 @@ func runBroker(request Request, account setup.Account, sid *windows.SID) (exitCo
 	child.StatePath = ""
 	child.Child = true
 	child.SandboxSID = account.SID
+	child.Desktop = desktop
 	child.HelperCommand = ""
 	child.HelperArgs = nil
 	resultFile, err := os.CreateTemp(account.TempDir, "dscode-result-*.json")
@@ -201,7 +204,7 @@ func runBroker(request Request, account setup.Account, sid *windows.SID) (exitCo
 		Env:       environment,
 		TimeoutMS: request.TimeoutMS,
 	}
-	brokerExitCode, brokerErr := launchProcess(broker, helper, account.TempDir, nil, token, launchWithToken, false)
+	brokerExitCode, brokerErr := launchProcess(broker, helper, account.TempDir, nil, token, launchWithToken, true)
 	if brokerErr != nil {
 		return 0, brokerErr
 	}
@@ -283,7 +286,7 @@ func launchProcess(
 	startup := windows.StartupInfo{}
 	startup.Cb = uint32(unsafe.Sizeof(startup))
 	if kind == launchRestricted {
-		startup.Desktop, err = windows.UTF16PtrFromString(`winsta0\default`)
+		startup.Desktop, err = windows.UTF16PtrFromString(request.Desktop)
 		if err != nil {
 			return 0, fmt.Errorf("encode sandbox desktop: %w", err)
 		}
@@ -302,12 +305,9 @@ func launchProcess(
 	if kind != launchCurrent {
 		flags |= windows.CREATE_NO_WINDOW
 	}
-	switch kind {
-	case launchCurrent:
-		startup.Flags = windows.STARTF_USESTDHANDLES
-		startup.StdInput = handles[0]
-		startup.StdOutput = handles[1]
-		startup.StdErr = handles[2]
+	startupPointer := &startup
+	var extended *windows.StartupInfoEx
+	if inheritStandardHandles && kind != launchWithToken {
 		attributes, err := windows.NewProcThreadAttributeList(1)
 		if err != nil {
 			return 0, fmt.Errorf("create process attribute list: %w", err)
@@ -320,9 +320,16 @@ func launchProcess(
 		); err != nil {
 			return 0, fmt.Errorf("restrict inherited handles: %w", err)
 		}
-		extended := windows.StartupInfoEx{StartupInfo: startup, ProcThreadAttributeList: attributes.List()}
-		extended.Cb = uint32(unsafe.Sizeof(extended))
+		extended = &windows.StartupInfoEx{
+			StartupInfo:             startup,
+			ProcThreadAttributeList: attributes.List(),
+		}
+		extended.Cb = uint32(unsafe.Sizeof(*extended))
+		startupPointer = &extended.StartupInfo
 		flags |= windows.EXTENDED_STARTUPINFO_PRESENT
+	}
+	switch kind {
+	case launchCurrent:
 		err = windows.CreateProcess(
 			application,
 			commandLine,
@@ -332,13 +339,13 @@ func launchProcess(
 			flags,
 			&environment[0],
 			currentDirectory,
-			&extended.StartupInfo,
+			startupPointer,
 			&process,
 		)
 	case launchWithToken:
-		err = createProcessWithToken(token, application, commandLine, flags, &environment[0], currentDirectory, &startup, &process)
+		err = createProcessWithToken(token, application, commandLine, flags, &environment[0], currentDirectory, startupPointer, &process)
 	case launchRestricted:
-		err = windows.CreateProcessAsUser(token, application, commandLine, nil, nil, false, flags, &environment[0], currentDirectory, &startup, &process)
+		err = windows.CreateProcessAsUser(token, application, commandLine, nil, nil, inheritStandardHandles, flags, &environment[0], currentDirectory, startupPointer, &process)
 	default:
 		return 0, fmt.Errorf("unknown process launch kind")
 	}
@@ -406,6 +413,8 @@ func sandboxEnvironment(token windows.Token, account setup.Account, request Requ
 	}
 	values["HOME"] = account.TempDir
 	values["USERPROFILE"] = account.TempDir
+	values["APPDATA"] = account.TempDir
+	values["LOCALAPPDATA"] = account.TempDir
 	values["TEMP"] = account.TempDir
 	values["TMP"] = account.TempDir
 	values["DSCODE_SANDBOX"] = request.Mode
@@ -448,6 +457,10 @@ func writeRestrictedToken(token windows.Token, sandboxSID *windows.SID) (windows
 	if created == 0 {
 		return 0, callErr
 	}
+	if err := setTokenDefaultDACL(result, restricted); err != nil {
+		result.Close()
+		return 0, err
+	}
 	privilegeName, _ := windows.UTF16PtrFromString("SeChangeNotifyPrivilege")
 	var luid windows.LUID
 	if err := windows.LookupPrivilegeValue(nil, privilegeName, &luid); err != nil {
@@ -463,22 +476,59 @@ func writeRestrictedToken(token windows.Token, sandboxSID *windows.SID) (windows
 	return result, nil
 }
 
-func grantDesktopAccess(sid *windows.SID) (func() error, error) {
+func setTokenDefaultDACL(token windows.Token, sids []windows.SIDAndAttributes) error {
+	entries := make([]windows.EXPLICIT_ACCESS, 0, len(sids))
+	for _, item := range sids {
+		entries = append(entries, windows.EXPLICIT_ACCESS{
+			AccessPermissions: windows.GENERIC_ALL,
+			AccessMode:        windows.GRANT_ACCESS,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+				TrusteeValue: windows.TrusteeValueFromSID(item.Sid),
+			},
+		})
+	}
+	dacl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		return err
+	}
+	info := struct {
+		DefaultDACL *windows.ACL
+	}{DefaultDACL: dacl}
+	return windows.SetTokenInformation(
+		token,
+		windows.TokenDefaultDacl,
+		(*byte)(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+	)
+}
+
+func grantDesktopAccess(sid *windows.SID) (string, func() error, error) {
 	windowStation, _, callErr := procGetProcessWindowStation.Call()
 	if windowStation == 0 {
-		return nil, callErr
+		return "", nil, callErr
 	}
-	desktop, _, callErr := procGetThreadDesktop.Call(uintptr(windows.GetCurrentThreadId()))
+	name := fmt.Sprintf("DSCodeSandbox-%d-%d", os.Getpid(), time.Now().UnixNano())
+	name16, _ := windows.UTF16PtrFromString(name)
+	desktop, _, callErr := procCreateDesktop.Call(
+		uintptr(unsafe.Pointer(name16)),
+		0,
+		0,
+		0,
+		0x000F01FF,
+		0,
+	)
 	if desktop == 0 {
-		return nil, callErr
+		return "", nil, callErr
 	}
 	type securedObject struct {
 		handle      windows.Handle
 		permissions windows.ACCESS_MASK
 	}
 	objects := []securedObject{
-		{handle: windows.Handle(windowStation), permissions: 0x0000037F},
-		{handle: windows.Handle(desktop), permissions: 0x000001FF},
+		{handle: windows.Handle(windowStation), permissions: 0x000F037F},
+		{handle: windows.Handle(desktop), permissions: 0x000F01FF},
 	}
 	restores := make([]func() error, 0, len(objects))
 	for _, object := range objects {
@@ -487,16 +537,20 @@ func grantDesktopAccess(sid *windows.SID) (func() error, error) {
 			for index := len(restores) - 1; index >= 0; index-- {
 				_ = restores[index]()
 			}
-			return nil, err
+			_, _, _ = procCloseDesktop.Call(desktop)
+			return "", nil, err
 		}
 		restores = append(restores, restore)
 	}
-	return func() error {
+	return `Winsta0\` + name, func() error {
 		var failures []error
 		for index := len(restores) - 1; index >= 0; index-- {
 			if err := restores[index](); err != nil {
 				failures = append(failures, err)
 			}
+		}
+		if closed, _, err := procCloseDesktop.Call(desktop); closed == 0 {
+			failures = append(failures, err)
 		}
 		return errors.Join(failures...)
 	}, nil

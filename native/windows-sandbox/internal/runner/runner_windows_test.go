@@ -5,10 +5,12 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,12 +169,12 @@ func TestSandboxFilesystemModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	helperArgs := []string{"-test.run=TestSandboxChildHelper", "--"}
-	exitCode, err := Run(Request{
+	exitCode, output, err := runWithCapturedStdout(Request{
 		Version:       ProtocolVersion,
 		StatePath:     statePath,
 		Mode:          "read-only",
 		Command:       "cmd.exe",
-		Args:          []string{"/d", "/c", "exit", "0"},
+		Args:          []string{"/d", "/c", "echo", "sandbox-stdout"},
 		Cwd:           workspace,
 		HelperCommand: helper,
 		HelperArgs:    helperArgs,
@@ -182,6 +184,9 @@ func TestSandboxFilesystemModes(t *testing.T) {
 	}
 	if exitCode != 0 {
 		t.Fatalf("sandbox cmd launch exit code = %d", exitCode)
+	}
+	if !strings.Contains(output, "sandbox-stdout") {
+		t.Fatalf("sandbox stdout was not forwarded: %q", output)
 	}
 	readResult := filepath.Join(readAccount.TempDir, "read-result.json")
 	result := runFilesystemProbe(t, Request{
@@ -227,6 +232,30 @@ func TestSandboxFilesystemModes(t *testing.T) {
 		t.Fatalf("unexpected workspace-write result: %+v", result)
 	}
 	assertNoWorkspaceACE(t, workspace, writeAccount.SID)
+}
+
+func runWithCapturedStdout(request Request) (uint32, string, error) {
+	original, err := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE)
+	if err != nil {
+		return 0, "", err
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return 0, "", err
+	}
+	defer reader.Close()
+	if err := windows.SetStdHandle(windows.STD_OUTPUT_HANDLE, windows.Handle(writer.Fd())); err != nil {
+		writer.Close()
+		return 0, "", err
+	}
+	exitCode, runErr := Run(request)
+	_ = windows.SetStdHandle(windows.STD_OUTPUT_HANDLE, original)
+	_ = writer.Close()
+	data, readErr := io.ReadAll(reader)
+	if runErr != nil {
+		return exitCode, string(data), runErr
+	}
+	return exitCode, string(data), readErr
 }
 
 func TestSandboxNetworkModes(t *testing.T) {

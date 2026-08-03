@@ -5,6 +5,11 @@ import { spawn } from "node:child_process";
 import { stripModelCredentialEnvironment } from "./providers.js";
 import type { SandboxMode } from "./runtime-options.js";
 import { hostShellCommand } from "./shell.js";
+import {
+  windowsNativeSandboxCommand,
+  windowsNativeSandboxDescription,
+  windowsNativeSandboxEnabled,
+} from "./windows-sandbox.js";
 
 export interface SandboxOptions {
   mode: SandboxMode;
@@ -24,6 +29,10 @@ export function sandboxCommand(
 ): SandboxedCommand {
   if (options.mode === "danger-full-access") {
     return hostShellCommand(shellCommand);
+  }
+
+  if (windowsNativeSandboxEnabled()) {
+    return windowsNativeSandboxCommand(shellCommand, cwd, options);
   }
 
   if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
@@ -102,6 +111,7 @@ export function sandboxCommand(
 
 export function sandboxDescription(options: SandboxOptions): string {
   if (options.mode === "danger-full-access") return "host access";
+  if (windowsNativeSandboxEnabled()) return windowsNativeSandboxDescription(options);
   if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
     return `Seatbelt ${options.mode}${options.network ? " + network" : ""}`;
   }
