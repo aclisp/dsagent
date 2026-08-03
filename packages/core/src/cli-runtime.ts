@@ -10,9 +10,18 @@ import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
 import { DSCODE_VERSION } from "./version.js";
+import {
+  parseWindowsSandboxLifecycleCommand,
+  runWindowsSandboxLifecycle,
+} from "./windows-sandbox.js";
 
 /** Run one DSCode CLI, JSON, or RPC process using the shared runtime. */
 export async function runDSCode(argv: string[]): Promise<void> {
+  const windowsSandboxCommand = parseWindowsSandboxLifecycleCommand(argv);
+  if (windowsSandboxCommand) {
+    runWindowsSandboxLifecycle(windowsSandboxCommand);
+    return;
+  }
   const parsed = parseRuntimeArgs(argv);
   if (parsed.help) {
     printDSCodeHelp();

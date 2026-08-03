@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildWindowsSandboxCommand } from "../packages/core/src/windows-sandbox.js";
+import {
+  buildWindowsSandboxCommand,
+  parseWindowsSandboxLifecycleCommand,
+} from "../packages/core/src/windows-sandbox.js";
 
 describe("Windows native sandbox protocol", () => {
   const requests: string[] = [];
@@ -49,5 +52,15 @@ describe("Windows native sandbox protocol", () => {
     } finally {
       await fs.rm(cwd, { recursive: true, force: true });
     }
+  });
+
+  it("parses only explicit lifecycle commands", () => {
+    expect(parseWindowsSandboxLifecycleCommand(["sandbox", "setup"])).toBe("setup");
+    expect(parseWindowsSandboxLifecycleCommand(["sandbox", "status"])).toBe("status");
+    expect(parseWindowsSandboxLifecycleCommand(["sandbox", "uninstall"])).toBe("uninstall");
+    expect(parseWindowsSandboxLifecycleCommand(["--sandbox", "read-only"])).toBeUndefined();
+    expect(() => parseWindowsSandboxLifecycleCommand(["sandbox", "repair"])).toThrow(
+      "Usage: dscode sandbox <setup|status|uninstall>",
+    );
   });
 });
