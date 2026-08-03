@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/firewall"
 	"golang.org/x/sys/windows"
 )
 
@@ -56,6 +57,9 @@ func TestInstallStatusAndUninstall(t *testing.T) {
 	if len(state.Accounts) != 4 {
 		t.Fatalf("accounts = %d, want 4", len(state.Accounts))
 	}
+	if len(state.Filters) != 8 {
+		t.Fatalf("WFP filters = %d, want 8", len(state.Filters))
+	}
 	status, err := Status(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +77,15 @@ func TestInstallStatusAndUninstall(t *testing.T) {
 		}
 		if exists {
 			t.Fatalf("sandbox account still exists after uninstall: %s", account.Name)
+		}
+	}
+	for _, filter := range state.Filters {
+		exists, err := firewall.Exists(filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if exists {
+			t.Fatalf("WFP filter still exists after uninstall: %s", filter)
 		}
 	}
 	if _, err := os.Stat(state.RuntimeRoot); !os.IsNotExist(err) {

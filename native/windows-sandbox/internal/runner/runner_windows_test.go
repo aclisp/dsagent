@@ -5,6 +5,7 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,6 +79,28 @@ func TestFilesystemProbeHelper(t *testing.T) {
 		os.Exit(125)
 	}
 	if err := os.WriteFile(os.Getenv("DSCODE_TEST_RESULT"), data, 0o600); err != nil {
+		os.Exit(125)
+	}
+}
+
+func TestNetworkProbeHelper(t *testing.T) {
+	if os.Getenv("DSCODE_NETWORK_PROBE") != "1" {
+		return
+	}
+	outbound := "blocked"
+	connection, err := net.DialTimeout("tcp", os.Getenv("DSCODE_TEST_ADDRESS"), 2*time.Second)
+	if err == nil {
+		outbound = "allowed"
+		_ = connection.Close()
+	}
+	inbound := "blocked"
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err == nil {
+		inbound = "allowed"
+		_ = listener.Close()
+	}
+	result := fmt.Sprintf("outbound:%s,inbound:%s", outbound, inbound)
+	if err := os.WriteFile(os.Getenv("DSCODE_TEST_RESULT"), []byte(result), 0o600); err != nil {
 		os.Exit(125)
 	}
 }
@@ -204,6 +227,94 @@ func TestSandboxFilesystemModes(t *testing.T) {
 		t.Fatalf("unexpected workspace-write result: %+v", result)
 	}
 	assertNoWorkspaceACE(t, workspace, writeAccount.SID)
+}
+
+func TestSandboxNetworkModes(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("requires elevated setup for temporary sandbox identities")
+	}
+	prefix := fmt.Sprintf("DN%08X", uint32(time.Now().UnixNano()))
+	statePath := filepath.Join(t.TempDir(), "state.bin")
+	state, err := setup.Install(statePath, prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := setup.Uninstall(statePath); err != nil {
+			t.Errorf("cleanup sandbox identities: %v", err)
+		}
+	})
+
+	testAddress := "github.com:443"
+	preflight, err := net.DialTimeout("tcp", testAddress, 3*time.Second)
+	if err != nil {
+		t.Skipf("external network preflight is unavailable: %v", err)
+	}
+	_ = preflight.Close()
+
+	helper, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	helperArgs := []string{"-test.run=TestSandboxChildHelper", "--"}
+	for _, testCase := range []struct {
+		name    string
+		network bool
+		role    string
+		want    string
+	}{
+		{name: "offline", network: false, role: "ROOff", want: "outbound:blocked,inbound:blocked"},
+		{name: "online", network: true, role: "ROOn", want: "outbound:allowed,inbound:allowed"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			account := accountByRole(t, state, testCase.role)
+			resultPath := filepath.Join(account.TempDir, "network-result.txt")
+			if err := os.WriteFile(resultPath, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sid, err := windows.StringToSid(account.SID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			grant, err := filesystem.GrantFileModify(resultPath, sid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer grant.Revoke()
+
+			exitCode, err := Run(Request{
+				Version:   ProtocolVersion,
+				StatePath: statePath,
+				Mode:      "read-only",
+				Network:   testCase.network,
+				Command:   helper,
+				Args:      []string{"-test.run=TestNetworkProbeHelper"},
+				Cwd:       workspace,
+				Env: map[string]string{
+					"DSCODE_NETWORK_PROBE": "1",
+					"DSCODE_TEST_ADDRESS":  testAddress,
+					"DSCODE_TEST_RESULT":   resultPath,
+				},
+				TimeoutMS:     5000,
+				HelperCommand: helper,
+				HelperArgs:    helperArgs,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exitCode != 0 {
+				t.Fatalf("network probe exit code = %d", exitCode)
+			}
+			data, err := os.ReadFile(resultPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(data); got != testCase.want {
+				t.Fatalf("network access = %s, want %s", got, testCase.want)
+			}
+		})
+	}
 }
 
 type filesystemProbeResult struct {

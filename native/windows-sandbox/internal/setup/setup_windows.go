@@ -15,13 +15,14 @@ import (
 	"unsafe"
 
 	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/filesystem"
+	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/firewall"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 const (
 	DefaultPrefix = "DSCode"
-	stateVersion  = 2
+	stateVersion  = 3
 
 	userPrivUser          = 1
 	ufScript              = 0x0001
@@ -73,6 +74,7 @@ type State struct {
 	Version     int       `json:"version"`
 	RuntimeRoot string    `json:"runtime_root"`
 	Accounts    []Account `json:"accounts"`
+	Filters     []string  `json:"filters,omitempty"`
 }
 
 type StatusResult struct {
@@ -196,6 +198,14 @@ func Install(statePath, prefix string) (State, error) {
 			_ = rollback(state)
 			return State{}, fmt.Errorf("hide %s from logon UI: %w", name, err)
 		}
+		if role == "ROOff" || role == "RWOff" {
+			filters, err := firewall.Install(prefix, role, account.SID)
+			if err != nil {
+				_ = rollback(state)
+				return State{}, err
+			}
+			state.Filters = append(state.Filters, filters...)
+		}
 	}
 	if err := writeState(statePath, state); err != nil {
 		_ = rollback(state)
@@ -223,6 +233,19 @@ func Status(statePath string) (StatusResult, error) {
 	if len(state.Accounts) != 4 {
 		result.Ready = false
 	}
+	for _, filter := range state.Filters {
+		exists, err := firewall.Exists(filter)
+		if err != nil {
+			return StatusResult{}, fmt.Errorf("inspect WFP filter %s: %w", filter, err)
+		}
+		if !exists {
+			result.Missing = append(result.Missing, "WFP:"+filter)
+		}
+	}
+	if len(state.Filters) != 8 {
+		result.Missing = append(result.Missing, "WFP filters")
+	}
+	result.Ready = result.Ready && len(state.Accounts) == 4 && len(state.Filters) == 8 && len(result.Missing) == 0
 	return result, nil
 }
 
@@ -287,6 +310,9 @@ func Uninstall(statePath string) error {
 		return err
 	}
 	var failures []error
+	if removeErr := firewall.Remove(state.Filters); removeErr != nil {
+		failures = append(failures, removeErr)
+	}
 	for index := len(state.Accounts) - 1; index >= 0; index-- {
 		account := state.Accounts[index]
 		if sid, sidErr := windows.StringToSid(account.SID); sidErr == nil {
@@ -317,6 +343,9 @@ func Uninstall(statePath string) error {
 
 func rollback(state State) error {
 	var failures []error
+	if err := firewall.Remove(state.Filters); err != nil {
+		failures = append(failures, err)
+	}
 	for index := len(state.Accounts) - 1; index >= 0; index-- {
 		account := state.Accounts[index]
 		if account.SID != "" {
