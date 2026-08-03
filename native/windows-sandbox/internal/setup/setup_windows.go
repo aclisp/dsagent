@@ -14,13 +14,14 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/filesystem"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 const (
 	DefaultPrefix = "DSCode"
-	stateVersion  = 1
+	stateVersion  = 2
 
 	userPrivUser          = 1
 	ufScript              = 0x0001
@@ -65,11 +66,13 @@ type Account struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
 	SID      string `json:"sid"`
+	TempDir  string `json:"temp_dir"`
 }
 
 type State struct {
-	Version  int       `json:"version"`
-	Accounts []Account `json:"accounts"`
+	Version     int       `json:"version"`
+	RuntimeRoot string    `json:"runtime_root"`
+	Accounts    []Account `json:"accounts"`
 }
 
 type StatusResult struct {
@@ -77,6 +80,33 @@ type StatusResult struct {
 	Version  int      `json:"version,omitempty"`
 	Missing  []string `json:"missing,omitempty"`
 	Accounts []string `json:"accounts,omitempty"`
+}
+
+func LoadAccount(statePath, mode string, network bool) (Account, error) {
+	state, err := readState(statePath)
+	if err != nil {
+		return Account{}, err
+	}
+	role := ""
+	switch mode {
+	case "read-only":
+		role = "ROOff"
+	default:
+		return Account{}, fmt.Errorf("unsupported sandbox mode: %s", mode)
+	}
+	if network {
+		role = role[:2] + "On"
+	}
+	for _, account := range state.Accounts {
+		if account.Role == role {
+			return account, nil
+		}
+	}
+	return Account{}, fmt.Errorf("sandbox account role is missing: %s", role)
+}
+
+func LogonAccount(account Account) (windows.Token, error) {
+	return logonBatch(account.Name, account.Password)
 }
 
 type userInfo1 struct {
@@ -93,6 +123,7 @@ type userInfo1 struct {
 type lsaObjectAttributes struct {
 	Length                   uint32
 	RootDirectory            windows.Handle
+	ObjectName               *lsaUnicodeString
 	Attributes               uint32
 	SecurityDescriptor       unsafe.Pointer
 	SecurityQualityOfService unsafe.Pointer
@@ -114,7 +145,14 @@ func Install(statePath, prefix string) (State, error) {
 		return State{}, fmt.Errorf("inspect setup state: %w", err)
 	}
 	roles := []string{"ROOff", "ROOn", "RWOff", "RWOn"}
-	state := State{Version: stateVersion}
+	runtimeRoot, err := sandboxRuntimeRoot(prefix)
+	if err != nil {
+		return State{}, err
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		return State{}, fmt.Errorf("create sandbox runtime root: %w", err)
+	}
+	state := State{Version: stateVersion, RuntimeRoot: runtimeRoot}
 	for _, role := range roles {
 		name := prefix + role
 		if len(name) > 20 {
@@ -138,6 +176,15 @@ func Install(statePath, prefix string) (State, error) {
 			return State{}, fmt.Errorf("resolve SID for %s: %w", name, err)
 		}
 		account.SID = sid.String()
+		account.TempDir = filepath.Join(runtimeRoot, name)
+		if err := os.MkdirAll(account.TempDir, 0o700); err != nil {
+			_ = rollback(state)
+			return State{}, fmt.Errorf("create private temp for %s: %w", name, err)
+		}
+		if err := filesystem.GrantPrivateDirectory(account.TempDir, sid); err != nil {
+			_ = rollback(state)
+			return State{}, fmt.Errorf("grant private temp for %s: %w", name, err)
+		}
 		state.Accounts[len(state.Accounts)-1] = account
 		if err := addDeniedLogonRights(sid); err != nil {
 			_ = rollback(state)
@@ -257,6 +304,9 @@ func Uninstall(statePath string) error {
 	if len(failures) > 0 {
 		return errors.Join(failures...)
 	}
+	if err := os.RemoveAll(state.RuntimeRoot); err != nil {
+		return fmt.Errorf("remove sandbox runtime root: %w", err)
+	}
 	if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove setup state: %w", err)
 	}
@@ -277,7 +327,18 @@ func rollback(state State) error {
 			failures = append(failures, err)
 		}
 	}
+	if state.RuntimeRoot != "" {
+		_ = os.RemoveAll(state.RuntimeRoot)
+	}
 	return errors.Join(failures...)
+}
+
+func sandboxRuntimeRoot(prefix string) (string, error) {
+	programData := os.Getenv("ProgramData")
+	if programData == "" {
+		return "", fmt.Errorf("ProgramData is unavailable")
+	}
+	return filepath.Join(programData, "DSCodeSandbox", prefix), nil
 }
 
 func addUser(name, password string) error {

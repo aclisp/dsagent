@@ -75,6 +75,9 @@ func TestInstallStatusAndUninstall(t *testing.T) {
 			t.Fatalf("sandbox account still exists after uninstall: %s", account.Name)
 		}
 	}
+	if _, err := os.Stat(state.RuntimeRoot); !os.IsNotExist(err) {
+		t.Fatalf("sandbox runtime root still exists after uninstall: %v", err)
+	}
 }
 
 func mustJSON(t *testing.T, value any) []byte {

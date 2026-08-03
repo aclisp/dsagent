@@ -17,7 +17,9 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "run":
-		run(os.Args[2])
+		run(os.Args[2], false)
+	case "run-child":
+		run(os.Args[2], true)
 	case "setup-install":
 		if _, err := setup.Install(os.Args[2], setup.DefaultPrefix); err != nil {
 			fail(err)
@@ -40,11 +42,11 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: dscode-windows-sandbox <run|setup-install|setup-status|setup-uninstall> <path>")
+	fmt.Fprintln(os.Stderr, "usage: dscode-windows-sandbox <run|run-child|setup-install|setup-status|setup-uninstall> <path>")
 	os.Exit(2)
 }
 
-func run(requestPath string) {
+func run(requestPath string, child bool) {
 	data, err := os.ReadFile(requestPath)
 	if err != nil {
 		fail(err)
@@ -56,7 +58,12 @@ func run(requestPath string) {
 	if err := json.Unmarshal(data, &request); err != nil {
 		fail(fmt.Errorf("decode request: %w", err))
 	}
-	exitCode, err := runner.Run(request)
+	var exitCode uint32
+	if child {
+		exitCode, err = runner.RunChild(request)
+	} else {
+		exitCode, err = runner.Run(request)
+	}
 	if err != nil {
 		fail(err)
 	}

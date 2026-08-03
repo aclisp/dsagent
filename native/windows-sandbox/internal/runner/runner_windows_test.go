@@ -3,11 +3,84 @@
 package runner
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/filesystem"
+	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/setup"
+	"golang.org/x/sys/windows"
 )
+
+func TestSandboxChildHelper(t *testing.T) {
+	if os.Getenv("DSCODE_SANDBOX_TEST_CHILD") != "1" {
+		return
+	}
+	separator := -1
+	for index, argument := range os.Args {
+		if argument == "--" {
+			separator = index
+			break
+		}
+	}
+	if separator < 0 || separator+1 >= len(os.Args) {
+		os.Exit(125)
+	}
+	requestPath := os.Args[separator+1]
+	data, err := os.ReadFile(requestPath)
+	if err != nil {
+		os.Exit(125)
+	}
+	if err := os.Remove(requestPath); err != nil {
+		os.Exit(125)
+	}
+	var request Request
+	if err := json.Unmarshal(data, &request); err != nil {
+		os.Exit(125)
+	}
+	exitCode, err := RunChild(request)
+	if err != nil {
+		os.Exit(125)
+	}
+	os.Exit(int(exitCode))
+}
+
+func TestFilesystemProbeHelper(t *testing.T) {
+	if os.Getenv("DSCODE_FILESYSTEM_PROBE") != "1" {
+		return
+	}
+	result := filesystemProbeResult{}
+	if data, err := os.ReadFile(os.Getenv("DSCODE_TEST_INPUT")); err == nil {
+		result.Read = string(data)
+	} else {
+		result.Read = "denied"
+	}
+	write := func(environmentKey string) string {
+		if err := os.WriteFile(os.Getenv(environmentKey), []byte("written"), 0o600); err != nil {
+			return "denied"
+		}
+		return "allowed"
+	}
+	result.Workspace = write("DSCODE_TEST_WORKSPACE")
+	result.Outside = write("DSCODE_TEST_OUTSIDE")
+	result.Escape = write("DSCODE_TEST_ESCAPE")
+	if err := os.WriteFile(filepath.Join(os.TempDir(), "temp-write.txt"), []byte("written"), 0o600); err != nil {
+		result.Temp = "denied"
+	} else {
+		result.Temp = "allowed"
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		os.Exit(125)
+	}
+	if err := os.WriteFile(os.Getenv("DSCODE_TEST_RESULT"), data, 0o600); err != nil {
+		os.Exit(125)
+	}
+}
 
 func TestRunPreservesExitCodeAndEnvironment(t *testing.T) {
 	t.Parallel()
@@ -28,6 +101,180 @@ func TestRunPreservesExitCodeAndEnvironment(t *testing.T) {
 	}
 	if exitCode != 7 {
 		t.Fatalf("exit code = %d, want 7", exitCode)
+	}
+}
+
+func TestSandboxFilesystemModes(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("requires elevated setup for temporary sandbox identities")
+	}
+	prefix := fmt.Sprintf("DF%08X", uint32(time.Now().UnixNano()))
+	statePath := filepath.Join(t.TempDir(), "state.bin")
+	state, err := setup.Install(statePath, prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := setup.Uninstall(statePath); err != nil {
+			t.Errorf("cleanup sandbox identities: %v", err)
+		}
+	})
+
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outsideDir := filepath.Join(root, "outside")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(workspace, "input.txt")
+	if err := os.WriteFile(input, []byte("read-ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	junction := filepath.Join(workspace, "escape")
+	if output, err := exec.Command("cmd.exe", "/d", "/c", "mklink", "/J", junction, outsideDir).CombinedOutput(); err != nil {
+		t.Fatalf("create test junction: %v: %s", err, output)
+	}
+
+	readAccount := accountByRole(t, state, "ROOff")
+	helper, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperArgs := []string{"-test.run=TestSandboxChildHelper", "--"}
+	exitCode, err := Run(Request{
+		Version:       ProtocolVersion,
+		StatePath:     statePath,
+		Mode:          "read-only",
+		Command:       "cmd.exe",
+		Args:          []string{"/d", "/c", "exit", "0"},
+		Cwd:           workspace,
+		HelperCommand: helper,
+		HelperArgs:    helperArgs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("sandbox cmd launch exit code = %d", exitCode)
+	}
+	readResult := filepath.Join(readAccount.TempDir, "read-result.json")
+	result := runFilesystemProbe(t, Request{
+		Version:   ProtocolVersion,
+		StatePath: statePath,
+		Mode:      "read-only",
+		Command:   "powershell.exe",
+		Cwd:       workspace,
+		Env: map[string]string{
+			"DSCODE_TEST_INPUT":     input,
+			"DSCODE_TEST_WORKSPACE": filepath.Join(workspace, "write.txt"),
+			"DSCODE_TEST_OUTSIDE":   filepath.Join(outsideDir, "outside.txt"),
+			"DSCODE_TEST_ESCAPE":    filepath.Join(junction, "escape.txt"),
+			"DSCODE_TEST_RESULT":    readResult,
+		},
+		HelperCommand: helper,
+		HelperArgs:    helperArgs,
+	})
+	if result.Read != "read-ok" || result.Workspace != "denied" || result.Outside != "denied" || result.Escape != "denied" || result.Temp != "allowed" {
+		t.Fatalf("unexpected read-only result: %+v", result)
+	}
+	assertNoWorkspaceACE(t, workspace, readAccount.SID)
+
+}
+
+type filesystemProbeResult struct {
+	Read      string `json:"read"`
+	Workspace string `json:"workspace"`
+	Outside   string `json:"outside"`
+	Escape    string `json:"escape"`
+	Temp      string `json:"temp"`
+}
+
+func runFilesystemProbe(t *testing.T, request Request) filesystemProbeResult {
+	t.Helper()
+	account, err := setup.LoadAccount(request.StatePath, request.Mode, request.Network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid, err := windows.StringToSid(account.SID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(request.Env["DSCODE_TEST_RESULT"], nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resultGrant, err := filesystem.GrantFileModify(request.Env["DSCODE_TEST_RESULT"], sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resultGrant.Revoke()
+	helper, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Command = helper
+	request.Args = []string{"-test.run=TestFilesystemProbeHelper"}
+	request.Env["DSCODE_FILESYSTEM_PROBE"] = "1"
+	exitCode, err := Run(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(request.Env["DSCODE_TEST_RESULT"])
+	if err != nil {
+		paths := []string{
+			request.Env["DSCODE_TEST_WORKSPACE"],
+			request.Env["DSCODE_TEST_OUTSIDE"],
+			request.Env["DSCODE_TEST_ESCAPE"],
+			filepath.Join(filepath.Dir(request.Env["DSCODE_TEST_RESULT"]), "temp-write.txt"),
+		}
+		states := make([]string, 0, len(paths))
+		for _, path := range paths {
+			_, statErr := os.Stat(path)
+			states = append(states, fmt.Sprintf("%s=%v", path, statErr))
+		}
+		t.Fatalf("filesystem probe exit code = %d; read result: %v; writes: %v", exitCode, err, states)
+	}
+	var result filesystemProbeResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("decode filesystem probe: %v: %s", err, data)
+	}
+	result.Read = string([]byte(result.Read))
+	return result
+}
+
+func accountByRole(t *testing.T, state setup.State, role string) setup.Account {
+	t.Helper()
+	for _, account := range state.Accounts {
+		if account.Role == role {
+			return account
+		}
+	}
+	t.Fatalf("missing account role %s", role)
+	return setup.Account{}
+}
+
+func assertNoWorkspaceACE(t *testing.T, workspace, sidString string) {
+	t.Helper()
+	sid, err := windows.StringToSid(sidString)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(workspace, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		found, err := filesystem.ContainsSID(path, sid)
+		if err != nil {
+			return err
+		}
+		if found {
+			return fmt.Errorf("ACL for %s still contains sandbox SID %s", path, sidString)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
