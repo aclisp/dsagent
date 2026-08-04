@@ -11,7 +11,10 @@ import {
   PersistedSessionAlreadyExistsError,
   PersistedSessionNotFoundError,
   createAgentSessionHost,
+  listPersistedSessions,
+  type PersistedSessionSummary,
 } from "./agent-session-host.js";
+import { toHttpSessionMessages, type AgentMessage } from "./session-messages.js";
 import {
   HttpUiResponseError,
   type HttpUiBroker,
@@ -24,6 +27,7 @@ import {
 
 export interface HttpAdapterServerHost {
   readonly session: {
+    readonly messages: readonly AgentMessage[];
     getLastAssistantText(): string | undefined;
   };
   readonly uiBroker: Pick<HttpUiBroker, "respond">;
@@ -46,10 +50,13 @@ export type HttpAdapterHostFactory = (
   options: HttpAdapterHostFactoryOptions,
 ) => Promise<HttpAdapterServerHost>;
 
+export type PersistedSessionLister = (cwd: string) => Promise<PersistedSessionSummary[]>;
+
 export interface CreateHttpAdapterServerOptions {
   workspaces: Readonly<Record<string, string>>;
   runtimeArgs?: readonly string[];
   createHost?: HttpAdapterHostFactory;
+  listPersistedSessions?: PersistedSessionLister;
 }
 
 export type HttpSessionStatus = "idle" | "running" | "aborting";
@@ -60,6 +67,10 @@ export interface HttpSessionDescriptor {
   persisted: true;
   status: HttpSessionStatus;
 }
+
+export type HttpSessionListEntry =
+  | { workspaceId: string; active: true; session: HttpSessionDescriptor }
+  | { workspaceId: string; active: false; session: PersistedSessionSummary | null };
 
 export type HttpTurnStatus =
   | "running"
@@ -219,6 +230,10 @@ class SessionController {
           : "running"
         : "idle",
     };
+  }
+
+  get messages(): readonly AgentMessage[] {
+    return this.host.session.messages;
   }
 
   private closeEventStream(response: ServerResponse): void {
@@ -497,6 +512,8 @@ export function createHttpAdapterServer(
   const createHost: HttpAdapterHostFactory =
     options.createHost ??
     ((hostOptions) => createAgentSessionHost(hostOptions));
+  const listSessions: PersistedSessionLister =
+    options.listPersistedSessions ?? listPersistedSessions;
   const sessions = new Map<string, SessionController>();
   const disposingSessions = new Map<string, SessionController>();
   const activatingSessions = new Set<string>();
@@ -506,6 +523,31 @@ export function createHttpAdapterServer(
     sessions.get(sessionId);
 
   server.get("/health", async () => ({ status: "ok" }));
+
+  server.get("/v1/sessions", async (request, reply) => {
+    const entries: HttpSessionListEntry[] = [];
+    for (const [workspaceId, cwd] of workspaces) {
+      const active = [...sessions.values(), ...disposingSessions.values()].find(
+        (controller) => controller.workspaceId === workspaceId,
+      );
+      if (active) {
+        entries.push({ workspaceId, active: true, session: active.descriptor });
+        continue;
+      }
+      let summaries: PersistedSessionSummary[];
+      try {
+        summaries = await listSessions(cwd);
+      } catch (error) {
+        request.log.error(
+          { err: error, workspaceId },
+          "Persisted session listing failed",
+        );
+        return reply.code(500).send({ error: "session_list_failed" });
+      }
+      entries.push({ workspaceId, active: false, session: summaries[0] ?? null });
+    }
+    return { sessions: entries };
+  });
 
   server.post<{ Body: CreateSessionBody }>(
     "/v1/sessions",
@@ -597,6 +639,17 @@ export function createHttpAdapterServer(
         return reply.code(404).send({ error: "session_not_found" });
       }
       return controller.descriptor;
+    },
+  );
+
+  server.get<{ Params: SessionParams }>(
+    "/v1/sessions/:sessionId/messages",
+    async (request, reply) => {
+      const controller = getSession(request.params.sessionId);
+      if (!controller) {
+        return reply.code(404).send({ error: "session_not_found" });
+      }
+      return { messages: toHttpSessionMessages(controller.messages) };
     },
   );
 

@@ -85,8 +85,10 @@ Rules that shape this loop:
 | Method | Path | Description | Success |
 | --- | --- | --- | --- |
 | `GET` | `/health` | Liveness | `200` `{ "status": "ok" }` |
+| `GET` | `/v1/sessions` | Most recent session per workspace | `200` `{ "sessions": [...] }` |
 | `POST` | `/v1/sessions` | Create or resume a session | `201` descriptor |
 | `GET` | `/v1/sessions/:sessionId` | Session status | `200` descriptor |
+| `GET` | `/v1/sessions/:sessionId/messages` | Conversation history of an active session | `200` `{ "messages": [...] }` |
 | `DELETE` | `/v1/sessions/:sessionId` | Abort, close streams, dispose agent | `204` |
 | `GET` | `/v1/sessions/:sessionId/events` | SSE event stream | `200` `text/event-stream` |
 | `POST` | `/v1/sessions/:sessionId/turns` | Start a turn | `202` `{ id, status }` |
@@ -94,6 +96,23 @@ Rules that shape this loop:
 | `POST` | `/v1/sessions/:sessionId/ui-requests/:requestId/responses` | Answer a UI request | `204` |
 
 ### Sessions
+
+`GET /v1/sessions` — one entry per configured workspace, in configuration order:
+
+```json
+{
+  "sessions": [
+    { "workspaceId": "main", "active": true, "session": { "id": "…", "workspaceId": "main", "persisted": true, "status": "idle" } },
+    { "workspaceId": "other", "active": false, "session": { "id": "…", "name": "…", "firstMessage": "…", "messageCount": 12, "modified": "2026-08-04T12:00:00.000Z" } }
+  ]
+}
+```
+
+- Active workspaces carry the live session descriptor (`status`: `idle` / `running` /
+  `aborting`); a session still disposing counts as active.
+- Inactive workspaces carry the most recently modified persisted session — the resume
+  target for `POST /v1/sessions { resumeSessionId }` — with `name` omitted when unset,
+  or `session: null` when the workspace has no history yet.
 
 `POST /v1/sessions` — body:
 
@@ -116,6 +135,29 @@ Rules that shape this loop:
 ```
 
 `status` is `idle`, `running`, or `aborting`. Sessions are always persisted on disk.
+
+### Messages
+
+`GET /v1/sessions/:sessionId/messages` returns the active session's conversation
+history:
+
+```json
+{
+  "messages": [
+    { "role": "user", "timestamp": 1770206400000, "content": [{ "type": "text", "text": "Fix the login form" }] },
+    { "role": "assistant", "timestamp": 1770206401000, "content": [{ "type": "text", "text": "On it." }, { "type": "toolCall", "id": "…", "name": "read", "arguments": { "path": "login.ts" } }] },
+    { "role": "toolResult", "timestamp": 1770206402000, "toolCallId": "…", "toolName": "read", "isError": false, "content": [{ "type": "text", "text": "…" }] },
+    { "role": "compactionSummary", "timestamp": 1770206403000, "summary": "…" }
+  ]
+}
+```
+
+- Active sessions only — an inactive or unknown session returns
+  `404 session_not_found`; resume it first, then fetch its messages.
+- The transcript is the session's current context view: after compaction it starts with
+  a `compactionSummary` followed by the retained tail.
+- Thinking and image content are omitted. While a turn is running, the snapshot may
+  include the in-progress assistant message.
 
 ### Turns
 
@@ -208,4 +250,5 @@ A mismatched body is rejected with `400 invalid_ui_response`; `confirm` cannot t
 | `409` | `session_already_exists` | Persisted session with that ID already exists |
 | `409` | `turn_in_progress` | Turn submitted while one is running |
 | `500` | `session_creation_failed` / `session_disposal_failed` / `turn_abort_failed` / `ui_response_failed` | Internal failure |
+| `500` | `session_list_failed` | Persisted session store scan failed on `GET /v1/sessions` |
 

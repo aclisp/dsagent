@@ -8,7 +8,9 @@ import {
   type HttpAdapterEvent,
   type HttpAdapterHostFactoryOptions,
   type HttpAdapterServerHost,
+  type PersistedSessionLister,
 } from "../src/http-server.js";
+import type { AgentMessage } from "../src/session-messages.js";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
@@ -63,6 +65,7 @@ function deferred(): {
 
 function createFakeHost(options?: {
   output?: string;
+  messages?: readonly AgentMessage[];
   prompt?: (message: string) => Promise<void>;
   waitForIdle?: () => Promise<void>;
   abort?: () => Promise<void>;
@@ -78,6 +81,7 @@ function createFakeHost(options?: {
     unsubscribeCount: 0,
     uiBroker: broker,
     session: {
+      messages: options?.messages ?? [],
       getLastAssistantText() {
         host.calls.push("output");
         return options?.output;
@@ -122,6 +126,7 @@ function createHarness(options?: {
   factory?: (factoryOptions: HttpAdapterHostFactoryOptions) => Promise<FakeHost>;
   runtimeArgs?: readonly string[];
   workspaces?: Readonly<Record<string, string>>;
+  listPersistedSessions?: PersistedSessionLister;
 }): Harness {
   const hosts = new Map<string, FakeHost>();
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
@@ -129,6 +134,9 @@ function createHarness(options?: {
     workspaces: options?.workspaces ?? WORKSPACES,
     ...(options?.runtimeArgs !== undefined
       ? { runtimeArgs: options.runtimeArgs }
+      : {}),
+    ...(options?.listPersistedSessions !== undefined
+      ? { listPersistedSessions: options.listPersistedSessions }
       : {}),
     createHost: async (factoryOptions) => {
       factoryCalls.push(factoryOptions);
@@ -311,6 +319,7 @@ describe("createHttpAdapterServer", () => {
 
     for (const request of [
       { method: "GET" as const, url: "/v1/sessions/missing" },
+      { method: "GET" as const, url: "/v1/sessions/missing/messages" },
       { method: "GET" as const, url: "/v1/sessions/missing/events" },
       {
         method: "POST" as const,
@@ -519,6 +528,164 @@ describe("createHttpAdapterServer", () => {
 
     blocked.resolve();
     expect((await first).statusCode).toBe(201);
+  });
+
+  it("lists sessions with live status or the most recent resume target", async () => {
+    const mainSummary = {
+      id: "saved-main",
+      firstMessage: "Hello from main",
+      messageCount: 4,
+      modified: new Date("2026-08-04T12:00:00Z"),
+    };
+    const listCalls: string[] = [];
+    const harness = createHarness({
+      listPersistedSessions: async (cwd) => {
+        listCalls.push(cwd);
+        if (cwd === "/workspace/main") {
+          return [
+            mainSummary,
+            { ...mainSummary, id: "older-main", messageCount: 2 },
+          ];
+        }
+        return [];
+      },
+    });
+
+    const empty = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toEqual({
+      sessions: [
+        { workspaceId: "main", active: false, session: { ...mainSummary, modified: "2026-08-04T12:00:00.000Z" } },
+        { workspaceId: "other", active: false, session: null },
+      ],
+    });
+    expect(listCalls).toEqual(["/workspace/main", "/workspace/other"]);
+
+    const sessionId = await harness.createSession("main");
+    const withActive = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(withActive.statusCode).toBe(200);
+    expect(withActive.json()).toEqual({
+      sessions: [
+        {
+          workspaceId: "main",
+          active: true,
+          session: { id: sessionId, workspaceId: "main", persisted: true, status: "idle" },
+        },
+        { workspaceId: "other", active: false, session: null },
+      ],
+    });
+    // The occupied workspace is served from live state, so only `other` is scanned again.
+    expect(listCalls).toEqual([
+      "/workspace/main",
+      "/workspace/other",
+      "/workspace/other",
+    ]);
+  });
+
+  it("lists a disposing session as active until disposal finishes", async () => {
+    const abortBlocked = deferred();
+    const host = createFakeHost({ abort: async () => abortBlocked.promise });
+    const harness = createHarness({
+      factory: async () => host,
+      listPersistedSessions: async () => [],
+    });
+    const sessionId = await harness.createSession();
+
+    const deletion = harness.server.inject({
+      method: "DELETE",
+      url: `/v1/sessions/${sessionId}`,
+    });
+    await vi.waitFor(() => expect(host.abortCount).toBe(1));
+    const listed = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(listed.json()).toMatchObject({
+      sessions: [
+        { workspaceId: "main", active: true, session: { id: sessionId, status: "idle" } },
+        { workspaceId: "other", active: false, session: null },
+      ],
+    });
+
+    abortBlocked.resolve();
+    expect((await deletion).statusCode).toBe(204);
+    const after = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(after.json()).toEqual({
+      sessions: [
+        { workspaceId: "main", active: false, session: null },
+        { workspaceId: "other", active: false, session: null },
+      ],
+    });
+  });
+
+  it("reports session_list_failed when the persisted store scan fails", async () => {
+    const harness = createHarness({
+      listPersistedSessions: async () => {
+        throw new Error("store unavailable");
+      },
+    });
+    const listed = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(listed.statusCode).toBe(500);
+    expect(listed.json()).toEqual({ error: "session_list_failed" });
+  });
+
+  it("returns the mapped transcript of an active session", async () => {
+    const messages: AgentMessage[] = [
+      { role: "user", content: "Fix the login form", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "hidden" },
+          { type: "text", text: "On it." },
+          { type: "toolCall", id: "call-1", name: "read", arguments: { path: "login.ts" } },
+        ],
+        api: "openai-completions",
+        provider: "openrouter",
+        model: "qwen3.7-plus",
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "stop",
+        timestamp: 2,
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "read",
+        content: [
+          { type: "text", text: "file body" },
+          { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+        ],
+        isError: false,
+        timestamp: 3,
+      },
+    ];
+    const harness = createHarness({
+      factory: async () => createFakeHost({ messages }),
+    });
+    const sessionId = await harness.createSession();
+
+    const fetched = await harness.server.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/messages`,
+    });
+    expect(fetched.statusCode).toBe(200);
+    expect(fetched.json()).toEqual({
+      messages: [
+        { role: "user", timestamp: 1, content: [{ type: "text", text: "Fix the login form" }] },
+        {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            { type: "text", text: "On it." },
+            { type: "toolCall", id: "call-1", name: "read", arguments: { path: "login.ts" } },
+          ],
+        },
+        {
+          role: "toolResult",
+          timestamp: 3,
+          toolCallId: "call-1",
+          toolName: "read",
+          isError: false,
+          content: [{ type: "text", text: "file body" }],
+        },
+      ],
+    });
   });
 
   it("runs turns independently across sessions", async () => {

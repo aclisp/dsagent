@@ -260,6 +260,26 @@ async function createSessionManager(
   return SessionManager.open(matches[0]!.path, sessionDir, cwd);
 }
 
+export interface PersistedSessionSummary {
+  id: string;
+  name?: string;
+  firstMessage: string;
+  messageCount: number;
+  modified: Date;
+}
+
+/** List persisted sessions for a workspace, most recently modified first. */
+export async function listPersistedSessions(cwd: string): Promise<PersistedSessionSummary[]> {
+  const infos = await SessionManager.list(cwd, getDSCodeSessionsDir());
+  return infos.map((info) => ({
+    id: info.id,
+    ...(info.name !== undefined ? { name: info.name } : {}),
+    firstMessage: info.firstMessage,
+    messageCount: info.messageCount,
+    modified: info.modified,
+  }));
+}
+
 let themeInitialized = false;
 
 function ensureThemeInitialized(): void {
