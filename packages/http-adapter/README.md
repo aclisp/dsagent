@@ -36,6 +36,8 @@ session — values: `--provider --base-url --transport --harness --permission --
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
+Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.
+
 ## Security notes
 
 - No built-in authentication. Bind to localhost or a private network and add your own auth.

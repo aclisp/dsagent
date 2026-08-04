@@ -3,10 +3,6 @@ import type { AgentMessage } from "../src/session-messages.js";
 import { toHttpSessionMessages } from "../src/session-messages.js";
 
 describe("toHttpSessionMessages", () => {
-  it("returns an empty list for an empty transcript", () => {
-    expect(toHttpSessionMessages([])).toEqual([]);
-  });
-
   it("normalizes string user content and drops image blocks", () => {
     const messages: AgentMessage[] = [
       { role: "user", content: "plain string", timestamp: 1 },

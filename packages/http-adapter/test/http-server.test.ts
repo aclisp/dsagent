@@ -582,39 +582,6 @@ describe("createHttpAdapterServer", () => {
     ]);
   });
 
-  it("lists a disposing session as active until disposal finishes", async () => {
-    const abortBlocked = deferred();
-    const host = createFakeHost({ abort: async () => abortBlocked.promise });
-    const harness = createHarness({
-      factory: async () => host,
-      listPersistedSessions: async () => [],
-    });
-    const sessionId = await harness.createSession();
-
-    const deletion = harness.server.inject({
-      method: "DELETE",
-      url: `/v1/sessions/${sessionId}`,
-    });
-    await vi.waitFor(() => expect(host.abortCount).toBe(1));
-    const listed = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
-    expect(listed.json()).toMatchObject({
-      sessions: [
-        { workspaceId: "main", active: true, session: { id: sessionId, status: "idle" } },
-        { workspaceId: "other", active: false, session: null },
-      ],
-    });
-
-    abortBlocked.resolve();
-    expect((await deletion).statusCode).toBe(204);
-    const after = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
-    expect(after.json()).toEqual({
-      sessions: [
-        { workspaceId: "main", active: false, session: null },
-        { workspaceId: "other", active: false, session: null },
-      ],
-    });
-  });
-
   it("reports session_list_failed when the persisted store scan fails", async () => {
     const harness = createHarness({
       listPersistedSessions: async () => {

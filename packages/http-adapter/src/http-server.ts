@@ -4,6 +4,7 @@ import path from "node:path";
 import Fastify, {
   type FastifyBaseLogger,
   type FastifyInstance,
+  type FastifyLoggerOptions,
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
@@ -57,6 +58,7 @@ export interface CreateHttpAdapterServerOptions {
   runtimeArgs?: readonly string[];
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
+  logger?: boolean | FastifyLoggerOptions;
 }
 
 export type HttpSessionStatus = "idle" | "running" | "aborting";
@@ -495,6 +497,7 @@ export function createHttpAdapterServer(
   options: CreateHttpAdapterServerOptions,
 ): FastifyInstance {
   const server = Fastify({
+    logger: options.logger ?? false,
     ajv: {
       customOptions: {
         coerceTypes: false,
