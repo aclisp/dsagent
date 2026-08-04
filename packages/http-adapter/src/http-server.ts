@@ -76,6 +76,10 @@ export type HttpAdapterEvent =
       output?: string | null;
     }
   | { type: "assistant_text_delta"; turnId: string | null; delta: string }
+  | { type: "thinking_start"; turnId: string | null }
+  | { type: "thinking_end"; turnId: string | null }
+  | { type: "compaction_start"; turnId: string | null }
+  | { type: "compaction_end"; turnId: string | null }
   | {
       type: "tool";
       turnId: string | null;
@@ -188,6 +192,8 @@ const uiResponseBodySchema = {
   ],
 } as const;
 
+const KEEPALIVE_INTERVAL_MS = 30_000;
+
 class SessionController {
   private readonly eventStreams = new Map<ServerResponse, () => void>();
   private activeTurn: ActiveTurn | undefined;
@@ -281,15 +287,28 @@ class SessionController {
     }
 
     const event = brokerEvent.event;
-    if (
-      event.type === "message_update" &&
-      event.assistantMessageEvent.type === "text_delta"
-    ) {
-      return {
-        type: "assistant_text_delta",
-        turnId,
-        delta: event.assistantMessageEvent.delta,
-      };
+    if (event.type === "message_update") {
+      const messageEvent = event.assistantMessageEvent;
+      if (messageEvent.type === "text_delta") {
+        return {
+          type: "assistant_text_delta",
+          turnId,
+          delta: messageEvent.delta,
+        };
+      }
+      if (messageEvent.type === "thinking_start") {
+        return { type: "thinking_start", turnId };
+      }
+      if (messageEvent.type === "thinking_end") {
+        return { type: "thinking_end", turnId };
+      }
+      return undefined;
+    }
+    if (event.type === "compaction_start") {
+      return { type: "compaction_start", turnId };
+    }
+    if (event.type === "compaction_end") {
+      return { type: "compaction_end", turnId };
     }
     if (event.type === "tool_execution_start") {
       return {
@@ -341,7 +360,15 @@ class SessionController {
       const event = this.translateBrokerEvent(brokerEvent);
       if (event) this.writeEvent(response, event);
     });
-    this.eventStreams.set(response, unsubscribe);
+    const keepalive = setInterval(() => {
+      if (!response.destroyed && !response.writableEnded) {
+        response.write(": keepalive\n\n");
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+    this.eventStreams.set(response, () => {
+      clearInterval(keepalive);
+      unsubscribe();
+    });
     response.once("close", () => this.closeEventStream(response));
     request.raw.once("error", () => this.closeEventStream(response));
     return reply;

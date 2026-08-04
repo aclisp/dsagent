@@ -605,6 +605,28 @@ describe("createHttpAdapterServer", () => {
       assistantMessageEvent: { type: "text_delta", delta: "Hello" },
     } as AgentSessionEvent);
     broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+    } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "internal" },
+    } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_end", content: "internal" },
+    } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "compaction_start",
+      reason: "threshold",
+    } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "compaction_end",
+      reason: "threshold",
+      aborted: false,
+      willRetry: false,
+    } as AgentSessionEvent);
+    broker.publishSessionEvent({
       type: "tool_execution_start",
       toolCallId: "tool-1",
       toolName: "read",
@@ -620,6 +642,22 @@ describe("createHttpAdapterServer", () => {
     expect(await events.next()).toMatchObject({
       type: "assistant_text_delta",
       delta: "Hello",
+    });
+    expect(await events.next()).toMatchObject({
+      type: "thinking_start",
+      turnId: null,
+    });
+    expect(await events.next()).toMatchObject({
+      type: "thinking_end",
+      turnId: null,
+    });
+    expect(await events.next()).toMatchObject({
+      type: "compaction_start",
+      turnId: null,
+    });
+    expect(await events.next()).toMatchObject({
+      type: "compaction_end",
+      turnId: null,
     });
     expect(await events.next()).toMatchObject({
       type: "tool",

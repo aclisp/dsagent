@@ -143,6 +143,10 @@ Event types:
 | --- | --- | --- |
 | `turn` | `turnId`, `status`, `output?` | Lifecycle: `running` / `aborting`, terminal `completed` (with `output` = last assistant text), `failed`, `aborted` |
 | `assistant_text_delta` | `turnId`, `delta` | Incremental assistant output |
+| `thinking_start` | `turnId` | Model began thinking (thinking content is not streamed) |
+| `thinking_end` | `turnId` | Model finished thinking |
+| `compaction_start` | `turnId` | Context summarization began |
+| `compaction_end` | `turnId` | Context summarization finished |
 | `tool` | `turnId`, `phase`, `toolCallId`, `name`, `args`, plus `partialResult` on `updated`, or `result`/`isError` on `completed` | Tool call lifecycle (`started` / `updated` / `completed`) |
 | `ui_request` | `turnId`, `request` | Interactive dialog to answer |
 | `ui_event` | `turnId`, `event` | Extension UI state: `status`, `widget`, `title`, `working_*`, `hidden_thinking_label`, `notify`, `editor_text` |
@@ -150,6 +154,13 @@ Event types:
 
 `turnId` is `null` for events emitted outside an active turn (for example UI updates at session
 startup).
+
+`thinking_start`/`thinking_end` and `compaction_start`/`compaction_end` are activity indicators:
+show a progress state between the pair and clear it on any terminal `turn` event — an aborted turn
+may never emit the matching `_end`. They are not replayed on reconnect.
+
+The server writes a `: keepalive` comment frame roughly every 30 seconds. Compliant SSE clients
+ignore comments; use their absence for staleness detection if needed.
 
 ## UI requests and responses
 
