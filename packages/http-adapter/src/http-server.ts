@@ -500,6 +500,7 @@ export function createHttpAdapterServer(
   const sessions = new Map<string, SessionController>();
   const disposingSessions = new Map<string, SessionController>();
   const activatingSessions = new Set<string>();
+  const activatingWorkspaces = new Set<string>();
 
   const getSession = (sessionId: string): SessionController | undefined =>
     sessions.get(sessionId);
@@ -539,7 +540,17 @@ export function createHttpAdapterServer(
         return reply.code(409).send({ error: "session_already_active" });
       }
 
+      const workspaceOccupied =
+        activatingWorkspaces.has(workspaceId) ||
+        [...sessions.values(), ...disposingSessions.values()].some(
+          (controller) => controller.workspaceId === workspaceId,
+        );
+      if (workspaceOccupied) {
+        return reply.code(409).send({ error: "workspace_session_active" });
+      }
+
       activatingSessions.add(sessionId);
+      activatingWorkspaces.add(workspaceId);
       try {
         const session: HttpAdapterHostFactoryOptions["session"] = resumed
           ? { type: "resume", id: sessionId }
@@ -573,6 +584,7 @@ export function createHttpAdapterServer(
         return reply.code(500).send({ error: "session_creation_failed" });
       } finally {
         activatingSessions.delete(sessionId);
+        activatingWorkspaces.delete(workspaceId);
       }
     },
   );

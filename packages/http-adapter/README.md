@@ -41,7 +41,7 @@ path, never client-controlled.
 - No built-in authentication. Bind to localhost or a private network and add your own auth.
 - Workspace IDs must resolve to server-controlled paths; never derive `cwd` from client input.
 - Credentials and the API key live server-side in the shared `~/.dscode` home.
-- One active turn per session is enforced; sessions are isolated (separate conversation state, tools,
-  MCP connections, and managed processes).
+- One active turn per session and one active session per workspace are enforced; sessions are
+  isolated (separate conversation state, tools, MCP connections, and managed processes).
 
 See `docs/API.md` for the endpoint reference and an end-to-end orchestration walkthrough.

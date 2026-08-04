@@ -415,6 +415,112 @@ describe("createHttpAdapterServer", () => {
     expect((await first).statusCode).toBe(201);
   });
 
+  it("allows at most one active session per workspace", async () => {
+    const harness = createHarness();
+    const first = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const duplicate = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "workspace_session_active" });
+
+    const elsewhere = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "other" },
+    });
+    expect(elsewhere.statusCode).toBe(201);
+  });
+
+  it("rejects resuming a different session into an occupied workspace", async () => {
+    const harness = createHarness();
+    await harness.createSession("main");
+
+    const resume = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main", resumeSessionId: "saved-session" },
+    });
+    expect(resume.statusCode).toBe(409);
+    expect(resume.json()).toEqual({ error: "workspace_session_active" });
+    expect(harness.factoryCalls).toHaveLength(1);
+  });
+
+  it("keeps the workspace occupied until disposal finishes", async () => {
+    const disposeBlocked = deferred();
+    const harness = createHarness({
+      factory: async () =>
+        createFakeHost({ dispose: async () => disposeBlocked.promise }),
+    });
+    const sessionId = await harness.createSession("main");
+
+    const deletion = harness.server.inject({
+      method: "DELETE",
+      url: `/v1/sessions/${sessionId}`,
+    });
+    await vi.waitFor(() =>
+      expect(harness.hosts.get(sessionId)!.disposeCount).toBe(1),
+    );
+
+    const blocked = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toEqual({ error: "workspace_session_active" });
+
+    disposeBlocked.resolve();
+    expect((await deletion).statusCode).toBe(204);
+
+    const created = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    expect(created.statusCode).toBe(201);
+  });
+
+  it("rejects concurrent activation of the same workspace", async () => {
+    const blocked = deferred();
+    let started!: () => void;
+    const factoryStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const harness = createHarness({
+      factory: async () => {
+        started();
+        await blocked.promise;
+        return createFakeHost();
+      },
+    });
+
+    const first = harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    await factoryStarted;
+    const second = await harness.server.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      payload: { workspaceId: "main" },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toEqual({ error: "workspace_session_active" });
+
+    blocked.resolve();
+    expect((await first).statusCode).toBe(201);
+  });
+
   it("runs turns independently across sessions", async () => {
     const blockers = new Map<string, ReturnType<typeof deferred>>();
     const harness = createHarness({

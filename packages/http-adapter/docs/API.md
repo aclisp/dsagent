@@ -106,6 +106,8 @@ Rules that shape this loop:
 - `resumeSessionId` (optional): resumes the persisted session with that ID — the new session takes
   that ID (`resumed: true`). Returns `404 persistent_session_not_found` when absent, or
   `409 session_already_active` when already active.
+- At most one active session per workspace: creating or resuming while the workspace has an active
+  session returns `409 workspace_session_active`.
 
 `201` response and the descriptor returned by `GET /v1/sessions/:sessionId`:
 
@@ -202,6 +204,7 @@ A mismatched body is rejected with `400 invalid_ui_response`; `confirm` cannot t
 | `404` | `ui_request_not_found` | Unknown `requestId` (or requested against the wrong session) |
 | `404` | `turn_not_found` | Abort of an unknown or already-finished turn |
 | `409` | `session_already_active` | Create/resume while the ID is active, activating, or disposing |
+| `409` | `workspace_session_active` | Create/resume while the workspace already has an active session |
 | `409` | `session_already_exists` | Persisted session with that ID already exists |
 | `409` | `turn_in_progress` | Turn submitted while one is running |
 | `500` | `session_creation_failed` / `session_disposal_failed` / `turn_abort_failed` / `ui_response_failed` | Internal failure |
