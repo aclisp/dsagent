@@ -232,6 +232,12 @@ Authentication:
   dscode auth status                Show credential sources without revealing secrets
   /login                            Choose a provider interactively
   /login <provider>                 Authenticate a specific provider
+
+Experimental Windows sandbox:
+  dscode sandbox setup              Install identities and WFP filters (elevated terminal)
+  dscode sandbox status             Inspect native sandbox readiness
+  dscode sandbox uninstall          Remove native sandbox state (elevated terminal)
+  DSCODE_WINDOWS_SANDBOX=1          Explicitly opt in after setup succeeds
 `);
 }
 

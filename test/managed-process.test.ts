@@ -67,7 +67,7 @@ describe("ManagedProcessRegistry", () => {
 });
 
 function backgroundCommand(): string {
-  const script = "setTimeout(() => process.stdout.write('done'), 100)";
+  const script = "setTimeout(() => process.stdout.write(`done`), 100)";
   if (process.platform === "win32") {
     return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
   }

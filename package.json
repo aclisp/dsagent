@@ -36,10 +36,11 @@
   },
   "scripts": {
     "build:core": "pnpm --dir packages/core build",
+    "build:windows-sandbox": "node scripts/build-windows-sandbox.mjs",
     "build": "pnpm build:core && tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "postinstall": "node scripts/postinstall.mjs",
-    "prepack": "pnpm build",
+    "prepack": "pnpm build && pnpm build:windows-sandbox",
     "prepublishOnly": "pnpm check",
     "predev": "pnpm build:core",
     "dev": "tsx src/cli.ts",
