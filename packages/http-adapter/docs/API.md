@@ -185,7 +185,7 @@ Event types:
 
 | type | fields | meaning |
 | --- | --- | --- |
-| `turn` | `turnId`, `status`, `output?` | Lifecycle: `running` / `aborting`, terminal `completed` (with `output` = last assistant text), `failed`, `aborted` |
+| `turn` | `turnId`, `status`, `output?`, `error?` | Lifecycle: `running` / `aborting`, terminal `completed` (with `output` = last assistant text), `failed` (with `error` = failure reason), `aborted` |
 | `assistant_text_delta` | `turnId`, `delta` | Incremental assistant output |
 | `thinking_start` | `turnId` | Model began thinking (thinking content is not streamed) |
 | `thinking_end` | `turnId` | Model finished thinking |

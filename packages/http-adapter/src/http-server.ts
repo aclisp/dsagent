@@ -87,6 +87,7 @@ export type HttpAdapterEvent =
       turnId: string;
       status: HttpTurnStatus;
       output?: string | null;
+      error?: string;
     }
   | { type: "assistant_text_delta"; turnId: string | null; delta: string }
   | { type: "thinking_start"; turnId: string | null }
@@ -161,6 +162,10 @@ interface AbortAttempt {
 interface ActiveTurn {
   id: string;
   abortAttempt?: Promise<AbortAttempt>;
+}
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const createSessionBodySchema = {
@@ -270,12 +275,14 @@ class SessionController {
     turnId: string,
     status: HttpTurnStatus,
     output?: string | null,
+    error?: string,
   ): void {
     const event: Extract<HttpAdapterEvent, { type: "turn" }> = {
       type: "turn",
       turnId,
       status,
       ...(output !== undefined ? { output } : {}),
+      ...(error !== undefined ? { error } : {}),
     };
     this.latestTurnEvent = event;
     this.publish(event);
@@ -417,7 +424,7 @@ class SessionController {
         this.publishTurn(turn.id, "aborted");
       } else if (failed) {
         log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
-        this.publishTurn(turn.id, "failed");
+        this.publishTurn(turn.id, "failed", undefined, failureMessage(failure));
       } else {
         try {
           this.publishTurn(
@@ -427,7 +434,7 @@ class SessionController {
           );
         } catch (error) {
           log.error({ err: error, turnId: turn.id }, "Agent turn failed");
-          this.publishTurn(turn.id, "failed");
+          this.publishTurn(turn.id, "failed", undefined, failureMessage(error));
         }
       }
       if (this.activeTurn === turn) this.activeTurn = undefined;

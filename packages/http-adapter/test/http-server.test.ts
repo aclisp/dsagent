@@ -766,6 +766,7 @@ describe("createHttpAdapterServer", () => {
       type: "turn",
       turnId: failedId,
       status: "failed",
+      error: "provider failed",
     });
     events.close();
 
