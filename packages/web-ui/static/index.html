@@ -126,6 +126,49 @@
       return text.length > length ? `${text.slice(0, length)}…` : text;
     }
 
+    function oneLine(text) {
+      return String(text).replace(/\s+/g, " ").trim();
+    }
+
+    // One-line summary of a tool call's args, mirroring the agent's own TUI summary.
+    // Falls back to the bare tool name when nothing is extractable.
+    function toolSummary(name, args = {}) {
+      const str = (value) => (typeof value === "string" ? value : "");
+      const qualified = (detail) => (detail ? `${name}: ${detail}` : name);
+      if (name === "exec_command") return qualified(truncate(oneLine(str(args.cmd)), 80));
+      if (name === "read_file") {
+        const range = args.line_start || args.line_end
+          ? `:${str(args.line_start) || "1"}-${str(args.line_end)}`
+          : "";
+        return qualified(`${oneLine(str(args.path))}${range}`);
+      }
+      if (name === "list_files") return qualified(oneLine(str(args.pattern)));
+      if (name === "search_files") {
+        const path = str(args.path);
+        return qualified(`${truncate(oneLine(str(args.query)), 80)}${path ? ` in ${path}` : ""}`);
+      }
+      if (name === "write_stdin") {
+        if (str(args.chars) !== "") return qualified(truncate(oneLine(str(args.chars)), 80));
+        if (args.terminate) return "write_stdin: terminate";
+        return name;
+      }
+      if (name === "apply_patch") {
+        const files = new Set();
+        for (const line of String(args.input ?? "").split("\n")) {
+          const match = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/.exec(line.trim());
+          if (match) files.add(match[1]);
+        }
+        if (files.size > 0) {
+          return `apply_patch: ${files.size} file${files.size > 1 ? "s" : ""}`;
+        }
+        return name;
+      }
+      if (name === "update_plan" && Array.isArray(args.steps)) {
+        return `update_plan: ${args.steps.length} steps`;
+      }
+      return name;
+    }
+
     // Append via a template instead of Termino's innerHTML +=, which re-parses
     // the console and detaches the streaming block mid-turn. Content added after
     // the streaming block invalidates it, so the next delta starts a new block
@@ -310,7 +353,7 @@
       source.addEventListener("tool", (e) => {
         const event = JSON.parse(e.data);
         if (event.phase === "started") {
-          outHtml(`<pre class="muted">⚙ ${escapeHtml(event.name)}</pre>`);
+          outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(event.name, event.args))}</pre>`);
         } else if (event.phase === "completed") {
           outHtml(`<pre class="muted">${event.isError ? "✗" : "✓"} ${escapeHtml(event.name)}</pre>`);
         }
@@ -346,7 +389,7 @@
         } else if (message.role === "assistant") {
           for (const block of message.content) {
             if (block.type === "text") out(block.text);
-            else outHtml(`<pre class="muted">⚙ ${escapeHtml(block.name)}</pre>`);
+            else outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(block.name, block.arguments))}</pre>`);
           }
         } else if (message.role === "toolResult") {
           outHtml(`<pre class="muted">${message.isError ? "✗" : "✓"} ${escapeHtml(message.toolName)}</pre>`);
