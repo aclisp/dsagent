@@ -23,6 +23,46 @@ Then open http://127.0.0.1:8899.
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session (e.g. `--provider openrouter --model qwen3.7-plus`) |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 
+## Docker
+
+The image stays lean (Node + app). Office/PDF tools for the agent (LibreOffice, poppler,
+ghostscript, qpdf, pandoc) are added by a derived image built once on the live env server.
+
+```sh
+# On the dev machine — build the lean image (amd64, so it deploys to AMD64 hosts like
+# EC2/ECS; on Apple Silicon this runs under emulation and is slower on the first build).
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
+
+# On the live env server — build the derived image once (adds the tool layer, cached locally).
+docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
+
+# Run (yolo + volumes + security).
+docker run -d --name dscode \
+  -p 8899:8899 \
+  -v dscode-home:/root/.dscode \
+  -v dscode-workspace:/workspace \
+  -e WORKSPACES=ws=/workspace \
+  -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access' \
+  --cap-drop ALL --security-opt no-new-privileges \
+  dscode-server
+```
+
+- **Volumes.** `/root/.dscode` holds the adapter's config (models.json, provider credentials) and
+  its persisted sessions — mount it so agent state survives container restarts. `/workspace` is
+  the agent's working directory (where it generates documents) — mount it to keep the output.
+- **`RUNTIME_ARGS` is mandatory in a container.** The default `workspace-write` sandbox has no
+  backend inside a Linux container (macOS `sandbox-exec` is unavailable and no `DSCODE_SANDBOX_IMAGE`
+  is configured), so every `exec_command` would fail without `--sandbox danger-full-access`. The
+  full trio also skips all mid-chat approval dialogs — the right posture for a non-technical
+  product, and the container already bounds the blast radius.
+- **`HOST=0.0.0.0`** is set in the image; the app default (`127.0.0.1`) is unreachable from outside
+  a container.
+- **Security.** `--cap-drop ALL --security-opt no-new-privileges` keeps the full-access agent from
+  escalating beyond the container. The lean image itself only adds `git` (the agent's tools run it
+  in the workspace).
+- **LibreOffice headless gotcha.** In a container, conversion can hang on the user profile lock —
+  add `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to` commands.
+
 ## What the page does
 
 Boots from `GET /v1/sessions` (workspace picker when more than one), attaches to an active
