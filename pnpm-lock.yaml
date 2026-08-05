@@ -120,6 +120,22 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
 
+  packages/web-ui:
+    dependencies:
+      '@thinkany/dscode-http-adapter':
+        specifier: workspace:*
+        version: link:../http-adapter
+      fastify:
+        specifier: ^5.11.0
+        version: 5.11.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
 packages:
 
   '@anthropic-ai/sdk@0.91.1':
