@@ -4,7 +4,19 @@ const term = Termino(document.getElementById("terminal"));
 const stopButton = document.getElementById("stop");
 const uploadButton = document.getElementById("upload");
 const fileInput = document.getElementById("file-input");
+const inputElement = document.querySelector(".termino-input");
 term.disable_input();
+
+// Upload and Stop are a single header slot: uploading is useless mid-turn (the
+// agent reads files only at the next prompt), so show Stop while a turn runs.
+const showIdleControls = () => {
+  uploadButton.hidden = false;
+  stopButton.hidden = true;
+};
+const showRunningControls = () => {
+  uploadButton.hidden = true;
+  stopButton.hidden = false;
+};
 
 // Identifies this page to the adapter so it can skip echoing our own input.
 const clientId = crypto.randomUUID();
@@ -176,19 +188,15 @@ function hideIndicator() {
   document.getElementById("indicator")?.remove();
 }
 
-// The agent's own working status arrives every second as a ui_event; render it into a
-// dedicated slot (distinct from the thinking/compaction indicator) and update in place.
+// The agent's own working status arrives every second as a ui_event; show it in the
+// disabled input's placeholder so it stays pinned at the bottom instead of being
+// pushed up by the streaming transcript.
 function showWorking(message) {
-  let line = document.getElementById("working");
-  if (!line) {
-    outHtml('<pre class="indicator" id="working"></pre>');
-    line = document.getElementById("working");
-  }
-  line.textContent = message;
+  inputElement.placeholder = message;
 }
 
 function hideWorking() {
-  document.getElementById("working")?.remove();
+  inputElement.placeholder = "";
 }
 
 function appendDelta(delta) {
@@ -212,7 +220,7 @@ function endStream() {
 function onTurn(event) {
   if (event.status === "running" || event.status === "aborting") {
     currentTurnId = event.turnId;
-    stopButton.hidden = false;
+    showRunningControls();
     // Another client submitted the turn: show its input (ours is already in the
     // prompt line).
     if (
@@ -232,7 +240,7 @@ function onTurn(event) {
     streamBlock.innerHTML = linkifyFilePaths(streamText, workspaceId);
   }
   endStream();
-  stopButton.hidden = true;
+  showIdleControls();
   currentTurnId = null;
   if (event.status === "failed") {
     outHtml(
@@ -328,8 +336,8 @@ function openStream() {
       out(`[note] ${event.message}`);
     } else if (event.method === "working_message") {
       if (event.message !== undefined) {
-        // The TUI suffix ("esc to interrupt") has no web equivalent; the Stop button is.
-        showWorking(event.message.replace(/\s*·\s*esc to interrupt/, ""));
+        // The TUI's "esc to interrupt" becomes the web's Stop button.
+        showWorking(event.message.replace(/\s*·\s*esc to interrupt/, " · Stop to interrupt"));
       } else {
         hideWorking();
       }
@@ -478,7 +486,7 @@ async function boot() {
     }
   }
   workspaceId = entry.workspaceId;
-  uploadButton.hidden = false;
+  showIdleControls();
   out(`workspace: ${workspaceId}`);
 
   let createResponse;
@@ -510,13 +518,6 @@ async function boot() {
 
   openStream();
   await renderHistory();
-  // The replayed working status may have landed above the history it precedes; move it
-  // to the live edge so it stays visible next to the streaming content.
-  const working = document.getElementById("working");
-  if (working) {
-    working.parentElement?.appendChild(working);
-    term.scroll_to_bottom();
-  }
   await chatLoop();
 }
 

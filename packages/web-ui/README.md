@@ -79,7 +79,9 @@ paths from its working directory.
   and everything else as an attachment, always with `X-Content-Type-Options: nosniff`.
 
 The page's Upload button posts to the upload endpoint and prints the resulting paths; the agent
-references them from the workspace. Download links are rendered client-side: a backticked span
+references them from the workspace. Upload and Stop share one header slot — Upload shows while
+idle, Stop replaces it while a turn runs (uploading mid-turn would be useless: the agent reads
+files only at the next prompt). Download links are rendered client-side: a backticked span
 counts as a file only when it looks like a path (no whitespace, and either a directory separator
 or a letter file extension), and `/workspace/…` paths always link. Anything else — `exec_command`,
 `npm install`, `v1.2` — stays plain text. To make the agent always cite files by path, add a line
@@ -98,8 +100,9 @@ chats over `POST /turns` while watching the SSE stream — assistant text stream
 tools print one line per phase, and
 `confirm`/`select`/`input`/`editor` requests are answered inline. Multiple open clients
 see each other's input: the `running` turn event carries the submitted message, and a
-page skips only its own (matched by `clientId`). Thinking, compaction, and the agent's
-live working status show as transient indicators. The Stop button aborts
+page skips only its own (matched by `clientId`). Thinking and compaction show as transient indicators, and the agent's
+live working status counts up in the disabled input line (the TUI's
+"esc to interrupt" suffix becomes " · Stop to interrupt"). The Stop button aborts
 the running turn. Refreshing the page reattaches and re-renders. After a server restart,
 the page silently reattaches on the next message — resuming the persisted session — and
 redelivers that message.
