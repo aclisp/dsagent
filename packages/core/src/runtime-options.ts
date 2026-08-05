@@ -11,6 +11,7 @@ import {
 import { DSCODE_VERSION } from "./version.js";
 import {
   DEFAULT_DEEPSEEK_BASE_URL,
+  getDSCodeStorageSettings,
   getStoredDeepSeekBaseUrl,
   normalizeDeepSeekBaseUrl,
 } from "./settings.js";
@@ -146,6 +147,14 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     !["--approve", "-a", "--no-approve", "-na"].some((flag) => hasFlag(forwarded, flag))
   ) {
     forwarded.unshift("--approve");
+  }
+  if (
+    getDSCodeStorageSettings().historyPersistence === "none" &&
+    !["--no-session", "--session", "--resume", "--continue", "--fork"].some((flag) =>
+      hasFlag(forwarded, flag),
+    )
+  ) {
+    forwarded.unshift("--no-session");
   }
   modelId ??= defaultModelForProvider(providerId);
   effort ??= defaultEffortForProvider(providerId);
