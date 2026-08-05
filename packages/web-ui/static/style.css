@@ -1,0 +1,76 @@
+html, body { height: 100%; }
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #101418;
+  color: #d8dee5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid #2a3138;
+}
+header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+#stop {
+  background: #5c2b2b;
+  color: #f2d1d1;
+  border: 1px solid #7c3f3f;
+  border-radius: 4px;
+  font: inherit;
+  padding: 2px 12px;
+  cursor: pointer;
+}
+/* visibility, not display:none: keeps the button's space reserved so the
+   header height doesn't bounce when the button appears */
+#stop[hidden] { display: inline-block; visibility: hidden; }
+#terminal {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+}
+#terminal > pre {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.termino-console {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+.termino-console pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.termino-input {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  background: #0b0e11;
+  color: #e8eef4;
+  border: 1px solid #2a3138;
+  border-radius: 4px;
+  font: inherit;
+  padding: 6px 8px;
+  resize: none;
+}
+.indicator { color: #8a97a5; font-style: italic; }
+.muted { color: #8a97a5; }

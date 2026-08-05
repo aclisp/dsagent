@@ -1,8 +1,9 @@
 # @thinkany/dscode-web-ui
 
-Minimal example UI for `@thinkany/dscode-http-adapter`: a single HTML page with a
-terminal-style chat, served by the adapter's own Fastify server. It exists to verify the
-adapter's REST + SSE surface against a live client — it is not a product frontend.
+Minimal example UI for `@thinkany/dscode-http-adapter`: a terminal-style chat served by
+the adapter's own Fastify server. It exists to verify the adapter's REST + SSE surface
+against a live client — it is not a product frontend. `static/` holds `index.html`
+(markup), `app.js` (page logic), `style.css` (styling), and the vendored `termino.js`.
 
 ## Run
 

@@ -55,6 +55,16 @@ server.get("/termino.js", async (_request, reply) => {
   return reply.type("text/javascript; charset=utf-8").send(script);
 });
 
+server.get("/app.js", async (_request, reply) => {
+  const script = await staticFile("app.js");
+  return reply.type("text/javascript; charset=utf-8").send(script);
+});
+
+server.get("/style.css", async (_request, reply) => {
+  const css = await staticFile("style.css");
+  return reply.type("text/css; charset=utf-8").send(css);
+});
+
 const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 8899);
 await server.listen({ host, port });
