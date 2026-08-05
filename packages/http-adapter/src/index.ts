@@ -21,6 +21,7 @@ export {
   type HttpTurnStatus,
   type PersistedSessionLister,
 } from "./http-server.js";
+export { pruneSessionFile } from "./session-pruner.js";
 export {
   toHttpSessionMessages,
   type AgentMessage,

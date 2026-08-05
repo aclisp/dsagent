@@ -35,6 +35,7 @@ export interface HttpAdapterServerHost {
   prompt(message: string): Promise<void>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
+  prunePersistedSession?(): boolean;
   subscribe(listener: HttpUiBrokerListener): () => void;
   dispose(): Promise<void>;
 }
@@ -42,6 +43,7 @@ export interface HttpAdapterServerHost {
 export interface HttpAdapterHostFactoryOptions {
   cwd: string;
   runtimeArgs?: readonly string[];
+  maxSessionFileBytes?: number;
   session:
     | { type: "persistent"; id: string }
     | { type: "resume"; id: string };
@@ -56,6 +58,7 @@ export type PersistedSessionLister = (cwd: string) => Promise<PersistedSessionSu
 export interface CreateHttpAdapterServerOptions {
   workspaces: Readonly<Record<string, string>>;
   runtimeArgs?: readonly string[];
+  maxSessionFileBytes?: number;
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
   logger?: boolean | FastifyLoggerOptions;
@@ -437,6 +440,13 @@ class SessionController {
           this.publishTurn(turn.id, "failed", undefined, failureMessage(error));
         }
       }
+      // Prune before releasing activeTurn so no new turn can append to the file
+      // while it is being rewritten.
+      try {
+        this.host.prunePersistedSession?.();
+      } catch (error) {
+        log.error({ err: error, turnId: turn.id }, "Session file pruning failed");
+      }
       if (this.activeTurn === turn) this.activeTurn = undefined;
     })();
 
@@ -612,6 +622,9 @@ export function createHttpAdapterServer(
           session,
           ...(options.runtimeArgs !== undefined
             ? { runtimeArgs: options.runtimeArgs }
+            : {}),
+          ...(options.maxSessionFileBytes !== undefined
+            ? { maxSessionFileBytes: options.maxSessionFileBytes }
             : {}),
         });
         const controller = new SessionController(sessionId, workspaceId, host);

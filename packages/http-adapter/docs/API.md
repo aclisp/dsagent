@@ -136,6 +136,11 @@ Rules that shape this loop:
 
 `status` is `idle`, `running`, or `aborting`. Sessions are always persisted on disk.
 
+Session files are append-only logs and are never rewritten unless the server is created with
+`maxSessionFileBytes` (opt-in). When set, a file that exceeds the limit is pruned at turn end:
+compacted-out history and dead branches are dropped, leaving exactly the active context — the
+live conversation is unaffected.
+
 ### Messages
 
 `GET /v1/sessions/:sessionId/messages` returns the active session's conversation

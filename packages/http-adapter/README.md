@@ -26,7 +26,10 @@ conversation state. Workspace IDs map to server-controlled paths, so clients nev
 answer `confirm` / `select` / `input` / `editor` requests as they arrive.
 
 Sessions are persisted to the per-home session store shared with the CLI (`~/.dscode/sessions`) and
-can be resumed by ID.
+can be resumed by ID. Session files are append-only logs and are never rewritten by default.
+Opt in to pruning with `createHttpAdapterServer({ maxSessionFileBytes })`: once a file exceeds the
+limit, it is rewritten down to its active context at turn end — compacted-out history and dead
+branches are dropped, the live conversation is unchanged.
 
 ## Runtime arguments
 
