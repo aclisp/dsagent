@@ -731,6 +731,43 @@ describe("createHttpAdapterServer", () => {
     await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
   });
 
+  it("broadcasts the submitted message with the client id", async () => {
+    const promptBlocked = deferred();
+    const harness = createHarness({
+      factory: async () =>
+        createFakeHost({ prompt: async () => promptBlocked.promise }),
+    });
+    const sessionId = await harness.createSession();
+    const firstEvents = await openEventStream(harness.server, sessionId);
+    const secondEvents = await openEventStream(harness.server, sessionId);
+
+    const accepted = await harness.server.inject({
+      method: "POST",
+      url: turnUrl(sessionId),
+      payload: { message: "Hello", clientId: "client-a" },
+    });
+    expect(accepted.statusCode).toBe(202);
+    const turnId = accepted.json<{ id: string }>().id;
+
+    const running = {
+      type: "turn",
+      turnId,
+      status: "running",
+      message: "Hello",
+      clientId: "client-a",
+    };
+    expect(await firstEvents.next()).toEqual(running);
+    expect(await secondEvents.next()).toEqual(running);
+
+    const lateEvents = await openEventStream(harness.server, sessionId);
+    expect(await lateEvents.next()).toEqual(running);
+
+    promptBlocked.resolve();
+    firstEvents.close();
+    secondEvents.close();
+    lateEvents.close();
+  });
+
   it.each([
     ["missing body", undefined],
     ["missing message", {}],
@@ -944,7 +981,12 @@ describe("createHttpAdapterServer", () => {
     });
     const turnId = accepted.json<{ id: string }>().id;
 
-    expect(await events.next()).toEqual({ type: "turn", turnId, status: "running" });
+    expect(await events.next()).toEqual({
+      type: "turn",
+      turnId,
+      status: "running",
+      message: "Apply the fix",
+    });
     const requestEvent = await events.next();
     if (requestEvent.type !== "ui_request") throw new Error("Missing UI request");
 

@@ -91,6 +91,8 @@ export type HttpAdapterEvent =
       status: HttpTurnStatus;
       output?: string | null;
       error?: string;
+      message?: string;
+      clientId?: string;
     }
   | { type: "assistant_text_delta"; turnId: string | null; delta: string }
   | { type: "thinking_start"; turnId: string | null }
@@ -142,6 +144,7 @@ interface SessionParams {
 
 interface TurnBody {
   message: string;
+  clientId?: string;
 }
 
 interface TurnParams extends SessionParams {
@@ -187,6 +190,7 @@ const turnBodySchema = {
   required: ["message"],
   properties: {
     message: { type: "string", minLength: 1 },
+    clientId: { type: "string", minLength: 1 },
   },
 } as const;
 
@@ -277,15 +281,21 @@ class SessionController {
   private publishTurn(
     turnId: string,
     status: HttpTurnStatus,
-    output?: string | null,
-    error?: string,
+    extras: {
+      output?: string | null;
+      error?: string;
+      message?: string;
+      clientId?: string;
+    } = {},
   ): void {
     const event: Extract<HttpAdapterEvent, { type: "turn" }> = {
       type: "turn",
       turnId,
       status,
-      ...(output !== undefined ? { output } : {}),
-      ...(error !== undefined ? { error } : {}),
+      ...(extras.output !== undefined ? { output: extras.output } : {}),
+      ...(extras.error !== undefined ? { error: extras.error } : {}),
+      ...(extras.message !== undefined ? { message: extras.message } : {}),
+      ...(extras.clientId !== undefined ? { clientId: extras.clientId } : {}),
     };
     this.latestTurnEvent = event;
     this.publish(event);
@@ -403,13 +413,19 @@ class SessionController {
 
   startTurn(
     message: string,
+    clientId: string | undefined,
     log: FastifyBaseLogger,
   ): { id: string; status: "running" } | undefined {
     if (this.activeTurn) return undefined;
 
     const turn: ActiveTurn = { id: randomUUID() };
     this.activeTurn = turn;
-    this.publishTurn(turn.id, "running");
+    // The running event carries the submission so every attached client can render
+    // the user line; the submitter recognizes itself via clientId.
+    this.publishTurn(turn.id, "running", {
+      message,
+      ...(clientId !== undefined ? { clientId } : {}),
+    });
 
     void (async () => {
       let failed = false;
@@ -427,17 +443,15 @@ class SessionController {
         this.publishTurn(turn.id, "aborted");
       } else if (failed) {
         log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
-        this.publishTurn(turn.id, "failed", undefined, failureMessage(failure));
+        this.publishTurn(turn.id, "failed", { error: failureMessage(failure) });
       } else {
         try {
-          this.publishTurn(
-            turn.id,
-            "completed",
-            this.host.session.getLastAssistantText() ?? null,
-          );
+          this.publishTurn(turn.id, "completed", {
+            output: this.host.session.getLastAssistantText() ?? null,
+          });
         } catch (error) {
           log.error({ err: error, turnId: turn.id }, "Agent turn failed");
-          this.publishTurn(turn.id, "failed", undefined, failureMessage(error));
+          this.publishTurn(turn.id, "failed", { error: failureMessage(error) });
         }
       }
       // Prune before releasing activeTurn so no new turn can append to the file
@@ -479,6 +493,7 @@ class SessionController {
     log.error({ err: result.error, turnId: turn.id }, "Agent turn abort failed");
     if (this.activeTurn === turn && turn.abortAttempt === attempt) {
       delete turn.abortAttempt;
+      // No extras: re-sending the submission would make clients re-render it.
       this.publishTurn(turn.id, "running");
     }
     return "failed";
@@ -726,7 +741,11 @@ export function createHttpAdapterServer(
         return reply.code(400).send({ error: "invalid_message" });
       }
 
-      const turn = controller.startTurn(request.body.message, request.log);
+      const turn = controller.startTurn(
+        request.body.message,
+        request.body.clientId,
+        request.log,
+      );
       if (!turn) return reply.code(409).send({ error: "turn_in_progress" });
       return reply.code(202).send(turn);
     },

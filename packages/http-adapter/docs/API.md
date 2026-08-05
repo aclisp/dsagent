@@ -167,8 +167,12 @@ history:
 ### Turns
 
 ```json
-{ "message": "Add validation to the login form" }
+{ "message": "Add validation to the login form", "clientId": "8c1fa2c4-…" }
 ```
+
+- `message` (required): the user prompt to run.
+- `clientId` (optional): opaque caller identifier, echoed in the `running` event — clients
+  use it to suppress their own echo of the submitted message.
 
 `202` acknowledges with `{ "id": "<turnId>", "status": "running" }`. The investigation happens
 concurrently; the outcome is delivered only as the terminal `turn` event on the stream.
@@ -190,7 +194,7 @@ Event types:
 
 | type | fields | meaning |
 | --- | --- | --- |
-| `turn` | `turnId`, `status`, `output?`, `error?` | Lifecycle: `running` / `aborting`, terminal `completed` (with `output` = last assistant text), `failed` (with `error` = failure reason), `aborted` |
+| `turn` | `turnId`, `status`, `output?`, `error?`, `message?`, `clientId?` | Lifecycle: `running` (with `message` = submitted text and `clientId` = submitter's id, when provided) / `aborting`, terminal `completed` (with `output` = last assistant text), `failed` (with `error` = failure reason), `aborted` |
 | `assistant_text_delta` | `turnId`, `delta` | Incremental assistant output |
 | `thinking_start` | `turnId` | Model began thinking (thinking content is not streamed) |
 | `thinking_end` | `turnId` | Model finished thinking |
