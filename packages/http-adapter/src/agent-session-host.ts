@@ -180,6 +180,7 @@ function createHost(
     },
     async abort() {
       assertActive();
+      uiBroker.cancelPending();
       await runtime.session.abort();
     },
     async waitForIdle() {
