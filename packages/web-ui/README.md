@@ -28,10 +28,11 @@ Then open http://127.0.0.1:8899.
 Boots from `GET /v1/sessions` (workspace picker when more than one), attaches to an active
 session or creates/resumes one, renders history from `GET /v1/sessions/:id/messages`, then
 chats over `POST /turns` while watching the SSE stream — assistant text streams live,
-tools print one line per phase, thinking/compaction show as indicators, and
+tools print one line per phase, and
 `confirm`/`select`/`input`/`editor` requests are answered inline. Multiple open clients
 see each other's input: the `running` turn event carries the submitted message, and a
-page skips only its own (matched by `clientId`). The Stop button aborts
+page skips only its own (matched by `clientId`). Thinking, compaction, and the agent's
+live working status show as transient indicators. The Stop button aborts
 the running turn. Refreshing the page reattaches and re-renders. After a server restart,
 the page silently reattaches on the next message — resuming the persisted session — and
 redelivers that message.

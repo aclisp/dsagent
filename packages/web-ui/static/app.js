@@ -142,6 +142,21 @@ function hideIndicator() {
   document.getElementById("indicator")?.remove();
 }
 
+// The agent's own working status arrives every second as a ui_event; render it into a
+// dedicated slot (distinct from the thinking/compaction indicator) and update in place.
+function showWorking(message) {
+  let line = document.getElementById("working");
+  if (!line) {
+    outHtml('<pre class="indicator" id="working"></pre>');
+    line = document.getElementById("working");
+  }
+  line.textContent = message;
+}
+
+function hideWorking() {
+  document.getElementById("working")?.remove();
+}
+
 function appendDelta(delta) {
   if (!streamBlock) {
     streamText = "";
@@ -178,6 +193,7 @@ function onTurn(event) {
     return;
   }
   hideIndicator();
+  hideWorking();
   endStream();
   stopButton.hidden = true;
   currentTurnId = null;
@@ -271,7 +287,16 @@ function openStream() {
   });
   source.addEventListener("ui_event", (e) => {
     const event = JSON.parse(e.data).event;
-    if (event.method === "notify") out(`[note] ${event.message}`);
+    if (event.method === "notify") {
+      out(`[note] ${event.message}`);
+    } else if (event.method === "working_message") {
+      if (event.message !== undefined) {
+        // The TUI suffix ("esc to interrupt") has no web equivalent; the Stop button is.
+        showWorking(event.message.replace(/\s*·\s*esc to interrupt/, ""));
+      } else {
+        hideWorking();
+      }
+    }
   });
 }
 
@@ -423,6 +448,13 @@ async function boot() {
 
   openStream();
   await renderHistory();
+  // The replayed working status may have landed above the history it precedes; move it
+  // to the live edge so it stays visible next to the streaming content.
+  const working = document.getElementById("working");
+  if (working) {
+    working.parentElement?.appendChild(working);
+    term.scroll_to_bottom();
+  }
   await chatLoop();
 }
 
