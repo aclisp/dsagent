@@ -22,6 +22,7 @@ Then open http://127.0.0.1:8899.
 | `WORKSPACES` | `demo=/tmp/dscode-web-ui-demo` | Comma-separated `id=path` pairs; directories are created if missing |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session (e.g. `--provider openrouter --model qwen3.7-plus`) |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
+| `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 
 ## Docker
 
@@ -62,6 +63,32 @@ docker run -d --name dscode \
   in the workspace).
 - **LibreOffice headless gotcha.** In a container, conversion can hang on the user profile lock —
   add `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to` commands.
+
+## File upload / download
+
+These endpoints are web-ui layer (not part of the http-adapter API). Files live in the
+workspace's `uploads/` subdirectory, so the agent reads and writes them by workspace-relative
+paths from its working directory.
+
+- `POST /v1/workspaces/:workspaceId/files` — multipart upload (field `files`, one part per file).
+  Writes each file to `<workspace>/uploads/<name>` (overwrites an existing file of the same name)
+  and returns `{ files: [{ name, path, size }] }`. Filenames are sanitized to a bare basename;
+  oversized files are rejected with 413 (`MAX_UPLOAD_BYTES`).
+- `GET /v1/workspaces/:workspaceId/files?path=<relative>` — download. Resolves within the
+  workspace (rejects `..` escapes and symlinks pointing outside), serves images/PDF/text inline
+  and everything else as an attachment, always with `X-Content-Type-Options: nosniff`.
+
+The page's Upload button posts to the upload endpoint and prints the resulting paths; the agent
+references them from the workspace. Download links are rendered client-side: a backticked span
+counts as a file only when it looks like a path (no whitespace, and either a directory separator
+or a letter file extension), and `/workspace/…` paths always link. Anything else — `exec_command`,
+`npm install`, `v1.2` — stays plain text. To make the agent always cite files by path, add a line
+to `~/.dscode/APPEND_SYSTEM.md`:
+
+```md
+When you create a file the user should see, save it in the workspace and cite it as a
+backticked workspace-relative path (e.g. `uploads/report.pdf`).
+```
 
 ## What the page does
 

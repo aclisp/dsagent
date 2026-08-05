@@ -1,6 +1,8 @@
 import { mkdir, readFile } from "node:fs/promises";
 import process from "node:process";
+import multipart from "@fastify/multipart";
 import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
+import { registerFileRoutes } from "./files.js";
 
 const DEFAULT_WORKSPACES = "demo=/tmp/dscode-web-ui-demo";
 
@@ -35,12 +37,17 @@ const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
   ? process.env.RUNTIME_ARGS.trim().split(/\s+/)
   : undefined;
 
+const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
+
 const server = createHttpAdapterServer({
   workspaces,
   logger: false,
   maxSessionFileBytes: 1024*1024,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
 });
+
+await server.register(multipart);
+registerFileRoutes(server, workspaces, { maxUploadBytes });
 
 const staticFile = (name: string): Promise<Buffer> =>
   readFile(new URL(`../static/${name}`, import.meta.url));

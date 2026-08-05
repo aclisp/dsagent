@@ -18,18 +18,24 @@ header {
   border-bottom: 1px solid #2a3138;
 }
 header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+/* Shared header-button base; #stop keeps a red accent for its destructive role. */
+.header-button {
+  font: inherit;
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: #d8dee5;
+  border: 1px solid #2a3138;
+}
+/* visibility, not display:none: keeps the button's space reserved so the
+   header height doesn't bounce when a button appears */
+.header-button[hidden] { display: inline-block; visibility: hidden; }
 #stop {
   background: #5c2b2b;
   color: #f2d1d1;
-  border: 1px solid #7c3f3f;
-  border-radius: 4px;
-  font: inherit;
-  padding: 2px 12px;
-  cursor: pointer;
+  border-color: #7c3f3f;
 }
-/* visibility, not display:none: keeps the button's space reserved so the
-   header height doesn't bounce when the button appears */
-#stop[hidden] { display: inline-block; visibility: hidden; }
 #terminal {
   flex: 1;
   min-height: 0;

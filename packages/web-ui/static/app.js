@@ -2,6 +2,8 @@ import { Termino } from "./termino.js";
 
 const term = Termino(document.getElementById("terminal"));
 const stopButton = document.getElementById("stop");
+const uploadButton = document.getElementById("upload");
+const fileInput = document.getElementById("file-input");
 term.disable_input();
 
 // Identifies this page to the adapter so it can skip echoing our own input.
@@ -71,6 +73,38 @@ function toolSummary(name, args = {}) {
     return `update_plan: ${args.steps.length} steps`;
   }
   return name;
+}
+
+// A backticked span counts as a file only when it looks like a path: no
+// whitespace, and either a directory separator or a letter file extension.
+function isFilePathToken(text) {
+  if (/\s/.test(text)) return false;
+  return text.includes("/") || /\.[A-Za-z]{1,10}$/.test(text);
+}
+
+// Convert backticked and /workspace/... file paths in assistant text into download
+// links. The agent cites files by workspace-relative path; the page owns the URL.
+function linkifyFilePaths(text, workspaceId) {
+  const base = `/v1/workspaces/${workspaceId}/files?path=`;
+  const pattern = /`([^`]+)`|\/workspace\/([^\s`]+)/g;
+  let html = "";
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    html += escapeHtml(text.slice(last, match.index));
+    const raw = match[1] ?? match[2];
+    if (match[1] !== undefined && !isFilePathToken(match[1])) {
+      html += escapeHtml(match[0]);
+    } else {
+      // Normalize an absolute container path back to workspace-relative and drop
+      // trailing sentence punctuation the agent may have written after the path.
+      const rel = raw.replace(/^\/workspace\//, "").replace(/[.,;:!?)]+$/, "");
+      const href = base + encodeURIComponent(rel);
+      html += `<a href="${href}" title="${escapeHtml(href)}">${escapeHtml(match[0])}</a>`;
+    }
+    last = match.index + match[0].length;
+  }
+  html += escapeHtml(text.slice(last));
+  return html;
 }
 
 // Append via a template instead of Termino's innerHTML +=, which re-parses
@@ -194,6 +228,9 @@ function onTurn(event) {
   }
   hideIndicator();
   hideWorking();
+  if (event.status === "completed" && streamBlock) {
+    streamBlock.innerHTML = linkifyFilePaths(streamText, workspaceId);
+  }
   endStream();
   stopButton.hidden = true;
   currentTurnId = null;
@@ -317,8 +354,11 @@ async function renderHistory() {
       }
     } else if (message.role === "assistant") {
       for (const block of message.content) {
-        if (block.type === "text") out(block.text);
-        else outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(block.name, block.arguments))}</pre>`);
+        if (block.type === "text") {
+          outHtml(`<pre>${linkifyFilePaths(block.text, workspaceId)}</pre>`);
+        } else {
+          outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(block.name, block.arguments))}</pre>`);
+        }
       }
     } else if (message.role === "toolResult") {
       outHtml(`<pre class="muted">${message.isError ? "✗" : "✓"} ${escapeHtml(message.toolName)}</pre>`);
@@ -393,6 +433,27 @@ stopButton.addEventListener("click", () => {
   }
 });
 
+uploadButton.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", async () => {
+  const selected = [...fileInput.files];
+  fileInput.value = "";
+  if (selected.length === 0) return;
+  const form = new FormData();
+  for (const file of selected) form.append("files", file);
+  const response = await api(`/v1/workspaces/${workspaceId}/files`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    out(`[upload failed: ${response.body?.error ?? response.status}]`);
+    return;
+  }
+  for (const file of response.body.files) {
+    outHtml(`<pre>Uploaded: ${linkifyFilePaths(`\`${file.path}\``, workspaceId)}</pre>`);
+  }
+});
+
 async function boot() {
   const listing = await api("/v1/sessions");
   if (!listing.ok) {
@@ -417,6 +478,7 @@ async function boot() {
     }
   }
   workspaceId = entry.workspaceId;
+  uploadButton.hidden = false;
   out(`workspace: ${workspaceId}`);
 
   let createResponse;
