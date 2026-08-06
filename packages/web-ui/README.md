@@ -51,27 +51,27 @@ docker run -d --name dscode \
   -p 8899:8899 \
   -v dscode-home:/root/.dscode \
   -v dscode-workspace:/workspace \
+  -v "$HOME/.dscode/models.json":/root/.dscode/models.json:ro \
   -e WORKSPACES='k9x7q2m4v8w1z5t3=/workspace' \
-  -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access' \
+  -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max' \
+  -e OPENROUTER_API_KEY='<your key>' \
   --cap-drop ALL --security-opt no-new-privileges \
   dscode-server
 ```
 
-- **Volumes.** `/root/.dscode` holds the adapter's config (models.json, provider credentials) and
-  its persisted sessions — mount it so agent state survives container restarts. `/workspace` is
-  the agent's working directory (where it generates documents) — mount it to keep the output.
-- **`RUNTIME_ARGS` is mandatory in a container.** The default `workspace-write` sandbox has no
-  backend inside a Linux container (macOS `sandbox-exec` is unavailable and no `DSCODE_SANDBOX_IMAGE`
-  is configured), so every `exec_command` would fail without `--sandbox danger-full-access`. The
-  full trio also skips all mid-chat approval dialogs — the right posture for a non-technical
-  product, and the container already bounds the blast radius.
+- **Volumes.** `dscode-home` holds the adapter's config and persisted sessions; `dscode-workspace`
+  is the agent's working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
+- **`RUNTIME_ARGS` is required in a container** — the default sandbox has no backend inside a Linux
+  container, so every `exec_command` fails without `--sandbox danger-full-access` (which also skips
+  mid-chat approval dialogs).
 - **`HOST=0.0.0.0`** is set in the image; the app default (`127.0.0.1`) is unreachable from outside
   a container.
-- **Security.** `--cap-drop ALL --security-opt no-new-privileges` keeps the full-access agent from
-  escalating beyond the container. The lean image itself only adds `git` (the agent's tools run it
-  in the workspace).
-- **LibreOffice headless gotcha.** In a container, conversion can hang on the user profile lock —
-  add `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to` commands.
+- **Security.** `--cap-drop ALL --security-opt no-new-privileges` contains the full-access agent.
+  No `--cap-add`: the image pins apt's sandbox to root and ships `git` + `ca-certificates`, so apt
+  and HTTPS git/curl work under the full cap-drop.
+- **Provider keys.** Keys referenced in `models.json` as `$ENV` must be passed with `-e`.
+- **LibreOffice.** In a container, conversion can hang on the user profile lock — add
+  `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to`.
 
 ## File upload / download
 

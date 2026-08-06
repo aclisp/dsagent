@@ -19,10 +19,13 @@ ENV HOST=0.0.0.0 PORT=8899
 # Lean image: only what the agent needs to run. Office/PDF tools are added by the
 # derived image deploy/tools.Dockerfile on the live env server, so the distributed
 # artifact stays small.
-# Use the Tsinghua apt mirror instead of deb.debian.org (faster in CN networks).
-RUN sed -i 's|deb.debian.org/debian|mirrors.tuna.tsinghua.edu.cn/debian|' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+# apt's sandbox drops to the _apt user (setgroups/setegid/seteuid), which fails under
+# --cap-drop ALL; pinning the sandbox user to root lets apt run in the locked-down
+# running container without opening any capabilities. Tsinghua mirror = faster in CN.
+RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
+    && sed -i 's|deb.debian.org/debian|mirrors.tuna.tsinghua.edu.cn/debian|' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
