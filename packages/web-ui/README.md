@@ -103,9 +103,7 @@ see each other's input: the `running` turn event carries the submitted message, 
 page skips only its own (matched by `clientId`). Thinking and compaction show as transient indicators, and the agent's
 live working status counts up in the disabled input line (the TUI's
 "esc to interrupt" suffix becomes " · Stop to interrupt"). The Stop button aborts
-the running turn. Refreshing the page reattaches and re-renders. After a server restart,
-the page silently reattaches on the next message — resuming the persisted session — and
-redelivers that message.
+the running turn. Refreshing the page reattaches and re-renders. 
 
 ## v1 limitations
 

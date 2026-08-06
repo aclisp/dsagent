@@ -31,6 +31,15 @@ let streamText = "";
 let reconnectNoted = false;
 let dialogChain = Promise.resolve();
 let dialogOpen = false;
+// The adapter pings every 30s; 3 missed pings mean the stream is stale.
+const STALE_MS = 90_000;
+const WATCHDOG_MS = 15_000;
+const RECONNECT_GAP_MS = 10_000;
+let lastEventAt = 0;
+let reconnectDue = false;
+let reconnecting = false;
+let lastReconnectAt = 0;
+let watchdog = null;
 
 // --- helpers -----------------------------------------------------------
 
@@ -300,15 +309,23 @@ function openStream() {
   const source = new EventSource(`/v1/sessions/${sessionId}/events`);
   stream = source;
   source.addEventListener("open", () => {
+    lastEventAt = Date.now();
+    reconnectDue = false;
     document.getElementById("reconnect-notice")?.remove();
     reconnectNoted = false;
   });
   source.addEventListener("error", () => {
-    if (!reconnectNoted) {
-      outHtml('<pre id="reconnect-notice" class="muted">[connection lost — reconnecting…]</pre>');
-      reconnectNoted = true;
-    }
+    // A stale error from a replaced stream must not clobber the current one.
+    if (stream !== source) return;
+    // Close instead of letting EventSource retry: its auto-reconnect is a bare
+    // URL reconnect that can stall or stop (laptop sleep, silent drops) and
+    // can't resume a restarted session. reattach() reopens / resumes instead.
+    source.close();
+    stream = null;
+    reconnectDue = true;
+    void reconnect();
   });
+  source.addEventListener("ping", () => { lastEventAt = Date.now(); });
   source.addEventListener("turn", (e) => onTurn(JSON.parse(e.data)));
   source.addEventListener("assistant_text_delta", (e) => appendDelta(JSON.parse(e.data).delta));
   source.addEventListener("thinking_start", () => showIndicator("…thinking"));
@@ -343,6 +360,42 @@ function openStream() {
       }
     }
   });
+}
+
+// Only shown once a reconnect attempt has failed, so a transient blip that
+// recovers instantly never flashes a notice.
+function showReconnectNotice() {
+  if (!reconnectNoted) {
+    outHtml('<pre id="reconnect-notice" class="muted">[connection lost — retrying…]</pre>');
+    reconnectNoted = true;
+  }
+}
+
+async function reconnect() {
+  if (reconnecting) return;
+  if (Date.now() - lastReconnectAt < RECONNECT_GAP_MS) {
+    reconnectDue = true;
+    return;
+  }
+  reconnecting = true;
+  lastReconnectAt = Date.now();
+  try {
+    stream?.close();
+    stream = null;
+    if (!(await reattach())) showReconnectNotice();
+  } finally {
+    reconnecting = false;
+  }
+}
+
+function startWatchdog() {
+  if (watchdog) return;
+  watchdog = setInterval(() => {
+    if (reconnectDue || Date.now() - lastEventAt > STALE_MS) {
+      reconnectDue = false;
+      void reconnect();
+    }
+  }, WATCHDOG_MS);
 }
 
 // --- flow ---------------------------------------------------------------
@@ -517,6 +570,7 @@ async function boot() {
   }
 
   openStream();
+  startWatchdog();
   await renderHistory();
   await chatLoop();
 }
