@@ -45,6 +45,9 @@ let currentTurnClientId = null;
 let isDialogObserver = false;
 // Last dialog shown, so a reconnect replay of the same request is skipped.
 let lastDialogKey = null;
+// Uploaded file paths awaiting the next submitted message, so the agent learns
+// about them in context instead of only from the transcript line.
+let pendingUploads = [];
 // A pending term.input()'s <pre> question plus its preceding blank line; re-anchored
 // to the bottom on each append so the shared transcript cannot push the idle client's
 // prompt (and its spacing) up.
@@ -171,6 +174,10 @@ function outHtml(html) {
 
 function out(text) {
   outHtml(`<pre>${escapeHtml(text)}</pre>`);
+}
+
+function outMuted(text) {
+  outHtml(`<pre class="muted">${escapeHtml(text)}</pre>`);
 }
 
 async function ask(question) {
@@ -550,8 +557,12 @@ async function chatLoop() {
     // a second pending ask resolves on the same Enter and disables the input.
     await waitTurn();
     blankLine();
-    const message = await ask("> ");
+    let message = await ask("> ");
     if (message === undefined || message.trim().length === 0) continue;
+    if (pendingUploads.length > 0) {
+      message = `[Uploaded files: ${pendingUploads.join(", ")}]\n${message}`;
+      pendingUploads = [];
+    }
     blankLine();
     let response = await jsonPost(`/v1/sessions/${sessionId}/turns`, {
       message,
@@ -596,7 +607,10 @@ fileInput.addEventListener("change", async () => {
     return;
   }
   for (const file of response.body.files) {
-    outHtml(`<pre>Uploaded: ${linkifyFilePaths(`\`${file.path}\``, workspaceId)}</pre>`);
+    pendingUploads.push(file.path);
+    outHtml(
+      `<pre class="muted">📎 uploaded: ${linkifyFilePaths(`\`${file.path}\``, workspaceId)}</pre>`,
+    );
   }
 });
 
@@ -619,17 +633,17 @@ async function boot() {
     return;
   }
   showIdleControls();
-  out(`workspace: ${workspaceId}`);
+  outMuted(`workspace: ${workspaceId}`);
 
   let createResponse;
   if (entry.active) {
     sessionId = entry.session.id;
-    out(`attached to active session ${sessionId}`);
+    outMuted(`attached to active session ${sessionId}`);
   } else if (entry.session) {
     const summary = entry.session;
     const label = summary.name
       ?? (summary.firstMessage ? `"${truncate(summary.firstMessage, 60)}"` : "untitled");
-    out(`resuming previous session: ${label} (${summary.messageCount} messages)`);
+    outMuted(`resuming previous session: ${label} (${summary.messageCount} messages)`);
     createResponse = await jsonPost("/v1/sessions", {
       workspaceId: entry.workspaceId,
       resumeSessionId: summary.id,
@@ -643,7 +657,7 @@ async function boot() {
       return;
     }
     sessionId = createResponse.body.id;
-    out(createResponse.body.resumed
+    outMuted(createResponse.body.resumed
       ? `resumed session ${sessionId}`
       : `new session ${sessionId}`);
   }

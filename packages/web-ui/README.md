@@ -87,10 +87,12 @@ paths from its working directory.
   workspace (rejects `..` escapes and symlinks pointing outside), serves images/PDF/text inline
   and everything else as an attachment, always with `X-Content-Type-Options: nosniff`.
 
-The page's Upload button posts to the upload endpoint and prints the resulting paths; the agent
-references them from the workspace. Upload and Stop share one header slot — Upload shows while
-idle, Stop replaces it while a turn runs (uploading mid-turn would be useless: the agent reads
-files only at the next prompt). Download links are rendered client-side: a backticked span
+The page's Upload button posts to the upload endpoint and prints a confirmation line with a
+download link; the agent references them from the workspace. Upload and Stop share one header
+slot — Upload shows while idle, Stop replaces it while a turn runs (uploading mid-turn would be
+useless: the agent reads files only at the next prompt). The uploaded paths are injected into the
+next message the page submits, so the agent learns about them in context; the hint is sent once
+and cleared. Download links are rendered client-side: a backticked span
 counts as a file only when it looks like a path (no whitespace, and either a directory separator
 or a letter file extension), and `/workspace/…` paths always link. Anything else — `exec_command`,
 `npm install`, `v1.2` — stays plain text. To make the agent always cite files by path, add a line
