@@ -19,7 +19,12 @@ const showRunningControls = () => {
 };
 
 // Identifies this page to the adapter so it can skip echoing our own input.
-const clientId = crypto.randomUUID();
+// Persisted per tab so a refresh mid-dialog stays the submitter; new tabs observe.
+let clientId = sessionStorage.getItem("clientId");
+if (!clientId) {
+  clientId = crypto.randomUUID();
+  sessionStorage.setItem("clientId", clientId);
+}
 
 let sessionId = null;
 let workspaceId = null;
@@ -28,9 +33,18 @@ let currentTurnId = null;
 let resolveTurn = null;
 let streamBlock = null;
 let streamText = "";
+// Last streamed text block, kept across outHtml calls (which reset the active
+// streamBlock) so the final message can still be linkified on completion.
+let lastTextBlock = null;
 let reconnectNoted = false;
 let dialogChain = Promise.resolve();
 let dialogOpen = false;
+// Only the page that submitted the running turn answers its dialogs; other pages
+// observe read-only until the turn ends.
+let currentTurnClientId = null;
+let isDialogObserver = false;
+// Last dialog shown, so a reconnect replay of the same request is skipped.
+let lastDialogKey = null;
 // The adapter pings every 30s; 3 missed pings mean the stream is stale.
 const STALE_MS = 90_000;
 const WATCHDOG_MS = 15_000;
@@ -208,6 +222,29 @@ function hideWorking() {
   inputElement.placeholder = "";
 }
 
+// Another page's dialog: observe read-only until the turn ends — cancel any pending
+// main prompt and lock the input. Stop stays visible so an orphaned dialog can be
+// aborted from any page.
+function becomeDialogObserver() {
+  if (isDialogObserver) return;
+  isDialogObserver = true;
+  term.cancel_input();
+  term.disable_input();
+}
+
+function renderDialogReadOnly(request) {
+  if (request.method === "confirm") {
+    out(`! ${request.title}`);
+    if (request.message) out(request.message);
+  } else {
+    out(request.title);
+    if (request.method === "select" && request.options) {
+      request.options.forEach((option, index) => out(`  ${index + 1}. ${option}`));
+    }
+  }
+  outHtml('<pre class="muted">[waiting for the master client to answer]</pre>');
+}
+
 function appendDelta(delta) {
   if (!streamBlock) {
     streamText = "";
@@ -216,11 +253,13 @@ function appendDelta(delta) {
   }
   streamText += delta;
   streamBlock.textContent = streamText;
+  lastTextBlock = streamBlock;
   term.scroll_to_bottom();
 }
 
 function endStream() {
   streamBlock = null;
+  lastTextBlock = null;
   streamText = "";
 }
 
@@ -229,6 +268,7 @@ function endStream() {
 function onTurn(event) {
   if (event.status === "running" || event.status === "aborting") {
     currentTurnId = event.turnId;
+    if (event.status === "running") currentTurnClientId = event.clientId ?? null;
     showRunningControls();
     // Another client submitted the turn: show its input (ours is already in the
     // prompt line).
@@ -245,10 +285,12 @@ function onTurn(event) {
   }
   hideIndicator();
   hideWorking();
-  if (event.status === "completed" && streamBlock) {
-    streamBlock.innerHTML = linkifyFilePaths(streamText, workspaceId);
+  if (event.status === "completed" && lastTextBlock) {
+    lastTextBlock.innerHTML = linkifyFilePaths(lastTextBlock.textContent, workspaceId);
   }
   endStream();
+  isDialogObserver = false;
+  currentTurnClientId = null;
   showIdleControls();
   currentTurnId = null;
   if (event.status === "failed") {
@@ -272,6 +314,17 @@ async function handleUiRequest(request, turnId) {
   // its question was on screen; skip stale dialogs instead of posting to a
   // cancelled request.
   if (turnId !== currentTurnId) return;
+  // A reconnect replays pending ui_requests; skip one we already showed.
+  const key = `${turnId}:${request.id}`;
+  if (key === lastDialogKey) return;
+  lastDialogKey = key;
+  // Only the page that submitted the running turn answers its dialogs; other pages see
+  // them read-only and stay out of the input flow.
+  if (currentTurnClientId !== clientId) {
+    becomeDialogObserver();
+    renderDialogReadOnly(request);
+    return;
+  }
   let answer;
   if (request.method === "confirm") {
     out(`! ${request.title}`);
@@ -430,9 +483,12 @@ async function renderHistory() {
 }
 
 async function waitTurn() {
+  // Arm the resolver before the GET so a turn that ends during the fetch is not
+  // missed; the GET only decides whether we need to park at all.
+  const parked = new Promise((resolve) => { resolveTurn = resolve; });
   const state = await api(`/v1/sessions/${sessionId}`);
   if (state.ok && state.body.status === "idle") return;
-  await new Promise((resolve) => { resolveTurn = resolve; });
+  await parked;
 }
 
 function blankLine() {
@@ -464,6 +520,9 @@ async function reattach() {
 
 async function chatLoop() {
   for (;;) {
+    // Await any in-flight turn so a dialog prompt is the only pending input;
+    // a second pending ask resolves on the same Enter and disables the input.
+    await waitTurn();
     blankLine();
     const message = await ask("> ");
     if (message === undefined || message.trim().length === 0) continue;
@@ -484,7 +543,7 @@ async function chatLoop() {
       out(`[turn rejected: ${response.body?.error ?? response.status}]`);
       continue;
     }
-    await waitTurn();
+    // The loop's top waitTurn() awaits the turn just submitted.
   }
 }
 
@@ -569,9 +628,12 @@ async function boot() {
       : `new session ${sessionId}`);
   }
 
+  // Render history before opening the stream: the replay of an in-flight turn
+  // (running event + pending dialog) then lands below the transcript instead of
+  // being pushed above it — and out of view — by the history render.
+  await renderHistory();
   openStream();
   startWatchdog();
-  await renderHistory();
   await chatLoop();
 }
 
