@@ -19,7 +19,9 @@ ENV HOST=0.0.0.0 PORT=8899
 # Lean image: only what the agent needs to run. Office/PDF tools are added by the
 # derived image deploy/tools.Dockerfile on the live env server, so the distributed
 # artifact stays small.
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+# Use the Tsinghua apt mirror instead of deb.debian.org (faster in CN networks).
+RUN sed -i 's|deb.debian.org/debian|mirrors.tuna.tsinghua.edu.cn/debian|' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
