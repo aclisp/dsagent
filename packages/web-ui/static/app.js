@@ -221,10 +221,14 @@ const jsonPost = (path, body) => api(path, {
 
 function showIndicator(text) {
   hideIndicator();
-  outHtml(`<pre class="indicator">${escapeHtml(text)}</pre>`);
-  const consoleElement = document.querySelector(".termino-console");
-  const indicator = consoleElement.lastElementChild;
-  if (indicator) indicator.id = "indicator";
+  const indicator = document.createElement("pre");
+  indicator.className = "indicator";
+  indicator.id = "indicator";
+  indicator.textContent = text;
+  document.querySelector(".termino-console").appendChild(indicator);
+  streamBlock = null;
+  streamText = "";
+  reAnchorPrompt();
   term.scroll_to_bottom();
 }
 
