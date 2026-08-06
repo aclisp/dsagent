@@ -45,6 +45,10 @@ let currentTurnClientId = null;
 let isDialogObserver = false;
 // Last dialog shown, so a reconnect replay of the same request is skipped.
 let lastDialogKey = null;
+// A pending term.input()'s <pre> question plus its preceding blank line; re-anchored
+// to the bottom on each append so the shared transcript cannot push the idle client's
+// prompt (and its spacing) up.
+let pendingPrompt = null;
 // The adapter pings every 30s; 3 missed pings mean the stream is stale.
 const STALE_MS = 90_000;
 const WATCHDOG_MS = 15_000;
@@ -142,6 +146,15 @@ function linkifyFilePaths(text, workspaceId) {
   return html;
 }
 
+// Keep a pending prompt (an idle client's "> ") pinned above the input box when new
+// content appends below it; appendChild on an existing child moves it to the end.
+function reAnchorPrompt() {
+  if (!pendingPrompt) return;
+  const consoleElement = document.querySelector(".termino-console");
+  if (pendingPrompt[pendingPrompt.length - 1] === consoleElement.lastElementChild) return;
+  for (const el of pendingPrompt) consoleElement.appendChild(el);
+}
+
 // Append via a template instead of Termino's innerHTML +=, which re-parses
 // the console and detaches the streaming block mid-turn. Content added after
 // the streaming block invalidates it, so the next delta starts a new block
@@ -152,6 +165,7 @@ function outHtml(html) {
   document.querySelector(".termino-console").appendChild(template.content);
   streamBlock = null;
   streamText = "";
+  reAnchorPrompt();
   term.scroll_to_bottom();
 }
 
@@ -162,9 +176,16 @@ function out(text) {
 async function ask(question) {
   term.enable_input();
   document.querySelector(".termino-input").focus();
+  const prompt = term.input(escapeHtml(question));
+  const promptElement = document.querySelector(".termino-console").lastElementChild;
+  // Keep chatLoop's blank line (the element right above the prompt) with it so the
+  // pair stays together when re-anchored; dialogs and the picker have no blank.
+  const prev = promptElement.previousElementSibling;
+  pendingPrompt = prev && /^\s*$/.test(prev.textContent) ? [prev, promptElement] : [promptElement];
   try {
-    return await term.input(escapeHtml(question));
+    return await prompt;
   } finally {
+    pendingPrompt = null;
     term.disable_input();
   }
 }
@@ -254,6 +275,7 @@ function appendDelta(delta) {
   streamText += delta;
   streamBlock.textContent = streamText;
   lastTextBlock = streamBlock;
+  reAnchorPrompt();
   term.scroll_to_bottom();
 }
 
