@@ -118,10 +118,12 @@ function toolSummary(name, args = {}) {
 }
 
 // A backticked span counts as a file only when it looks like a path: no
-// whitespace, and either a directory separator or a letter file extension.
+// whitespace or shell/URL metacharacters, and either a directory separator
+// or a dotted name ("report.pdf"; a bare ".md" is a format mention).
 function isFilePathToken(text) {
   if (/\s/.test(text)) return false;
-  return text.includes("/") || /\.[A-Za-z]{1,10}$/.test(text);
+  if (/[#?@<>=&|:]/.test(text)) return false;
+  return text.includes("/") || /^[^\s.].*\.[A-Za-z]{1,10}$/.test(text);
 }
 
 // Convert backticked and /workspace/... file paths in assistant text into download

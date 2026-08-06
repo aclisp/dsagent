@@ -93,8 +93,9 @@ slot — Upload shows while idle, Stop replaces it while a turn runs (uploading 
 useless: the agent reads files only at the next prompt). The uploaded paths are injected into the
 next message the page submits, so the agent learns about them in context; the hint is sent once
 and cleared. Download links are rendered client-side: a backticked span
-counts as a file only when it looks like a path (no whitespace, and either a directory separator
-or a letter file extension), and `/workspace/…` paths always link. Anything else — `exec_command`,
+counts as a file only when it looks like a path (no whitespace or shell/URL metacharacters, and
+either a directory separator or a dotted name like `report.pdf` — a bare `.md` stays plain), and
+`/workspace/…` paths always link. Anything else — `exec_command`,
 `npm install`, `v1.2` — stays plain text. To make the agent always cite files by path, add a line
 to `~/.dscode/APPEND_SYSTEM.md`:
 
