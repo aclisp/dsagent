@@ -90,6 +90,6 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
   resize: none;
 }
 /* The working status occupies the disabled input while a turn runs. */
-.termino-input::placeholder { color: #8a97a5; font-style: italic; }
-.indicator { color: #8a97a5; font-style: italic; }
+.termino-input::placeholder { color: #8a97a5; text-align: center; }
+.indicator { color: #8a97a5; }
 .muted { color: #8a97a5; }
