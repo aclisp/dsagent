@@ -4,8 +4,6 @@ import multipart from "@fastify/multipart";
 import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
 import { registerFileRoutes } from "./files.js";
 
-const DEFAULT_WORKSPACES = "demo=/tmp/dscode-web-ui-demo";
-
 function parseWorkspaces(value: string): Record<string, string> {
   const workspaces: Record<string, string> = {};
   for (const entry of value.split(",")) {
@@ -28,7 +26,11 @@ function parseWorkspaces(value: string): Record<string, string> {
   return workspaces;
 }
 
-const workspaces = parseWorkspaces(process.env.WORKSPACES ?? DEFAULT_WORKSPACES);
+const workspacesConfig = process.env.WORKSPACES;
+if (!workspacesConfig?.trim()) {
+  throw new Error("WORKSPACES is required (comma-separated id=path pairs; ids are secrets)");
+}
+const workspaces = parseWorkspaces(workspacesConfig);
 for (const cwd of Object.values(workspaces)) {
   await mkdir(cwd, { recursive: true });
 }
@@ -43,6 +45,7 @@ const server = createHttpAdapterServer({
   workspaces,
   logger: false,
   maxSessionFileBytes: 1024*1024,
+  requireWorkspaceIdForSessionList: true,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
 });
 
@@ -52,10 +55,18 @@ registerFileRoutes(server, workspaces, { maxUploadBytes });
 const staticFile = (name: string): Promise<Buffer> =>
   readFile(new URL(`../static/${name}`, import.meta.url));
 
-server.get("/", async (_request, reply) => {
-  const html = await staticFile("index.html");
-  return reply.type("text/html; charset=utf-8").send(html);
-});
+// The page is served only at /chat/<workspaceId>, where the workspaceId is the secret
+// credential — the root and unknown ids 404.
+server.get<{ Params: { workspaceId: string } }>(
+  "/chat/:workspaceId",
+  async (request, reply) => {
+    if (!workspaces[request.params.workspaceId]) {
+      return reply.code(404).send({ error: "workspace_not_found" });
+    }
+    const html = await staticFile("index.html");
+    return reply.type("text/html; charset=utf-8").send(html);
+  },
+);
 
 server.get("/termino.js", async (_request, reply) => {
   const script = await staticFile("termino.js");

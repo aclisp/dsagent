@@ -525,9 +525,9 @@ function blankLine() {
 // session can be resumed under the same id. The old EventSource got a 404 while
 // the session was gone, which closes it for good, so always open a fresh stream.
 async function reattach() {
-  const listing = await api("/v1/sessions");
+  const listing = await api(`/v1/sessions?workspaceId=${encodeURIComponent(workspaceId)}`);
   if (!listing.ok) return false;
-  const entry = listing.body.sessions.find((e) => e.workspaceId === workspaceId);
+  const entry = listing.body.sessions[0];
   if (!entry) return false;
   if (entry.active) {
     sessionId = entry.session.id;
@@ -601,29 +601,23 @@ fileInput.addEventListener("change", async () => {
 });
 
 async function boot() {
-  const listing = await api("/v1/sessions");
+  // The workspace secret comes from the URL (/chat/<workspaceId>); the server serves
+  // the page only for a configured id, so a load here implies a valid one.
+  workspaceId = location.pathname.split("/")[2];
+  if (!workspaceId) {
+    out("[missing workspace in URL]");
+    return;
+  }
+  const listing = await api(`/v1/sessions?workspaceId=${encodeURIComponent(workspaceId)}`);
   if (!listing.ok) {
     out(`[cannot reach the adapter: ${listing.status}]`);
     return;
   }
-  const entries = listing.body.sessions;
-  let entry;
-  if (entries.length === 1) {
-    entry = entries[0];
-  } else {
-    entries.forEach((e, index) => {
-      out(`${index + 1}. ${e.workspaceId}${e.active ? " (active)" : ""}`);
-    });
-    for (;;) {
-      const choice = await ask("workspace # > ");
-      const selected = entries[Number(choice) - 1];
-      if (choice !== undefined && selected) {
-        entry = selected;
-        break;
-      }
-    }
+  const entry = listing.body.sessions[0];
+  if (!entry) {
+    out(`[workspace ${workspaceId} not found]`);
+    return;
   }
-  workspaceId = entry.workspaceId;
   showIdleControls();
   out(`workspace: ${workspaceId}`);
 

@@ -13,16 +13,25 @@ pnpm --dir packages/web-ui build
 node packages/web-ui/dist/server.js
 ```
 
-Then open http://127.0.0.1:8899.
+Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 ## Configuration (environment)
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WORKSPACES` | `demo=/tmp/dscode-web-ui-demo` | Comma-separated `id=path` pairs; directories are created if missing |
+| `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; directories are created if missing. The ids are **secrets** — use a random high-entropy value per deployment |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session (e.g. `--provider openrouter --model qwen3.7-plus`) |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
+
+## Workspaces as a secret
+
+There is no default or discoverable workspace. The chat page is served only at
+`/chat/:workspaceId`; `/` and unknown ids return 404. The id is the bearer credential for
+the whole deployment — whoever holds the URL can open the page and, because the same id
+gates the API (`GET /v1/sessions` requires `?workspaceId=`), reach the full-access agent.
+Share the URL out-of-band (e.g. `https://host/chat/k9x7…`). The id is high-entropy, so
+it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
 
 ## Docker
 
@@ -42,7 +51,7 @@ docker run -d --name dscode \
   -p 8899:8899 \
   -v dscode-home:/root/.dscode \
   -v dscode-workspace:/workspace \
-  -e WORKSPACES=ws=/workspace \
+  -e WORKSPACES='k9x7q2m4v8w1z5t3=/workspace' \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access' \
   --cap-drop ALL --security-opt no-new-privileges \
   dscode-server
@@ -94,7 +103,7 @@ backticked workspace-relative path (e.g. `uploads/report.pdf`).
 
 ## What the page does
 
-Boots from `GET /v1/sessions` (workspace picker when more than one), attaches to an active
+Boots from the `workspaceId` in the URL, attaches to an active
 session or creates/resumes one, renders history from `GET /v1/sessions/:id/messages`, then
 chats over `POST /turns` while watching the SSE stream — assistant text streams live,
 tools print one line per phase, and
