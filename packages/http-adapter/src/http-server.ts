@@ -61,6 +61,8 @@ export interface CreateHttpAdapterServerOptions {
   maxSessionFileBytes?: number;
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
+  /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
+  requireWorkspaceIdForSessionList?: boolean;
   logger?: boolean | FastifyLoggerOptions;
 }
 
@@ -559,30 +561,42 @@ export function createHttpAdapterServer(
 
   server.get("/health", async () => ({ status: "ok" }));
 
-  server.get("/v1/sessions", async (request, reply) => {
-    const entries: HttpSessionListEntry[] = [];
-    for (const [workspaceId, cwd] of workspaces) {
-      const active = [...sessions.values(), ...disposingSessions.values()].find(
-        (controller) => controller.workspaceId === workspaceId,
-      );
-      if (active) {
-        entries.push({ workspaceId, active: true, session: active.descriptor });
-        continue;
+  server.get<{ Querystring: { workspaceId?: string } }>(
+    "/v1/sessions",
+    async (request, reply) => {
+      const { workspaceId } = request.query;
+      if (options.requireWorkspaceIdForSessionList && !workspaceId?.trim()) {
+        return reply.code(400).send({ error: "invalid_session_request" });
       }
-      let summaries: PersistedSessionSummary[];
-      try {
-        summaries = await listSessions(cwd);
-      } catch (error) {
-        request.log.error(
-          { err: error, workspaceId },
-          "Persisted session listing failed",
+      const scope = workspaceId?.trim();
+      const cwd = scope ? workspaces.get(scope) : undefined;
+      if (scope && !cwd) return reply.code(404).send({ error: "workspace_not_found" });
+      const targets: [string, string][] =
+        scope && cwd ? [[scope, cwd]] : [...workspaces.entries()];
+      const entries: HttpSessionListEntry[] = [];
+      for (const [entryWorkspaceId, entryCwd] of targets) {
+        const active = [...sessions.values(), ...disposingSessions.values()].find(
+          (controller) => controller.workspaceId === entryWorkspaceId,
         );
-        return reply.code(500).send({ error: "session_list_failed" });
+        if (active) {
+          entries.push({ workspaceId: entryWorkspaceId, active: true, session: active.descriptor });
+          continue;
+        }
+        let summaries: PersistedSessionSummary[];
+        try {
+          summaries = await listSessions(entryCwd);
+        } catch (error) {
+          request.log.error(
+            { err: error, workspaceId: entryWorkspaceId },
+            "Persisted session listing failed",
+          );
+          return reply.code(500).send({ error: "session_list_failed" });
+        }
+        entries.push({ workspaceId: entryWorkspaceId, active: false, session: summaries[0] ?? null });
       }
-      entries.push({ workspaceId, active: false, session: summaries[0] ?? null });
-    }
-    return { sessions: entries };
-  });
+      return { sessions: entries };
+    },
+  );
 
   server.post<{ Body: CreateSessionBody }>(
     "/v1/sessions",

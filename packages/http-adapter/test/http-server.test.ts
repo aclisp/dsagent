@@ -133,6 +133,7 @@ function createHarness(options?: {
   runtimeArgs?: readonly string[];
   workspaces?: Readonly<Record<string, string>>;
   listPersistedSessions?: PersistedSessionLister;
+  requireWorkspaceIdForSessionList?: boolean;
 }): Harness {
   const hosts = new Map<string, FakeHost>();
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
@@ -143,6 +144,9 @@ function createHarness(options?: {
       : {}),
     ...(options?.listPersistedSessions !== undefined
       ? { listPersistedSessions: options.listPersistedSessions }
+      : {}),
+    ...(options?.requireWorkspaceIdForSessionList !== undefined
+      ? { requireWorkspaceIdForSessionList: options.requireWorkspaceIdForSessionList }
       : {}),
     createHost: async (factoryOptions) => {
       factoryCalls.push(factoryOptions);
@@ -586,6 +590,86 @@ describe("createHttpAdapterServer", () => {
       "/workspace/other",
       "/workspace/other",
     ]);
+  });
+
+  it("gates the session list behind ?workspaceId= when requireWorkspaceIdForSessionList is set", async () => {
+    const mainSummary = { id: "saved-main", firstMessage: "Hi", messageCount: 1, modified: new Date("2026-08-04T12:00:00Z") };
+    const listCalls: string[] = [];
+    const harness = createHarness({
+      requireWorkspaceIdForSessionList: true,
+      listPersistedSessions: async (cwd) => {
+        listCalls.push(cwd);
+        return cwd === "/workspace/main" ? [mainSummary] : [];
+      },
+    });
+
+    // No workspaceId → rejected, nothing scanned.
+    const missing = await harness.server.inject({ method: "GET", url: "/v1/sessions" });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json()).toEqual({ error: "invalid_session_request" });
+    expect(listCalls).toEqual([]);
+
+    // Unknown workspace id → 404.
+    const unknown = await harness.server.inject({
+      method: "GET",
+      url: "/v1/sessions?workspaceId=nope",
+    });
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toEqual({ error: "workspace_not_found" });
+    expect(listCalls).toEqual([]);
+
+    // Valid id → only that workspace's entry, no cross-workspace scan.
+    const scoped = await harness.server.inject({
+      method: "GET",
+      url: "/v1/sessions?workspaceId=main",
+    });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json()).toEqual({
+      sessions: [
+        {
+          workspaceId: "main",
+          active: false,
+          session: { ...mainSummary, modified: "2026-08-04T12:00:00.000Z" },
+        },
+      ],
+    });
+    expect(listCalls).toEqual(["/workspace/main"]);
+
+    // An active session in the scoped workspace is served from live state.
+    const sessionId = await harness.createSession("main");
+    const scopedActive = await harness.server.inject({
+      method: "GET",
+      url: "/v1/sessions?workspaceId=main",
+    });
+    expect(scopedActive.json()).toEqual({
+      sessions: [
+        {
+          workspaceId: "main",
+          active: true,
+          session: { id: sessionId, workspaceId: "main", persisted: true, status: "idle" },
+        },
+      ],
+    });
+  });
+
+  it("scopes to a single workspace when ?workspaceId= is given without the option", async () => {
+    const harness = createHarness({
+      listPersistedSessions: async (cwd) => (cwd === "/workspace/main" ? [{ id: "saved-main", firstMessage: "Hi", messageCount: 1, modified: new Date("2026-08-04T12:00:00Z") }] : []),
+    });
+    const scoped = await harness.server.inject({
+      method: "GET",
+      url: "/v1/sessions?workspaceId=main",
+    });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json()).toEqual({
+      sessions: [
+        {
+          workspaceId: "main",
+          active: false,
+          session: { id: "saved-main", firstMessage: "Hi", messageCount: 1, modified: "2026-08-04T12:00:00.000Z" },
+        },
+      ],
+    });
   });
 
   it("reports session_list_failed when the persisted store scan fails", async () => {

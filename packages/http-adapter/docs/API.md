@@ -114,6 +114,13 @@ Rules that shape this loop:
   target for `POST /v1/sessions { resumeSessionId }` — with `name` omitted when unset,
   or `session: null` when the workspace has no history yet.
 
+The list can be scoped to one workspace with `?workspaceId=<id>`: only that entry is
+returned, and an unknown id yields `404 workspace_not_found`. When the server is created
+with `requireWorkspaceIdForSessionList: true`, the param becomes mandatory — a request
+without it returns `400 invalid_session_request` and no workspace is scanned. This is
+the capability-URL mode: the workspace id is a secret that gates the API surface, so the
+list never enumerates ids to anonymous callers.
+
 `POST /v1/sessions` — body:
 
 ```json
@@ -247,7 +254,7 @@ A mismatched body is rejected with `400 invalid_ui_response`; `confirm` cannot t
 
 | status | code | when |
 | --- | --- | --- |
-| `400` | `invalid_session_request` | Missing, blank, extra, or mistyped session body fields |
+| `400` | `invalid_session_request` | Missing, blank, extra, or mistyped session body fields; no `workspaceId` on `GET /v1/sessions` when `requireWorkspaceIdForSessionList` is set |
 | `400` | `invalid_message` | Blank or missing `message` |
 | `400` | `invalid_ui_response` | Malformed or wrong-shape UI response |
 | `404` | `workspace_not_found` | Unknown `workspaceId` |
