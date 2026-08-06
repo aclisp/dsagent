@@ -399,7 +399,7 @@ class SessionController {
     });
     const keepalive = setInterval(() => {
       if (!response.destroyed && !response.writableEnded) {
-        response.write(": keepalive\n\n");
+        response.write("event: ping\ndata: {}\n\n");
       }
     }, KEEPALIVE_INTERVAL_MS);
     this.eventStreams.set(response, () => {

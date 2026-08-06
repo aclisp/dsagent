@@ -204,6 +204,7 @@ Event types:
 | `ui_request` | `turnId`, `request` | Interactive dialog to answer |
 | `ui_event` | `turnId`, `event` | Extension UI state: `status`, `widget`, `title`, `working_*`, `hidden_thinking_label`, `notify`, `editor_text` |
 | `extension_error` | `turnId`, `error` (`extensionPath`, `event`, `message`) | Extension handler failure |
+| `ping` | — | Heartbeat sent roughly every 30 seconds to keep the connection alive; its absence signals a stale connection |
 
 `turnId` is `null` for events emitted outside an active turn (for example UI updates at session
 startup).
@@ -212,8 +213,8 @@ startup).
 show a progress state between the pair and clear it on any terminal `turn` event — an aborted turn
 may never emit the matching `_end`. They are not replayed on reconnect.
 
-The server writes a `: keepalive` comment frame roughly every 30 seconds. Compliant SSE clients
-ignore comments; use their absence for staleness detection if needed.
+The server sends a `ping` event roughly every 30 seconds; a client can use its absence to detect a
+stale connection and reconnect.
 
 ## UI requests and responses
 
