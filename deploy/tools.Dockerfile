@@ -8,4 +8,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-writer libreoffice-calc libreoffice-impress \
       poppler-utils ghostscript qpdf pandoc \
       fonts-noto-cjk fonts-noto-core fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*

@@ -61,6 +61,11 @@ docker run -d --name dscode \
   dscode-server
 ```
 
+The same deployment is available as `docker-compose.yml` at the repo root: fill in `.env`
+(`WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL` — see `.env.example`), then `docker compose
+up -d` creates the container and recreates it after an image rebuild; `docker compose down`
+stops it without touching the named volumes.
+
 - **Volumes.** `dscode-home` holds the adapter's config and persisted sessions; `dscode-workspace`
   is the agent's working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
 - **`RUNTIME_ARGS` is required in a container** — the default sandbox has no backend inside a Linux
@@ -73,6 +78,8 @@ docker run -d --name dscode \
   `ripgrep` + `procps`, so apt, HTTPS git/curl, `rg` search, and process tools (`ps`/`pgrep`/`free`)
   work under the full cap-drop.
 - **Provider keys.** Keys referenced in `models.json` as `$ENV` must be passed with `-e`.
+  An example lives at `deploy/models.json.example` — copy it to `~/.dscode/models.json` and
+  replace the `baseUrl` placeholder with your endpoint.
 - **LibreOffice.** In a container, conversion can hang on the user profile lock — add
   `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to`.
 
