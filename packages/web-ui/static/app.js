@@ -18,11 +18,21 @@ const showRunningControls = () => {
   stopButton.hidden = false;
 };
 
+// crypto.randomUUID needs a secure context (HTTPS or localhost); plain-http LAN
+// hosts lack it, so fall back to a v4 UUID built from getRandomValues.
+const makeClientId = () => {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
+
 // Identifies this page to the adapter so it can skip echoing our own input.
 // Persisted per tab so a refresh mid-dialog stays the submitter; new tabs observe.
 let clientId = sessionStorage.getItem("clientId");
 if (!clientId) {
-  clientId = crypto.randomUUID();
+  clientId = crypto.randomUUID ? crypto.randomUUID() : makeClientId();
   sessionStorage.setItem("clientId", clientId);
 }
 
