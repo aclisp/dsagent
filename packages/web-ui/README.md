@@ -30,7 +30,7 @@ There is no default or discoverable workspace. The chat page is served only at
 `/chat/:workspaceId`; `/` and unknown ids return 404. The id is the bearer credential for
 the whole deployment — whoever holds the URL can open the page and, because the same id
 gates the API (`GET /v1/sessions` requires `?workspaceId=`), reach the full-access agent.
-Share the URL out-of-band (e.g. `https://host/chat/k9x7…`). The id is high-entropy, so
+Share the URL out-of-band (e.g. `https://host/chat/<workspace-id>`). The id is high-entropy, so
 it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
 
 ## Docker
@@ -52,7 +52,7 @@ docker run -d --name dscode \
   -v dscode-home:/root/.dscode \
   -v dscode-workspace:/workspace \
   -v "$HOME/.dscode/models.json":/root/.dscode/models.json:ro \
-  -e WORKSPACES='k9x7q2m4v8w1z5t3=/workspace' \
+  -e "WORKSPACES='<workspace-id>=/workspace'" \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max' \
   -e OPENROUTER_API_KEY='<your key>' \
   --cap-drop ALL --security-opt no-new-privileges \
