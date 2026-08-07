@@ -100,6 +100,16 @@ The other DSCode tools are TUI-first and don't fit this deployment:
   backend for their `read-only`/`workspace-write` modes — none of which exist inside the
   container. `DSCODE_SUBAGENT_DEPTH=1` also skips its registration.
 
+### Default skills
+
+The image ships two skills — `grill-me` and `skill-creator` — bundled in
+`deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
+(`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
+only when missing, so existing deployments pick them up without user skills being overwritten.
+They're auto-discovered by pi (the user skills dir is not trust-gated) and listed in the system
+prompt now that the `read` tool is active. Add user skills by dropping directories into the
+volume's `/root/.dscode/skills/`.
+
 ## File upload / download
 
 These endpoints are web-ui layer (not part of the http-adapter API). Files live in the
