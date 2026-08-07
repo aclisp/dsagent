@@ -20,7 +20,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; directories are created if missing. The ids are **secrets** — use a random high-entropy value per deployment |
-| `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch` to keep the agent toolset to what the web-ui can display |
+| `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
@@ -54,7 +54,7 @@ docker run -d --name dscode \
   -v dscode-workspace:/workspace \
   -v "$HOME/.dscode/models.json":/root/.dscode/models.json:ro \
   -e "WORKSPACES='<workspace-id>=/workspace'" \
-  -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch' \
+  -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
   -e OPENROUTER_API_KEY='<your key>' \
   --cap-drop ALL --security-opt no-new-privileges \
@@ -85,9 +85,12 @@ stops it without touching the named volumes.
 
 ## Agent toolset
 
-The web-ui restricts the agent to three tools (`--tools exec_command,write_stdin,apply_patch`
-plus `DSCODE_SUBAGENT_DEPTH=1`). The other DSCode tools are TUI-first and don't fit this
-deployment:
+The web-ui restricts the agent to four tools (`--tools exec_command,write_stdin,apply_patch,read`
+plus `DSCODE_SUBAGENT_DEPTH=1`). `read` is pi's built-in file reader — it's included because pi
+only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
+auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
+`read`. `/system-prompt` shows the rendered system prompt, active tools, and loaded skills.
+The other DSCode tools are TUI-first and don't fit this deployment:
 
 - `update_plan` is excluded: plan state is rendered through a TUI widget the web-ui doesn't
   display, and plan mode is unreachable here (the deployment runs `--permission full` in `rpc`
