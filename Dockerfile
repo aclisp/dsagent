@@ -24,7 +24,7 @@ ENV HOST=0.0.0.0 PORT=8899
 # running container without opening any capabilities. Tsinghua mirror = faster in CN.
 RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && sed -i 's|deb.debian.org/debian|mirrors.tuna.tsinghua.edu.cn/debian|' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules

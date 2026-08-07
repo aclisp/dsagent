@@ -69,8 +69,9 @@ docker run -d --name dscode \
 - **`HOST=0.0.0.0`** is set in the image; the app default (`127.0.0.1`) is unreachable from outside
   a container.
 - **Security.** `--cap-drop ALL --security-opt no-new-privileges` contains the full-access agent.
-  No `--cap-add`: the image pins apt's sandbox to root and ships `git` + `ca-certificates`, so apt
-  and HTTPS git/curl work under the full cap-drop.
+  No `--cap-add`: the image pins apt's sandbox to root and ships `git` + `ca-certificates` +
+  `ripgrep` + `procps`, so apt, HTTPS git/curl, `rg` search, and process tools (`ps`/`pgrep`/`free`)
+  work under the full cap-drop.
 - **Provider keys.** Keys referenced in `models.json` as `$ENV` must be passed with `-e`.
 - **LibreOffice.** In a container, conversion can hang on the user profile lock — add
   `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to`.
