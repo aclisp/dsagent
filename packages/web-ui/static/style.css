@@ -96,7 +96,11 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
   overflow-y: hidden;
 }
 /* The working status occupies the disabled input while a turn runs. */
-.termino-input::placeholder { color: #8a97a5; text-align: center; }
+.termino-input::placeholder {
+  color: #8a97a5;
+  text-align: center;
+  font-size: 14px;
+}
 .indicator { color: #8a97a5; }
 .muted { color: #8a97a5; }
 /* File/share links: a light blue that holds contrast on the dark background;
