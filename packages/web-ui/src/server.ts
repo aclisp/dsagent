@@ -83,6 +83,11 @@ server.get("/style.css", async (_request, reply) => {
   return reply.type("text/css; charset=utf-8").send(css);
 });
 
+server.get("/favicon.png", async (_request, reply) => {
+  const favicon = await staticFile("favicon.png");
+  return reply.type("image/png").send(favicon);
+});
+
 const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 8899);
 await server.listen({ host, port });

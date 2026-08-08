@@ -29,10 +29,11 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
-# Default skills live outside /root/.dscode (a named volume) and are seeded by the
-# entrypoint on every start, so existing volumes pick them up without being clobbered.
+# Bundled skills and prompt files live outside /root/.dscode (a named volume) and are
+# seeded by the entrypoint on every start, so existing volumes pick them up without being clobbered.
 COPY deploy/docker-entrypoint.sh /usr/local/bin/dscode-entrypoint.sh
 COPY deploy/default-skills /usr/local/share/dscode/default-skills
+COPY deploy/default-files /usr/local/share/dscode/default-files
 RUN chmod +x /usr/local/bin/dscode-entrypoint.sh
 EXPOSE 8899
 ENTRYPOINT ["/usr/local/bin/dscode-entrypoint.sh"]

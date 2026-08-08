@@ -110,6 +110,15 @@ They're auto-discovered by pi (the user skills dir is not trust-gated) and liste
 prompt now that the `read` tool is active. Add user skills by dropping directories into the
 volume's `/root/.dscode/skills/`.
 
+### Default prompt/context files
+
+The image also bundles `APPEND_SYSTEM.md` and `AGENTS.md` under `deploy/default-files/`. On every
+container start, the entrypoint copies each missing file into the global `DSCODE_HOME` directory
+(`~/.dscode` by default), where pi loads them as prompt/context files. Existing files are preserved,
+so edit them in the named `home` volume to customize the defaults. `APPEND_SYSTEM.md` contains the
+global product persona; `AGENTS.md` contains the Web UI output rules and file-citation guidance.
+`/system-prompt` shows the resulting prompt.
+
 ## File upload / download
 
 These endpoints are web-ui layer (not part of the http-adapter API). Files live in the
@@ -133,8 +142,8 @@ and cleared. Download links are rendered client-side: a backticked span
 counts as a file only when it looks like a path (no whitespace or shell/URL metacharacters, and
 either a directory separator or a dotted name like `report.pdf` — a bare `.md` stays plain), and
 `/workspace/…` paths always link. Anything else — `exec_command`,
-`npm install`, `v1.2` — stays plain text. To make the agent always cite files by path, add a line
-to `~/.dscode/APPEND_SYSTEM.md`:
+`npm install`, `v1.2` — stays plain text. The bundled `AGENTS.md` already asks the agent to
+cite user-visible files by path; edit `~/.dscode/AGENTS.md` to customize that behavior:
 
 ```md
 When you create a file the user should see, save it in the workspace and cite it as a
