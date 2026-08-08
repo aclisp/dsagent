@@ -14,6 +14,7 @@ services:
     image: ${DSCODE_IMAGE:-dscode-server}
     container_name: dscode
     restart: unless-stopped
+    init: true
     ports:
       - "8899:8899"
     environment:

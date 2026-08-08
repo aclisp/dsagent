@@ -57,6 +57,7 @@ docker run -d --name dscode \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
   -e OPENROUTER_API_KEY='<your key>' \
+  --init \
   --cap-drop ALL --security-opt no-new-privileges \
   dscode-server
 ```
@@ -73,6 +74,9 @@ stops it without touching the named volumes.
   mid-chat approval dialogs).
 - **`HOST=0.0.0.0`** is set in the image; the app default (`127.0.0.1`) is unreachable from outside
   a container.
+- **Process reaping.** `--init` starts Docker's minimal init process as PID 1 so orphaned
+  subprocesses are reaped and termination signals are forwarded. The Compose deployment uses
+  `init: true`; recreate an existing container after enabling it.
 - **Security.** `--cap-drop ALL --security-opt no-new-privileges` contains the full-access agent.
   No `--cap-add`: the image pins apt's sandbox to root and ships `git` + `ca-certificates` +
   `ripgrep` + `procps`, so apt, HTTPS git/curl, `rg` search, and process tools (`ps`/`pgrep`/`free`)
@@ -102,7 +106,7 @@ The other DSCode tools are TUI-first and don't fit this deployment:
 
 ### Default skills
 
-The image ships two skills — `grill-me` and `skill-creator` — bundled in
+The image ships three skills — `grill-me`, `skill-creator`, and `youxin-cli` — bundled in
 `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.
