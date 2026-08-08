@@ -163,9 +163,14 @@ live working status counts up in the disabled input line (the TUI's
 "esc to interrupt" suffix becomes " · Stop to interrupt"). The Stop button aborts
 the running turn. Refreshing the page reattaches and re-renders. 
 
+## Input behavior
+
+The chat input starts at one row, expands for wrapped or pasted multiline content up to three rows,
+and shows a vertical scrollbar beyond that limit. Enter submits the current input; Shift+Enter
+inserts a newline.
+
 ## v1 limitations
 
-- Single-line input only; `editor` requests degrade to one line.
 - Plain-text rendering — assistant markdown is shown raw.
 - Input is disabled while a turn runs; dialogs and the Stop button are the only
   interactions mid-turn.

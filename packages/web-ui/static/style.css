@@ -80,14 +80,20 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
   flex: none;
   width: 100%;
   box-sizing: border-box;
+  min-height: 34px;
+  max-height: 74px;
   margin-top: 6px;
   background: #0b0e11;
   color: #e8eef4;
   border: 1px solid #2a3138;
   border-radius: 4px;
   font: inherit;
+  font-size: 16px;
+  line-height: 20px;
   padding: 6px 8px;
   resize: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
 }
 /* The working status occupies the disabled input while a turn runs. */
 .termino-input::placeholder { color: #8a97a5; text-align: center; }

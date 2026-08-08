@@ -138,8 +138,8 @@ export function Termino(terminalSelector, keyCodes, settings) {
 
       //// DISABLE TERMINAL SCROLL UP / DOWN FOR ANIMATIONS ETC...
       if (DEF_SETTINGS.disable_terminal_input != true) {
-        /// HANDLE INPUTS ON COMMAND KEY. 
-        checkIfCommand()
+        /// HANDLE INPUTS ON COMMAND KEY.
+        checkIfCommand(e)
       }
 
       /// SCROLL UP / DOWN TERMINAL FUNCTION
@@ -182,9 +182,9 @@ export function Termino(terminalSelector, keyCodes, settings) {
 
         function handleCommandForQuestion(event) {
 
-          if (event.keyCode == Command_Key) {
-            if (window.event.preventDefault) {
-              window.event.preventDefault()
+          if (event.keyCode == Command_Key && !event.shiftKey) {
+            if (event.preventDefault) {
+              event.preventDefault()
             }
             let value = terminalSelector.querySelector(DEF_SETTINGS.terminal_input).value
             termClearValue()
@@ -277,7 +277,30 @@ export function Termino(terminalSelector, keyCodes, settings) {
     /// FUNCTION TO REMOVE / CLEAR INPUT VALUE
     function termClearValue() {
       terminalSelector.querySelector(DEF_SETTINGS.terminal_input).value = ""
+      resizeTerminalInput()
     }
+
+    /// FUNCTION TO RESIZE THE INPUT TO ITS CONTENT, UP TO THE CSS MAXIMUM
+    function resizeTerminalInput() {
+      const input = terminalSelector.querySelector(DEF_SETTINGS.terminal_input)
+      const inputStyle = window.getComputedStyle(input)
+      const borderHeight = parseFloat(inputStyle.borderTopWidth) + parseFloat(inputStyle.borderBottomWidth)
+      const minHeight = parseFloat(inputStyle.minHeight)
+      const maxHeight = parseFloat(inputStyle.maxHeight)
+
+      input.style.height = "auto"
+      input.style.overflowY = "hidden"
+      const contentHeight = input.scrollHeight + borderHeight
+      const height = Math.max(contentHeight, Number.isFinite(minHeight) ? minHeight : 0)
+      const boundedHeight = Number.isFinite(maxHeight) ? Math.min(height, maxHeight) : height
+      input.style.height = `${boundedHeight}px`
+      input.style.overflowY = Number.isFinite(maxHeight) && height > maxHeight ? "auto" : "hidden"
+    }
+
+    const terminal_input = terminalSelector.querySelector(DEF_SETTINGS.terminal_input)
+    terminal_input.addEventListener("input", resizeTerminalInput)
+    window.addEventListener("resize", resizeTerminalInput)
+    resizeTerminalInput()
 
     /// FUNCTION TO DELAY TERMINAL OUTPUTS / ECHO ETC (AWAIT / PROMISE BASED) - EXAMPLE : await term.delay(xxx) ...     
     const termDelay = ms => new Promise(res => setTimeout(res, ms));
@@ -334,9 +357,9 @@ export function Termino(terminalSelector, keyCodes, settings) {
 
 
     // If the user has pressed COMMAND btn - default btn is enter
-    async function checkIfCommand() {
+    async function checkIfCommand(event) {
 
-      let key = window.event.keyCode;
+      let key = event.keyCode;
 
 
 
@@ -362,12 +385,12 @@ export function Termino(terminalSelector, keyCodes, settings) {
 
 
         /// ECHO INPUT VALUE ON COMMAND BUTTON - BY DEFAULT IS ENTER. 
-        if (key === Command_Key) {
+        if (key === Command_Key && !event.shiftKey) {
 
 
           /// STOP ENTER FROM GOING DOWN / DOING WEIRD THINGS..
-          if (window.event.preventDefault) {
-            window.event.preventDefault()
+          if (event.preventDefault) {
+            event.preventDefault()
           }
 
           /// ECHO USER INPUT     
