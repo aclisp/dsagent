@@ -100,7 +100,7 @@ describe("workspace file routes", () => {
 
     const response = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=uploads/notes.txt",
+      url: "/share/ws/uploads/notes.txt",
     });
 
     expect(response.statusCode).toBe(200);
@@ -110,17 +110,63 @@ describe("workspace file routes", () => {
     expect(response.headers["content-type"]).toContain("text/plain");
   });
 
-  it("serves scriptable types as attachments", async () => {
+  it("serves HTML pages inline with the HTML content type", async () => {
     const { server, workspace } = await setupServer();
-    await writeFile(path.join(workspace, "uploads", "page.html"), "<h1>x</h1>");
+    for (const name of ["page.html", "page.htm"]) {
+      await writeFile(path.join(workspace, "uploads", name), "<h1>x</h1>");
 
-    const response = await server.inject({
+      const response = await server.inject({
+        method: "GET",
+        url: `/share/ws/uploads/${name}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe("<h1>x</h1>");
+      expect(response.headers["content-disposition"]).toContain("inline");
+      expect(response.headers["content-type"]).toContain("text/html");
+      expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    }
+  });
+
+  it("serves H5 assets with browser MIME types", async () => {
+    const { server, workspace } = await setupServer();
+    await writeFile(path.join(workspace, "uploads", "app.js"), "console.log('ok');");
+    await writeFile(path.join(workspace, "uploads", "style.css"), "body { color: red; }");
+
+    const script = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=uploads/page.html",
+      url: "/share/ws/uploads/app.js",
+    });
+    const style = await server.inject({
+      method: "GET",
+      url: "/share/ws/uploads/style.css",
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-disposition"]).toContain("attachment");
+    expect(script.headers["content-type"]).toContain("text/javascript");
+    expect(script.headers["content-disposition"]).toContain("inline");
+    expect(style.headers["content-type"]).toContain("text/css");
+    expect(style.headers["content-disposition"]).toContain("inline");
+  });
+
+  it("serves supported Office documents inline with their Office MIME types", async () => {
+    const { server, workspace } = await setupServer();
+    const cases = [
+      ["report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      ["table.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      ["slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+    ] as const;
+
+    for (const [name, contentType] of cases) {
+      await writeFile(path.join(workspace, "uploads", name), "office-content");
+      const response = await server.inject({
+        method: "GET",
+        url: `/share/ws/uploads/${name}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-disposition"]).toContain("inline");
+      expect(response.headers["content-type"]).toContain(contentType);
+    }
   });
 
   it("rejects path traversal outside the workspace", async () => {
@@ -130,7 +176,7 @@ describe("workspace file routes", () => {
 
     const response = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=uploads/../../outside-secret.txt",
+      url: "/share/ws/uploads/../../outside-secret.txt",
     });
 
     expect(response.statusCode).toBe(404);
@@ -140,7 +186,7 @@ describe("workspace file routes", () => {
     const { server } = await setupServer();
     const response = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=/etc/hosts",
+      url: "/share/ws/%2Fetc%2Fhosts",
     });
     expect(response.statusCode).toBe(400);
   });
@@ -151,21 +197,21 @@ describe("workspace file routes", () => {
 
     const unknown = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/nope/files?path=a.txt",
+      url: "/share/nope/a.txt",
     });
     expect(unknown.statusCode).toBe(404);
     expect(unknown.json().error).toBe("workspace_not_found");
 
     const missing = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=uploads/missing.txt",
+      url: "/share/ws/uploads/missing.txt",
     });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error).toBe("file_not_found");
 
     const directory = await server.inject({
       method: "GET",
-      url: "/v1/workspaces/ws/files?path=uploads",
+      url: "/share/ws/uploads",
     });
     expect(directory.statusCode).toBe(404);
   });

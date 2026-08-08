@@ -19,7 +19,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; directories are created if missing. The ids are **secrets** — use a random high-entropy value per deployment |
+| `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing; IDs are **secrets** — use a random high-entropy value per deployment |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
@@ -133,16 +133,16 @@ paths from its working directory.
   Writes each file to `<workspace>/uploads/<name>` (overwrites an existing file of the same name)
   and returns `{ files: [{ name, path, size }] }`. Filenames are sanitized to a bare basename;
   oversized files are rejected with 413 (`MAX_UPLOAD_BYTES`).
-- `GET /v1/workspaces/:workspaceId/files?path=<relative>` — download. Resolves within the
-  workspace (rejects `..` escapes and symlinks pointing outside), serves images/PDF/text inline
-  and everything else as an attachment, always with `X-Content-Type-Options: nosniff`.
+- `GET /share/:workspaceId/<relative-path>` — share/view a workspace file. Resolves within the
+  workspace (rejects `..` escapes and symlinks pointing outside), serves browser-consumable
+  files inline and everything else as an attachment, always with `X-Content-Type-Options: nosniff`.
 
 The page's Upload button posts to the upload endpoint and prints a confirmation line with a
-download link; the agent references them from the workspace. Upload and Stop share one header
+share link; the agent references them from the workspace. Upload and Stop share one header
 slot — Upload shows while idle, Stop replaces it while a turn runs (uploading mid-turn would be
 useless: the agent reads files only at the next prompt). The uploaded paths are injected into the
 next message the page submits, so the agent learns about them in context; the hint is sent once
-and cleared. Download links are rendered client-side: a backticked span
+and cleared. Share links are rendered client-side: a backticked span
 counts as a file only when it looks like a path (no whitespace or shell/URL metacharacters, and
 either a directory separator or a dotted name like `report.pdf` — a bare `.md` stays plain), and
 `/workspace/…` paths always link. Anything else — `exec_command`,

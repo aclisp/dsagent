@@ -136,10 +136,10 @@ function isFilePathToken(text) {
   return text.includes("/") || /^[^\s.].*\.[A-Za-z]{1,10}$/.test(text);
 }
 
-// Convert backticked and /workspace/... file paths in assistant text into download
+// Convert backticked and /workspace/... file paths in assistant text into share
 // links. The agent cites files by workspace-relative path; the page owns the URL.
 function linkifyFilePaths(text, workspaceId) {
-  const base = `/v1/workspaces/${workspaceId}/files?path=`;
+  const base = `/share/${workspaceId}/`;
   const pattern = /`([^`]+)`|\/workspace\/([^\s`]+)/g;
   let html = "";
   let last = 0;
@@ -152,7 +152,7 @@ function linkifyFilePaths(text, workspaceId) {
       // Normalize an absolute container path back to workspace-relative and drop
       // trailing sentence punctuation the agent may have written after the path.
       const rel = raw.replace(/^\/workspace\//, "").replace(/[.,;:!?)]+$/, "");
-      const href = base + encodeURIComponent(rel);
+      const href = base + rel.split("/").map((segment) => encodeURIComponent(segment)).join("/");
       html += `<a href="${href}" title="${escapeHtml(href)}">${escapeHtml(match[0])}</a>`;
     }
     last = match.index + match[0].length;
@@ -544,7 +544,7 @@ function blankLine() {
 // session can be resumed under the same id. The old EventSource got a 404 while
 // the session was gone, which closes it for good, so always open a fresh stream.
 async function reattach() {
-  const listing = await api(`/v1/sessions?workspaceId=${encodeURIComponent(workspaceId)}`);
+  const listing = await api(`/v1/sessions?workspaceId=${workspaceId}`);
   if (!listing.ok) return false;
   const entry = listing.body.sessions[0];
   if (!entry) return false;
@@ -634,7 +634,7 @@ async function boot() {
     out("[missing workspace in URL]");
     return;
   }
-  const listing = await api(`/v1/sessions?workspaceId=${encodeURIComponent(workspaceId)}`);
+  const listing = await api(`/v1/sessions?workspaceId=${workspaceId}`);
   if (!listing.ok) {
     out(`[cannot reach the adapter: ${listing.status}]`);
     return;

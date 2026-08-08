@@ -99,7 +99,7 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
 .termino-input::placeholder { color: #8a97a5; text-align: center; }
 .indicator { color: #8a97a5; }
 .muted { color: #8a97a5; }
-/* File-download links: a light blue that holds contrast on the dark background;
+/* File/share links: a light blue that holds contrast on the dark background;
    underline only on hover so the transcript stays clean. */
 a { color: #58a6ff; text-decoration: none; }
 a:hover { text-decoration: underline; }

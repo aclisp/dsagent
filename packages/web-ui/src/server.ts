@@ -3,28 +3,7 @@ import process from "node:process";
 import multipart from "@fastify/multipart";
 import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
 import { registerFileRoutes } from "./files.js";
-
-function parseWorkspaces(value: string): Record<string, string> {
-  const workspaces: Record<string, string> = {};
-  for (const entry of value.split(",")) {
-    const trimmed = entry.trim();
-    if (trimmed.length === 0) continue;
-    const separator = trimmed.indexOf("=");
-    if (separator <= 0) {
-      throw new Error(`Invalid WORKSPACES entry "${trimmed}" — expected id=path`);
-    }
-    const id = trimmed.slice(0, separator).trim();
-    const cwd = trimmed.slice(separator + 1).trim();
-    if (id.length === 0 || cwd.length === 0) {
-      throw new Error(`Invalid WORKSPACES entry "${trimmed}" — expected id=path`);
-    }
-    workspaces[id] = cwd;
-  }
-  if (Object.keys(workspaces).length === 0) {
-    throw new Error("WORKSPACES resolved to no workspaces");
-  }
-  return workspaces;
-}
+import { parseWorkspaces } from "./workspaces.js";
 
 const workspacesConfig = process.env.WORKSPACES;
 if (!workspacesConfig?.trim()) {

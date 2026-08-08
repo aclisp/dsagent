@@ -62,29 +62,29 @@ export function registerFileRoutes(
     },
   );
 
-  server.get<{
-    Params: { workspaceId: string };
-    Querystring: { path?: string };
-  }>("/v1/workspaces/:workspaceId/files", async (request, reply) => {
-    const cwd = workspaces[request.params.workspaceId];
-    if (!cwd) return reply.code(404).send({ error: "workspace_not_found" });
-    const rel = request.query.path;
-    if (rel === undefined || rel.length === 0 || path.isAbsolute(rel)) {
-      return reply.code(400).send({ error: "invalid_path" });
-    }
+  server.get<{ Params: { workspaceId: string; "*": string } }>(
+    "/share/:workspaceId/*",
+    async (request, reply) => {
+      const cwd = workspaces[request.params.workspaceId];
+      if (!cwd) return reply.code(404).send({ error: "workspace_not_found" });
+      const rel = request.params["*"];
+      if (rel === undefined || rel.length === 0 || path.isAbsolute(rel)) {
+        return reply.code(400).send({ error: "invalid_path" });
+      }
 
-    const resolved = await resolveWithinWorkspace(cwd, rel);
-    if (!resolved) return reply.code(404).send({ error: "file_not_found" });
-    const info = await stat(resolved);
-    if (!info.isFile()) return reply.code(404).send({ error: "file_not_found" });
+      const resolved = await resolveWithinWorkspace(cwd, rel);
+      if (!resolved) return reply.code(404).send({ error: "file_not_found" });
+      const info = await stat(resolved);
+      if (!info.isFile()) return reply.code(404).send({ error: "file_not_found" });
 
-    const name = path.basename(resolved);
-    reply
-      .header("X-Content-Type-Options", "nosniff")
-      .header("Content-Type", contentTypeFor(name))
-      .header("Content-Disposition", contentDisposition(name));
-    return reply.send(createReadStream(resolved));
-  });
+      const name = path.basename(resolved);
+      reply
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Type", contentTypeFor(name))
+        .header("Content-Disposition", contentDisposition(name));
+      return reply.send(createReadStream(resolved));
+    },
+  );
 }
 
 /** Reject path-like filenames outright; only a bare basename is accepted. */
@@ -123,11 +123,32 @@ const CONTENT_TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".csv": "text/csv; charset=utf-8",
   ".json": "application/json",
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".yaml": "application/yaml",
+  ".yml": "application/yaml",
+  ".webmanifest": "application/manifest+json",
+  ".wasm": "application/wasm",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -138,19 +159,43 @@ function contentTypeFor(name: string): string {
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }
 
-// Viewable in the browser; everything else (html/js/svg…) is an attachment so a
-// hostile workspace file cannot run scripts on this origin.
+// Workspace URLs are bearer share links. Keep browser-consumable HTML/H5 assets
+// inline so shared pages can load their relative scripts, styles, fonts, and media.
 const INLINE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
   ".jpeg",
   ".gif",
   ".webp",
+  ".avif",
+  ".ico",
+  ".svg",
   ".pdf",
   ".txt",
   ".md",
   ".csv",
   ".json",
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".mjs",
+  ".yaml",
+  ".yml",
+  ".webmanifest",
+  ".wasm",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".mp4",
+  ".webm",
+  ".docx",
+  ".xlsx",
+  ".pptx",
 ]);
 
 function contentDisposition(name: string): string {
