@@ -3,9 +3,10 @@
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .
 FROM dscode-server:lean
 
-# Office + PDF toolchain (headless)
+# Common server utilities, Office + PDF toolchain (headless)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libreoffice-writer libreoffice-calc libreoffice-impress \
+      python3 curl wget jq unzip zip file \
+      libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
       poppler-utils ghostscript qpdf pandoc \
       fonts-noto-cjk fonts-noto-core fonts-liberation \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
