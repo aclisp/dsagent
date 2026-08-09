@@ -17,16 +17,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.83.0",
-    "@earendil-works/pi-ai": "^0.83.0",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-agent-core": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
     "@thinkany/dscode-core": "workspace:*",
-    "fastify": "^5.11.0"
+    "fastify": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=22.19.0"

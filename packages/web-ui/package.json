@@ -11,14 +11,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/multipart": "^10.1.0",
+    "@fastify/multipart": "catalog:",
     "@thinkany/dscode-http-adapter": "workspace:*",
-    "fastify": "^5.11.0"
+    "fastify": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.7"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=22.19.0"

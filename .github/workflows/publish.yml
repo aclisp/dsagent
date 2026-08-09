@@ -121,10 +121,10 @@ jobs:
         run: |
           mkdir -p package-artifacts
           if [ "$CLI_UNPUBLISHED" = "true" ]; then
-            npm pack --pack-destination package-artifacts
+            pnpm pack --pack-destination package-artifacts
           fi
           if [ "$CORE_UNPUBLISHED" = "true" ]; then
-            npm pack ./packages/core --pack-destination package-artifacts
+            pnpm --dir packages/core pack --pack-destination "$PWD/package-artifacts"
           fi
 
       - name: Upload package artifact

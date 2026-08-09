@@ -39,8 +39,9 @@ try {
     { mode: 0o600 },
   );
 
-  runNpm(["pack", "--pack-destination", artifacts], projectRoot);
-  runNpm(["pack", "./packages/core", "--pack-destination", artifacts], projectRoot);
+  // pnpm resolves catalog: specifiers to publishable semver ranges in the tarball.
+  runPnpm(["pack", "--pack-destination", artifacts], projectRoot);
+  runPnpm(["pack", "--pack-destination", artifacts], path.join(projectRoot, "packages", "core"));
 
   const cliTarball = path.join(artifacts, `thinkany-dscode-${cliPackage.version}.tgz`);
   const coreTarball = path.join(artifacts, `thinkany-dscode-core-${corePackage.version}.tgz`);
@@ -144,6 +145,10 @@ function runNpm(args, cwd, extraEnv = {}) {
   );
   requireFile(npmCli);
   return run(process.execPath, [npmCli, ...args], cwd, extraEnv);
+}
+
+function runPnpm(args, cwd, extraEnv = {}) {
+  return run("pnpm", args, cwd, extraEnv);
 }
 
 function verifyWindowsSandboxHelpers(nativeRoot) {

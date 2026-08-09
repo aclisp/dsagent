@@ -15,7 +15,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@10.12.2",
+  "packageManager": "pnpm@10.27.0",
   "files": [
     "assets",
     "dist",
@@ -37,8 +37,11 @@
   },
   "scripts": {
     "build:core": "pnpm --dir packages/core build",
+    "build:http-adapter": "pnpm --dir packages/http-adapter build",
+    "build:web-ui": "pnpm --dir packages/web-ui build",
+    "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:web-ui",
     "build:windows-sandbox": "node scripts/build-windows-sandbox.mjs",
-    "build": "pnpm build:core && tsc -p tsconfig.json",
+    "build": "pnpm build:packages && tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "pnpm build && pnpm build:windows-sandbox",
@@ -48,7 +51,7 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "package:check": "node scripts/package-smoke.mjs",
-    "typecheck": "pnpm build:core && tsc -p tsconfig.json --noEmit",
+    "typecheck": "pnpm build:packages && tsc -p tsconfig.json --noEmit",
     "check": "pnpm typecheck && pnpm test && pnpm build && pnpm package:check",
     "smoke:live": "pnpm build && node scripts/live-smoke.mjs",
     "features:live": "pnpm build && node scripts/live-features.mjs",
@@ -58,21 +61,21 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.83.0",
-    "@earendil-works/pi-ai": "^0.83.0",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
-    "@earendil-works/pi-tui": "^0.83.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@napi-rs/keyring": "^1.3.0",
-    "fast-glob": "^3.3.3",
-    "picocolors": "^1.1.1",
-    "typebox": "^1.3.7",
-    "zod": "^4.1.5"
+    "@earendil-works/pi-agent-core": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@napi-rs/keyring": "catalog:",
+    "fast-glob": "catalog:",
+    "picocolors": "catalog:",
+    "typebox": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
-    "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

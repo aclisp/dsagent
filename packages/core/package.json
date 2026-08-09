@@ -44,19 +44,19 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.83.0",
-    "@earendil-works/pi-ai": "^0.83.0",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
-    "@earendil-works/pi-tui": "^0.83.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@napi-rs/keyring": "^1.3.0",
-    "fast-glob": "^3.3.3",
-    "picocolors": "^1.1.1",
-    "typebox": "^1.3.7",
-    "zod": "^4.1.5"
+    "@earendil-works/pi-agent-core": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@napi-rs/keyring": "catalog:",
+    "fast-glob": "catalog:",
+    "picocolors": "catalog:",
+    "typebox": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
-    "typescript": "^5.9.2"
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
   }
 }
