@@ -33,11 +33,24 @@ registerFileRoutes(server, workspaces, { maxUploadBytes });
 
 const staticFile = (name: string): Promise<Buffer> =>
   readFile(new URL(`../static/${name}`, import.meta.url));
+const markedModule = (): Promise<Buffer> =>
+  readFile(new URL(import.meta.resolve("marked")));
 
-// The page is served only at /chat/<workspaceId>, where the workspaceId is the secret
-// credential — the root and unknown ids 404.
+// Pages are served only with a configured workspace id, which is also the secret
+// credential. The friendly chat owns /chat; the raw terminal remains at /debug.
 server.get<{ Params: { workspaceId: string } }>(
   "/chat/:workspaceId",
+  async (request, reply) => {
+    if (!workspaces[request.params.workspaceId]) {
+      return reply.code(404).send({ error: "workspace_not_found" });
+    }
+    const html = await staticFile("chat.html");
+    return reply.type("text/html; charset=utf-8").send(html);
+  },
+);
+
+server.get<{ Params: { workspaceId: string } }>(
+  "/debug/:workspaceId",
   async (request, reply) => {
     if (!workspaces[request.params.workspaceId]) {
       return reply.code(404).send({ error: "workspace_not_found" });
@@ -46,6 +59,21 @@ server.get<{ Params: { workspaceId: string } }>(
     return reply.type("text/html; charset=utf-8").send(html);
   },
 );
+
+server.get("/chat.js", async (_request, reply) => {
+  const script = await staticFile("chat.js");
+  return reply.type("text/javascript; charset=utf-8").send(script);
+});
+
+server.get("/chat.css", async (_request, reply) => {
+  const css = await staticFile("chat.css");
+  return reply.type("text/css; charset=utf-8").send(css);
+});
+
+server.get("/marked.esm.js", async (_request, reply) => {
+  const script = await markedModule();
+  return reply.type("text/javascript; charset=utf-8").send(script);
+});
 
 server.get("/termino.js", async (_request, reply) => {
   const script = await staticFile("termino.js");

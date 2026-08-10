@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f3f6fa">
+  <title>与 Steve Code 私聊</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/chat.css">
+</head>
+<body>
+  <main id="chat-app" class="chat-app" aria-label="与 Steve Code 私聊">
+    <header class="chat-header">
+      <img class="header-avatar" src="/favicon.png" alt="Steve Code">
+      <div class="header-identity">
+        <h1>Steve Code</h1>
+        <p id="agent-status" class="agent-status">
+          <span class="online-dot" aria-hidden="true"></span>
+          <span id="agent-status-text">正在连接</span>
+        </p>
+      </div>
+    </header>
+
+    <div id="connection-banner" class="connection-banner" role="status" hidden>
+      连接已断开，正在重新连接
+    </div>
+
+    <section id="message-scroller" class="message-scroller" aria-label="聊天消息">
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </section>
+
+    <button id="jump-latest" class="jump-latest" type="button" hidden>回到最新消息</button>
+
+    <footer class="composer">
+      <div id="pending-attachments" class="pending-attachments" aria-live="polite"></div>
+      <form id="composer-form" class="composer-form">
+        <button id="upload-button" class="icon-button" type="button" aria-label="添加附件" title="添加附件">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8.5 12.8 15.7 5.6a3 3 0 0 1 4.2 4.2l-9.1 9.1a5 5 0 0 1-7.1-7.1l9-9"/>
+          </svg>
+        </button>
+        <input id="file-input" type="file" multiple hidden>
+        <textarea
+          id="message-input"
+          rows="1"
+          placeholder="给 Steve Code 发消息"
+          aria-label="消息"
+        ></textarea>
+        <button id="action-button" class="action-button" type="submit">发送</button>
+      </form>
+    </footer>
+  </main>
+
+  <section id="fatal-screen" class="fatal-screen" hidden>
+    <img src="/favicon.png" alt="" aria-hidden="true">
+    <p>暂时无法连接 Steve Code，请稍后刷新页面。</p>
+  </section>
+
+  <div id="modal-backdrop" class="modal-backdrop" hidden>
+    <section class="request-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title"></h2>
+      <p id="modal-message" class="modal-message" hidden></p>
+      <div id="modal-control" class="modal-control"></div>
+      <p id="modal-observer" class="modal-observer" hidden>正在等待另一页面完成确认</p>
+      <div id="modal-actions" class="modal-actions"></div>
+    </section>
+  </div>
+
+  <script type="module" src="/chat.js"></script>
+</body>
+</html>
