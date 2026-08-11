@@ -78,6 +78,7 @@ const state = {
   respondingRequestKey: null,
   reconnecting: false,
   reconnectDue: false,
+  historySyncDue: false,
   lastReconnectAt: 0,
   lastEventAt: 0,
   watchdog: null,
@@ -486,6 +487,13 @@ function moveTypingToBottom(turn) {
 function removeTyping(turn) {
   turn?.typingRow?.row.remove();
   if (turn) turn.typingRow = null;
+}
+
+function discardLiveTurn() {
+  const renderFrame = state.liveTurn?.assistantBubble?.renderFrame;
+  if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
+  removeTyping(state.liveTurn);
+  state.liveTurn = null;
 }
 
 function streamAssistantDelta(event) {
@@ -1198,7 +1206,11 @@ function openStream() {
 function startWatchdog() {
   if (state.watchdog !== null) return;
   state.watchdog = setInterval(() => {
-    if (state.reconnectDue || Date.now() - state.lastEventAt > STALE_MS) {
+    if (
+      state.reconnectDue
+      || state.historySyncDue
+      || Date.now() - state.lastEventAt > STALE_MS
+    ) {
       state.reconnectDue = false;
       setConnection(false, { showBanner: false });
       void reconnect();
@@ -1303,6 +1315,7 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   const previousFollowLatest = state.followLatest;
   const response = await api(`/v1/sessions/${state.sessionId}/messages`);
   if (!response.ok) return false;
+  discardLiveTurn();
   state.followLatest = preserveBrowserScroll
     ? false
     : preserveScroll
@@ -1348,25 +1361,57 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   return true;
 }
 
-async function reconnect() {
+async function reconnect({ refreshHistory = false } = {}) {
+  if (refreshHistory) state.historySyncDue = true;
   if (state.reconnecting) return;
-  if (Date.now() - state.lastReconnectAt < RECONNECT_GAP_MS) {
+  if (!state.historySyncDue && Date.now() - state.lastReconnectAt < RECONNECT_GAP_MS) {
     state.reconnectDue = true;
     return;
   }
   state.reconnecting = true;
   state.lastReconnectAt = Date.now();
+  const shouldRefreshHistory = state.historySyncDue;
+  state.historySyncDue = false;
   try {
     state.stream?.close();
     state.stream = null;
+    if (document.visibilityState === "hidden") {
+      state.historySyncDue ||= shouldRefreshHistory;
+      state.reconnectDue = true;
+      return;
+    }
     if (!(await attachSession())) {
+      state.historySyncDue ||= shouldRefreshHistory;
       state.reconnectDue = true;
       setConnection(false);
+      return;
+    }
+    if (document.visibilityState === "hidden") {
+      state.historySyncDue ||= shouldRefreshHistory;
+      state.reconnectDue = true;
+      return;
+    }
+    if (shouldRefreshHistory && !(await renderHistory({ preserveScroll: true }))) {
+      state.historySyncDue = true;
+      state.reconnectDue = true;
+      setConnection(false);
+      return;
+    }
+    if (document.visibilityState === "hidden") {
+      state.reconnectDue = true;
       return;
     }
     openStream();
   } finally {
     state.reconnecting = false;
+    if (
+      state.historySyncDue
+      && !state.reconnectDue
+      && document.visibilityState !== "hidden"
+    ) {
+      state.lastReconnectAt = 0;
+      queueMicrotask(() => void reconnect());
+    }
   }
 }
 
@@ -1706,17 +1751,46 @@ function pauseConnection() {
   layoutResizeObserver.disconnect();
 }
 
-window.addEventListener("pagehide", pauseConnection);
-window.addEventListener("beforeunload", pauseConnection);
-window.addEventListener("pageshow", (event) => {
-  if (!event.persisted) return;
+function resumeConnection(refreshHistory) {
   observeChatLayout();
   state.booting = false;
   state.reconnectDue = false;
   state.lastReconnectAt = 0;
   setConnection(false, { showBanner: false });
   startWatchdog();
-  void reconnect();
+  void reconnect({ refreshHistory });
+}
+
+let hiddenAt = document.visibilityState === "hidden" ? Date.now() : null;
+let pageLifecyclePaused = false;
+
+// Safari can freeze timers and EventSource delivery while the page is backgrounded.
+// A running turn or a stale background interval gets one authoritative history sync;
+// BFCache navigation remains on the DOM-preserving reconnect path below.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    hiddenAt ??= Date.now();
+    return;
+  }
+  if (hiddenAt === null || pageLifecyclePaused) return;
+  const hiddenDuration = Date.now() - hiddenAt;
+  hiddenAt = null;
+  if (!state.running && hiddenDuration < STALE_MS) return;
+  pauseConnection();
+  resumeConnection(true);
+});
+
+window.addEventListener("pagehide", () => {
+  pageLifecyclePaused = true;
+  hiddenAt = null;
+  pauseConnection();
+});
+window.addEventListener("beforeunload", pauseConnection);
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  pageLifecyclePaused = false;
+  hiddenAt = null;
+  resumeConnection(false);
 });
 
 resizeInput();
