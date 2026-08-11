@@ -1,6 +1,6 @@
 ## 最终架构
 
-> 状态：Slice 1–2 已完成并通过手工验收；Slice 3–4 尚未实施。
+> 状态：Slice 1–2 已完成并通过手工验收；Slice 3 已实现、待验收；Slice 4 尚未实施。
 
 ```text
 用户上传图片并提问
@@ -230,7 +230,7 @@ NODE_EXTRA_CA_CERTS
 
 Slice 2 已通过手工验收。核心安全边界已经形成，但生产镜像里还没有安装 `/app/dist/vision-cli.js`；该交付属于 Slice 3。
 
-## Slice 3：构建产物和容器交付
+## Slice 3：构建产物和容器交付（已实现，待验收）
 
 目标是让 lean 镜像包含 CLI，同时继续保护 `packages` 源码。
 
@@ -240,7 +240,7 @@ Slice 2 已通过手工验收。核心安全边界已经形成，但生产镜像
 - 使用 esbuild 将视觉 entry 和 DSCode workspace 代码打成一个 minified ESM 文件。
 - 不包含 source map。
 - 第三方生产依赖继续从现有 `/app/node_modules` 解析。
-- 输出例如：
+- 输出：
 
 ```text
 /app/dist/vision-cli.js
@@ -281,28 +281,38 @@ VISION_MODEL=your-vision-capable-openrouter-model-id
 
 现有 `models.json:ro` 挂载保持不变，`auth.json` 不新增、不挂载。
 
-预计修改：
+实际修改：
 
-- 根 `package.json` 构建脚本。
-- 视觉 bundle 脚本。
-- [`Dockerfile`](/Users/homerh/Code/dscode/Dockerfile)。
-- [`.env.example`](/Users/homerh/Code/dscode/.env.example)。
-- [`docker-compose.yml`](/Users/homerh/Code/dscode/docker-compose.yml)。
-- 模型配置示例和 Web UI Server 文档。
+- 根 `package.json` 新增 `bundle:vision`，并把视觉 bundle 纳入 `pnpm build`。
+- 新增 `scripts/bundle-vision-cli.mjs`；bundle 覆盖根 `dist/vision-cli.js` 并删除其 source map。
+- 视觉 entry 直接导入 Core 视觉模块，避免把通用 CLI 和完整 Agent 扩展打入产物。
+- [`Dockerfile`](/Users/homerh/Code/dscode/Dockerfile) 的 build stage 执行根构建，runtime stage 只复制视觉 bundle，并创建 `/usr/local/bin/dscode-vision`。
+- [`.env.example`](/Users/homerh/Code/dscode/.env.example) 和 [`docker-compose.yml`](/Users/homerh/Code/dscode/docker-compose.yml) 增加 `VISION_MODEL` 配置。
+- 新增不含本机专用或 `deploy/default-files` bind mount 的通用 `docker-compose.example.yml`。
+- `deploy/models.json.example` 增加声明 `input: ["text", "image"]` 的视觉模型示例。
+- Web UI Server 文档补充配置、容器命令、安全边界和运行语义。
+- package smoke test 验证安装后的视觉 CLI 不依赖 `packages/core/dist`，且不携带 source map。
 
-当前 `docker-compose.yml` 已有未提交修改。到这个 Slice 时会只追加视觉配置，保留现有内容，不擅自暂存或提交其他改动。
+当前 `docker-compose.yml` 的既有本机配置保持不变；通用发布示例单独维护在 `docker-compose.example.yml`。
 
-自动验证：
+已完成的自动验证：
 
 - `pnpm build` 生成 minified 视觉产物。
 - 产物不依赖 `packages/*/src`。
 - 产物可启动并显示帮助或配置错误。
 - package smoke test 验证必须的 bundle 存在。
-- 根 `pnpm check` 通过。
+- `pnpm pack --dry-run` 通过，打包清单包含 `dist/vision-cli.js`、不包含其 source map。
+- 排除当前受限环境无法运行的 localhost、主目录写入和 Seatbelt hook 三组测试后，45 个测试文件、216 个测试通过，1 个 Windows-only 测试按平台跳过。
+
+实际 bundle 约 8 KiB，只保留一个运行时第三方动态依赖
+`@earendil-works/pi-coding-agent`。将 bundle 单独复制到临时目录、移除 Core build tree 后，
+`--help` 仍可正常启动。根 `pnpm check` 没有作为当前环境的 green gate，因为它会运行上述
+三组受沙箱限制的测试，并在 package smoke 阶段调用 npm 安装；等价的构建、聚焦测试、
+隔离 bundle 检查和 pack dry-run 已完成。
 
 我不会运行 Docker、启动 Server 或做浏览器验证。镜像构建与容器验收留给你手工执行。
 
-Slice 3 完成后暂停。
+Slice 3 实现完成后暂停，等待手工镜像构建与容器验收。
 
 ## Slice 4：默认 Skill 和产品行为
 

@@ -1,0 +1,39 @@
+# DSCode chat server — generic Compose template.
+#
+# Copy this file to docker-compose.yml and create a .env with WORKSPACE_ID,
+# OPENROUTER_API_KEY, MODEL, and VISION_MODEL (see .env.example).
+# Build the image first:
+#   docker build -f deploy/tools.Dockerfile -t dscode-server .
+#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
+#
+# HOST/PORT come from image defaults (0.0.0.0:8899).
+services:
+  dscode:
+    image: ${DSCODE_IMAGE:-dscode-server}
+    container_name: dscode
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8899:8899"
+    environment:
+      # The workspace id is the deployment's bearer credential — high-entropy, shared only out-of-band.
+      WORKSPACES: "${WORKSPACE_ID:?set WORKSPACE_ID in .env}=/workspace"
+      RUNTIME_ARGS: >-
+        --permission full --network --sandbox danger-full-access
+        --provider openrouter --model ${MODEL:?set MODEL in .env}
+        --effort max --tools exec_command,write_stdin,apply_patch,read
+      DSCODE_SUBAGENT_DEPTH: "1"
+      DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
+    volumes:
+      - home:/root/.dscode
+      - workspace:/workspace
+      - "${HOME:-/root}/.dscode/models.json:/root/.dscode/models.json:ro"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  home:
+  workspace:

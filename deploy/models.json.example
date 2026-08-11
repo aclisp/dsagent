@@ -18,16 +18,34 @@
           "thinkingLevelMap": {
             "off": null,
             "minimal": null,
-            "low": null,
-            "medium": null,
+            "low": "high",
+            "medium": "high",
             "high": "high",
-            "xhigh": null,
+            "xhigh": "max",
             "max": "max"
           },
           "input": ["text"],
           "contextWindow": 100000,
           "maxTokens": 64000,
           "cost": { "input": 1, "output": 2, "cacheRead": 0.2, "cacheWrite": 0 }
+        },
+        {
+          "id": "qwen3.7-flash",
+          "name": "qwen3.7-flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "xhigh",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 100000,
+          "maxTokens": 64000,
+          "cost": { "input": 0.2, "output": 0.8, "cacheRead": 0.04, "cacheWrite": 0.25 }
         }
       ]
     }

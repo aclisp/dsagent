@@ -108,6 +108,19 @@ try {
   if (!visionHelp.includes("dscode-vision --image <path>")) {
     throw new Error("Installed vision CLI help is unavailable");
   }
+  verifyVisionBundle(
+    installedVisionCli,
+    path.join(
+      cliInstall,
+      "node_modules",
+      "@thinkany",
+      "dscode",
+      "packages",
+      "core",
+      "dist",
+    ),
+    cliInstall,
+  );
 
   const rpcProbe = [
     'import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";',
@@ -187,6 +200,27 @@ function verifyWindowsSandboxHelpers(nativeRoot) {
     if (nativeManifest.files?.[relative] !== digest) {
       throw new Error(`Windows sandbox helper checksum mismatch: ${relative}`);
     }
+  }
+}
+
+function verifyVisionBundle(visionCli, coreDist, cwd) {
+  const source = fs.readFileSync(visionCli, "utf8");
+  if (source.includes("../packages/core/") || source.includes("sourceMappingURL")) {
+    throw new Error("Installed vision CLI is not a standalone bundle");
+  }
+  if (fs.existsSync(`${visionCli}.map`)) {
+    throw new Error("Installed vision CLI unexpectedly includes a source map");
+  }
+
+  const hiddenCoreDist = `${coreDist}.package-smoke-hidden`;
+  fs.renameSync(coreDist, hiddenCoreDist);
+  try {
+    const help = run(process.execPath, [visionCli, "--help"], cwd);
+    if (!help.includes("dscode-vision --image <path>")) {
+      throw new Error("Bundled vision CLI cannot start without DSCode workspace modules");
+    }
+  } finally {
+    fs.renameSync(hiddenCoreDist, coreDist);
   }
 }
 

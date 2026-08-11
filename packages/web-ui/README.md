@@ -22,6 +22,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing; IDs are **secrets** — use a random high-entropy value per deployment |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
+| `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 
@@ -56,16 +57,18 @@ docker run -d --name dscode \
   -e "WORKSPACES='<workspace-id>=/workspace'" \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
+  -e DSCODE_VISION_MODEL='<vision model>' \
   -e OPENROUTER_API_KEY='<your key>' \
   --init \
   --cap-drop ALL --security-opt no-new-privileges \
   dscode-server
 ```
 
-The same deployment is available as `docker-compose.yml` at the repo root: fill in `.env`
-(`WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL` — see `.env.example`), then `docker compose
-up -d` creates the container and recreates it after an image rebuild; `docker compose down`
-stops it without touching the named volumes.
+The same deployment is available as the generic `docker-compose.example.yml` at the repo root.
+Copy it to `docker-compose.yml`, fill in `.env` (`WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL`,
+`VISION_MODEL` — see `.env.example`), then `docker compose up -d` creates the container and
+recreates it after an image rebuild; `docker compose down` stops it without touching the named
+volumes. The template contains no machine-specific or default-file bind mounts.
 
 - **Volumes.** `dscode-home` holds the adapter's config and persisted sessions; `dscode-workspace`
   is the agent's working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
@@ -81,9 +84,10 @@ stops it without touching the named volumes.
   No `--cap-add`: the image pins apt's sandbox to root and ships `git` + `ca-certificates` +
   `ripgrep` + `procps`, so apt, HTTPS git/curl, `rg` search, and process tools (`ps`/`pgrep`/`free`)
   work under the full cap-drop.
-- **Provider keys.** Keys referenced in `models.json` as `$ENV` must be passed with `-e`.
-  An example lives at `deploy/models.json.example` — copy it to `~/.dscode/models.json` and
-  replace the `baseUrl` placeholder with your endpoint.
+- **Provider keys and models.** Keys referenced in `models.json` as `$ENV` must be passed with
+  `-e`. An example lives at `deploy/models.json.example` — copy it to
+  `~/.dscode/models.json`, replace the `baseUrl` placeholder, and declare both the main model
+  and the `DSCODE_VISION_MODEL`. The vision entry must include `"image"` in its `input` array.
 - **LibreOffice.** In a container, conversion can hang on the user profile lock — add
   `--env:UserInstallation=file:///tmp/lo_profile` to `libreoffice --convert-to`.
 
@@ -103,6 +107,26 @@ The other DSCode tools are TUI-first and don't fit this deployment:
   the DSCode CLI), require a Git repository for implementer worktrees, and need a sandbox
   backend for their `read-only`/`workspace-write` modes — none of which exist inside the
   container. `DSCODE_SUBAGENT_DEPTH=1` also skips its registration.
+
+### Vision analysis CLI
+
+The lean image installs `/usr/local/bin/dscode-vision`, backed by the minified standalone
+bundle at `/app/dist/vision-cli.js`. It analyzes one PNG, JPEG, GIF, or WebP image through the
+OpenRouter model selected by `DSCODE_VISION_MODEL`:
+
+```sh
+dscode-vision --image "uploads/screenshot.png" --prompt "Explain this error"
+```
+
+When the command is issued through `exec_command`, Core recognizes only this exact, narrow
+syntax and starts the fixed bundle without a shell. The child receives `OPENROUTER_API_KEY`,
+the vision model setting, and the current main-agent thinking level through an environment
+allowlist. Ordinary commands still have all model credentials stripped; wrappers, pipes,
+redirections, command substitution, and command chaining do not enter the trusted path.
+
+The vision process reads the mounted `models.json` but does not read the shared `auth.json`,
+load skills or context files, create a session, or expose tools to the vision model. Its text
+result returns to the main agent as ordinary `exec_command` output.
 
 ### Default skills
 

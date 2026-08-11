@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { formatDSCodeError } from "./cli-runtime.js";
 import { FileCredentialStore } from "./credential-store.js";
 import { getDSCodeHome } from "./home.js";
 import { detectImageMimeType } from "./image-input.js";
@@ -126,7 +125,7 @@ export async function runVisionCliProcess(argv: readonly string[]): Promise<void
   try {
     await runVisionCli(argv);
   } catch (error) {
-    process.stderr.write(`error: ${formatDSCodeError(error)}\n`);
+    process.stderr.write(`error: ${formatVisionError(error)}\n`);
     process.exitCode = 1;
   }
 }
@@ -274,6 +273,10 @@ async function runVisionRuntime(
 
 function isThinkingLevel(value: string | undefined): value is ThinkingLevel {
   return (THINKING_LEVELS as readonly string[]).includes(value ?? "");
+}
+
+function formatVisionError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

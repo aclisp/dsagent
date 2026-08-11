@@ -8,9 +8,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 # The root postinstall references scripts/postinstall.mjs.
 COPY scripts ./scripts
 COPY packages ./packages
+COPY src ./src
 RUN pnpm install --frozen-lockfile
-# Build all server packages and bundle the web server in topological order.
-RUN pnpm build:packages
+# Build all server packages, the bundled web server, and the standalone vision CLI.
+RUN pnpm build
 
 FROM node:22 AS prod-deps
 RUN corepack enable
@@ -39,14 +40,17 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
-# The runtime contains only the bundled server, public static assets, package
-# metadata needed by Node's resolver, and production dependencies. Source,
-# tests, declarations, and source maps never cross into this stage.
+# The runtime contains only the bundled server and vision CLI, public static
+# assets, package metadata needed by Node's resolver, and production dependencies.
+# Source, tests, declarations, and source maps never cross into this stage.
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/packages/web-ui/node_modules ./packages/web-ui/node_modules
 COPY --from=build /app/packages/web-ui/package.json ./packages/web-ui/package.json
 COPY --from=build /app/packages/web-ui/dist/server.js ./packages/web-ui/dist/server.js
 COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static
+COPY --from=build /app/dist/vision-cli.js ./dist/vision-cli.js
+RUN chmod 0555 /app/dist/vision-cli.js \
+    && ln -s /app/dist/vision-cli.js /usr/local/bin/dscode-vision
 # Bundled skills and prompt files live outside /root/.dscode (a named volume) and are
 # seeded by the entrypoint on every start, so existing volumes pick them up without being clobbered.
 COPY deploy/docker-entrypoint.sh /usr/local/bin/dscode-entrypoint.sh
