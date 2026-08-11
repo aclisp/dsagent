@@ -86,6 +86,20 @@ describe("trusted dscode-vision command", () => {
     });
   });
 
+  it("rejects a chained dscode-vision invocation instead of using the credential-free shell", () => {
+    expect(
+      classifyVisionCommand(
+        'cd /workspace/canvas-transient-route && dscode-vision --image "transient-route.png"',
+      ),
+    ).toEqual({
+      kind: "invalid",
+      reason: "dscode-vision must be invoked directly without cd or command chaining",
+    });
+    expect(classifyVisionCommand(`printf '%s' "&& dscode-vision --image screen.png"`)).toEqual({
+      kind: "other",
+    });
+  });
+
   it("builds an allowlisted environment and injects current thinking", () => {
     expect(
       createVisionProcessEnvironment(

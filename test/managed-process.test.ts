@@ -161,6 +161,18 @@ describe("ManagedProcessRegistry", () => {
       );
 
       await expect(
+        registry.start("cd /workspace && dscode-vision --image image.png", {
+          cwd: os.tmpdir(),
+          sandbox: { mode: "danger-full-access", network: true },
+          yieldTimeMs: 2_000,
+          timeoutMs: 5_000,
+          thinkingLevel: "high",
+        }),
+      ).rejects.toThrow(
+        "Invalid dscode-vision command: dscode-vision must be invoked directly without cd or command chaining",
+      );
+
+      await expect(
         registry.start("dscode-vision --image image.png", {
           cwd: os.tmpdir(),
           sandbox: { mode: "danger-full-access", network: false },

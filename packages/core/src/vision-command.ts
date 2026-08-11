@@ -56,7 +56,15 @@ export function parseTrustedVisionCommand(command: string): TrustedVisionCommand
 }
 
 export function classifyVisionCommand(command: string): VisionCommandClassification {
-  if (!/^\s*dscode-vision(?=$|\s|[;&|<>])/.test(command)) return { kind: "other" };
+  if (!/^\s*dscode-vision(?=$|\s|[;&|<>])/.test(command)) {
+    if (containsChainedVisionCommand(command)) {
+      return {
+        kind: "invalid",
+        reason: "dscode-vision must be invoked directly without cd or command chaining",
+      };
+    }
+    return { kind: "other" };
+  }
 
   const parsedWords = parseLiteralCommandWords(command);
   if (!parsedWords.ok) return { kind: "invalid", reason: parsedWords.reason };
@@ -69,6 +77,36 @@ export function classifyVisionCommand(command: string): VisionCommandClassificat
     return { kind: "invalid", reason: parsedArguments.reason };
   }
   return { kind: "trusted", command: { args: parsedArguments.args } };
+}
+
+function containsChainedVisionCommand(command: string): boolean {
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index]!;
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+      if (character === "\\" && quote === '"') index += 1;
+      continue;
+    }
+    if (character === "'") {
+      quote = "'";
+      continue;
+    }
+    if (character === '"') {
+      quote = '"';
+      continue;
+    }
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (!";&|()\n\r".includes(character)) continue;
+
+    let commandStart = index + 1;
+    while (/\s|[;&|()]/.test(command[commandStart] ?? "")) commandStart += 1;
+    if (/^dscode-vision(?=$|\s|[;&|<>])/.test(command.slice(commandStart))) return true;
+  }
+  return false;
 }
 
 export function createVisionProcessEnvironment(

@@ -20,6 +20,15 @@ dscode-vision --image "uploads/screenshot.png" --prompt "Explain this error and 
 Do not wrap the command with `env`, `sudo`, or another executable, and do not add pipes,
 redirections, command substitution, or command chaining.
 
+The command already runs from the workspace. If the image is in a subdirectory, put that directory
+in the `--image` value instead of changing directories first:
+
+```bash
+dscode-vision --image "/workspace/canvas-transient-route/transient-route.png" --prompt "Analyze this image"
+```
+
+Never use `cd ... && dscode-vision ...`.
+
 For multiple images, run one command per image and then compare or summarize the observations.
 Treat stdout as supporting visual observations: integrate it into a natural answer instead of
 mechanically forwarding it to the user.

@@ -172,11 +172,13 @@ Slice 1 已通过真实视觉模型手工验收。CLI 可以在受控环境中�
 dscode-vision --image "screen shot.png" --prompt "读取全部文字"
 ```
 
-可以进入可信分支。直接以 `dscode-vision` 开头但语法无效的命令会在创建子进程前返回明确的
-拒绝原因，不再回退到无凭证 shell。wrapper 或环境变量赋值形式仍作为普通无凭证命令处理：
+可以进入可信分支。直接以 `dscode-vision` 开头但语法无效的命令，以及通过 shell operator
+在后续命令中尝试调用 `dscode-vision` 的形式，都会在创建子进程前返回明确的拒绝原因，不再
+回退到无凭证 shell。wrapper 或环境变量赋值形式仍作为普通无凭证命令处理：
 
 ```bash
 dscode-vision a.png && env
+cd /workspace/project && dscode-vision --image image.png
 dscode-vision a.png | tee result.txt
 OPENROUTER_API_KEY=x dscode-vision a.png
 sudo dscode-vision a.png
@@ -316,7 +318,7 @@ VISION_MODEL=your-vision-capable-openrouter-model-id
 
 Slice 3 已通过手工镜像和视觉 CLI 验收。
 
-## Slice 4：默认 Skill 和产品行为（已实现，待验收）
+## Slice 4：默认 Skill 和产品行为（已实现并验收）
 
 新增：
 
@@ -352,6 +354,8 @@ entrypoint 现有的默认 Skill seed 逻辑直接分发新 Skill；如果用户
   多图汇总、结果整理和失败处理规则。
 - Skill 明确只使用严格的 `dscode-vision --image ... --prompt ...` 形式，不通过 wrapper、
   shell 组合或普通 `dscode` 绕过专用执行边界。
+- 子目录图片直接在 `--image` 中使用 workspace 相对路径或绝对路径，禁止先执行
+  `cd ... && dscode-vision ...`；Core 对这种链式尝试返回明确拒绝原因。
 - Web UI Server 文档同步默认 Skill 清单，并补充主模型关系、安全边界和常见失败原因。
 
 已完成的自动验证：
