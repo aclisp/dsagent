@@ -59,16 +59,20 @@ const state = {
   workingSeconds: null,
   liveTurn: null,
   pendingUploads: [],
+  uploadingFiles: [],
   composing: false,
   followLatest: true,
   jumpingToLatest: false,
   scrollIntent: null,
   lastDateKey: null,
   lastBubbleRole: null,
-  lastRenderedUserRaw: null,
+  lastRenderedUserTurnId: null,
   lastAssistantText: "",
   historyLastTurn: null,
+  historyTurnPendingBinding: false,
+  attachedSessionStatus: null,
   currentRequestKey: null,
+  respondingRequestKey: null,
   reconnecting: false,
   reconnectDue: false,
   lastReconnectAt: 0,
@@ -174,9 +178,10 @@ function resetTimeline() {
   messagesElement.replaceChildren();
   state.lastDateKey = null;
   state.lastBubbleRole = null;
-  state.lastRenderedUserRaw = null;
+  state.lastRenderedUserTurnId = null;
   state.lastAssistantText = "";
   state.historyLastTurn = null;
+  state.historyTurnPendingBinding = false;
   state.timelineRetentionReady = false;
   state.timelineTargetTurns = RETAINED_TURN_TARGET;
   state.timelineMaxTurns = RETAINED_TURN_TARGET + TURN_TRIM_BUFFER;
@@ -435,7 +440,6 @@ function appendMessage(role, rawText, timestamp = Date.now(), options = {}) {
     text.className = "plain-text";
     text.textContent = parts.text;
     if (parts.text.length > 0) elements.bubble.appendChild(text);
-    state.lastRenderedUserRaw = rawText;
   }
   const attachmentList = createAttachmentList(parts.attachments);
   if (attachmentList) elements.bubble.appendChild(attachmentList);
@@ -574,6 +578,10 @@ function updateWorkProcess(process) {
     process.summaryText.textContent = `正在处理 · ${count} 项操作`;
     return;
   }
+  if (process.status === "unsynced") {
+    process.summaryText.textContent = `状态未同步 · ${count} 项操作`;
+    return;
+  }
   if (process.status === "aborted") {
     process.summaryText.textContent = `已停止 · ${count} 项操作`;
     return;
@@ -648,7 +656,7 @@ function newTurnContext(rawMessage = null) {
   };
 }
 
-function ensureLiveTurn(turnId) {
+function ensureLiveTurn(turnId, rawMessage = null) {
   if (
     state.liveTurn?.pendingSubmission
     && state.currentTurnClientId !== state.clientId
@@ -662,24 +670,53 @@ function ensureLiveTurn(turnId) {
     return state.liveTurn;
   }
   const historyTurn = state.historyLastTurn;
-  if (
-    historyTurn
-    && historyTurn.rawMessage !== null
-    && historyTurn.rawMessage === state.lastRenderedUserRaw
-  ) {
+  if (historyTurn?.id === turnId) {
     state.liveTurn = historyTurn;
-    state.liveTurn.id = turnId;
     state.liveTurn.pendingSubmission = false;
     if (state.liveTurn.process) {
       state.liveTurn.process.running = true;
       updateWorkProcess(state.liveTurn.process);
     }
   } else {
-    state.liveTurn = newTurnContext();
+    state.liveTurn = newTurnContext(rawMessage);
     state.liveTurn.id = turnId;
   }
   if (!state.liveTurn.firstDeltaSeen) appendTyping(state.liveTurn);
   return state.liveTurn;
+}
+
+function bindPendingHistoryTurn(event) {
+  if (!state.historyTurnPendingBinding) return false;
+  state.historyTurnPendingBinding = false;
+  const historyTurn = state.historyLastTurn;
+  if (
+    !historyTurn
+    || historyTurn.rawMessage === null
+    || (event.message !== undefined && historyTurn.rawMessage !== event.message)
+  ) return false;
+
+  historyTurn.id = event.turnId;
+  state.lastRenderedUserTurnId = event.turnId;
+  return true;
+}
+
+function renderTurnUserMessage(event) {
+  const historyBound = bindPendingHistoryTurn(event);
+  if (event.status !== "running" || event.message === undefined) return;
+  if (historyBound || state.lastRenderedUserTurnId === event.turnId) return;
+
+  const optimisticTurn = state.liveTurn;
+  const matchesOptimisticTurn = optimisticTurn?.rawMessage === event.message
+    && (
+      optimisticTurn.id === event.turnId
+      || (
+        optimisticTurn.id === null
+        && optimisticTurn.pendingSubmission
+        && event.clientId === state.clientId
+      )
+    );
+  if (!matchesOptimisticTurn) appendMessage("user", event.message);
+  state.lastRenderedUserTurnId = event.turnId;
 }
 
 function renderStatus() {
@@ -731,9 +768,12 @@ function updateComposer() {
   actionButton.disabled = unavailable
     || (running
       ? state.currentTurnId === null || state.aborting
-      : messageInput.value.trim().length === 0 && state.pendingUploads.length === 0);
+      : state.uploading
+        || (messageInput.value.trim().length === 0 && state.pendingUploads.length === 0));
   for (const control of modalBackdrop.querySelectorAll("button, input, textarea")) {
-    control.disabled = !state.connected || control.dataset.requiresSelection === "true";
+    control.disabled = !state.connected
+      || state.respondingRequestKey !== null
+      || control.dataset.requiresSelection === "true";
   }
 }
 
@@ -793,6 +833,7 @@ function closeModal() {
   modalActions.replaceChildren();
   modalObserver.hidden = true;
   state.currentRequestKey = null;
+  state.respondingRequestKey = null;
 }
 
 function onTurn(event) {
@@ -805,23 +846,18 @@ function onTurn(event) {
       }
       state.aborting = false;
       state.workingPhase = "working";
-      if (
-        event.message !== undefined
-        && event.clientId !== state.clientId
-        && event.message !== state.lastRenderedUserRaw
-      ) {
-        appendMessage("user", event.message);
-      }
     } else {
       state.aborting = true;
     }
+    renderTurnUserMessage(event);
     setRunning(true);
-    const turn = ensureLiveTurn(event.turnId);
+    const turn = ensureLiveTurn(event.turnId, event.message ?? null);
     if (!turn.firstDeltaSeen) appendTyping(turn);
     renderStatus();
     return;
   }
 
+  state.historyTurnPendingBinding = false;
   const turn = state.liveTurn;
   removeTyping(turn);
   finishWorkProcess(turn, event.status);
@@ -978,6 +1014,10 @@ function friendlyRequest(request) {
 }
 
 async function respondToRequest(request, response) {
+  const requestKey = state.currentRequestKey;
+  if (requestKey === null || state.respondingRequestKey === requestKey) return;
+  state.respondingRequestKey = requestKey;
+  updateComposer();
   const result = await api(
     `/v1/sessions/${state.sessionId}/ui-requests/${request.id}/responses`,
     {
@@ -986,9 +1026,12 @@ async function respondToRequest(request, response) {
       body: JSON.stringify(response),
     },
   );
+  if (state.currentRequestKey !== requestKey) return;
+  state.respondingRequestKey = null;
   if (result.ok) {
     closeModal();
   } else {
+    updateComposer();
     appendSystemNotice("处理过程中出现了问题，请重试。", "error");
   }
 }
@@ -1160,9 +1203,25 @@ function startWatchdog() {
   }, WATCHDOG_MS);
 }
 
+function reconcileSessionStatus(session) {
+  state.sessionId = session.id;
+  state.attachedSessionStatus = session.status;
+  if (session.status === "idle") state.historyTurnPendingBinding = false;
+  if (session.status !== "idle" || !state.running) return;
+
+  removeTyping(state.liveTurn);
+  if (state.liveTurn?.process) {
+    state.liveTurn.process.running = false;
+    state.liveTurn.process.status = "unsynced";
+    updateWorkProcess(state.liveTurn.process);
+  }
+  closeModal();
+  setRunning(false);
+}
+
 async function activateSession(entry) {
   if (entry.active) {
-    state.sessionId = entry.session.id;
+    reconcileSessionStatus(entry.session);
     return true;
   }
   const resumeSessionId = state.sessionId ?? entry.session?.id;
@@ -1172,14 +1231,14 @@ async function activateSession(entry) {
   };
   const response = await jsonPost("/v1/sessions", body);
   if (response.ok) {
-    state.sessionId = response.body.id;
+    reconcileSessionStatus(response.body);
     return true;
   }
   if (response.status === 409) {
     const retry = await api(`/v1/sessions?workspaceId=${state.workspaceId}`);
     const active = retry.ok ? retry.body.sessions[0] : null;
     if (active?.active) {
-      state.sessionId = active.session.id;
+      reconcileSessionStatus(active.session);
       return true;
     }
   }
@@ -1253,6 +1312,9 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   }
   finishWorkProcess(currentTurn);
   state.historyLastTurn = currentTurn;
+  state.historyTurnPendingBinding = currentTurn !== null
+    && currentTurn.rawMessage !== null
+    && (state.attachedSessionStatus === "running" || state.attachedSessionStatus === "aborting");
   if (response.body.messages.length === 0) {
     appendMessage(
       "assistant",
@@ -1335,6 +1397,21 @@ function renderPendingUploads() {
     card.append(icon, name, remove);
     pendingAttachmentsElement.appendChild(card);
   });
+  if (state.uploadingFiles.length > 0) {
+    const card = document.createElement("div");
+    card.className = "pending-attachment is-uploading";
+    card.setAttribute("role", "status");
+    const spinner = document.createElement("span");
+    spinner.className = "upload-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "attachment-name";
+    label.textContent = state.uploadingFiles.length === 1
+      ? `正在上传 ${state.uploadingFiles[0].name}…`
+      : `正在上传 ${state.uploadingFiles.length} 个文件…`;
+    card.append(spinner, label);
+    pendingAttachmentsElement.appendChild(card);
+  }
 }
 
 function technicalPrompt(text, attachments) {
@@ -1375,7 +1452,7 @@ async function recoverMissingSession() {
 }
 
 async function submitMessage() {
-  if (state.running || state.submitting || !state.connected) return;
+  if (state.running || state.submitting || state.uploading || !state.connected) return;
   const text = messageInput.value;
   const attachments = [...state.pendingUploads];
   if (text.trim().length === 0 && attachments.length === 0) return;
@@ -1435,6 +1512,7 @@ async function submitMessage() {
   }
   state.currentTurnId = response.body.id;
   state.currentTurnClientId = state.clientId;
+  state.lastRenderedUserTurnId = response.body.id;
   if (!state.liveTurn) state.liveTurn = newTurnContext(prompt);
   state.liveTurn.id = response.body.id;
   state.liveTurn.pendingSubmission = false;
@@ -1459,8 +1537,10 @@ async function abortTurn() {
 }
 
 async function uploadFiles(files) {
-  if (files.length === 0 || state.running || !state.connected) return;
+  if (files.length === 0 || state.running || state.uploading || !state.connected) return;
   state.uploading = true;
+  state.uploadingFiles = [...files];
+  renderPendingUploads();
   updateComposer();
   const form = new FormData();
   for (const file of files) form.append("files", file);
@@ -1469,7 +1549,9 @@ async function uploadFiles(files) {
     body: form,
   });
   state.uploading = false;
+  state.uploadingFiles = [];
   if (!response.ok) {
+    renderPendingUploads();
     appendSystemNotice(
       response.status === 413 ? "文件太大，无法上传。" : "上传失败，请重试。",
       "error",
