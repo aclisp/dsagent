@@ -849,6 +849,7 @@ function registerCommandTools(
         sandbox: { mode: current.sandbox, network: current.network },
         yieldTimeMs: params.yield_time_ms ?? 10_000,
         timeoutMs: params.timeout_ms ?? 120_000,
+        thinkingLevel: pi.getThinkingLevel(),
         ...(signal ? { signal } : {}),
       });
       let result = await run(commandAccess);

@@ -1,6 +1,6 @@
 ## 最终架构
 
-> 状态：Slice 1 已完成并通过手工验收；Slice 2–4 尚未实施。
+> 状态：Slice 1–2 已完成并通过手工验收；Slice 3–4 尚未实施。
 
 ```text
 用户上传图片并提问
@@ -124,9 +124,9 @@ node dist/vision-cli.js \
   --prompt '请详细描述图片内容，并提取其中全部文字'
 ```
 
-Slice 1 已通过真实视觉模型手工验收。当前 CLI 可以在受控环境中直接提供 Key 使用，但还不能从 Web UI Agent 安全调用；该安全调用路径属于 Slice 2。
+Slice 1 已通过真实视觉模型手工验收。CLI 可以在受控环境中直接提供 Key 使用；Web UI Agent 的可信执行边界已在 Slice 2 实现，生产镜像交付仍需 Slice 3。
 
-## Slice 2：可信 `exec_command` 执行分支
+## Slice 2：可信 `exec_command` 执行分支（已完成并验收）
 
 目标是实现方案 D。
 
@@ -154,10 +154,15 @@ Slice 1 已通过真实视觉模型手工验收。当前 CLI 可以在受控环�
 - 不通过 `$PATH` 解析真正执行文件。
 - 内部始终启动构建时确定的固定绝对路径。
 
+实际启动形式为 `process.execPath + 固定视觉脚本绝对路径 + 已解析参数`。脚本路径相对于
+已加载的 Core/Server 产物解析到根 `dist/vision-cli.js`；本地构建与容器运行时都不依赖
+`dscode-vision` 的 `$PATH` 查找结果，也不依赖视觉脚本的 shebang 解析。
+
 为了避免新增 shell 解析依赖，建议实现一个很小的“不展开参数解析器”：
 
 - 支持普通参数、单引号、双引号和反斜杠。
-- 不展开 `$VAR`、`$(...)`、反引号或通配符。
+- 双引号中的普通 `$VAR` 作为字面文本传递，不做环境变量展开。
+- 拒绝 `$()`、反引号和未引用的通配符。
 - 拒绝未引用的 shell 控制符和换行。
 - 解析后再验证参数结构。
 
@@ -181,6 +186,7 @@ sudo dscode-vision a.png
 ```text
 OPENROUTER_API_KEY
 DSCODE_VISION_MODEL
+DSCODE_VISION_THINKING（由当前主 Agent thinking level 覆盖写入）
 DSCODE_HOME
 HOME
 PATH
@@ -190,7 +196,7 @@ HTTPS_PROXY/HTTP_PROXY/NO_PROXY
 NODE_EXTRA_CA_CERTS
 ```
 
-其他模型 Key 不传入。
+其他模型 Key、`NODE_OPTIONS` 和未列入 allowlist 的环境变量不传入。
 
 还需要：
 
@@ -200,17 +206,29 @@ NODE_EXTRA_CA_CERTS
 - 复用 `ManagedProcessRegistry` 的超时、终止、输出上限和 `write_stdin` 生命周期。
 - 错误和日志中永远不打印 Key。
 
-自动验证：
+已完成的自动验证：
 
 - 普通 `exec_command` 仍看不到所有模型 Key。
 - 精确视觉命令能收到 OpenRouter Key。
 - 视觉进程看不到其他 Provider Key。
 - 管道、连接命令、重定向等不能获得 Key。
 - 修改 `$PATH` 或放置同名程序不能替换固定可执行文件。
-- 超时、中断和后台进程清理行为保持不变。
-- 不影响现有 managed-process、sandbox 和 approval 测试。
+- 可信视觉进程继续复用超时、中断、后台进程和输出上限管理。
+- 现有 managed-process 和 access/approval 聚焦测试保持通过。
 
-Slice 2 完成后暂停。此时核心安全边界已经形成，但生产镜像里还没有安装最终 CLI。
+实际修改：
+
+- 新增 `packages/core/src/vision-command.ts`，负责严格命令识别和可信环境 allowlist。
+- `ManagedProcessRegistry` 在网络权限已获准时直启固定视觉脚本；其他情况保留原有 shell 与凭证剥离路径。
+- `exec_command` 每次调用都从 `pi.getThinkingLevel()` 读取当前值。
+- `commandNeedsNetwork()` 只将符合严格语法的视觉命令识别为网络命令。
+- 新增命令语法、环境隔离、固定路径、防 `$PATH` 冒名、shell fallback 和 thinking 同步测试。
+
+本 Slice 的聚焦测试为 22 passed、1 个 Windows-only 测试按当前平台跳过；Core typecheck、
+根 `pnpm build` 和 diff check 通过。全量 `pnpm test` 在当前受限执行环境中仍有与本 Slice
+无关的 localhost listen、用户主目录写入和 Seatbelt hook 测试限制，未作为本 Slice 的 green gate。
+
+Slice 2 已通过手工验收。核心安全边界已经形成，但生产镜像里还没有安装 `/app/dist/vision-cli.js`；该交付属于 Slice 3。
 
 ## Slice 3：构建产物和容器交付
 
@@ -225,11 +243,11 @@ Slice 2 完成后暂停。此时核心安全边界已经形成，但生产镜像
 - 输出例如：
 
 ```text
-/app/dist/dscode-vision.js
+/app/dist/vision-cli.js
 ```
 
 - `/usr/local/bin/dscode-vision` 指向该固定产物。
-- 可信执行分支直接启动 `/app/dist/dscode-vision.js`，不跟随用户的 `$PATH`。
+- 可信执行分支直接启动 `/app/dist/vision-cli.js`，不跟随用户的 `$PATH`。
 
 运行镜像仍然不复制：
 

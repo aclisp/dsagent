@@ -15,6 +15,7 @@ describe("ManagedProcessRegistry", () => {
           sandbox: { mode: "danger-full-access", network: false },
           yieldTimeMs: 0,
           timeoutMs: 5_000,
+          thinkingLevel: "low",
         },
       );
       expect(started.running).toBe(true);
@@ -48,6 +49,7 @@ describe("ManagedProcessRegistry", () => {
         sandbox: { mode: "danger-full-access", network: false },
         yieldTimeMs: 250,
         timeoutMs: 5_000,
+        thinkingLevel: "low",
       });
       expect(started.running).toBe(true);
       expect(started.output).toContain("ready");
@@ -64,6 +66,183 @@ describe("ManagedProcessRegistry", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it.runIf(process.platform !== "win32")(
+    "launches an exact vision command through the fixed script with an allowlisted environment",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-vision-process-"));
+      const fixedVisionScript = path.join(root, "fixed-vision.mjs");
+      const pathShadow = path.join(root, "dscode-vision");
+      await fs.writeFile(
+        fixedVisionScript,
+        `setTimeout(() => console.log(JSON.stringify({
+          fixed: true,
+          args: process.argv.slice(2),
+          openrouter: process.env.OPENROUTER_API_KEY ?? null,
+          openai: process.env.OPENAI_API_KEY ?? null,
+          custom: process.env.CUSTOM_SECRET ?? null,
+          model: process.env.DSCODE_VISION_MODEL ?? null,
+          thinking: process.env.DSCODE_VISION_THINKING ?? null
+        })), 50);`,
+      );
+      await fs.writeFile(
+        pathShadow,
+        "#!/usr/bin/env node\nconsole.log(JSON.stringify({ fixed: false }));\n",
+      );
+      await fs.chmod(pathShadow, 0o755);
+
+      const environment = saveEnvironment([
+        "PATH",
+        "OPENROUTER_API_KEY",
+        "OPENAI_API_KEY",
+        "CUSTOM_SECRET",
+        "DSCODE_VISION_MODEL",
+      ]);
+      process.env.PATH = `${root}${path.delimiter}${process.env.PATH ?? ""}`;
+      process.env.OPENROUTER_API_KEY = "trusted-openrouter-key";
+      process.env.OPENAI_API_KEY = "must-not-reach-vision";
+      process.env.CUSTOM_SECRET = "must-not-reach-vision";
+      process.env.DSCODE_VISION_MODEL = "vision-model";
+
+      const registry = new ManagedProcessRegistry({ visionExecutable: fixedVisionScript });
+      try {
+        const started = await registry.start(
+          'dscode-vision --image "screen shot.png" --prompt "read $IMAGE literally"',
+          {
+            cwd: root,
+            sandbox: { mode: "danger-full-access", network: true },
+            yieldTimeMs: 0,
+            timeoutMs: 5_000,
+            thinkingLevel: "max",
+          },
+        );
+        expect(started.running).toBe(true);
+        const completed = await registry.interact(started.processId, { yieldTimeMs: 2_000 });
+        expect(completed).toMatchObject({
+          running: false,
+          exitCode: 0,
+          sandbox: "trusted dscode-vision (fixed executable)",
+        });
+        expect(JSON.parse(completed.output)).toEqual({
+          fixed: true,
+          args: [
+            "--image",
+            "screen shot.png",
+            "--prompt",
+            "read $IMAGE literally",
+          ],
+          openrouter: "trusted-openrouter-key",
+          openai: null,
+          custom: null,
+          model: "vision-model",
+          thinking: "max",
+        });
+      } finally {
+        registry.dispose();
+        restoreEnvironment(environment);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "keeps malformed vision commands on the credential-stripped shell path",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-vision-shell-"));
+      const fixedVisionScript = path.join(root, "fixed-vision.mjs");
+      const pathCommand = path.join(root, "dscode-vision");
+      await fs.writeFile(fixedVisionScript, 'console.log("trusted path must not run");\n');
+      await fs.writeFile(
+        pathCommand,
+        `#!/usr/bin/env node
+console.log(JSON.stringify({
+  shell: true,
+  openrouter: process.env.OPENROUTER_API_KEY ?? null,
+  openai: process.env.OPENAI_API_KEY ?? null
+}));
+`,
+      );
+      await fs.chmod(pathCommand, 0o755);
+
+      const environment = saveEnvironment([
+        "PATH",
+        "OPENROUTER_API_KEY",
+        "OPENAI_API_KEY",
+      ]);
+      process.env.PATH = `${root}${path.delimiter}${process.env.PATH ?? ""}`;
+      process.env.OPENROUTER_API_KEY = "must-not-reach-shell";
+      process.env.OPENAI_API_KEY = "must-not-reach-shell";
+
+      const registry = new ManagedProcessRegistry({ visionExecutable: fixedVisionScript });
+      try {
+        const result = await registry.start("dscode-vision --image image.png | cat", {
+          cwd: root,
+          sandbox: { mode: "danger-full-access", network: true },
+          yieldTimeMs: 2_000,
+          timeoutMs: 5_000,
+          thinkingLevel: "high",
+        });
+        expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "host" });
+        expect(JSON.parse(result.output)).toEqual({
+          shell: true,
+          openrouter: null,
+          openai: null,
+        });
+
+        const withoutNetworkGrant = await registry.start(
+          "dscode-vision --image image.png",
+          {
+            cwd: root,
+            sandbox: { mode: "danger-full-access", network: false },
+            yieldTimeMs: 2_000,
+            timeoutMs: 5_000,
+            thinkingLevel: "high",
+          },
+        );
+        expect(withoutNetworkGrant).toMatchObject({
+          running: false,
+          exitCode: 0,
+          sandbox: "host",
+        });
+        expect(JSON.parse(withoutNetworkGrant.output)).toEqual({
+          shell: true,
+          openrouter: null,
+          openai: null,
+        });
+      } finally {
+        registry.dispose();
+        restoreEnvironment(environment);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "keeps managed timeout behavior for the trusted vision process",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-vision-timeout-"));
+      const fixedVisionScript = path.join(root, "fixed-vision.mjs");
+      await fs.writeFile(fixedVisionScript, "setInterval(() => {}, 1_000);\n");
+      const registry = new ManagedProcessRegistry({ visionExecutable: fixedVisionScript });
+      try {
+        const result = await registry.start("dscode-vision --image image.png", {
+          cwd: root,
+          sandbox: { mode: "danger-full-access", network: true },
+          yieldTimeMs: 1_000,
+          timeoutMs: 250,
+          thinkingLevel: "medium",
+        });
+        expect(result).toMatchObject({
+          running: false,
+          timedOut: true,
+          sandbox: "trusted dscode-vision (fixed executable)",
+        });
+      } finally {
+        registry.dispose();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 function backgroundCommand(): string {
@@ -76,4 +255,15 @@ function backgroundCommand(): string {
 
 function powerShellNodeCommand(script: string): string {
   return `& '${process.execPath.replaceAll("'", "''")}' '${script.replaceAll("'", "''")}'`;
+}
+
+function saveEnvironment(names: readonly string[]): Map<string, string | undefined> {
+  return new Map(names.map((name) => [name, process.env[name]]));
+}
+
+function restoreEnvironment(environment: ReadonlyMap<string, string | undefined>): void {
+  for (const [name, value] of environment) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 }

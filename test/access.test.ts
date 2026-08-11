@@ -54,9 +54,12 @@ describe("Codex-style scoped access escalation", () => {
       "pnpm install",
       "curl https://example.com",
       "gh pr create",
+      'dscode-vision --image "screen shot.png" --prompt "read all text"',
     ]) {
       expect(commandNeedsNetwork(command), command).toBe(true);
     }
+    expect(commandNeedsNetwork("dscode-vision --image screen.png | cat")).toBe(false);
+    expect(commandNeedsNetwork("sudo dscode-vision --image screen.png")).toBe(false);
     expect(commandNeedsNetwork("pnpm test")).toBe(false);
     expect(commandNeedsNetwork("git status")).toBe(false);
   });
