@@ -65,7 +65,16 @@ try {
     "dist",
     "cli.js",
   );
+  const installedVisionCli = path.join(
+    cliInstall,
+    "node_modules",
+    "@thinkany",
+    "dscode",
+    "dist",
+    "vision-cli.js",
+  );
   requireFile(installedCli);
+  requireFile(installedVisionCli);
   verifyWindowsSandboxHelpers(
     path.join(
       cliInstall,
@@ -94,6 +103,10 @@ try {
   const version = run(process.execPath, [installedCli, "--version"], cliInstall).trim();
   if (version !== cliPackage.version) {
     throw new Error(`Installed CLI returned ${version}; expected ${cliPackage.version}`);
+  }
+  const visionHelp = run(process.execPath, [installedVisionCli, "--help"], cliInstall);
+  if (!visionHelp.includes("dscode-vision --image <path>")) {
+    throw new Error("Installed vision CLI help is unavailable");
   }
 
   const rpcProbe = [

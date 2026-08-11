@@ -88,4 +88,14 @@ export {
   type ParsedRuntimeArgs,
   type SandboxMode,
 } from "./runtime-options.js";
+export {
+  loadVisionRuntimeConfig,
+  parseVisionCliArgs,
+  runVisionCli,
+  runVisionCliProcess,
+  visionCliHelp,
+  type ParsedVisionCliArgs,
+  type VisionCliInvocation,
+  type VisionRuntimeConfig,
+} from "./vision-cli.js";
 export { DSCODE_VERSION } from "./version.js";

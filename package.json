@@ -33,7 +33,8 @@
     "README.md"
   ],
   "bin": {
-    "dscode": "./dist/cli.js"
+    "dscode": "./dist/cli.js",
+    "dscode-vision": "./dist/vision-cli.js"
   },
   "scripts": {
     "build:core": "pnpm --dir packages/core build",
@@ -43,7 +44,7 @@
     "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:web-ui && pnpm bundle:server",
     "build:windows-sandbox": "node scripts/build-windows-sandbox.mjs",
     "build": "pnpm build:packages && tsc -p tsconfig.json",
-    "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "postbuild": "node -e \"const fs=require('node:fs'); for (const file of ['dist/cli.js','dist/vision-cli.js']) fs.chmodSync(file, 0o755)\"",
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "pnpm build && pnpm build:windows-sandbox",
     "prepublishOnly": "pnpm check",
