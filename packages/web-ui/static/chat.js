@@ -57,6 +57,8 @@ const state = {
   pendingUploads: [],
   composing: false,
   followLatest: true,
+  jumpingToLatest: false,
+  scrollIntent: null,
   lastDateKey: null,
   lastBubbleRole: null,
   lastRenderedUserRaw: null,
@@ -83,6 +85,8 @@ if (!state.clientId) {
   state.clientId = crypto.randomUUID ? crypto.randomUUID() : makeClientId();
   sessionStorage.setItem("chatClientId", state.clientId);
 }
+
+let followLatestFrame = null;
 
 async function api(path, options = {}) {
   try {
@@ -114,15 +118,34 @@ function isNearBottom() {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < NEAR_BOTTOM_PX;
 }
 
+function scheduleFollowLatest() {
+  if (!state.followLatest || followLatestFrame !== null) return;
+  followLatestFrame = requestAnimationFrame(() => {
+    followLatestFrame = null;
+    if (!state.followLatest) return;
+    scroller.scrollTop = scroller.scrollHeight;
+    jumpLatestButton.hidden = true;
+  });
+}
+
 function afterContentChange(force = false) {
-  if (force || state.followLatest) {
-    requestAnimationFrame(() => {
-      scroller.scrollTop = scroller.scrollHeight;
-      jumpLatestButton.hidden = true;
-    });
+  if (force) {
+    state.followLatest = true;
+    state.jumpingToLatest = false;
+    state.scrollIntent = null;
+  }
+  if (state.followLatest) {
+    scheduleFollowLatest();
   } else {
     jumpLatestButton.hidden = false;
   }
+}
+
+function stopFollowingLatest() {
+  if (scroller.scrollHeight <= scroller.clientHeight) return;
+  state.followLatest = false;
+  state.jumpingToLatest = false;
+  jumpLatestButton.hidden = false;
 }
 
 function isBackForwardNavigation() {
@@ -357,8 +380,13 @@ function removeTyping(turn) {
   if (turn) turn.typingRow = null;
 }
 
-function streamAssistantDelta(delta) {
-  const turn = ensureLiveTurn(state.currentTurnId);
+function streamAssistantDelta(event) {
+  if (
+    typeof event.delta !== "string"
+    || typeof event.turnId !== "string"
+    || event.turnId !== state.currentTurnId
+  ) return;
+  const turn = ensureLiveTurn(event.turnId);
   if (!turn) return;
   let message = turn.assistantBubble;
   if (!message) {
@@ -375,7 +403,7 @@ function streamAssistantDelta(delta) {
     turn.assistantBubble = message;
   }
   turn.firstDeltaSeen = true;
-  message.text += delta;
+  message.text += event.delta;
   state.lastAssistantText = message.text;
   state.lastBubbleRole = "assistant";
   if (message.renderFrame === undefined) {
@@ -634,15 +662,22 @@ function reconcileCompletedOutput(output) {
   if (typeof output !== "string" || output.length === 0) return;
   const turn = state.liveTurn;
   if (turn?.assistantBubble) {
+    const currentText = turn.assistantBubble.text;
+    if (currentText === output || !output.startsWith(currentText)) return;
     if (turn.assistantBubble.renderFrame !== undefined) {
       cancelAnimationFrame(turn.assistantBubble.renderFrame);
       turn.assistantBubble.renderFrame = undefined;
     }
-    if (turn.assistantBubble.text !== output) {
-      turn.assistantBubble.text = output;
-    }
+    turn.assistantBubble.text = output;
     renderAssistantMarkdown(turn.assistantBubble.bubble, turn.assistantBubble.text);
     state.lastAssistantText = output;
+    afterContentChange();
+    return;
+  }
+  if (turn) {
+    turn.assistantBubble = appendMessage("assistant", output);
+    turn.assistantBubble.text = output;
+    turn.firstDeltaSeen = true;
     return;
   }
   if (state.lastAssistantText !== output) appendMessage("assistant", output);
@@ -706,7 +741,8 @@ function onTurn(event) {
 }
 
 function handleToolEvent(event) {
-  const turn = ensureLiveTurn(event.turnId ?? state.currentTurnId);
+  if (typeof event.turnId !== "string" || event.turnId !== state.currentTurnId) return;
+  const turn = ensureLiveTurn(event.turnId);
   if (!turn) return;
   if (event.phase === "started") {
     turn.assistantBubble = null;
@@ -946,13 +982,20 @@ function handleUiEvent(event) {
   }
 }
 
+function addCurrentStreamListener(source, type, listener) {
+  source.addEventListener(type, (event) => {
+    if (state.stream !== source) return;
+    state.lastEventAt = Date.now();
+    listener(event);
+  });
+}
+
 function openStream() {
+  state.stream?.close();
   const source = new EventSource(`/v1/sessions/${state.sessionId}/events`);
   state.stream = source;
   state.lastEventAt = Date.now();
-  source.addEventListener("open", () => {
-    if (state.stream !== source) return;
-    state.lastEventAt = Date.now();
+  addCurrentStreamListener(source, "open", () => {
     state.reconnectDue = false;
     state.booting = false;
     setConnection(true);
@@ -967,38 +1010,40 @@ function openStream() {
     setConnection(false, { showBanner: false });
     void reconnect();
   });
-  source.addEventListener("ping", () => {
-    state.lastEventAt = Date.now();
+  addCurrentStreamListener(source, "ping", () => {});
+  addCurrentStreamListener(source, "turn", (event) => onTurn(JSON.parse(event.data)));
+  addCurrentStreamListener(source, "assistant_text_delta", (event) => {
+    streamAssistantDelta(JSON.parse(event.data));
   });
-  source.addEventListener("turn", (event) => onTurn(JSON.parse(event.data)));
-  source.addEventListener("assistant_text_delta", (event) => {
-    streamAssistantDelta(JSON.parse(event.data).delta);
-  });
-  source.addEventListener("thinking_start", () => {
+  addCurrentStreamListener(source, "thinking_start", (event) => {
+    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
     state.workingPhase = "thinking";
     renderStatus();
   });
-  source.addEventListener("thinking_end", () => {
+  addCurrentStreamListener(source, "thinking_end", (event) => {
+    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
     state.workingPhase = "working";
     renderStatus();
   });
-  source.addEventListener("compaction_start", () => {
+  addCurrentStreamListener(source, "compaction_start", (event) => {
+    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
     state.workingPhase = "compaction";
     renderStatus();
   });
-  source.addEventListener("compaction_end", () => {
+  addCurrentStreamListener(source, "compaction_end", (event) => {
+    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
     state.workingPhase = "working";
     renderStatus();
   });
-  source.addEventListener("tool", (event) => handleToolEvent(JSON.parse(event.data)));
-  source.addEventListener("ui_request", (event) => {
+  addCurrentStreamListener(source, "tool", (event) => handleToolEvent(JSON.parse(event.data)));
+  addCurrentStreamListener(source, "ui_request", (event) => {
     const data = JSON.parse(event.data);
     showUiRequest(data.request, data.turnId);
   });
-  source.addEventListener("extension_error", () => {
+  addCurrentStreamListener(source, "extension_error", () => {
     appendSystemNotice("处理过程中出现了问题，请重试。", "error");
   });
-  source.addEventListener("ui_event", (event) => {
+  addCurrentStreamListener(source, "ui_event", (event) => {
     handleUiEvent(JSON.parse(event.data).event);
   });
 }
@@ -1152,12 +1197,6 @@ async function reconnect() {
       setConnection(false);
       return;
     }
-    if (!(await renderHistory({ preserveScroll: true }))) {
-      state.reconnectDue = true;
-      setConnection(false);
-      return;
-    }
-    state.liveTurn = null;
     openStream();
   } finally {
     state.reconnecting = false;
@@ -1361,15 +1400,73 @@ async function boot() {
   startWatchdog();
 }
 
+let pointerScrollTop = null;
+let previousTouchY = null;
+
+// Treat following as sticky user intent. On iOS, content and composer resizing
+// can emit scroll events even though the user did not move toward older messages.
 scroller.addEventListener("scroll", () => {
-  state.followLatest = isNearBottom();
+  if (pointerScrollTop !== null && scroller.scrollTop !== pointerScrollTop) {
+    state.scrollIntent = scroller.scrollTop < pointerScrollTop ? "older" : "newer";
+    pointerScrollTop = scroller.scrollTop;
+  }
+  if (isNearBottom()) {
+    state.followLatest = true;
+    state.jumpingToLatest = false;
+    state.scrollIntent = null;
+  } else if (state.scrollIntent === "older") {
+    stopFollowingLatest();
+  }
   jumpLatestButton.hidden = state.followLatest;
 });
 
+scroller.addEventListener("pointerdown", () => {
+  state.jumpingToLatest = false;
+  pointerScrollTop = scroller.scrollTop;
+});
+
+scroller.addEventListener("pointerup", () => {
+  pointerScrollTop = null;
+});
+
+scroller.addEventListener("pointercancel", () => {
+  pointerScrollTop = null;
+});
+
+scroller.addEventListener("wheel", (event) => {
+  state.scrollIntent = event.deltaY < 0 ? "older" : "newer";
+}, { passive: true });
+
+scroller.addEventListener("touchstart", (event) => {
+  previousTouchY = event.touches[0]?.clientY ?? null;
+}, { passive: true });
+
+scroller.addEventListener("touchmove", (event) => {
+  const currentTouchY = event.touches[0]?.clientY ?? null;
+  if (
+    currentTouchY !== null
+    && previousTouchY !== null
+    && currentTouchY !== previousTouchY
+  ) state.scrollIntent = currentTouchY > previousTouchY ? "older" : "newer";
+  previousTouchY = currentTouchY;
+}, { passive: true });
+
+scroller.addEventListener("touchend", () => {
+  previousTouchY = null;
+  if (isNearBottom()) state.scrollIntent = null;
+}, { passive: true });
+
+scroller.addEventListener("touchcancel", () => {
+  previousTouchY = null;
+  if (isNearBottom()) state.scrollIntent = null;
+}, { passive: true });
+
 jumpLatestButton.addEventListener("click", () => {
   state.followLatest = true;
-  scroller.scrollTop = scroller.scrollHeight;
+  state.jumpingToLatest = true;
+  state.scrollIntent = null;
   jumpLatestButton.hidden = true;
+  scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
 });
 
 messageInput.addEventListener("input", () => {
@@ -1409,15 +1506,17 @@ function pauseConnection() {
   state.stream = null;
   if (state.watchdog !== null) clearInterval(state.watchdog);
   state.watchdog = null;
+  if (followLatestFrame !== null) cancelAnimationFrame(followLatestFrame);
+  followLatestFrame = null;
   setConnection(false, { showBanner: false });
-  composerResizeObserver.disconnect();
+  layoutResizeObserver.disconnect();
 }
 
 window.addEventListener("pagehide", pauseConnection);
 window.addEventListener("beforeunload", pauseConnection);
 window.addEventListener("pageshow", (event) => {
   if (!event.persisted) return;
-  composerResizeObserver.observe(composerElement);
+  observeChatLayout();
   state.booting = false;
   state.reconnectDue = false;
   state.lastReconnectAt = 0;
@@ -1430,6 +1529,14 @@ resizeInput();
 positionJumpButton();
 updateComposer();
 renderStatus();
-const composerResizeObserver = new ResizeObserver(positionJumpButton);
-composerResizeObserver.observe(composerElement);
+const layoutResizeObserver = new ResizeObserver(() => {
+  positionJumpButton();
+  scheduleFollowLatest();
+});
+function observeChatLayout() {
+  layoutResizeObserver.observe(composerElement);
+  layoutResizeObserver.observe(messagesElement);
+  layoutResizeObserver.observe(scroller);
+}
+observeChatLayout();
 void boot();
