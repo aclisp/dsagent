@@ -172,7 +172,8 @@ Slice 1 已通过真实视觉模型手工验收。CLI 可以在受控环境中�
 dscode-vision --image "screen shot.png" --prompt "读取全部文字"
 ```
 
-可以进入可信分支；下面这些全部进入普通无凭证分支：
+可以进入可信分支。直接以 `dscode-vision` 开头但语法无效的命令会在创建子进程前返回明确的
+拒绝原因，不再回退到无凭证 shell。wrapper 或环境变量赋值形式仍作为普通无凭证命令处理：
 
 ```bash
 dscode-vision a.png && env
@@ -222,7 +223,8 @@ NODE_EXTRA_CA_CERTS
 - `ManagedProcessRegistry` 在网络权限已获准时直启固定视觉脚本；其他情况保留原有 shell 与凭证剥离路径。
 - `exec_command` 每次调用都从 `pi.getThinkingLevel()` 读取当前值。
 - `commandNeedsNetwork()` 只将符合严格语法的视觉命令识别为网络命令。
-- 新增命令语法、环境隔离、固定路径、防 `$PATH` 冒名、shell fallback 和 thinking 同步测试。
+- 新增命令语法、拒绝原因、环境隔离、固定路径、防 `$PATH` 冒名、禁止直接视觉命令静默
+  shell fallback 和 thinking 同步测试。
 
 本 Slice 的聚焦测试为 22 passed、1 个 Windows-only 测试按当前平台跳过；Core typecheck、
 根 `pnpm build` 和 diff check 通过。全量 `pnpm test` 在当前受限执行环境中仍有与本 Slice

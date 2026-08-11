@@ -6,9 +6,9 @@ import { BoundedOutput } from "./process.js";
 import { stripModelCredentialEnvironment } from "./providers.js";
 import { sandboxCommand, type SandboxOptions } from "./sandbox.js";
 import {
+  classifyVisionCommand,
   createVisionProcessEnvironment,
   DEFAULT_VISION_CLI_EXECUTABLE,
-  parseTrustedVisionCommand,
 } from "./vision-command.js";
 
 export interface ManagedProcessResult {
@@ -60,9 +60,14 @@ export class ManagedProcessRegistry {
       signal?: AbortSignal;
     },
   ): Promise<ManagedProcessResult> {
-    const visionCommand = options.sandbox.network
-      ? parseTrustedVisionCommand(command)
-      : undefined;
+    const vision = classifyVisionCommand(command);
+    if (vision.kind === "invalid") {
+      throw new Error(`Invalid dscode-vision command: ${vision.reason}`);
+    }
+    if (vision.kind === "trusted" && !options.sandbox.network) {
+      throw new Error("dscode-vision requires network access");
+    }
+    const visionCommand = vision.kind === "trusted" ? vision.command : undefined;
     const invocation = visionCommand
       ? {
           command: process.execPath,

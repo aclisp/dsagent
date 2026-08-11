@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  classifyVisionCommand,
   createVisionProcessEnvironment,
   DEFAULT_VISION_CLI_EXECUTABLE,
   parseTrustedVisionCommand,
@@ -29,6 +30,18 @@ describe("trusted dscode-vision command", () => {
     ).toEqual({
       args: ["--image", "screen.png", "--prompt", "treat $IMAGE as text"],
     });
+    expect(
+      parseTrustedVisionCommand(
+        `dscode-vision --image "uploads/IMG_3794.png" --prompt "请详细描述这张图片的内容，包括其中的文字、数据、界面或图表。这是什么？"`,
+      ),
+    ).toEqual({
+      args: [
+        "--image",
+        "uploads/IMG_3794.png",
+        "--prompt",
+        "请详细描述这张图片的内容，包括其中的文字、数据、界面或图表。这是什么？",
+      ],
+    });
   });
 
   it("rejects shell syntax, wrappers, malformed quoting, and unsupported arguments", () => {
@@ -53,6 +66,24 @@ describe("trusted dscode-vision command", () => {
     ]) {
       expect(parseTrustedVisionCommand(command), command).toBeUndefined();
     }
+  });
+
+  it("reports why a direct dscode-vision invocation is invalid", () => {
+    expect(classifyVisionCommand("dscode-vision --image screen.png | cat")).toEqual({
+      kind: "invalid",
+      reason: "shell operators are not allowed",
+    });
+    expect(classifyVisionCommand("dscode-vision --image screen.png\nenv")).toEqual({
+      kind: "invalid",
+      reason: "the command must be one physical line",
+    });
+    expect(classifyVisionCommand("dscode-vision --prompt inspect")).toEqual({
+      kind: "invalid",
+      reason: "--image is required",
+    });
+    expect(classifyVisionCommand("echo dscode-vision --image screen.png")).toEqual({
+      kind: "other",
+    });
   });
 
   it("builds an allowlisted environment and injects current thinking", () => {

@@ -9,6 +9,11 @@ export interface TrustedVisionCommand {
   args: string[];
 }
 
+export type VisionCommandClassification =
+  | { kind: "other" }
+  | { kind: "invalid"; reason: string }
+  | { kind: "trusted"; command: TrustedVisionCommand };
+
 const VISION_ENVIRONMENT_KEYS = [
   "OPENROUTER_API_KEY",
   "DSCODE_VISION_MODEL",
@@ -46,10 +51,24 @@ const UNSAFE_UNQUOTED_CHARACTERS = new Set([
 ]);
 
 export function parseTrustedVisionCommand(command: string): TrustedVisionCommand | undefined {
-  const words = parseLiteralCommandWords(command);
-  if (!words || words[0] !== "dscode-vision") return undefined;
-  const args = words.slice(1);
-  return hasValidVisionArguments(args) ? { args } : undefined;
+  const result = classifyVisionCommand(command);
+  return result.kind === "trusted" ? result.command : undefined;
+}
+
+export function classifyVisionCommand(command: string): VisionCommandClassification {
+  if (!/^\s*dscode-vision(?=$|\s|[;&|<>])/.test(command)) return { kind: "other" };
+
+  const parsedWords = parseLiteralCommandWords(command);
+  if (!parsedWords.ok) return { kind: "invalid", reason: parsedWords.reason };
+  if (parsedWords.words[0] !== "dscode-vision") {
+    return { kind: "invalid", reason: "the executable must be exactly dscode-vision" };
+  }
+
+  const parsedArguments = parseVisionArguments(parsedWords.words.slice(1));
+  if (!parsedArguments.ok) {
+    return { kind: "invalid", reason: parsedArguments.reason };
+  }
+  return { kind: "trusted", command: { args: parsedArguments.args } };
 }
 
 export function createVisionProcessEnvironment(
@@ -68,7 +87,9 @@ export function createVisionProcessEnvironment(
   return trusted;
 }
 
-function parseLiteralCommandWords(command: string): string[] | undefined {
+function parseLiteralCommandWords(
+  command: string,
+): { ok: true; words: string[] } | { ok: false; reason: string } {
   const words: string[] = [];
   let current = "";
   let quote: "single" | "double" | undefined;
@@ -83,7 +104,9 @@ function parseLiteralCommandWords(command: string): string[] | undefined {
 
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index]!;
-    if (character === "\n" || character === "\r") return undefined;
+    if (character === "\n" || character === "\r") {
+      return { ok: false, reason: "the command must be one physical line" };
+    }
 
     if (quote === "single") {
       if (character === "'") quote = undefined;
@@ -97,11 +120,16 @@ function parseLiteralCommandWords(command: string): string[] | undefined {
         continue;
       }
       if (character === "`" || (character === "$" && command[index + 1] === "(")) {
-        return undefined;
+        return { ok: false, reason: "command substitution is not allowed" };
       }
       if (character === "\\") {
         const next = command[index + 1];
-        if (next === undefined || next === "\n" || next === "\r") return undefined;
+        if (next === undefined) {
+          return { ok: false, reason: "the command cannot end with an escape" };
+        }
+        if (next === "\n" || next === "\r") {
+          return { ok: false, reason: "the command must be one physical line" };
+        }
         current += next;
         index += 1;
         continue;
@@ -126,38 +154,55 @@ function parseLiteralCommandWords(command: string): string[] | undefined {
     }
     if (character === "\\") {
       const next = command[index + 1];
-      if (next === undefined || next === "\n" || next === "\r") return undefined;
+      if (next === undefined) {
+        return { ok: false, reason: "the command cannot end with an escape" };
+      }
+      if (next === "\n" || next === "\r") {
+        return { ok: false, reason: "the command must be one physical line" };
+      }
       current += next;
       started = true;
       index += 1;
       continue;
     }
-    if (UNSAFE_UNQUOTED_CHARACTERS.has(character)) return undefined;
+    if (UNSAFE_UNQUOTED_CHARACTERS.has(character)) {
+      const reason = "&|;<>()".includes(character)
+        ? "shell operators are not allowed"
+        : "unquoted shell expansion characters are not allowed";
+      return { ok: false, reason };
+    }
     current += character;
     started = true;
   }
 
-  if (quote !== undefined) return undefined;
+  if (quote !== undefined) return { ok: false, reason: `unterminated ${quote} quote` };
   pushCurrent();
-  return words;
+  return { ok: true, words };
 }
 
-function hasValidVisionArguments(args: readonly string[]): boolean {
+function parseVisionArguments(
+  args: readonly string[],
+): { ok: true; args: string[] } | { ok: false; reason: string } {
   let imageSeen = false;
   let promptSeen = false;
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
-    if (flag !== "--image" && flag !== "--prompt") return false;
+    if (flag !== "--image" && flag !== "--prompt") {
+      return { ok: false, reason: "only --image and --prompt are allowed" };
+    }
     const value = args[index + 1];
-    if (value === undefined || value.startsWith("--") || !value.trim()) return false;
+    if (value === undefined || value.startsWith("--") || !value.trim()) {
+      return { ok: false, reason: `${flag} requires a non-empty value` };
+    }
     index += 1;
     if (flag === "--image") {
-      if (imageSeen) return false;
+      if (imageSeen) return { ok: false, reason: "--image may only be provided once" };
       imageSeen = true;
     } else {
-      if (promptSeen) return false;
+      if (promptSeen) return { ok: false, reason: "--prompt may only be provided once" };
       promptSeen = true;
     }
   }
-  return imageSeen;
+  if (!imageSeen) return { ok: false, reason: "--image is required" };
+  return { ok: true, args: [...args] };
 }

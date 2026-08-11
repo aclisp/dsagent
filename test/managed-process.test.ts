@@ -145,77 +145,34 @@ describe("ManagedProcessRegistry", () => {
     },
   );
 
-  it.runIf(process.platform !== "win32")(
-    "keeps malformed vision commands on the credential-stripped shell path",
-    async () => {
-      const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-vision-shell-"));
-      const fixedVisionScript = path.join(root, "fixed-vision.mjs");
-      const pathCommand = path.join(root, "dscode-vision");
-      await fs.writeFile(fixedVisionScript, 'console.log("trusted path must not run");\n');
-      await fs.writeFile(
-        pathCommand,
-        `#!/usr/bin/env node
-console.log(JSON.stringify({
-  shell: true,
-  openrouter: process.env.OPENROUTER_API_KEY ?? null,
-  openai: process.env.OPENAI_API_KEY ?? null
-}));
-`,
-      );
-      await fs.chmod(pathCommand, 0o755);
-
-      const environment = saveEnvironment([
-        "PATH",
-        "OPENROUTER_API_KEY",
-        "OPENAI_API_KEY",
-      ]);
-      process.env.PATH = `${root}${path.delimiter}${process.env.PATH ?? ""}`;
-      process.env.OPENROUTER_API_KEY = "must-not-reach-shell";
-      process.env.OPENAI_API_KEY = "must-not-reach-shell";
-
-      const registry = new ManagedProcessRegistry({ visionExecutable: fixedVisionScript });
-      try {
-        const result = await registry.start("dscode-vision --image image.png | cat", {
-          cwd: root,
+  it("rejects malformed or ungranted vision commands without a shell fallback", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      await expect(
+        registry.start("dscode-vision --image image.png | cat", {
+          cwd: os.tmpdir(),
           sandbox: { mode: "danger-full-access", network: true },
           yieldTimeMs: 2_000,
           timeoutMs: 5_000,
           thinkingLevel: "high",
-        });
-        expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "host" });
-        expect(JSON.parse(result.output)).toEqual({
-          shell: true,
-          openrouter: null,
-          openai: null,
-        });
+        }),
+      ).rejects.toThrow(
+        "Invalid dscode-vision command: shell operators are not allowed",
+      );
 
-        const withoutNetworkGrant = await registry.start(
-          "dscode-vision --image image.png",
-          {
-            cwd: root,
-            sandbox: { mode: "danger-full-access", network: false },
-            yieldTimeMs: 2_000,
-            timeoutMs: 5_000,
-            thinkingLevel: "high",
-          },
-        );
-        expect(withoutNetworkGrant).toMatchObject({
-          running: false,
-          exitCode: 0,
-          sandbox: "host",
-        });
-        expect(JSON.parse(withoutNetworkGrant.output)).toEqual({
-          shell: true,
-          openrouter: null,
-          openai: null,
-        });
-      } finally {
-        registry.dispose();
-        restoreEnvironment(environment);
-        await fs.rm(root, { recursive: true, force: true });
-      }
-    },
-  );
+      await expect(
+        registry.start("dscode-vision --image image.png", {
+          cwd: os.tmpdir(),
+          sandbox: { mode: "danger-full-access", network: false },
+          yieldTimeMs: 2_000,
+          timeoutMs: 5_000,
+          thinkingLevel: "high",
+        }),
+      ).rejects.toThrow("dscode-vision requires network access");
+    } finally {
+      registry.dispose();
+    }
+  });
 
   it.runIf(process.platform !== "win32")(
     "keeps managed timeout behavior for the trusted vision process",
