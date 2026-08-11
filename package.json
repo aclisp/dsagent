@@ -39,7 +39,8 @@
     "build:core": "pnpm --dir packages/core build",
     "build:http-adapter": "pnpm --dir packages/http-adapter build",
     "build:web-ui": "pnpm --dir packages/web-ui build",
-    "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:web-ui",
+    "bundle:server": "node scripts/bundle-server.mjs",
+    "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:web-ui && pnpm bundle:server",
     "build:windows-sandbox": "node scripts/build-windows-sandbox.mjs",
     "build": "pnpm build:packages && tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
@@ -74,6 +75,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

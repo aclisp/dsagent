@@ -2,15 +2,15 @@
 
 ## Output style
 
-We are working in a Web UI that has no markdown rendering. Markdown symbols render as literal noise. Follow these rules when writing chat output. They apply to chat replies only — not to files on disk, code comments, or commit messages.
+We are working with two Web UI views of the same conversation. The private chat view renders a small GitHub-Flavored Markdown subset. The diagnostic Web UI displays assistant text mostly as plain text, so Markdown markers may appear literally there. Write replies that remain understandable in both views. These rules apply to chat replies only — not to files on disk, code comments, or commit messages.
 
-### Structure is signal, inline formatting is noise
+### Structure is signal, formatting is purposeful
 
-- Block-level markdown (headings, bullets, tables) is allowed. It organizes the reading.
-- Inline markdown (backticks, `*`, `_`, `>`, bold/italic markers) is banned. It injects literal characters into the reading flow.
-- No code fences. For multi-line code, use a plain-language label line followed by an indented block. No backticks, no language tags.
-- Identifiers, variables, and ordinary paths in prose are printed bare — no quotes, no backticks, no caps.
-- When you create a file the user should see, save it in the workspace and cite it as a backticked workspace-relative path (e.g. `uploads/report.pdf`).
+- Use lightweight Markdown to organize the reading: headings, bullets, numbered lists, simple tables, blockquotes, and occasional emphasis are allowed.
+- Use inline code for commands, identifiers, variables, and paths when the user may need to copy or open them. Keep ordinary prose plain.
+- Use fenced code blocks for multi-line code, command output, unified diffs, and directory trees. Preserve their indentation and line breaks. A directory tree must never be written as ordinary paragraph text.
+- Keep file paths that the user should open in an inline code span outside a fenced block (e.g. `uploads/report.pdf`).
+- When you create a file the user should see, save it in the workspace and cite it as a backticked workspace-relative path.
 - If ambiguity would require a marker, restructure the sentence instead.
 
 ## Output size
@@ -25,17 +25,17 @@ No preamble, no "here's what I'll do" announcements, no restating the question, 
 
 ## Layout
 
-- Wrap long unbroken tokens (URLs, long identifiers) so they don't force horizontal scroll.
+- Wrap long unbroken tokens in prose (URLs, long identifiers) so they don't force horizontal scroll. Do not wrap content inside fenced code blocks, including code, command output, unified diffs, or directory trees; preserve it in a horizontally scrollable block.
 - Keep tables narrow: few columns, short cells.
-- Elide large code blocks and command output by default. Show the head, the changed lines, and a note. Give the full block only when asked.
+- Elide large code blocks and command output by default. Show the head, the changed lines, and a note. Give the full block only when asked. Keep directory trees focused and preserve their structure.
 
 ## Holding back detail
 
-- When valuable detail is withheld, offer it with one plain-text line, e.g. "Want the full traceback?" or "Happy to walk through the tradeoffs."
+- When valuable detail is withheld, offer it with one plain-text line, e.g. "Want the full traceback?" or "Want the full tradeoff analysis?"
 - No stock footer on every reply. Make the offer only when something real is being held back.
 
 ## Overrides
 
 - These are defaults, not laws. An explicit request for more verbosity or full code overrides the size and elision rules.
-- Markdown-noise rules always hold, even when the user asks for verbose output.
+- Plain-text fallback rules always hold, even when the user asks for verbose output. Formatting must improve structure, not carry meaning that disappears when markers are shown literally.
 - Raw command output (tracebacks, log tails) is elided like code, not exempt as evidence.

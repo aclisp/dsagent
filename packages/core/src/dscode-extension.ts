@@ -682,31 +682,6 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         handler: async (_args, ctx) => ctx.ui.notify(mcp.status(), "info"),
       });
 
-      pi.registerCommand("system-prompt", {
-        description: "Show the rendered system prompt, active tools, and loaded skills",
-        handler: async (_args, ctx) => {
-          const base = ctx.getSystemPrompt();
-          // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
-          const effective = base.includes("# DSCode engineering contract")
-            ? base
-            : effectiveSystemPrompt(base, projectCommands, effectiveAccess());
-          const tools = ctx.getSystemPromptOptions().selectedTools ?? [];
-          const skills = ctx.getSystemPromptOptions().skills ?? [];
-          ctx.ui.notify(
-            [
-              `tools: ${tools.join(", ") || "none"}`,
-              `skills (${skills.length}):`,
-              ...(skills.length
-                ? skills.map((s) => `- ${s.name}${s.disableModelInvocation ? " [command-only]" : ""}`)
-                : ["- none"]),
-              `--- rendered system prompt (${effective.length.toLocaleString()} chars) ---`,
-              effective,
-            ].join("\n"),
-            "info",
-          );
-        },
-      });
-
       pi.registerCommand("status", {
         description: "Show model, access, context, cache, token, and cost details",
         handler: async (_args, ctx) => {

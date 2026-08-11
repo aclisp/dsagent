@@ -9,8 +9,18 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY scripts ./scripts
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
-# Build web-ui and its workspace deps (core, http-adapter) in topological order.
-RUN pnpm --filter @thinkany/dscode-web-ui... build
+# Build all server packages and bundle the web server in topological order.
+RUN pnpm build:packages
+
+FROM node:22 AS prod-deps
+RUN corepack enable
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY scripts ./scripts
+COPY packages/core/package.json packages/core/package.json
+COPY packages/http-adapter/package.json packages/http-adapter/package.json
+COPY packages/web-ui/package.json packages/web-ui/package.json
+RUN pnpm install --prod --frozen-lockfile
 
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
@@ -29,8 +39,14 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
+# The runtime contains only the bundled server, public static assets, package
+# metadata needed by Node's resolver, and production dependencies. Source,
+# tests, declarations, and source maps never cross into this stage.
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/packages/web-ui/node_modules ./packages/web-ui/node_modules
+COPY --from=build /app/packages/web-ui/package.json ./packages/web-ui/package.json
+COPY --from=build /app/packages/web-ui/dist/server.js ./packages/web-ui/dist/server.js
+COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static
 # Bundled skills and prompt files live outside /root/.dscode (a named volume) and are
 # seeded by the entrypoint on every start, so existing volumes pick them up without being clobbered.
 COPY deploy/docker-entrypoint.sh /usr/local/bin/dscode-entrypoint.sh

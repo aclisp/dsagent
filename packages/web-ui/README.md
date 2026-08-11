@@ -93,7 +93,7 @@ The web-ui restricts the agent to four tools (`--tools exec_command,write_stdin,
 plus `DSCODE_SUBAGENT_DEPTH=1`). `read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
-`read`. `/system-prompt` shows the rendered system prompt, active tools, and loaded skills.
+`read`.
 The other DSCode tools are TUI-first and don't fit this deployment:
 
 - `update_plan` is excluded: plan state is rendered through a TUI widget the web-ui doesn't
@@ -121,7 +121,6 @@ container start, the entrypoint copies each missing file into the global `DSCODE
 (`~/.dscode` by default), where pi loads them as prompt/context files. Existing files are preserved,
 so edit them in the named `home` volume to customize the defaults. `APPEND_SYSTEM.md` contains the
 global product persona; `AGENTS.md` contains the Web UI output rules and file-citation guidance.
-`/system-prompt` shows the resulting prompt.
 
 ## File upload / download
 
