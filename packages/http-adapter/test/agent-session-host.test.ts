@@ -81,6 +81,8 @@ describe.sequential("createAgentSessionHost", () => {
       await expect(host.prompt("/clear")).rejects.toThrow(
         "Session command /clear is not supported",
       );
+      await expect(host.prompt("/status")).resolves.toBeUndefined();
+      await expect(host.prompt("/doctor")).resolves.toBeUndefined();
 
       const firstDispose = host.dispose();
       const secondDispose = host.dispose();

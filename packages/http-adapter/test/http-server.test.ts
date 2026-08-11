@@ -84,14 +84,12 @@ function createFakeHost(options?: {
     uiBroker: broker,
     session: {
       messages: options?.messages ?? [],
-      getLastAssistantText() {
-        host.calls.push("output");
-        return options?.output;
-      },
     },
     async prompt(message) {
       host.calls.push(`prompt:${message}`);
       await options?.prompt?.(message);
+      host.calls.push("output");
+      return options?.output;
     },
     async waitForIdle() {
       host.calls.push("wait");
@@ -240,6 +238,26 @@ async function waitForCall(host: FakeHost, call: string): Promise<void> {
 
 function turnUrl(sessionId: string): string {
   return `/v1/sessions/${sessionId}/turns`;
+}
+
+function assistantMessage(text: string): AgentMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "openai-completions",
+    provider: "openrouter",
+    model: "test-model",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 1,
+  };
 }
 
 describe("createHttpAdapterServer", () => {
@@ -813,6 +831,55 @@ describe("createHttpAdapterServer", () => {
     );
     events.close();
     await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
+  });
+
+  it("returns null output when a UI-only turn produces no assistant message", async () => {
+    const host = createFakeHost({
+      messages: [assistantMessage("Previous answer")],
+    });
+    const harness = createHarness({ factory: async () => host });
+    const sessionId = await harness.createSession();
+    const accepted = await harness.server.inject({
+      method: "POST",
+      url: turnUrl(sessionId),
+      payload: { message: "/status" },
+    });
+    const turnId = accepted.json<{ id: string }>().id;
+    await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
+
+    const events = await openEventStream(harness.server, sessionId);
+    expect(await events.next()).toEqual({
+      type: "turn",
+      turnId,
+      status: "completed",
+      output: null,
+    });
+    events.close();
+  });
+
+  it("returns output when consecutive turns produce identical assistant text", async () => {
+    const host = createFakeHost({ output: "Same answer" });
+    const harness = createHarness({ factory: async () => host });
+    const sessionId = await harness.createSession();
+
+    for (const [index, message] of ["First", "Second"].entries()) {
+      const accepted = await harness.server.inject({
+        method: "POST",
+        url: turnUrl(sessionId),
+        payload: { message },
+      });
+      const turnId = accepted.json<{ id: string }>().id;
+      await vi.waitFor(() => expect(host.pruneCalls).toBe(index + 1));
+
+      const events = await openEventStream(harness.server, sessionId);
+      expect(await events.next()).toEqual({
+        type: "turn",
+        turnId,
+        status: "completed",
+        output: "Same answer",
+      });
+      events.close();
+    }
   });
 
   it("broadcasts the submitted message with the client id", async () => {

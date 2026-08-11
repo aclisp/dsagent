@@ -29,10 +29,9 @@ import {
 export interface HttpAdapterServerHost {
   readonly session: {
     readonly messages: readonly AgentMessage[];
-    getLastAssistantText(): string | undefined;
   };
   readonly uiBroker: Pick<HttpUiBroker, "respond">;
-  prompt(message: string): Promise<void>;
+  prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
   prunePersistedSession?(): boolean;
@@ -432,8 +431,9 @@ class SessionController {
     void (async () => {
       let failed = false;
       let failure: unknown;
+      let output: string | undefined;
       try {
-        await this.host.prompt(message);
+        output = await this.host.prompt(message);
         await this.host.waitForIdle();
       } catch (error) {
         failed = true;
@@ -449,7 +449,7 @@ class SessionController {
       } else {
         try {
           this.publishTurn(turn.id, "completed", {
-            output: this.host.session.getLastAssistantText() ?? null,
+            output: output ?? null,
           });
         } catch (error) {
           log.error({ err: error, turnId: turn.id }, "Agent turn failed");

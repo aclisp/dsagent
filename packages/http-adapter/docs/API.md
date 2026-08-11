@@ -201,7 +201,7 @@ Event types:
 
 | type | fields | meaning |
 | --- | --- | --- |
-| `turn` | `turnId`, `status`, `output?`, `error?`, `message?`, `clientId?` | Lifecycle: `running` (with `message` = submitted text and `clientId` = submitter's id, when provided) / `aborting`, terminal `completed` (with `output` = last assistant text), `failed` (with `error` = failure reason), `aborted` |
+| `turn` | `turnId`, `status`, `output?`, `error?`, `message?`, `clientId?` | Lifecycle: `running` (with `message` = submitted text and `clientId` = submitter's id, when provided) / `aborting`, terminal `completed` (with `output` = assistant text produced by this turn, or `null` for UI-only commands), `failed` (with `error` = failure reason), `aborted` |
 | `assistant_text_delta` | `turnId`, `delta` | Incremental assistant output |
 | `thinking_start` | `turnId` | Model began thinking (thinking content is not streamed) |
 | `thinking_end` | `turnId` | Model finished thinking |
@@ -268,4 +268,3 @@ A mismatched body is rejected with `400 invalid_ui_response`; `confirm` cannot t
 | `409` | `turn_in_progress` | Turn submitted while one is running |
 | `500` | `session_creation_failed` / `session_disposal_failed` / `turn_abort_failed` / `ui_response_failed` | Internal failure |
 | `500` | `session_list_failed` | Persisted session store scan failed on `GET /v1/sessions` |
-

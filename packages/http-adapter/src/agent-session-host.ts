@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import path from "node:path";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   type AgentSession,
   type AgentSessionEvent,
@@ -63,7 +64,7 @@ export interface AgentSessionHost {
   readonly session: AgentSession;
   readonly diagnostics: readonly AgentSessionRuntimeDiagnostic[];
   readonly uiBroker: HttpUiBroker;
-  prompt(message: string): Promise<void>;
+  prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
   prunePersistedSession(): boolean;
@@ -181,7 +182,18 @@ function createHost(
     async prompt(message) {
       assertActive();
       assertPromptSupported(message);
-      await runtime.session.prompt(message, { source: "rpc" });
+      let output: string | undefined;
+      const unsubscribeOutput = runtime.session.subscribe((event) => {
+        if (event.type === "message_end" && event.message.role === "assistant") {
+          output = assistantText(event.message);
+        }
+      });
+      try {
+        await runtime.session.prompt(message, { source: "rpc" });
+        return output;
+      } finally {
+        unsubscribeOutput();
+      }
     },
     async abort() {
       assertActive();
@@ -230,6 +242,14 @@ function createHost(
       return attempt;
     },
   };
+}
+
+function assistantText(message: Extract<AgentMessage, { role: "assistant" }>): string | undefined {
+  let text = "";
+  for (const content of message.content) {
+    if (content.type === "text") text += content.text;
+  }
+  return text.trim() || undefined;
 }
 
 const UNSUPPORTED_SESSION_COMMANDS = new Set([
