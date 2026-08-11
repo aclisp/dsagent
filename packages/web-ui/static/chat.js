@@ -2,6 +2,9 @@ import { marked } from "/marked.esm.js";
 
 marked.setOptions({ gfm: true });
 
+const configuredAgentName = document.querySelector('meta[name="chat-agent-name"]')?.content;
+if (!configuredAgentName) throw new Error("Chat agent name is not configured");
+const agentName = configuredAgentName;
 const appElement = document.getElementById("chat-app");
 const fatalScreen = document.getElementById("fatal-screen");
 const statusElement = document.getElementById("agent-status");
@@ -404,7 +407,7 @@ function createMessageRow(role, timestamp, showAvatar) {
       const avatar = document.createElement("img");
       avatar.className = "message-avatar";
       avatar.src = "/favicon.png";
-      avatar.alt = "Steve Code";
+      avatar.alt = agentName;
       row.appendChild(avatar);
     } else {
       const spacer = document.createElement("span");
@@ -464,7 +467,7 @@ function appendTyping(turn) {
   const showAvatar = state.lastBubbleRole !== "assistant";
   const elements = createMessageRow("assistant", Date.now(), showAvatar);
   elements.row.classList.add("typing-row");
-  elements.bubble.setAttribute("aria-label", "Steve Code 正在输入");
+  elements.bubble.setAttribute("aria-label", `${agentName} 正在输入`);
   for (let index = 0; index < 3; index += 1) {
     const dot = document.createElement("span");
     dot.className = "typing-dot";
@@ -964,7 +967,7 @@ function friendlyRequest(request) {
       const label = toolLabel(toolMatch[1].trim());
       return {
         title: `需要${label}`,
-        message: `Steve Code 需要你的确认才能继续${label}。`,
+        message: `${agentName} 需要你的确认才能继续${label}。`,
       };
     }
     if (title === "Continue?") return { title: "确认继续", message: request.message };
@@ -1318,7 +1321,7 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   if (response.body.messages.length === 0) {
     appendMessage(
       "assistant",
-      "你好，我是 Steve Code。有什么需要我帮忙的？",
+      `你好，我是 ${agentName}。有什么需要我帮忙的？`,
       Date.now(),
       { forceScroll: !preserveBrowserScroll },
     );
@@ -1500,7 +1503,7 @@ async function submitMessage() {
     markSendFailed(optimistic);
     restoreSubmission(text, attachments);
     if (response.status === 409) {
-      appendSystemNotice("Steve Code 正在处理其他消息，请稍后重新发送", "warning");
+      appendSystemNotice(`${agentName} 正在处理其他消息，请稍后重新发送`, "warning");
     }
     updateComposer();
     focusMessageInput();

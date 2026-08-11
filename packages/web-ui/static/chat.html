@@ -5,16 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f3f6fa">
-  <title>与 Steve Code 私聊</title>
+  <meta name="chat-agent-name" content="{{CHAT_AGENT_NAME}}">
+  <title>与 {{CHAT_AGENT_NAME}} 私聊</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/chat.css">
 </head>
 <body>
-  <main id="chat-app" class="chat-app" aria-label="与 Steve Code 私聊">
+  <main id="chat-app" class="chat-app" aria-label="与 {{CHAT_AGENT_NAME}} 私聊">
     <header class="chat-header">
-      <img class="header-avatar" src="/favicon.png" alt="Steve Code">
+      <img class="header-avatar" src="/favicon.png" alt="{{CHAT_AGENT_NAME}}">
       <div class="header-identity">
-        <h1>Steve Code</h1>
+        <h1>{{CHAT_AGENT_NAME}}</h1>
         <p id="agent-status" class="agent-status">
           <span class="online-dot" aria-hidden="true"></span>
           <span id="agent-status-text">正在连接</span>
@@ -44,7 +45,7 @@
         <textarea
           id="message-input"
           rows="1"
-          placeholder="给 Steve Code 发消息"
+          placeholder="给 {{CHAT_AGENT_NAME}} 发消息"
           aria-label="消息"
         ></textarea>
         <button id="action-button" class="action-button" type="submit">发送</button>
@@ -54,7 +55,7 @@
 
   <section id="fatal-screen" class="fatal-screen" hidden>
     <img src="/favicon.png" alt="" aria-hidden="true">
-    <p>暂时无法连接 Steve Code，请稍后刷新页面。</p>
+    <p>暂时无法连接 {{CHAT_AGENT_NAME}}，请稍后刷新页面。</p>
   </section>
 
   <div id="modal-backdrop" class="modal-backdrop" hidden>

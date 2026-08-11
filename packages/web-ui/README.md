@@ -23,6 +23,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
 | `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
+| `CHAT_AGENT_NAME` | `Steve Code` | Display name used throughout the friendly `/chat/:workspaceId` page; does not rename the raw debug UI |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 
@@ -58,6 +59,7 @@ docker run -d --name dscode \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
   -e DSCODE_VISION_MODEL='<vision model>' \
+  -e CHAT_AGENT_NAME='Steve Code' \
   -e OPENROUTER_API_KEY='<your key>' \
   --init \
   --cap-drop ALL --security-opt no-new-privileges \

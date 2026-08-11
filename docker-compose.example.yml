@@ -24,6 +24,7 @@ services:
         --effort max --tools exec_command,write_stdin,apply_patch,read
       DSCODE_SUBAGENT_DEPTH: "1"
       DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
+      CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
     volumes:
       - home:/root/.dscode

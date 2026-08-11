@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import process from "node:process";
 import multipart from "@fastify/multipart";
 import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
+import { renderChatPage, resolveChatAgentName } from "./chat-page.js";
 import { registerFileRoutes } from "./files.js";
 import { parseWorkspaces } from "./workspaces.js";
 
@@ -19,6 +20,7 @@ const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
   : undefined;
 
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
+const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
 
 const server = createHttpAdapterServer({
   workspaces,
@@ -45,7 +47,7 @@ server.get<{ Params: { workspaceId: string } }>(
       return reply.code(404).send({ error: "workspace_not_found" });
     }
     const html = await staticFile("chat.html");
-    return reply.type("text/html; charset=utf-8").send(html);
+    return reply.type("text/html; charset=utf-8").send(renderChatPage(html, chatAgentName));
   },
 );
 
