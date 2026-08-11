@@ -1,6 +1,6 @@
 ## 最终架构
 
-> 状态：Slice 1–2 已完成并通过手工验收；Slice 3 已实现、待验收；Slice 4 尚未实施。
+> 状态：Slice 1–3 已完成并通过手工验收；Slice 4 已实现、待验收。
 
 ```text
 用户上传图片并提问
@@ -232,7 +232,7 @@ NODE_EXTRA_CA_CERTS
 
 Slice 2 已通过手工验收。核心安全边界已经形成，但生产镜像里还没有安装 `/app/dist/vision-cli.js`；该交付属于 Slice 3。
 
-## Slice 3：构建产物和容器交付（已实现，待验收）
+## Slice 3：构建产物和容器交付（已完成并验收）
 
 目标是让 lean 镜像包含 CLI，同时继续保护 `packages` 源码。
 
@@ -314,9 +314,9 @@ VISION_MODEL=your-vision-capable-openrouter-model-id
 
 我不会运行 Docker、启动 Server 或做浏览器验证。镜像构建与容器验收留给你手工执行。
 
-Slice 3 实现完成后暂停，等待手工镜像构建与容器验收。
+Slice 3 已通过手工镜像和视觉 CLI 验收。
 
-## Slice 4：默认 Skill 和产品行为
+## Slice 4：默认 Skill 和产品行为（已实现，待验收）
 
 新增：
 
@@ -343,21 +343,26 @@ Skill 只向主模型说明：
 - Server API
 - Tool 列表
 
-entrypoint 现有的默认 Skill seed 逻辑可以直接分发新 Skill；因为它是一个新目录，不会覆盖用户已有 Skill。
+entrypoint 现有的默认 Skill seed 逻辑直接分发新 Skill；如果用户目录中已经存在同名 Skill，
+则保持用户版本，不会覆盖。
 
-文档补充：
+实际修改：
 
-- `dscode-vision` 的用途和命令格式。
-- `VISION_MODEL` 配置。
-- 与主模型的关系。
-- 普通命令拿不到 Key，但同容器 root 主动攻击不在防护范围。
-- 常见失败原因和排查方式。
+- 新增 `deploy/default-skills/dscode-vision/SKILL.md`，包含图片来源、prompt、单图调用、
+  多图汇总、结果整理和失败处理规则。
+- Skill 明确只使用严格的 `dscode-vision --image ... --prompt ...` 形式，不通过 wrapper、
+  shell 组合或普通 `dscode` 绕过专用执行边界。
+- Web UI Server 文档同步默认 Skill 清单，并补充主模型关系、安全边界和常见失败原因。
 
-自动验证：
+已完成的自动验证：
 
-- Skill frontmatter 和目录结构正确。
-- 镜像默认 Skill 清单文档同步。
-- 构建和完整测试通过。
+- `skill-creator` 的 `quick_validate.py` 验证 frontmatter、名称和目录结构通过。
+- 默认 Skill 目录检查能发现 `dscode-vision`、`grill-me`、`skill-creator` 和 `youxin-cli`。
+- 根 `pnpm build` 通过。
+- 根 `pnpm check` 的测试阶段有 45 个测试文件、216 个测试通过；其余失败仍是当前受限环境中的
+  localhost listen、主目录写入和 Seatbelt hook 三组已知限制，与本 Slice 无关。
+- `pnpm package:check` 首次受限于用户 npm cache 写入；改用临时 cache 后停留在 npm 临时安装
+  阶段且没有输出，超过一分钟后手工终止，未作为本 Slice 的 green gate。
 
 随后由你做最终手工验收：
 

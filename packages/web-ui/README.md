@@ -126,12 +126,20 @@ redirections, command substitution, and command chaining do not enter the truste
 
 The vision process reads the mounted `models.json` but does not read the shared `auth.json`,
 load skills or context files, create a session, or expose tools to the vision model. Its text
-result returns to the main agent as ordinary `exec_command` output.
+result returns to the main agent as ordinary `exec_command` output. The bundled `dscode-vision`
+skill tells the main agent when to call the CLI and to turn its observations into a natural answer
+rather than forwarding raw output.
+
+Common failures are a missing `DSCODE_VISION_MODEL`, no matching `models.json` entry, a model that
+does not declare image input, a missing OpenRouter key, and an invalid, unsupported, or oversized
+image. Ordinary commands seeing an empty `OPENROUTER_API_KEY` is expected: only the strictly parsed
+vision command receives it. This protects against accidental disclosure, not an actively hostile
+root process inside the same container.
 
 ### Default skills
 
-The image ships three skills — `grill-me`, `skill-creator`, and `youxin-cli` — bundled in
-`deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
+The image ships four skills — `dscode-vision`, `grill-me`, `skill-creator`, and `youxin-cli` —
+bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.
 They're auto-discovered by pi (the user skills dir is not trust-gated) and listed in the system
