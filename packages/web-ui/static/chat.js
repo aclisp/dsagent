@@ -29,6 +29,10 @@ const WATCHDOG_MS = 15_000;
 const RECONNECT_GAP_MS = 10_000;
 const NEAR_BOTTOM_PX = 90;
 const MAX_INPUT_HEIGHT = 88;
+const RETAINED_TURN_TARGET = 100;
+const TURN_TRIM_BUFFER = 20;
+const RETAINED_TIMELINE_ITEM_TARGET = 500;
+const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
@@ -70,6 +74,13 @@ const state = {
   lastReconnectAt: 0,
   lastEventAt: 0,
   watchdog: null,
+  timelineRetentionReady: false,
+  timelineTargetTurns: RETAINED_TURN_TARGET,
+  timelineMaxTurns: RETAINED_TURN_TARGET + TURN_TRIM_BUFFER,
+  timelineTargetItems: RETAINED_TIMELINE_ITEM_TARGET,
+  timelineMaxItems: RETAINED_TIMELINE_ITEM_TARGET + TIMELINE_ITEM_TRIM_BUFFER,
+  trimmedTurnCount: 0,
+  trimmingTimeline: false,
 };
 
 function makeClientId() {
@@ -87,6 +98,8 @@ if (!state.clientId) {
 }
 
 let followLatestFrame = null;
+let pointerScrollTop = null;
+let previousTouchY = null;
 
 async function api(path, options = {}) {
   try {
@@ -134,6 +147,7 @@ function afterContentChange(force = false) {
     state.jumpingToLatest = false;
     state.scrollIntent = null;
   }
+  trimTimelineIfNeeded();
   if (state.followLatest) {
     scheduleFollowLatest();
   } else {
@@ -163,6 +177,12 @@ function resetTimeline() {
   state.lastRenderedUserRaw = null;
   state.lastAssistantText = "";
   state.historyLastTurn = null;
+  state.timelineRetentionReady = false;
+  state.timelineTargetTurns = RETAINED_TURN_TARGET;
+  state.timelineMaxTurns = RETAINED_TURN_TARGET + TURN_TRIM_BUFFER;
+  state.timelineTargetItems = RETAINED_TIMELINE_ITEM_TARGET;
+  state.timelineMaxItems = RETAINED_TIMELINE_ITEM_TARGET + TIMELINE_ITEM_TRIM_BUFFER;
+  state.trimmedTurnCount = 0;
 }
 
 function localDateKey(timestamp) {
@@ -185,15 +205,95 @@ function timeLabel(timestamp) {
   return timeFormatter.format(new Date(timestamp));
 }
 
-function ensureDateSeparator(timestamp) {
-  const key = localDateKey(timestamp);
-  if (key === state.lastDateKey) return;
+function createDateSeparator(timestamp) {
   const separator = document.createElement("div");
   separator.className = "date-separator";
   separator.textContent = dateLabel(timestamp);
+  return separator;
+}
+
+function ensureDateSeparator(timestamp) {
+  const key = localDateKey(timestamp);
+  if (key === state.lastDateKey) return;
+  const separator = createDateSeparator(timestamp);
   messagesElement.appendChild(separator);
   state.lastDateKey = key;
   state.lastBubbleRole = null;
+}
+
+function timelineUserRows(children = [...messagesElement.children]) {
+  return children.filter(
+    (element) => element.classList.contains("message-row") && element.dataset.role === "user",
+  );
+}
+
+function configureTimelineRetention() {
+  const turnCount = timelineUserRows().length;
+  const itemCount = messagesElement.childElementCount;
+  state.timelineTargetTurns = Math.max(RETAINED_TURN_TARGET, turnCount);
+  state.timelineMaxTurns = state.timelineTargetTurns + TURN_TRIM_BUFFER;
+  state.timelineTargetItems = Math.max(RETAINED_TIMELINE_ITEM_TARGET, itemCount);
+  state.timelineMaxItems = state.timelineTargetItems + TIMELINE_ITEM_TRIM_BUFFER;
+  state.timelineRetentionReady = true;
+}
+
+function createTimelineRetentionNotice() {
+  const notice = document.createElement("div");
+  notice.className = "system-notice timeline-retention-notice";
+  notice.textContent = `为保持页面流畅，已收起 ${state.trimmedTurnCount} 轮较早对话。刷新页面可重新同步当前历史。`;
+  return notice;
+}
+
+function trimTimelineIfNeeded() {
+  if (!state.timelineRetentionReady || state.trimmingTimeline) return false;
+
+  const children = [...messagesElement.children];
+  const users = timelineUserRows(children);
+  if (
+    users.length <= state.timelineMaxTurns
+    && children.length <= state.timelineMaxItems
+  ) return false;
+
+  let boundaryPosition = Math.max(0, users.length - state.timelineTargetTurns);
+  const minimumItemIndex = Math.max(0, children.length - state.timelineTargetItems);
+  while (
+    boundaryPosition < users.length - 1
+    && children.indexOf(users[boundaryPosition]) < minimumItemIndex
+  ) boundaryPosition += 1;
+  if (boundaryPosition <= 0) return false;
+
+  const boundary = users[boundaryPosition];
+  const boundaryIndex = children.indexOf(boundary);
+  const removable = children.slice(0, boundaryIndex);
+  const removedTurns = timelineUserRows(removable).length;
+  if (removedTurns === 0 || pointerScrollTop !== null || previousTouchY !== null) return false;
+
+  if (!state.followLatest) {
+    const lastRemovable = removable.at(-1);
+    if (
+      lastRemovable
+      && lastRemovable.getBoundingClientRect().bottom
+        > scroller.getBoundingClientRect().top + 1
+    ) return false;
+  }
+
+  state.trimmingTimeline = true;
+  try {
+    const anchorTop = boundary.getBoundingClientRect().top;
+    for (const element of removable) element.remove();
+    state.trimmedTurnCount += removedTurns;
+
+    const timestamp = Number(boundary.dataset.timestamp);
+    const separator = createDateSeparator(Number.isFinite(timestamp) ? timestamp : Date.now());
+    messagesElement.insertBefore(separator, boundary);
+    messagesElement.insertBefore(createTimelineRetentionNotice(), separator);
+
+    const anchorOffset = boundary.getBoundingClientRect().top - anchorTop;
+    if (anchorOffset !== 0) scroller.scrollTop += anchorOffset;
+    return true;
+  } finally {
+    state.trimmingTimeline = false;
+  }
 }
 
 function isFilePathToken(text) {
@@ -293,6 +393,7 @@ function createMessageRow(role, timestamp, showAvatar) {
   const row = document.createElement("article");
   row.className = `message-row is-${role}`;
   row.dataset.role = role;
+  row.dataset.timestamp = String(timestamp);
   if (role === "assistant") {
     if (showAvatar) {
       const avatar = document.createElement("img");
@@ -1160,6 +1261,7 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
       { forceScroll: !preserveBrowserScroll },
     );
   }
+  configureTimelineRetention();
   if (preserveBrowserScroll) {
     requestAnimationFrame(() => {
       state.followLatest = isNearBottom();
@@ -1400,9 +1502,6 @@ async function boot() {
   startWatchdog();
 }
 
-let pointerScrollTop = null;
-let previousTouchY = null;
-
 // Treat following as sticky user intent. On iOS, content and composer resizing
 // can emit scroll events even though the user did not move toward older messages.
 scroller.addEventListener("scroll", () => {
@@ -1414,6 +1513,7 @@ scroller.addEventListener("scroll", () => {
     state.followLatest = true;
     state.jumpingToLatest = false;
     state.scrollIntent = null;
+    trimTimelineIfNeeded();
   } else if (state.scrollIntent === "older") {
     stopFollowingLatest();
   }
@@ -1427,10 +1527,12 @@ scroller.addEventListener("pointerdown", () => {
 
 scroller.addEventListener("pointerup", () => {
   pointerScrollTop = null;
+  if (isNearBottom()) trimTimelineIfNeeded();
 });
 
 scroller.addEventListener("pointercancel", () => {
   pointerScrollTop = null;
+  if (isNearBottom()) trimTimelineIfNeeded();
 });
 
 scroller.addEventListener("wheel", (event) => {
@@ -1453,12 +1555,18 @@ scroller.addEventListener("touchmove", (event) => {
 
 scroller.addEventListener("touchend", () => {
   previousTouchY = null;
-  if (isNearBottom()) state.scrollIntent = null;
+  if (isNearBottom()) {
+    state.scrollIntent = null;
+    trimTimelineIfNeeded();
+  }
 }, { passive: true });
 
 scroller.addEventListener("touchcancel", () => {
   previousTouchY = null;
-  if (isNearBottom()) state.scrollIntent = null;
+  if (isNearBottom()) {
+    state.scrollIntent = null;
+    trimTimelineIfNeeded();
+  }
 }, { passive: true });
 
 jumpLatestButton.addEventListener("click", () => {
@@ -1466,6 +1574,7 @@ jumpLatestButton.addEventListener("click", () => {
   state.jumpingToLatest = true;
   state.scrollIntent = null;
   jumpLatestButton.hidden = true;
+  trimTimelineIfNeeded();
   scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
 });
 

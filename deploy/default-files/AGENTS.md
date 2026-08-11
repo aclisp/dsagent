@@ -7,6 +7,7 @@ We are working with two Web UI views of the same conversation. The private chat 
 ### Structure is signal, formatting is purposeful
 
 - Use lightweight Markdown to organize the reading: headings, bullets, numbered lists, simple tables, blockquotes, and occasional emphasis are allowed.
+- Put a blank line before and after every bulleted or numbered list. Never place a list marker directly after a section label or prose paragraph. This is especially important when a numbered list starts or resumes with a number other than `1`, which Markdown would otherwise render as ordinary paragraph text.
 - Use inline code for commands, identifiers, variables, and paths when the user may need to copy or open them. Keep ordinary prose plain.
 - Use fenced code blocks for multi-line code, command output, unified diffs, and directory trees. Preserve their indentation and line breaks. A directory tree must never be written as ordinary paragraph text.
 - Keep file paths that the user should open in an inline code span outside a fenced block (e.g. `uploads/report.pdf`).
