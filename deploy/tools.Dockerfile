@@ -1,11 +1,20 @@
+# syntax=docker/dockerfile:1
+
 # Derived image: the lean dscode-server image + the office/PDF tool layer.
 # Build this once on the live env server (cached locally):
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .
 FROM dscode-server:lean
 
 # Common server utilities and the system-level Office/PDF, OCR, image, and font
-# toolchain used for document and visual artifact work.
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# toolchain used for document and visual artifact work. Keep APT downloads in
+# BuildKit caches so a failed build can reuse them on the next attempt. Restore
+# docker-clean afterward so the runtime keeps its normal cache-cleaning policy.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    mv /etc/apt/apt.conf.d/docker-clean /tmp/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       python3 python3-pip python-is-python3 \
       curl wget jq unzip zip file \
       libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
@@ -13,7 +22,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       tesseract-ocr tesseract-ocr-chi-sim \
       fontconfig fonts-noto-cjk fonts-noto-core fonts-liberation \
       fonts-crosextra-carlito fonts-crosextra-caladea fonts-urw-base35 \
-    && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
+    && rm /etc/apt/apt.conf.d/keep-cache \
+    && mv /tmp/docker-clean /etc/apt/apt.conf.d/docker-clean
 
 # This image is the agent's dedicated tool environment, so artifact libraries
 # are intentionally installed system-wide from PyPI at their current versions.
