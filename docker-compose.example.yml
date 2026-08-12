@@ -1,20 +1,27 @@
 # DSCode chat server — generic Compose template.
 #
-# Copy this file to docker-compose.yml and create a .env with WORKSPACE_ID,
-# OPENROUTER_API_KEY, MODEL, and VISION_MODEL (see .env.example).
-# Build the image first:
+# Build the image first from the project root:
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .
 #   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 #
-# HOST/PORT come from image defaults (0.0.0.0:8899).
+# Then create an instance by copying this file and .env.example into its own
+# local directory. Edit only that instance's .env before starting it:
+#   mkdir -p .local/my-agent
+#   cp docker-compose.example.yml .local/my-agent/docker-compose.yml
+#   cp .env.example .local/my-agent/.env
+#   cd .local/my-agent && docker compose up -d
+#
+name: "${DSCODE_INSTANCE_NAME:?set DSCODE_INSTANCE_NAME in .env}"
+
+# HOST/PORT inside the container come from image defaults (0.0.0.0:8899).
 services:
   dscode:
     image: ${DSCODE_IMAGE:-dscode-server}
-    container_name: dscode
+    container_name: "${DSCODE_INSTANCE_NAME}"
     restart: unless-stopped
     init: true
     ports:
-      - "8899:8899"
+      - "${DSCODE_HOST_PORT:?set DSCODE_HOST_PORT in .env}:8899"
     environment:
       # The workspace id is the deployment's bearer credential — high-entropy, shared only out-of-band.
       WORKSPACES: "${WORKSPACE_ID:?set WORKSPACE_ID in .env}=/workspace"

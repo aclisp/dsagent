@@ -291,13 +291,13 @@ VISION_MODEL=your-vision-capable-openrouter-model-id
 - 新增 `scripts/bundle-vision-cli.mjs`；bundle 覆盖根 `dist/vision-cli.js` 并删除其 source map。
 - 视觉 entry 直接导入 Core 视觉模块，避免把通用 CLI 和完整 Agent 扩展打入产物。
 - [`Dockerfile`](/Users/homerh/Code/dscode/Dockerfile) 的 build stage 执行根构建，runtime stage 只复制视觉 bundle，并创建 `/usr/local/bin/dscode-vision`。
-- [`.env.example`](/Users/homerh/Code/dscode/.env.example) 和 [`docker-compose.yml`](/Users/homerh/Code/dscode/docker-compose.yml) 增加 `VISION_MODEL` 配置。
-- 新增不含本机专用或 `deploy/default-files` bind mount 的通用 `docker-compose.example.yml`。
+- [`.env.example`](/Users/homerh/Code/dscode/.env.example) 和 [`docker-compose.example.yml`](/Users/homerh/Code/dscode/docker-compose.example.yml) 增加 `VISION_MODEL` 配置。
+- 通用 Compose 模板不包含本机专用或 `deploy/default-files` bind mount。
 - `deploy/models.json.example` 增加声明 `input: ["text", "image"]` 的视觉模型示例。
 - Web UI Server 文档补充配置、容器命令、安全边界和运行语义。
 - package smoke test 验证安装后的视觉 CLI 不依赖 `packages/core/dist`，且不携带 source map。
 
-当前 `docker-compose.yml` 的既有本机配置保持不变；通用发布示例单独维护在 `docker-compose.example.yml`。
+当前部署布局只在仓库根目录维护通用 `docker-compose.example.yml`；每套本机配置复制到被 Git 忽略的 `.local/<instance>/`，并通过各自的 `.env` 配置实例名和宿主机端口。
 
 已完成的自动验证：
 

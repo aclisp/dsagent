@@ -67,13 +67,16 @@ docker run -d --name dscode \
 ```
 
 The same deployment is available as the generic `docker-compose.example.yml` at the repo root.
-Copy it to `docker-compose.yml`, fill in `.env` (`WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL`,
-`VISION_MODEL` — see `.env.example`), then `docker compose up -d` creates the container and
-recreates it after an image rebuild; `docker compose down` stops it without touching the named
-volumes. The template contains no machine-specific or default-file bind mounts.
+Copy it and `.env.example` into `.local/<instance>/`, then configure that instance's `.env`:
+`DSCODE_INSTANCE_NAME`, `DSCODE_HOST_PORT`, `WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL`, and
+`VISION_MODEL`. Run `docker compose up -d` from the instance directory to create or update it;
+`docker compose down` stops it without touching its project-scoped named volumes. Creating another
+instance only requires another local directory and different `.env` values. The template contains
+no machine-specific or default-file bind mounts.
 
-- **Volumes.** `dscode-home` holds the adapter's config and persisted sessions; `dscode-workspace`
-  is the agent's working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
+- **Volumes.** The `docker run` example uses `dscode-home` and `dscode-workspace`; Compose creates
+  `<instance>_home` and `<instance>_workspace`. They hold the adapter's config, persisted sessions,
+  and working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
 - **`RUNTIME_ARGS` is required in a container** — the default sandbox has no backend inside a Linux
   container, so every `exec_command` fails without `--sandbox danger-full-access` (which also skips
   mid-chat approval dialogs).
