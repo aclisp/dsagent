@@ -50,11 +50,17 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
 
 # Run (yolo + volumes + security).
+DSCODE_PROMPT_PROFILE=steve
 docker run -d --name dscode \
   -p 8899:8899 \
   -v dscode-home:/root/.dscode \
   -v dscode-workspace:/workspace \
   -v "$HOME/.dscode/models.json":/root/.dscode/models.json:ro \
+  -v "$PWD/deploy/prompt-profiles/$DSCODE_PROMPT_PROFILE/SYSTEM.md":/root/.dscode/SYSTEM.md:ro \
+  -v "$PWD/deploy/prompt-profiles/$DSCODE_PROMPT_PROFILE/favicon.png":/app/packages/web-ui/static/favicon.png:ro \
+  -v "$PWD/deploy/default-files/APPEND_SYSTEM.md":/root/.dscode/APPEND_SYSTEM.md:ro \
+  -v "$PWD/deploy/default-files/AGENTS.md":/root/.dscode/AGENTS.md:ro \
+  -v "$PWD/deploy/locked-workspace-pi":/workspace/.pi:ro \
   -e "WORKSPACES='<workspace-id>=/workspace'" \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
@@ -69,10 +75,11 @@ docker run -d --name dscode \
 The same deployment is available as the generic `docker-compose.example.yml` at the repo root.
 Copy it and `.env.example` into `.local/<instance>/`, then configure that instance's `.env`:
 `DSCODE_INSTANCE_NAME`, `DSCODE_HOST_PORT`, `WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL`, and
-`VISION_MODEL`. Run `docker compose up -d` from the instance directory to create or update it;
+`VISION_MODEL`, and `DSCODE_PROMPT_PROFILE`. Run `docker compose up -d` from the instance directory
+to create or update it;
 `docker compose down` stops it without touching its project-scoped named volumes. Creating another
 instance only requires another local directory and different `.env` values. The template contains
-no machine-specific or default-file bind mounts.
+no machine-specific paths; its prompt mounts resolve through the repository-relative `../../deploy`.
 
 - **Volumes.** The `docker run` example uses `dscode-home` and `dscode-workspace`; Compose creates
   `<instance>_home` and `<instance>_workspace`. They hold the adapter's config, persisted sessions,
@@ -151,13 +158,50 @@ They're auto-discovered by pi (the user skills dir is not trust-gated) and liste
 prompt now that the `read` tool is active. Add user skills by dropping directories into the
 volume's `/root/.dscode/skills/`.
 
-### Default prompt/context files
+### Prompt profiles and protected prompt files
 
-The image also bundles `APPEND_SYSTEM.md` and `AGENTS.md` under `deploy/default-files/`. On every
-container start, the entrypoint copies each missing file into the global `DSCODE_HOME` directory
-(`~/.dscode` by default), where pi loads them as prompt/context files. Existing files are preserved,
-so edit them in the named `home` volume to customize the defaults. `APPEND_SYSTEM.md` contains the
-global product persona; `AGENTS.md` contains the Web UI output rules and file-citation guidance.
+Compose selects the product identity with `DSCODE_PROMPT_PROFILE` and directly mounts the matching
+`deploy/prompt-profiles/<name>/SYSTEM.md` over `/root/.dscode/SYSTEM.md`, and mounts the profile's
+`favicon.png` over the Web UI static asset. The default is `steve`; `assistant` is also bundled.
+Both replace Pi's built-in base prompt. The favicon is also used as the friendly chat header and
+assistant-message avatar. Adding another product profile requires a directory containing both
+files and that name in the instance's `.env`:
+
+```text
+deploy/prompt-profiles/<name>/
+├── SYSTEM.md
+└── favicon.png
+```
+
+All product profiles share `deploy/default-files/APPEND_SYSTEM.md`, which contains the
+implementation-confidentiality boundary. `AGENTS.md` remains the shared Web UI output and
+file-citation guidance. Compose mounts all three effective global files read-only, so the agent
+cannot edit, replace, or delete them. `CHAT_AGENT_NAME` is independent of the prompt profile; set it
+in `.env` when a profile should use a different name in the friendly chat UI.
+
+Pi gives prompt files in a trusted workspace's `.pi` directory precedence over global prompt
+files. The normal Compose template therefore mounts `deploy/locked-workspace-pi` read-only at
+`/workspace/.pi`, preventing a full-access agent from creating a workspace `SYSTEM.md` or
+`APPEND_SYSTEM.md` to bypass the protected global files.
+
+For developer Debug mode, copy `docker-compose.debug.example.yml` next to the instance Compose file
+and recreate with both files:
+
+```sh
+cp ../../docker-compose.debug.example.yml docker-compose.debug.yml
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
+```
+
+The override mounts `deploy/debug-workspace-pi` instead. Its zero-byte `SYSTEM.md` shadows the
+product identity and restores Pi's built-in base; its zero-byte `APPEND_SYSTEM.md` shadows and
+removes the confidentiality boundary. `AGENTS.md`, skills, and DSCode's engineering contract remain
+available. The workspace must be trusted for Pi to load these workspace-level overrides; direct
+HTTP sessions use a trusted workspace by default. Debug mode retains the selected product profile's
+favicon unless its Compose override explicitly mounts a different image.
+
+The image entrypoint still seeds missing `APPEND_SYSTEM.md` and `AGENTS.md` into `DSCODE_HOME` for
+deployments that do not use these Compose mounts. Existing named-volume files are preserved, while
+the direct read-only mounts above take precedence in the normal deployment.
 
 ## File upload / download
 
