@@ -602,7 +602,11 @@ function updateWorkProcess(process) {
     return;
   }
   if (process.status === "failed") {
-    process.summaryText.textContent = `处理失败 · ${count} 项操作`;
+    process.summaryText.textContent = `未能完成 · ${count} 项操作`;
+    return;
+  }
+  if (process.status === "unknown") {
+    process.summaryText.textContent = `工作过程 · ${count} 项操作`;
     return;
   }
   process.summaryText.textContent = `已完成 ${count} 项操作`;
@@ -642,17 +646,25 @@ function finishWorkProcess(turn, status) {
   if (!turn?.process) return;
   turn.process.running = false;
   const outcomes = [...turn.process.steps.values()].map((step) => step.outcome);
-  const inferredStatus = outcomes.includes("denied")
+  turn.process.status = status !== "aborted" && outcomes.includes("denied")
     ? "denied"
-    : outcomes.includes("failed")
-      ? "failed"
-      : "completed";
-  turn.process.status = status === "aborted"
-    ? status
-    : inferredStatus === "denied"
-      ? inferredStatus
-      : status ?? inferredStatus;
+    : status;
+  const showToolErrors = turn.process.status === "failed";
+  for (const step of turn.process.steps.values()) {
+    if (step.outcome === "failed") {
+      step.element.classList.toggle("is-error", showToolErrors);
+    }
+  }
   updateWorkProcess(turn.process);
+}
+
+function finishHistoricalWorkProcess(turn) {
+  if (!turn?.process) return;
+  const finalText = turn.assistantBubble?.text;
+  finishWorkProcess(
+    turn,
+    typeof finalText === "string" && finalText.trim() !== "" ? "completed" : "unknown",
+  );
 }
 
 function newTurnContext(rawMessage = null) {
@@ -1270,7 +1282,7 @@ async function attachSession() {
 
 function renderHistoryMessage(message, currentTurn) {
   if (message.role === "user") {
-    finishWorkProcess(currentTurn);
+    finishHistoricalWorkProcess(currentTurn);
     const raw = message.content.map((block) => block.text).join("\n");
     appendMessage("user", raw, message.timestamp);
     return newTurnContext(raw);
@@ -1303,7 +1315,7 @@ function renderHistoryMessage(message, currentTurn) {
     return turn;
   }
   if (message.role === "compactionSummary") {
-    finishWorkProcess(currentTurn);
+    finishHistoricalWorkProcess(currentTurn);
     appendSystemNotice("较早的对话已整理为记忆", "info", message.timestamp);
     return null;
   }
@@ -1326,7 +1338,7 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   for (const message of response.body.messages) {
     currentTurn = renderHistoryMessage(message, currentTurn);
   }
-  finishWorkProcess(currentTurn);
+  finishHistoricalWorkProcess(currentTurn);
   state.historyLastTurn = currentTurn;
   state.historyTurnPendingBinding = currentTurn !== null
     && currentTurn.rawMessage !== null
