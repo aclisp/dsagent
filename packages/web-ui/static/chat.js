@@ -549,14 +549,15 @@ function ensureWorkProcess(turn, timestamp = Date.now()) {
   const summary = document.createElement("summary");
   const summaryText = document.createElement("span");
   summary.appendChild(summaryText);
-  const steps = document.createElement("ul");
-  steps.className = "work-steps";
-  details.append(summary, steps);
+  const groups = document.createElement("ul");
+  groups.className = "work-steps";
+  details.append(summary, groups);
   messagesElement.appendChild(details);
   turn.process = {
     details,
     summaryText,
-    stepsElement: steps,
+    groupsElement: groups,
+    groups: new Map(),
     steps: new Map(),
     running: true,
   };
@@ -612,6 +613,23 @@ function updateWorkProcess(process) {
   process.summaryText.textContent = `已完成 ${count} 项操作`;
 }
 
+function updateWorkGroup(process, group) {
+  const count = group.steps.size;
+  group.element.textContent = count === 1 ? group.label : `${group.label} ×${count}`;
+  const outcomes = [...group.steps].map((step) => step.outcome);
+  const denied = outcomes.includes("denied");
+  const failed = outcomes.includes("failed");
+  group.element.classList.toggle("is-denied", denied);
+  group.element.classList.toggle(
+    "is-error",
+    !denied && failed && (process.running || process.status === "failed"),
+  );
+}
+
+function updateWorkGroups(process) {
+  for (const group of process.groups.values()) updateWorkGroup(process, group);
+}
+
 function recordTool(
   turn,
   toolCallId,
@@ -624,20 +642,24 @@ function recordTool(
   const process = ensureWorkProcess(turn, timestamp);
   let step = process.steps.get(toolCallId);
   if (!step) {
-    const element = document.createElement("li");
-    element.className = "work-step";
-    element.textContent = toolLabel(name);
-    process.stepsElement.appendChild(element);
-    step = { element, completed: false };
+    const label = toolLabel(name);
+    let group = process.groups.get(label);
+    if (!group) {
+      const element = document.createElement("li");
+      element.className = "work-step";
+      group = { label, element, steps: new Set() };
+      process.groups.set(label, group);
+      process.groupsElement.appendChild(element);
+    }
+    step = { group, completed: false };
+    group.steps.add(step);
     process.steps.set(toolCallId, step);
   }
   if (phase === "completed") {
     step.completed = true;
     step.outcome = outcome ?? toolResultOutcome(undefined, isError);
-    const denied = step.outcome === "denied";
-    step.element.classList.toggle("is-error", isError && !denied);
-    step.element.classList.toggle("is-denied", denied);
   }
+  updateWorkGroup(process, step.group);
   updateWorkProcess(process);
   afterContentChange();
 }
@@ -649,12 +671,7 @@ function finishWorkProcess(turn, status) {
   turn.process.status = status !== "aborted" && outcomes.includes("denied")
     ? "denied"
     : status;
-  const showToolErrors = turn.process.status === "failed";
-  for (const step of turn.process.steps.values()) {
-    if (step.outcome === "failed") {
-      step.element.classList.toggle("is-error", showToolErrors);
-    }
-  }
+  updateWorkGroups(turn.process);
   updateWorkProcess(turn.process);
 }
 
