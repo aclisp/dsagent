@@ -452,8 +452,8 @@ function appendMessage(role, rawText, timestamp = Date.now(), options = {}) {
   return { ...elements, text: parts.text, rawText };
 }
 
-function appendSystemNotice(text, kind = "info", timestamp = Date.now()) {
-  ensureDateSeparator(timestamp);
+function appendSystemNotice(text, kind = "info", timestamp = Date.now(), options = {}) {
+  if (options.showDateSeparator !== false) ensureDateSeparator(timestamp);
   const notice = document.createElement("div");
   notice.className = `system-notice${kind === "info" ? "" : ` is-${kind}`}`;
   notice.textContent = text;
@@ -1333,7 +1333,9 @@ function renderHistoryMessage(message, currentTurn) {
   }
   if (message.role === "compactionSummary") {
     finishHistoricalWorkProcess(currentTurn);
-    appendSystemNotice("较早的对话已整理为记忆", "info", message.timestamp);
+    appendSystemNotice("较早的对话已整理为记忆", "info", message.timestamp, {
+      showDateSeparator: false,
+    });
     return null;
   }
   return currentTurn;
