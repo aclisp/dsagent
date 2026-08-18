@@ -21,6 +21,9 @@ const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
 
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
 const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
+const corsOrigins = process.env.CORS_ORIGINS?.trim()
+  ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
+  : undefined;
 
 const server = createHttpAdapterServer({
   workspaces,
@@ -28,6 +31,7 @@ const server = createHttpAdapterServer({
   maxSessionFileBytes: 1024*1024,
   requireWorkspaceIdForSessionList: true,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
+  ...(corsOrigins !== undefined ? { corsOrigins } : {}),
 });
 
 await server.register(multipart);

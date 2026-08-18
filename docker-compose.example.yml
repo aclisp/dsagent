@@ -33,6 +33,7 @@ services:
       DSCODE_SUBAGENT_DEPTH: "1"
       DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
       CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
     volumes:
       - home:/root/.dscode

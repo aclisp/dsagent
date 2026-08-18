@@ -4,6 +4,7 @@ import path from "node:path";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { createHttpAdapterServer } from "../../http-adapter/src/http-server.js";
 import { registerFileRoutes } from "../src/files.js";
 
 const BOUNDARY = "----dscode-test-boundary";
@@ -33,21 +34,35 @@ afterEach(async () => {
   );
 });
 
-async function setupServer(): Promise<{ server: FastifyInstance; workspace: string }> {
+async function setupServer(options?: {
+  corsOrigins?: readonly string[];
+}): Promise<{ server: FastifyInstance; workspace: string }> {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "dscode-webui-files-"));
   await mkdir(path.join(workspace, "uploads"), { recursive: true });
-  const server = Fastify();
+  const server = options?.corsOrigins
+    ? createHttpAdapterServer({
+        workspaces: { ws: workspace },
+        corsOrigins: options.corsOrigins,
+      })
+    : Fastify();
   await server.register(multipart);
   registerFileRoutes(server, { ws: workspace }, { maxUploadBytes: 1024 * 1024 });
   serverState.push({ server, workspace });
   return { server, workspace };
 }
 
-async function upload(server: FastifyInstance, files: { name: string; content: string }[]) {
+async function upload(
+  server: FastifyInstance,
+  files: { name: string; content: string }[],
+  origin?: string,
+) {
   return server.inject({
     method: "POST",
     url: "/v1/workspaces/ws/files",
-    headers: { "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
+    headers: {
+      "content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+      ...(origin !== undefined ? { origin } : {}),
+    },
     payload: multipartBody(files),
   });
 }
@@ -64,6 +79,39 @@ describe("workspace file routes", () => {
     expect(await readFile(path.join(workspace, "uploads", "hello.txt"), "utf8")).toBe(
       "hello world",
     );
+  });
+
+  it("allows configured origins to upload but not read share routes through CORS", async () => {
+    const origin = "https://app.example.com";
+    const { server } = await setupServer({ corsOrigins: [origin] });
+
+    const preflight = await server.inject({
+      method: "OPTIONS",
+      url: "/v1/workspaces/ws/files",
+      headers: {
+        origin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe(origin);
+
+    const uploaded = await upload(
+      server,
+      [{ name: "photo.png", content: "image" }],
+      origin,
+    );
+    expect(uploaded.statusCode).toBe(201);
+    expect(uploaded.headers["access-control-allow-origin"]).toBe(origin);
+
+    const shared = await server.inject({
+      method: "GET",
+      url: "/share/ws/uploads/photo.png",
+      headers: { origin },
+    });
+    expect(shared.statusCode).toBe(200);
+    expect(shared.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
   it("stores path-like filenames safely — busboy strips directory parts", async () => {

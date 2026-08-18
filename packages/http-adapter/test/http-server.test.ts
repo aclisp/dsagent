@@ -132,6 +132,7 @@ function createHarness(options?: {
   workspaces?: Readonly<Record<string, string>>;
   listPersistedSessions?: PersistedSessionLister;
   requireWorkspaceIdForSessionList?: boolean;
+  corsOrigins?: readonly string[];
 }): Harness {
   const hosts = new Map<string, FakeHost>();
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
@@ -145,6 +146,9 @@ function createHarness(options?: {
       : {}),
     ...(options?.requireWorkspaceIdForSessionList !== undefined
       ? { requireWorkspaceIdForSessionList: options.requireWorkspaceIdForSessionList }
+      : {}),
+    ...(options?.corsOrigins !== undefined
+      ? { corsOrigins: options.corsOrigins }
       : {}),
     createHost: async (factoryOptions) => {
       factoryCalls.push(factoryOptions);
@@ -176,6 +180,7 @@ function createHarness(options?: {
 async function openEventStream(
   server: FastifyInstance,
   sessionId: string,
+  origin?: string,
 ): Promise<EventStream> {
   const controller = new AbortController();
   const response = await server.inject({
@@ -183,6 +188,7 @@ async function openEventStream(
     url: `/v1/sessions/${sessionId}/events`,
     payloadAsStream: true,
     signal: controller.signal,
+    ...(origin !== undefined ? { headers: { origin } } : {}),
   });
   const stream = response.stream();
   const events: HttpAdapterEvent[] = [];
@@ -261,6 +267,73 @@ function assistantMessage(text: string): AgentMessage {
 }
 
 describe("createHttpAdapterServer", () => {
+  it.each([
+    [["*"], "wildcard"],
+    [["https://app.example.com/"], "exact HTTP(S) origin"],
+    [["https://app.example.com/path"], "exact HTTP(S) origin"],
+    [["ftp://app.example.com"], "exact HTTP(S) origin"],
+    [[""], "blank entries"],
+  ])("rejects invalid CORS origins: %s", (corsOrigins, message) => {
+    expect(() => createHttpAdapterServer({ workspaces: WORKSPACES, corsOrigins })).toThrow(
+      message,
+    );
+  });
+
+  it("allows configured origins on API routes and handles preflight", async () => {
+    const origin = "https://app.example.com";
+    const harness = createHarness({ corsOrigins: [origin, origin] });
+
+    const health = await harness.server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin },
+    });
+    expect(health.statusCode).toBe(200);
+    expect(health.headers["access-control-allow-origin"]).toBe(origin);
+    expect(health.headers.vary).toContain("Origin");
+
+    const preflight = await harness.server.inject({
+      method: "OPTIONS",
+      url: "/v1/sessions",
+      headers: {
+        origin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe(origin);
+    expect(preflight.headers["access-control-allow-methods"]).toContain("POST");
+    expect(preflight.headers["access-control-allow-headers"]).toContain("Content-Type");
+    expect(preflight.headers["access-control-max-age"]).toBe("600");
+  });
+
+  it("keeps CORS disabled by default and omits headers for other origins and paths", async () => {
+    const origin = "https://app.example.com";
+    const disabled = createHarness();
+    const disabledResponse = await disabled.server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin },
+    });
+    expect(disabledResponse.headers["access-control-allow-origin"]).toBeUndefined();
+
+    const enabled = createHarness({ corsOrigins: [origin] });
+    const otherOrigin = await enabled.server.inject({
+      method: "GET",
+      url: "/v1/sessions",
+      headers: { origin: "https://other.example.com" },
+    });
+    expect(otherOrigin.headers["access-control-allow-origin"]).toBeUndefined();
+
+    const share = await enabled.server.inject({
+      method: "GET",
+      url: "/share/main/uploads/file.txt",
+      headers: { origin },
+    });
+    expect(share.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("reports health and manages an active persistent session", async () => {
     const harness = createHarness({ runtimeArgs: ["--permission", "auto"] });
 
@@ -809,7 +882,11 @@ describe("createHttpAdapterServer", () => {
 
   it("returns completion through session-scoped SSE replay", async () => {
     const host = createFakeHost({ output: "Completed" });
-    const harness = createHarness({ factory: async () => host });
+    const origin = "https://app.example.com";
+    const harness = createHarness({
+      factory: async () => host,
+      corsOrigins: [origin],
+    });
     const sessionId = await harness.createSession();
     const accepted = await harness.server.inject({
       method: "POST",
@@ -819,7 +896,7 @@ describe("createHttpAdapterServer", () => {
     const turnId = accepted.json<{ id: string }>().id;
     await waitForCall(host, "output");
 
-    const events = await openEventStream(harness.server, sessionId);
+    const events = await openEventStream(harness.server, sessionId, origin);
     expect(await events.next()).toEqual({
       type: "turn",
       turnId,
@@ -829,6 +906,7 @@ describe("createHttpAdapterServer", () => {
     expect(events.response.headers["content-type"]).toBe(
       "text/event-stream; charset=utf-8",
     );
+    expect(events.response.headers["access-control-allow-origin"]).toBe(origin);
     events.close();
     await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
   });

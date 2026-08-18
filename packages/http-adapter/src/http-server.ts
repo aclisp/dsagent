@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import path from "node:path";
+import cors from "@fastify/cors";
 import Fastify, {
   type FastifyBaseLogger,
   type FastifyInstance,
@@ -62,6 +63,8 @@ export interface CreateHttpAdapterServerOptions {
   listPersistedSessions?: PersistedSessionLister;
   /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
   requireWorkspaceIdForSessionList?: boolean;
+  /** Browser origins allowed to call /health and routes under /v1; omitted disables CORS. */
+  corsOrigins?: readonly string[];
   logger?: boolean | FastifyLoggerOptions;
 }
 
@@ -219,6 +222,39 @@ const uiResponseBodySchema = {
 } as const;
 
 const KEEPALIVE_INTERVAL_MS = 30_000;
+const CORS_METHODS = ["GET", "HEAD", "POST", "DELETE", "OPTIONS"];
+const CORS_ALLOWED_HEADERS = ["Content-Type", "Accept"];
+const CORS_MAX_AGE_SECONDS = 600;
+
+function normalizeCorsOrigins(values: readonly string[] | undefined): string[] {
+  if (values === undefined) return [];
+  const origins = new Set<string>();
+  for (const raw of values) {
+    const value = raw.trim();
+    if (value.length === 0) throw new Error("CORS origins must not contain blank entries");
+    if (value === "*") throw new Error("CORS wildcard origin is not allowed");
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error(`Invalid CORS origin: ${value}`);
+    }
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.origin !== value
+    ) {
+      throw new Error(`CORS origin must be an exact HTTP(S) origin: ${value}`);
+    }
+    origins.add(value);
+  }
+  return [...origins];
+}
+
+function isCorsApiRequest(url: string): boolean {
+  const pathname = url.split("?", 1)[0] ?? "";
+  return pathname === "/health" || pathname.startsWith("/v1/");
+}
 
 class SessionController {
   private readonly eventStreams = new Map<ServerResponse, () => void>();
@@ -386,6 +422,9 @@ class SessionController {
   openEventStream(request: FastifyRequest, reply: FastifyReply): FastifyReply {
     reply.hijack();
     const response = reply.raw;
+    for (const [name, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) response.setHeader(name, value);
+    }
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
@@ -530,6 +569,7 @@ class SessionController {
 export function createHttpAdapterServer(
   options: CreateHttpAdapterServerOptions,
 ): FastifyInstance {
+  const corsOrigins = normalizeCorsOrigins(options.corsOrigins);
   const server = Fastify({
     logger: options.logger ?? false,
     ajv: {
@@ -539,6 +579,23 @@ export function createHttpAdapterServer(
       },
     },
   });
+  if (corsOrigins.length > 0) {
+    server.register(cors, {
+      delegator(request, callback) {
+        if (!isCorsApiRequest(request.url)) {
+          callback(null, { origin: false });
+          return;
+        }
+        callback(null, {
+          origin: corsOrigins,
+          methods: CORS_METHODS,
+          allowedHeaders: CORS_ALLOWED_HEADERS,
+          credentials: false,
+          maxAge: CORS_MAX_AGE_SECONDS,
+        });
+      },
+    });
+  }
   const workspaces = new Map<string, string>();
   for (const [id, cwd] of Object.entries(options.workspaces)) {
     if (id.trim().length === 0) throw new Error("Workspace ID must not be blank");
