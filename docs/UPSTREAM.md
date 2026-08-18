@@ -5,9 +5,9 @@
 Current baseline:
 
 - Upstream branch: remote `origin/dev` at `1ce0328`, verified directly with `git ls-remote`; the local `dev` branch matches it.
-- Server branch: local `feature/server` at `b1f1668`; the published `fork/feature/server` remains at `c13d0b4` until the integration work is pushed.
+- Server branch: local `feature/server` at `7ff320d`; the published `fork/feature/server` remains at `c13d0b4` until the integration work is pushed.
 - Merge base: unchanged at `5e37295`.
-- `7282c6b` is integrated as `b1f1668`; the non-Desktop portion of `b597a4f` is applied in the working tree for review.
+- `7282c6b` is integrated as `b1f1668`; the non-Desktop portion of `b597a4f` is integrated as `7ff320d`; `6e9a037` is applied in the working tree for review.
 - Since the recorded upstream baseline `9f8559c`, upstream added one functional commit affecting Core, `6e9a037`, followed by merge commit `1ce0328`.
 
 Four upstream-only commits after the merge base currently affect `packages/core`.
@@ -15,15 +15,14 @@ Four upstream-only commits after the merge base currently affect `packages/core`
 | Commit | Current decision | Integration status and rationale |
 | --- | --- | --- |
 | `7282c6b` — Release 0.3.6 with DeepSeek Pro selection | Integrated | Ported as `b1f1668`, including the `0.3.6` package-version updates and focused provider test. |
-| `b597a4f` — Add OpenCode Zen Go API-key login | Ported for review | Its nine non-Desktop files are applied in the working tree: Core provider/login support, English and Chinese documentation, MCP credential stripping, and focused tests. The Desktop provider-ID change remains intentionally omitted. |
+| `b597a4f` — Add OpenCode Zen Go API-key login | Integrated | Ported as `7ff320d`: Core provider/login support, English and Chinese documentation, MCP credential stripping, and focused tests. The Desktop provider-ID change remains intentionally omitted. |
 | `9444a4d` — Desktop personalization and conversation improvements | Do not port | Still conflicts with the protected prompt-profile design and current Core prompt composition. The Server has no trusted producer or explicit product requirement for this personalization input. |
-| `6e9a037` — Preserve image content returned by MCP tools | Recommended clean port | New since the previous review. It preserves standard MCP image blocks instead of replacing them with omission text. With the `b597a4f` credential fixture now present, its complete three-file patch passes `git apply --check` without adaptation. |
+| `6e9a037` — Preserve image content returned by MCP tools | Ported for review | Its complete three-file patch is applied without adaptation. Standard MCP image blocks are now preserved for the agent instead of being replaced with omission text. |
 
 ### Current integration order
 
-1. Review and commit the applied non-Desktop `b597a4f` port.
-2. Port the complete `6e9a037` MCP image-result patch.
-3. Continue to skip `9444a4d` unless the Server gains a trusted, read-only personalization source and explicit precedence rules.
+1. Review and commit the applied `6e9a037` MCP image-result port.
+2. Continue to skip `9444a4d` unless the Server gains a trusted, read-only personalization source and explicit precedence rules.
 
 The original integration rule remains unchanged: select upstream work by commit and preserve the Server branch's Vision CLI, prompt hardening, workspace catalog, and Web UI-specific Core behavior. Do not replace `packages/core` with the upstream snapshot.
 
@@ -31,7 +30,9 @@ This refresh used a direct remote-tip query, Git history and source diffs, ances
 
 The `7282c6b` port was subsequently validated with its exact upstream regression test, the existing provider and runtime-options tests, and the Core typecheck: 15 focused tests passed. It was committed as `b1f1668`. Docker and live provider verification were not run.
 
-The non-Desktop `b597a4f` working-tree port was validated with the login-scope, provider, runtime-options, and MCP tests: 31 focused tests passed, followed by the Core typecheck. Live OpenCode login and provider calls were not run.
+The non-Desktop `b597a4f` port was validated with the login-scope, provider, runtime-options, and MCP tests: 31 focused tests passed, followed by the Core typecheck. It was committed as `7ff320d`. Live OpenCode login and provider calls were not run.
+
+The `6e9a037` working-tree port was validated with both MCP tests, covering credential stripping and image-content preservation, followed by the Core typecheck. Live MCP image-result verification was not run.
 
 ## 2026-08-13: `packages/core` review
 
