@@ -32,8 +32,15 @@ interface ConnectedServer {
   name: string;
   client: Client;
   close(): Promise<void>;
-  tools: string[];
+  tools: ConnectedTool[];
 }
+
+interface ConnectedTool {
+  name: string;
+  summary: string;
+}
+
+const MCP_TOOL_SUMMARY_MAX_LENGTH = 120;
 
 export class MCPManager {
   private readonly servers: ConnectedServer[] = [];
@@ -64,8 +71,18 @@ export class MCPManager {
     return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
   }
 
+  detailedStatus(): string {
+    const lines: string[] = [];
+    for (const server of this.servers) {
+      lines.push(`${server.name}: connected (${server.tools.length} tools)`);
+      lines.push(...server.tools.map((tool) => `- ${tool.name}: ${tool.summary}`));
+    }
+    lines.push(...this.errors.map((error) => `error: ${error}`));
+    return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
+  }
+
   toolNames(): string[] {
-    return this.servers.flatMap((server) => server.tools);
+    return this.servers.flatMap((server) => server.tools.map((tool) => tool.name));
   }
 
   async close(): Promise<void> {
@@ -105,10 +122,13 @@ export class MCPManager {
       }
 
       const listed = await client.listTools();
-      const registered: string[] = [];
+      const registered: ConnectedTool[] = [];
       for (const tool of listed.tools) {
         const localName = `mcp__${sanitizeName(serverName)}__${sanitizeName(tool.name)}`;
-        registered.push(localName);
+        registered.push({
+          name: localName,
+          summary: summarizeTool(tool.description, tool.title, tool.name),
+        });
         pi.registerTool({
           name: localName,
           label: `${serverName}: ${tool.title ?? tool.name}`,
@@ -141,7 +161,9 @@ export class MCPManager {
         });
       }
       // registerTool refreshes Pi's registry after bind; activate the discovered names.
-      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...registered])]);
+      pi.setActiveTools([
+        ...new Set([...pi.getActiveTools(), ...registered.map((tool) => tool.name)]),
+      ]);
       this.servers.push({ name: serverName, client, close, tools: registered });
     } catch (error) {
       if (close) await close().catch(() => {});
@@ -188,6 +210,16 @@ function defaultStringEnvironment(): Record<string, string> {
 
 function sanitizeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function summarizeTool(
+  description: string | undefined,
+  title: string | undefined,
+  name: string,
+): string {
+  const summary = (description?.trim() || title?.trim() || name).replace(/\s+/g, " ");
+  if (summary.length <= MCP_TOOL_SUMMARY_MAX_LENGTH) return summary;
+  return `${summary.slice(0, MCP_TOOL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
 interface FormattedMcpResult {

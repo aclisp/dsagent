@@ -678,8 +678,8 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       });
 
       pi.registerCommand("mcp", {
-        description: "Show MCP server and tool status",
-        handler: async (_args, ctx) => ctx.ui.notify(mcp.status(), "info"),
+        description: "Show MCP servers, tool names, and summaries",
+        handler: async (_args, ctx) => ctx.ui.notify(mcp.detailedStatus(), "info"),
       });
 
       pi.registerCommand("x-7f3c9a", {

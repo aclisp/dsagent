@@ -15,15 +15,19 @@ describe("MCPManager", () => {
   const originalCredentials = Object.fromEntries(
     MODEL_CREDENTIAL_ENV_KEYS.map((name) => [name, process.env[name]]),
   );
+  const originalDSCodeHome = process.env.DSCODE_HOME;
 
   afterEach(async () => {
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
     for (const name of MODEL_CREDENTIAL_ENV_KEYS) restore(name, originalCredentials[name]);
+    restore("DSCODE_HOME", originalDSCodeHome);
   });
 
   it("loads trusted project tools and strips the model key from stdio", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-mcp-"));
+    process.env.DSCODE_HOME = path.join(root, "home");
+    await fs.mkdir(process.env.DSCODE_HOME);
     await fs.mkdir(path.join(root, ".dscode"));
     await fs.writeFile(
       path.join(root, ".dscode", "mcp.json"),
@@ -58,7 +62,13 @@ describe("MCPManager", () => {
     const manager = new MCPManager();
     try {
       await manager.connectConfigured(pi, ctx);
-      expect(manager.status()).toContain("fixture: connected (1 tools)");
+      expect(manager.status()).toBe("fixture: connected (1 tools)");
+      expect(manager.detailedStatus()).toBe(
+        [
+          "fixture: connected (1 tools)",
+          "- mcp__fixture__echo: Echo text and report whether the model key leaked",
+        ].join("\n"),
+      );
       expect(active).toContain("mcp__fixture__echo");
       const tool = tools.get("mcp__fixture__echo");
       expect(tool).toBeDefined();
@@ -76,6 +86,8 @@ describe("MCPManager", () => {
 
   it("preserves standard MCP image content for the agent", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-mcp-"));
+    process.env.DSCODE_HOME = path.join(root, "home");
+    await fs.mkdir(process.env.DSCODE_HOME);
     await fs.mkdir(path.join(root, ".dscode"));
     await fs.writeFile(
       path.join(root, ".dscode", "mcp.json"),
