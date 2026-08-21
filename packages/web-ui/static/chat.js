@@ -34,7 +34,7 @@ const RECONNECT_GAP_MS = 10_000;
 const NEAR_BOTTOM_PX = 90;
 const MAX_INPUT_HEIGHT = 88;
 const HEADER_GESTURE_THRESHOLD_PX = 14;
-const TIME_SEPARATOR_GAP_MS = 5 * 60_000;
+const TIME_SEPARATOR_INTERVAL_MS = 5 * 60_000;
 const RETAINED_TURN_TARGET = 100;
 const TURN_TRIM_BUFFER = 20;
 const RETAINED_TIMELINE_ITEM_TARGET = 500;
@@ -71,7 +71,7 @@ const state = {
   jumpingToLatest: false,
   scrollingToEarliest: false,
   scrollIntent: null,
-  lastTimelineTimestamp: null,
+  lastTimeSeparatorTimestamp: null,
   lastRenderedUserTurnId: null,
   lastAssistantText: "",
   historyLastTurn: null,
@@ -227,7 +227,7 @@ function scrollToEarliest() {
 
 function resetTimeline() {
   messagesElement.replaceChildren();
-  state.lastTimelineTimestamp = null;
+  state.lastTimeSeparatorTimestamp = null;
   state.lastRenderedUserTurnId = null;
   state.lastAssistantText = "";
   state.historyLastTurn = null;
@@ -262,20 +262,21 @@ function timeLabel(timestamp) {
 function createTimeSeparator(timestamp) {
   const separator = document.createElement("div");
   separator.className = "time-separator";
+  separator.dataset.timestamp = String(timestamp);
   separator.textContent = timeSeparatorLabel(timestamp);
   return separator;
 }
 
 function ensureTimeSeparator(timestamp) {
-  const previousTimestamp = state.lastTimelineTimestamp;
+  const previousTimestamp = state.lastTimeSeparatorTimestamp;
   const changedDate = previousTimestamp === null
     || localDateKey(timestamp) !== localDateKey(previousTimestamp);
   const separatedByTime = previousTimestamp === null
-    || timestamp - previousTimestamp >= TIME_SEPARATOR_GAP_MS;
+    || timestamp - previousTimestamp >= TIME_SEPARATOR_INTERVAL_MS;
   if (changedDate || separatedByTime) {
     messagesElement.appendChild(createTimeSeparator(timestamp));
+    state.lastTimeSeparatorTimestamp = timestamp;
   }
-  state.lastTimelineTimestamp = timestamp;
 }
 
 function timelineUserRows(children = [...messagesElement.children]) {
@@ -344,6 +345,11 @@ function trimTimelineIfNeeded() {
     const separator = createTimeSeparator(Number.isFinite(timestamp) ? timestamp : Date.now());
     messagesElement.insertBefore(separator, boundary);
     messagesElement.insertBefore(createTimelineRetentionNotice(), separator);
+    const latestSeparator = [...messagesElement.querySelectorAll(".time-separator")].at(-1);
+    const latestTimestamp = Number(latestSeparator?.dataset.timestamp);
+    state.lastTimeSeparatorTimestamp = Number.isFinite(latestTimestamp)
+      ? latestTimestamp
+      : null;
 
     const anchorOffset = boundary.getBoundingClientRect().top - anchorTop;
     if (anchorOffset !== 0) scroller.scrollTop += anchorOffset;
