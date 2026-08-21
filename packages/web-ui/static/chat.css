@@ -333,7 +333,8 @@ button {
 }
 
 .bubble blockquote {
-  padding-left: 0.9em;
+  margin-inline: 0;
+  padding-left: 1.2em;
   color: #69768a;
   border-left: 3px solid #ccd6e3;
 }
@@ -353,7 +354,7 @@ button {
   overflow-x: auto;
   color: #dce5f1;
   background: #202938;
-  border-radius: 9px;
+  border-radius: 4px;
   white-space: pre;
 }
 
@@ -525,8 +526,8 @@ button {
 .typing-dot:nth-child(3) { animation-delay: 240ms; }
 
 @keyframes typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
-  30% { transform: translateY(-3px); opacity: 1; }
+  0%, 60%, 100% { transform: translateY(1px); opacity: 0.55; }
+  30% { transform: translateY(-2px); opacity: 1; }
 }
 
 .jump-latest {
@@ -752,17 +753,21 @@ button {
 
 .action-button {
   padding: 0;
-  color: #ffffff;
+  color: #252525;
   background: transparent;
   border: 0;
 }
 
 .action-button::before {
-  background: #07c160;
+  background: var(--chat-background);
+}
+
+.action-button.is-stop {
+  color: #252525;
 }
 
 .action-button.is-stop::before {
-  background: #d7544d;
+  background: var(--chat-background);
 }
 
 .action-icon {
@@ -783,8 +788,8 @@ button {
 
 .action-icon-stop {
   display: none;
-  fill: none;
-  stroke: currentColor;
+  fill: currentColor;
+  stroke: none;
 }
 
 .action-button.is-stop .action-icon-enter {
