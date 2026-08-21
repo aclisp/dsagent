@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f3f6fa">
+  <meta name="theme-color" content="#ededed">
   <meta name="chat-agent-name" content="{{CHAT_AGENT_NAME}}">
   <title>与 {{CHAT_AGENT_NAME}} 私聊</title>
   <link rel="icon" type="image/png" href="/favicon.png">
@@ -12,8 +12,8 @@
 </head>
 <body>
   <main id="chat-app" class="chat-app" aria-label="与 {{CHAT_AGENT_NAME}} 私聊">
+    <div id="scroll-earliest" class="scroll-earliest" aria-hidden="true"></div>
     <header class="chat-header">
-      <img class="header-avatar" src="/favicon.png" alt="{{CHAT_AGENT_NAME}}">
       <div class="header-identity">
         <h1>{{CHAT_AGENT_NAME}}</h1>
         <p id="agent-status" class="agent-status">
@@ -38,7 +38,7 @@
       <form id="composer-form" class="composer-form">
         <button id="upload-button" class="icon-button" type="button" aria-label="添加附件" title="添加附件">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M8.5 12.8 15.7 5.6a3 3 0 0 1 4.2 4.2l-9.1 9.1a5 5 0 0 1-7.1-7.1l9-9"/>
+            <path d="M12 5v14M5 12h14"/>
           </svg>
         </button>
         <input id="file-input" type="file" multiple hidden>
@@ -48,7 +48,14 @@
           placeholder="给 {{CHAT_AGENT_NAME}} 发消息"
           aria-label="消息"
         ></textarea>
-        <button id="action-button" class="action-button" type="submit">发送</button>
+        <button id="action-button" class="action-button" type="submit" aria-label="发送" title="发送">
+          <svg class="action-icon action-icon-enter" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 5v5a4 4 0 0 1-4 4H6m4-4-4 4 4 4"/>
+          </svg>
+          <svg class="action-icon action-icon-stop" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m7 7 10 10M17 7 7 17"/>
+          </svg>
+        </button>
       </form>
     </footer>
   </main>

@@ -13,6 +13,7 @@ const connectionBanner = document.getElementById("connection-banner");
 const scroller = document.getElementById("message-scroller");
 const messagesElement = document.getElementById("messages");
 const jumpLatestButton = document.getElementById("jump-latest");
+const scrollEarliestHotspot = document.getElementById("scroll-earliest");
 const composerElement = document.querySelector(".composer");
 const composerForm = document.getElementById("composer-form");
 const messageInput = document.getElementById("message-input");
@@ -32,6 +33,8 @@ const WATCHDOG_MS = 15_000;
 const RECONNECT_GAP_MS = 10_000;
 const NEAR_BOTTOM_PX = 90;
 const MAX_INPUT_HEIGHT = 88;
+const HEADER_GESTURE_THRESHOLD_PX = 14;
+const TIME_SEPARATOR_GAP_MS = 5 * 60_000;
 const RETAINED_TURN_TARGET = 100;
 const TURN_TRIM_BUFFER = 20;
 const RETAINED_TIMELINE_ITEM_TARGET = 500;
@@ -66,9 +69,9 @@ const state = {
   composing: false,
   followLatest: true,
   jumpingToLatest: false,
+  scrollingToEarliest: false,
   scrollIntent: null,
-  lastDateKey: null,
-  lastBubbleRole: null,
+  lastTimelineTimestamp: null,
   lastRenderedUserTurnId: null,
   lastAssistantText: "",
   historyLastTurn: null,
@@ -108,6 +111,10 @@ if (!state.clientId) {
 let followLatestFrame = null;
 let pointerScrollTop = null;
 let previousTouchY = null;
+let headerGestureDistance = 0;
+const compactHeaderMedia = window.matchMedia(
+  "(orientation: landscape) and (max-height: 500px) and (pointer: coarse)",
+);
 
 async function api(path, options = {}) {
   try {
@@ -153,6 +160,7 @@ function afterContentChange(force = false) {
   if (force) {
     state.followLatest = true;
     state.jumpingToLatest = false;
+    state.scrollingToEarliest = false;
     state.scrollIntent = null;
   }
   trimTimelineIfNeeded();
@@ -178,10 +186,48 @@ function positionJumpButton() {
   jumpLatestButton.style.bottom = `${composerElement.offsetHeight + 14}px`;
 }
 
+function setHeaderCollapsed(collapsed) {
+  appElement.classList.toggle(
+    "is-header-collapsed",
+    collapsed && compactHeaderMedia.matches,
+  );
+}
+
+function updateHeaderFromTouch(delta) {
+  if (!compactHeaderMedia.matches || delta === 0) return;
+  if (Math.sign(delta) !== Math.sign(headerGestureDistance)) headerGestureDistance = 0;
+  headerGestureDistance += delta;
+  if (
+    headerGestureDistance >= HEADER_GESTURE_THRESHOLD_PX
+    && scroller.scrollHeight > scroller.clientHeight
+    && scroller.scrollTop > 0
+  ) {
+    setHeaderCollapsed(true);
+    headerGestureDistance = 0;
+  } else if (headerGestureDistance <= -HEADER_GESTURE_THRESHOLD_PX) {
+    setHeaderCollapsed(false);
+    headerGestureDistance = 0;
+  }
+}
+
+function scrollToEarliest() {
+  setHeaderCollapsed(false);
+  if (scroller.scrollHeight <= scroller.clientHeight) return;
+  state.followLatest = false;
+  state.jumpingToLatest = false;
+  state.scrollIntent = "older";
+  jumpLatestButton.hidden = false;
+  if (scroller.scrollTop <= 1) {
+    state.scrollingToEarliest = false;
+    return;
+  }
+  state.scrollingToEarliest = true;
+  scroller.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function resetTimeline() {
   messagesElement.replaceChildren();
-  state.lastDateKey = null;
-  state.lastBubbleRole = null;
+  state.lastTimelineTimestamp = null;
   state.lastRenderedUserTurnId = null;
   state.lastAssistantText = "";
   state.historyLastTurn = null;
@@ -199,35 +245,37 @@ function localDateKey(timestamp) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function dateLabel(timestamp) {
+function timeSeparatorLabel(timestamp) {
   const date = new Date(timestamp);
   const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const dayDifference = Math.round((todayStart - targetStart) / 86_400_000);
-  if (dayDifference === 0) return "今天";
-  if (dayDifference === 1) return "昨天";
-  return `${date.getMonth() + 1} 月 ${date.getDate()} 日`;
+  if (localDateKey(timestamp) === localDateKey(today.getTime())) return timeLabel(timestamp);
+  const datePart = date.getFullYear() === today.getFullYear()
+    ? `${date.getMonth() + 1} 月 ${date.getDate()} 日`
+    : `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日`;
+  return `${datePart} ${timeLabel(timestamp)}`;
 }
 
 function timeLabel(timestamp) {
   return timeFormatter.format(new Date(timestamp));
 }
 
-function createDateSeparator(timestamp) {
+function createTimeSeparator(timestamp) {
   const separator = document.createElement("div");
-  separator.className = "date-separator";
-  separator.textContent = dateLabel(timestamp);
+  separator.className = "time-separator";
+  separator.textContent = timeSeparatorLabel(timestamp);
   return separator;
 }
 
-function ensureDateSeparator(timestamp) {
-  const key = localDateKey(timestamp);
-  if (key === state.lastDateKey) return;
-  const separator = createDateSeparator(timestamp);
-  messagesElement.appendChild(separator);
-  state.lastDateKey = key;
-  state.lastBubbleRole = null;
+function ensureTimeSeparator(timestamp) {
+  const previousTimestamp = state.lastTimelineTimestamp;
+  const changedDate = previousTimestamp === null
+    || localDateKey(timestamp) !== localDateKey(previousTimestamp);
+  const separatedByTime = previousTimestamp === null
+    || timestamp - previousTimestamp >= TIME_SEPARATOR_GAP_MS;
+  if (changedDate || separatedByTime) {
+    messagesElement.appendChild(createTimeSeparator(timestamp));
+  }
+  state.lastTimelineTimestamp = timestamp;
 }
 
 function timelineUserRows(children = [...messagesElement.children]) {
@@ -293,7 +341,7 @@ function trimTimelineIfNeeded() {
     state.trimmedTurnCount += removedTurns;
 
     const timestamp = Number(boundary.dataset.timestamp);
-    const separator = createDateSeparator(Number.isFinite(timestamp) ? timestamp : Date.now());
+    const separator = createTimeSeparator(Number.isFinite(timestamp) ? timestamp : Date.now());
     messagesElement.insertBefore(separator, boundary);
     messagesElement.insertBefore(createTimelineRetentionNotice(), separator);
 
@@ -397,45 +445,36 @@ function createAttachmentList(attachments) {
   return list;
 }
 
-function createMessageRow(role, timestamp, showAvatar) {
-  ensureDateSeparator(timestamp);
+function createMessageRow(role, timestamp) {
+  ensureTimeSeparator(timestamp);
   const row = document.createElement("article");
   row.className = `message-row is-${role}`;
   row.dataset.role = role;
   row.dataset.timestamp = String(timestamp);
   if (role === "assistant") {
-    if (showAvatar) {
-      const avatar = document.createElement("img");
-      avatar.className = "message-avatar";
-      avatar.src = "/favicon.png";
-      avatar.alt = agentName;
-      row.appendChild(avatar);
-    } else {
-      const spacer = document.createElement("span");
-      spacer.className = "message-avatar-spacer";
-      spacer.setAttribute("aria-hidden", "true");
-      row.appendChild(spacer);
-    }
+    const avatar = document.createElement("img");
+    avatar.className = "message-avatar";
+    avatar.src = "/favicon.png";
+    avatar.alt = agentName;
+    row.appendChild(avatar);
   }
   const column = document.createElement("div");
   column.className = "message-column";
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  const time = document.createElement("div");
-  time.className = "message-time";
-  time.textContent = timeLabel(timestamp);
-  column.append(bubble, time);
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  column.append(bubble, meta);
   row.appendChild(column);
   messagesElement.appendChild(row);
-  return { row, bubble, time };
+  return { row, bubble, meta };
 }
 
 function appendMessage(role, rawText, timestamp = Date.now(), options = {}) {
-  const showAvatar = role === "assistant" && state.lastBubbleRole !== "assistant";
   const parts = role === "user"
     ? parseUploadedMessage(rawText)
     : { text: rawText, attachments: options.attachments ?? [] };
-  const elements = createMessageRow(role, timestamp, showAvatar);
+  const elements = createMessageRow(role, timestamp);
   if (role === "assistant") {
     renderAssistantMarkdown(elements.bubble, parts.text);
     state.lastAssistantText = parts.text;
@@ -447,26 +486,23 @@ function appendMessage(role, rawText, timestamp = Date.now(), options = {}) {
   }
   const attachmentList = createAttachmentList(parts.attachments);
   if (attachmentList) elements.bubble.appendChild(attachmentList);
-  state.lastBubbleRole = role;
   afterContentChange(options.forceScroll);
   return { ...elements, text: parts.text, rawText };
 }
 
 function appendSystemNotice(text, kind = "info", timestamp = Date.now(), options = {}) {
-  if (options.showDateSeparator !== false) ensureDateSeparator(timestamp);
+  if (options.showTimeSeparator !== false) ensureTimeSeparator(timestamp);
   const notice = document.createElement("div");
   notice.className = `system-notice${kind === "info" ? "" : ` is-${kind}`}`;
   notice.textContent = text;
   messagesElement.appendChild(notice);
-  state.lastBubbleRole = null;
   afterContentChange();
   return notice;
 }
 
 function appendTyping(turn) {
   if (turn.typingRow || turn.firstDeltaSeen) return;
-  const showAvatar = state.lastBubbleRole !== "assistant";
-  const elements = createMessageRow("assistant", Date.now(), showAvatar);
+  const elements = createMessageRow("assistant", Date.now());
   elements.row.classList.add("typing-row");
   elements.bubble.setAttribute("aria-label", `${agentName} 正在输入`);
   for (let index = 0; index < 3; index += 1) {
@@ -521,7 +557,6 @@ function streamAssistantDelta(event) {
   turn.firstDeltaSeen = true;
   message.text += event.delta;
   state.lastAssistantText = message.text;
-  state.lastBubbleRole = "assistant";
   if (message.renderFrame === undefined) {
     message.renderFrame = requestAnimationFrame(() => {
       message.renderFrame = undefined;
@@ -543,7 +578,7 @@ function toolLabel(name) {
 
 function ensureWorkProcess(turn, timestamp = Date.now()) {
   if (turn.process) return turn.process;
-  ensureDateSeparator(timestamp);
+  ensureTimeSeparator(timestamp);
   const details = document.createElement("details");
   details.className = "work-process";
   const summary = document.createElement("summary");
@@ -792,7 +827,7 @@ function focusMessageInput() {
   if (state.booting || !state.connected || state.running || state.submitting) return;
   requestAnimationFrame(() => {
     if (state.booting || !state.connected || state.running || state.submitting) return;
-    messageInput.focus();
+    messageInput.focus({ preventScroll: true });
   });
 }
 
@@ -800,10 +835,10 @@ function updateComposer() {
   const unavailable = state.booting || !state.connected;
   const running = state.running || state.submitting;
   messageInput.disabled = unavailable || running;
-  uploadButton.hidden = running;
-  uploadButton.disabled = unavailable || state.uploading;
+  uploadButton.disabled = unavailable || running || state.uploading;
   actionButton.classList.toggle("is-stop", running);
-  actionButton.textContent = running ? "停止" : "发送";
+  actionButton.setAttribute("aria-label", running ? "停止" : "发送");
+  actionButton.title = running ? "停止" : "发送";
   actionButton.type = running ? "button" : "submit";
   actionButton.disabled = unavailable
     || (running
@@ -1001,7 +1036,15 @@ function friendlyRequest(request) {
     }
     const toolMatch = /^Allow\s+(.+?)\??$/i.exec(title);
     if (toolMatch) {
-      const label = toolLabel(toolMatch[1].trim());
+      const toolName = toolMatch[1].trim();
+      const label = toolLabel(toolName);
+      if (toolName === "exec_command" && request.message.trim()) {
+        return {
+          title: `需要${label}`,
+          message: request.message,
+          messageStyle: "command",
+        };
+      }
       return {
         title: `需要${label}`,
         message: `${agentName} 需要你的确认才能继续${label}。`,
@@ -1334,7 +1377,7 @@ function renderHistoryMessage(message, currentTurn) {
   if (message.role === "compactionSummary") {
     finishHistoricalWorkProcess(currentTurn);
     appendSystemNotice("较早的对话已整理为记忆", "info", message.timestamp, {
-      showDateSeparator: false,
+      showTimeSeparator: false,
     });
     return null;
   }
@@ -1511,7 +1554,7 @@ function markSendFailed(message) {
   const stateLabel = document.createElement("span");
   stateLabel.className = "message-state";
   stateLabel.textContent = "发送失败";
-  message.time.appendChild(stateLabel);
+  message.meta.appendChild(stateLabel);
 }
 
 async function recoverMissingSession() {
@@ -1666,6 +1709,13 @@ async function boot() {
 // Treat following as sticky user intent. On iOS, content and composer resizing
 // can emit scroll events even though the user did not move toward older messages.
 scroller.addEventListener("scroll", () => {
+  if (scroller.scrollTop <= 1) setHeaderCollapsed(false);
+  if (state.scrollingToEarliest) {
+    state.followLatest = false;
+    jumpLatestButton.hidden = false;
+    if (scroller.scrollTop <= 1) state.scrollingToEarliest = false;
+    return;
+  }
   if (pointerScrollTop !== null && scroller.scrollTop !== pointerScrollTop) {
     state.scrollIntent = scroller.scrollTop < pointerScrollTop ? "older" : "newer";
     pointerScrollTop = scroller.scrollTop;
@@ -1683,6 +1733,7 @@ scroller.addEventListener("scroll", () => {
 
 scroller.addEventListener("pointerdown", () => {
   state.jumpingToLatest = false;
+  state.scrollingToEarliest = false;
   pointerScrollTop = scroller.scrollTop;
 });
 
@@ -1701,6 +1752,7 @@ scroller.addEventListener("wheel", (event) => {
 }, { passive: true });
 
 scroller.addEventListener("touchstart", (event) => {
+  headerGestureDistance = 0;
   previousTouchY = event.touches[0]?.clientY ?? null;
 }, { passive: true });
 
@@ -1710,11 +1762,15 @@ scroller.addEventListener("touchmove", (event) => {
     currentTouchY !== null
     && previousTouchY !== null
     && currentTouchY !== previousTouchY
-  ) state.scrollIntent = currentTouchY > previousTouchY ? "older" : "newer";
+  ) {
+    state.scrollIntent = currentTouchY > previousTouchY ? "older" : "newer";
+    updateHeaderFromTouch(previousTouchY - currentTouchY);
+  }
   previousTouchY = currentTouchY;
 }, { passive: true });
 
 scroller.addEventListener("touchend", () => {
+  headerGestureDistance = 0;
   previousTouchY = null;
   if (isNearBottom()) {
     state.scrollIntent = null;
@@ -1723,6 +1779,7 @@ scroller.addEventListener("touchend", () => {
 }, { passive: true });
 
 scroller.addEventListener("touchcancel", () => {
+  headerGestureDistance = 0;
   previousTouchY = null;
   if (isNearBottom()) {
     state.scrollIntent = null;
@@ -1733,10 +1790,18 @@ scroller.addEventListener("touchcancel", () => {
 jumpLatestButton.addEventListener("click", () => {
   state.followLatest = true;
   state.jumpingToLatest = true;
+  state.scrollingToEarliest = false;
   state.scrollIntent = null;
   jumpLatestButton.hidden = true;
   trimTimelineIfNeeded();
   scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+});
+
+scrollEarliestHotspot.addEventListener("click", scrollToEarliest);
+
+compactHeaderMedia.addEventListener("change", () => {
+  headerGestureDistance = 0;
+  if (!compactHeaderMedia.matches) setHeaderCollapsed(false);
 });
 
 messageInput.addEventListener("input", () => {
