@@ -9,21 +9,11 @@ description: Use when Codex needs to inspect or operate on Youxin Cloud OpenAPI 
 
 Use the installed `youxin-cli` binary as the execution boundary for Youxin Cloud OpenAPI work. Do not import repo-local helper code, create temporary scripts in a project repo, or depend on a local checkout.
 
-## Stdin and EOF
+## Golden Rules
 
-`youxin-cli` does not read stdin unless `--stdin-json` is present. This keeps commands such as
-`help`, field inspection, and `--body-file` requests from waiting on an unrelated open pipe.
-
-When `--stdin-json` is used, the CLI reads stdin until EOF and accepts the JSON envelope formats
-listed in `references/commands.md`. Always provide finite input, for example:
-
-```bash
-printf '%s\n' '{"body":{"page":1,"num":10}}' | youxin-cli --stdin-json object query --form-code Account__s
-```
-
-Never start `youxin-cli --stdin-json` without a finite input source. Keep credentials in profiles
-or environment variables rather than embedding secrets in command text. Commands using flags,
-profiles, environment variables, or `--body-file` should omit `--stdin-json`.
+1. **Never guess field values or filter values.** Read `references/commands.md#field-value-shapes--filter-value-rules` before building a query or upsert payload.
+2. **Single/multi-select fields**: run `object fields` first and use `fieldOptions[].optionId` as the filter/write value — never the option name. Filtering by option name silently matches nothing.
+3. **Lookup fields**: query the referenced object first to get the target `recordId`, then filter the lookup field by that numeric `recordId` (or use a dot-path key like `Lookup__c.Name__c`).
 
 ## First Checks
 
@@ -47,8 +37,7 @@ youxin-cli help
 
 - Treat `~/.config/youxin-cli/profiles.json` as sensitive local private state.
 - Do not create, edit, or delete the profile file unless the user explicitly asks.
-- Prefer environment variables or stdin JSON with `--stdin-json` for credentials.
-- Avoid putting secrets in shell command arguments.
+- Prefer environment variables for passing credentials; avoid putting secrets in shell command arguments.
 - Do not print access tokens, refresh tokens, OpenAPI keys, or OpenAPI secrets.
 - When checking auth, summarize token presence/expiry instead of echoing token values.
 
@@ -80,7 +69,7 @@ Expected shape:
 }
 ```
 
-When a profile is available, read it, choose the user-requested profile or `defaultProfile`, and pass credentials/context to `youxin-cli` via env vars or stdin JSON. Never echo the profile contents.
+When a profile is available, read it, choose the user-requested profile or `defaultProfile`, and pass credentials/context to `youxin-cli` via env vars. Never echo the profile contents.
 
 Resolve a user-mentioned tenant/profile name in this order:
 
@@ -128,6 +117,8 @@ youxin-cli object fields --form-code Account__s --format json --useful
 
 For comma-separated field paths, fetch JSON and produce the requested list from the returned `data[].fieldId` values.
 
+`--useful` filters system/audit fields, reverse relations, and empty-named fields out of the listing. It does not affect query results — to keep query output clean, pass an explicit `externalFields` list.
+
 ### Curate Lookup Drilldowns
 
 When the user asks for useful fields, display fields, lookup paths, or fields suitable for export/sync:
@@ -155,6 +146,16 @@ Common mistakes to avoid:
 - Use `externalFields` (not `fields`) for field selection
 - Use `num` (not `limit` or `pageSize`) for page size
 - Use `page` (not `pageNumber`) for page number
+- Filtering a select field by its option name instead of `optionId` — see Golden Rules
+- Using `like` without `%` wildcards — use `contains` for substring matching
+
+Before filtering on a field whose value domain you have not seen, check `references/commands.md#field-value-shapes--filter-value-rules` or run a small unfiltered query and inspect one record's `fieldData`.
+
+Minimal working example:
+
+```bash
+youxin-cli object query --form-code Account__s --body '{"page":1,"num":10}'
+```
 
 Prefer body files or stdin JSON for non-trivial filters:
 
@@ -174,7 +175,16 @@ youxin-cli invoke --method POST --path /openapi/object/record/page --body-file .
 
 Use `--read-only` only when the request is known to be a read operation.
 
+## Stdin
+
+The CLI never reads stdin unless the global `--stdin-json` flag is present, so ordinary commands never hang on an open pipe. When `--stdin-json` is used, stdin is read until EOF — always provide a finite producer such as `printf`, and keep credentials in profiles or environment variables rather than command text:
+
+```bash
+printf '%s\n' '{"body":{"page":1,"num":10}}' | youxin-cli --stdin-json object query --form-code Account__s
+```
+
+Commands using flags, profiles, environment variables, or `--body-file` should omit `--stdin-json`.
+
 ## Reference
 
-- Read `references/USAGE.md` for the complete CLI usage manual and supported workflows.
-- Read `references/commands.md` for exact arguments, profile schema, payload shapes, output schemas, and lookup drilldown rules.
+- Read `references/commands.md` for exact arguments, profile schema, payload shapes, output schemas, field value shapes and filter value rules, and lookup drilldown rules.

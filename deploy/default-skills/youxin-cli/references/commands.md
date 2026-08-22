@@ -2,22 +2,6 @@
 
 Use this reference when exact flags, payload shapes, or output formats matter.
 
-## Shared Inputs
-
-### Stdin JSON
-
-`youxin-cli` does not consume stdin unless the global `--stdin-json` flag is present. This keeps
-commands such as `help`, field inspection, and commands using `--body-file` from waiting on an open
-pipe. With `--stdin-json`, stdin is read until EOF, so provide a finite producer that closes stdin:
-
-```bash
-printf '%s\n' '{"body":{"page":1,"num":10}}' | youxin-cli --stdin-json object query --form-code Account__s
-```
-
-Use profiles or environment variables for secrets instead of embedding them in the producer
-command. Omit `--stdin-json` when using flags, profiles, environment variables, or `--body-file`.
-
-
 ## Local Private Profiles
 
 Before asking for credentials or scanning source code, check for a local private profile:
@@ -71,12 +55,70 @@ Selection rules:
 Usage rules:
 
 - Never print profile secrets.
-- Prefer passing profile values to `youxin-cli` through env vars or stdin JSON with `--stdin-json`.
+- Pass profile values to `youxin-cli` through environment variables (or stdin JSON with `--stdin-json`).
 - Do not create or edit the profile unless the user explicitly asks.
 - If no profile exists, suggest creating one to save future tokens and avoid rediscovering credentials/context.
 - If no profile exists and source discovery is needed, ask for permission before inspecting tracked source files. Report candidate tenant/profile names, not secret values.
 
-Example stdin envelope produced from a profile:
+## Shared Inputs
+
+### Credentials And Context
+
+Credentials are resolved in this order:
+
+1. Flags
+2. Environment variables
+3. Stdin JSON when `--stdin-json` is present
+
+Supported credential inputs:
+
+| Purpose | Flag | Environment variable | Stdin JSON key |
+| --- | --- | --- | --- |
+| OpenAPI key | `--key` | `YOUXIN_OPENAPI_KEY` | `credentials.key`, `key`, `openapiKey` |
+| OpenAPI secret | `--secret` | `YOUXIN_OPENAPI_SECRET` | `credentials.secret`, `secret`, `openapiSecret` |
+| Access token | `--token` | `YOUXIN_ACCESS_TOKEN` | `credentials.token`, `token`, `accessToken` |
+| Refresh token | `--refresh-token` | `YOUXIN_REFRESH_TOKEN` | `credentials.refreshToken`, `refreshToken` |
+
+If an access token is provided, the CLI uses it directly and does not fetch a new one. Otherwise, commands that call business APIs require an OpenAPI key and secret; the CLI fetches one access token per command invocation. The CLI does not refresh tokens during business commands — fetch a new one with `auth token` when the old one expires.
+
+Request context inputs (`appId` and `userId` required for business commands; `accountId` optional):
+
+| Purpose | Flag | Environment variable | Stdin JSON key |
+| --- | --- | --- | --- |
+| App ID | `--app-id` | `YOUXIN_APP_ID` | `context.appId`, `appId` |
+| User ID | `--user-id` | `YOUXIN_USER_ID` | `context.userId`, `userId` |
+| Account ID | `--account-id` | `YOUXIN_ACCOUNT_ID` | `context.accountId`, `accountId` |
+
+Prefer environment variables or stdin JSON over command-line flags for secrets; flags can appear in shell history and process listings.
+
+### Payload Input
+
+Commands that accept request bodies support three payload modes.
+
+Inline JSON:
+
+```bash
+youxin-cli object query \
+  --form-code Account__s \
+  --body '{"page":1,"num":10}'
+```
+
+JSON file:
+
+```bash
+youxin-cli object query \
+  --form-code Account__s \
+  --body-file ./query.json
+```
+
+Stdin JSON (requires the global `--stdin-json` flag):
+
+```bash
+printf '%s\n' '{"body":{"page":1,"num":10}}' |
+  youxin-cli --stdin-json object query --form-code Account__s
+```
+
+With `--stdin-json`, the CLI uses `body` first, then `param`. If stdin JSON does not look like a credential/context envelope, the whole stdin object is treated as the request body. An example envelope:
 
 ```json
 {
@@ -95,38 +137,23 @@ Example stdin envelope produced from a profile:
 }
 ```
 
-Credentials:
+### Stdin Is Opt-In
 
-| Purpose | Flag | Environment variable | Stdin JSON key |
-| --- | --- | --- | --- |
-| OpenAPI key | `--key` | `YOUXIN_OPENAPI_KEY` | `credentials.key`, `key`, `openapiKey` |
-| OpenAPI secret | `--secret` | `YOUXIN_OPENAPI_SECRET` | `credentials.secret`, `secret`, `openapiSecret` |
-| Access token | `--token` | `YOUXIN_ACCESS_TOKEN` | `credentials.token`, `token`, `accessToken` |
-| Refresh token | `--refresh-token` | `YOUXIN_REFRESH_TOKEN` | `credentials.refreshToken`, `refreshToken` |
-
-Context:
-
-| Purpose | Flag | Environment variable | Stdin JSON key |
-| --- | --- | --- | --- |
-| App ID | `--app-id` | `YOUXIN_APP_ID` | `context.appId`, `appId` |
-| User ID | `--user-id` | `YOUXIN_USER_ID` | `context.userId`, `userId` |
-| Account ID | `--account-id` | `YOUXIN_ACCOUNT_ID` | `context.accountId`, `accountId` |
-
-Payloads:
-
-- `--body '{"page":1,"num":10}'`
-- `--body-file ./payload.json`
-- stdin JSON with `--stdin-json` and a finite producer that closes stdin
+`youxin-cli` does not consume stdin unless the global `--stdin-json` flag is present, so `help`, field inspection, and `--body-file` commands never wait on an unrelated open pipe. When `--stdin-json` is present, stdin is read until EOF — always provide a finite producer that closes stdin, such as `printf` or a heredoc.
 
 ## Commands
 
 ### `auth token`
 
-Fetch an OpenAPI access token.
+Fetch an OpenAPI access token from an OpenAPI key and secret.
 
-```bash
-youxin-cli auth token
-```
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--key` | Yes unless provided by env/`--stdin-json` | OpenAPI key. |
+| `--secret` | Yes unless provided by env/`--stdin-json` | OpenAPI secret. |
+| `--refresh-token` | No | Refresh token. If provided, the wrapper uses refresh-token grant mode. |
 
 Output:
 
@@ -138,15 +165,26 @@ Output:
 }
 ```
 
-Do not print token values back to the user.
+This command prints secrets. Redirect or store output carefully, and do not print token values back to the user.
+
+Example with env vars:
+
+```bash
+export YOUXIN_OPENAPI_KEY='YOUR_OPENAPI_KEY'
+export YOUXIN_OPENAPI_SECRET='YOUR_OPENAPI_SECRET'
+
+youxin-cli auth token
+```
 
 ### `auth resolve-token`
 
-Resolve a Youxin login-state token.
+Resolve a Youxin login-state token into user and tenant information.
 
-```bash
-youxin-cli auth resolve-token --login-token YOUXIN_LOGIN_TOKEN
-```
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--login-token` | Yes unless provided by `--stdin-json` | Youxin platform login-state token. |
 
 Output:
 
@@ -162,21 +200,36 @@ Output:
 }
 ```
 
-### `object fields`
-
-Fetch object field metadata.
+Example:
 
 ```bash
-youxin-cli object fields --form-code Account__s --format json|table|csv --useful
+youxin-cli auth resolve-token --login-token 'YOUXIN_LOGIN_TOKEN'
 ```
 
-Arguments:
+### `object fields`
 
-- `--form-code`: required.
-- `--format`: optional, defaults to `json`.
-- `--useful`: optional deterministic filter for noisy system/internal fields.
+Fetch object field metadata for a `formCode`.
 
-JSON output:
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--form-code` | Yes | Target object/form code, such as `Account__s`. |
+| `--format` | No | Output format: `json`, `table`, or `csv`. Defaults to `json`. |
+| `--useful` | No | Filter out noisy fields. See below. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`. |
+
+What `--useful` filters out:
+
+- Fields with an empty `fieldName`.
+- Known system/audit field IDs: `CreatedBy`, `CreatedAt`, `UpdatedBy`, `UpdatedAt`, `OwnerId`, `OwnerDeptId`, `Deleted`, `Version`, `TenantId`, `CompanyId`.
+- Field IDs starting with `_` or ending with `__r` (reverse relation fields).
+- Fields named 创建人, 创建时间, 修改人, 修改时间, 负责人, 所属部门.
+
+`--useful` only affects the `object fields` listing. Query results can still contain system fields such as `CreatorId`, `OrgId`, `sort`, and `app_id` — to get clean query output, pass an explicit `externalFields` list in `object query`.
+
+Output with `--format json`:
 
 ```json
 {
@@ -198,13 +251,378 @@ JSON output:
 }
 ```
 
-Table output columns:
+Output with `--format table`:
 
-```text
-Field ID, Name, Type, Ref Object, Options, Description
+```markdown
+| Field ID | Name | Type | Ref Object | Options | Description |
+| --- | --- | --- | --- | --- | --- |
+| Name | 名称 | 文本 |  |  | Display name |
 ```
 
-## Lookup Drilldown Curation
+Output with `--format csv`:
+
+```csv
+Field ID,Name,Type,Ref Object,Options,Description
+Name,名称,文本,,,Display name
+```
+
+Examples:
+
+```bash
+youxin-cli object fields --form-code Account__s --format table --useful
+youxin-cli object fields --form-code Account__s --format json --useful
+```
+
+### `object query`
+
+Query object records.
+
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--form-code` | Yes | Target object/form code. This value overwrites any `formCode` in the body. |
+| `--body` | No | Inline JSON query body. |
+| `--body-file` | No | Path to a JSON query body file. |
+| stdin JSON with `--stdin-json` | No | Query body or envelope. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`. |
+
+Body fields:
+
+| Body field | Description |
+| --- | --- |
+| `page` | Page number. Defaults to `1`. |
+| `num` | Page size. Defaults to `10`. |
+| `recordIds` | Numeric record IDs to fetch. |
+| `externalFields` | Fields to return. Supports dot-path drilldown where the API supports it. |
+| `fieldSorts` | Sort descriptors, for example `{ "fieldKey": "CreatedAt", "sortBy": "desc" }`. |
+| `queryCriteria` | Exact-match criteria object keyed by field ID. |
+| `search` | OR filter array. |
+| `filter` | AND filter array. |
+
+Filter conditions include:
+
+```text
+equal, unEqual, greater, smaller, greaterEqual, smallerEqual, in, notIn,
+contains, notContains, like, isNull, isNotNull, begin_with, end_with
+```
+
+Output:
+
+```json
+{
+  "page": {
+    "total": 29,
+    "pages": 3
+  },
+  "data": [
+    {
+      "recordId": 123,
+      "fieldData": {
+        "Name": "Example"
+      }
+    }
+  ]
+}
+```
+
+Minimal example:
+
+```bash
+youxin-cli object query \
+  --form-code Account__s \
+  --body '{"page":1,"num":10}'
+```
+
+Non-trivial filters:
+
+```bash
+youxin-cli object query \
+  --form-code Account__s \
+  --body-file ./query.json
+```
+
+```bash
+cat > /tmp/query.json <<'JSON'
+{
+  "page": 1,
+  "num": 10,
+  "externalFields": ["Name", "OwnerId.Name"],
+  "queryCriteria": {
+    "Status__c": "open"
+  }
+}
+JSON
+
+youxin-cli object query --form-code Account__s --body-file /tmp/query.json
+```
+
+Summarize result counts and selected fields. Avoid dumping large record sets unless the user asks.
+
+### `object upsert`
+
+Insert or update object records.
+
+This is a mutating command and requires `--yes`.
+
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--form-code` | Yes | Target object/form code. This value overwrites any `formCode` in the body. |
+| `--body` | No | Inline JSON upsert body. |
+| `--body-file` | No | Path to JSON upsert body file. |
+| stdin JSON with `--stdin-json` | No | Upsert body or envelope. |
+| `--yes` | Yes | Required mutation confirmation. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`. |
+
+Body fields:
+
+| Body field | Required | Description |
+| --- | --- | --- |
+| `fieldDatas` | Yes for useful mutation | Array of field-data objects to insert/update. If omitted, v1 sends an empty array. To update an existing record, include its `recordId` in the field-data object; a partial-field update with `recordId` returns `state: "Update"`. |
+| `autoNumberSettable` | No | Whether to manually set auto-number fields. |
+| `bizRuleCloseable` | No | Whether to bypass business-rule checks. |
+| `processCloseable` | No | Whether to bypass trigger/process execution. |
+| `clearExistedSubRecord` | No | Whether to clear existing child records when updating with child data. |
+| `subFormCodes` | No | Child form codes to clear when `clearExistedSubRecord` is true. |
+
+Output:
+
+```json
+{
+  "data": [
+    {
+      "successOrNot": true,
+      "recordId": 123,
+      "failMsg": null,
+      "successMsg": "success",
+      "state": "Insert",
+      "formCode": "Account__s",
+      "uniqKv": null,
+      "importNo": "IMPORT_NO",
+      "parentUniqKv": null,
+      "parentRecordId": null,
+      "parentFormCode": null,
+      "parentImportNo": null
+    }
+  ]
+}
+```
+
+Example:
+
+```bash
+cat > /tmp/upsert.json <<'JSON'
+{
+  "fieldDatas": [
+    {
+      "Name": "Example Account",
+      "Status__c": {
+        "name": "Open",
+        "value": "open"
+      }
+    }
+  ]
+}
+JSON
+
+youxin-cli object upsert \
+  --form-code Account__s \
+  --body-file /tmp/upsert.json \
+  --yes
+```
+
+Without `--yes`, the CLI exits with code `2` before sending a request and prints a dry-run summary.
+
+### `object delete`
+
+Delete object records by record ID.
+
+This is a mutating command and requires `--yes`.
+
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--form-code` | Yes | Target object/form code. |
+| `--record-ids` | Yes | Comma-separated numeric record IDs, such as `123,456`. |
+| `--yes` | Yes | Required mutation confirmation. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`. |
+
+Output:
+
+```json
+{
+  "data": [
+    {
+      "successOrNot": true,
+      "recordId": 123,
+      "failMsg": null,
+      "successMsg": "success",
+      "state": "Delete",
+      "formCode": "Account__s"
+    }
+  ]
+}
+```
+
+Example:
+
+```bash
+youxin-cli object delete \
+  --form-code Account__s \
+  --record-ids 123,456 \
+  --yes
+```
+
+### `file upload`
+
+Upload a local file to Youxin Cloud.
+
+This is treated as a mutating command and requires `--yes`.
+
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--file` | Yes | Local file path to upload. |
+| `--operate-type` | Yes | Upload type: `image`, `audio`, `video`, or `file`. |
+| `--file-name` | No | File name to send to the API. If omitted, no explicit `fileName` query parameter is sent. |
+| `--yes` | Yes | Required mutation confirmation. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`. |
+
+Output:
+
+```json
+{
+  "url": "https://..."
+}
+```
+
+Example:
+
+```bash
+youxin-cli file upload \
+  --file ./example.pdf \
+  --file-name example.pdf \
+  --operate-type file \
+  --yes
+```
+
+### `invoke`
+
+Advanced raw OpenAPI caller. Use this when a wrapper is not yet exposed as a first-class CLI command; prefer first-class commands when available.
+
+Inputs:
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `--method` | Yes | HTTP method, such as `POST`, `GET`, or `DELETE`. The CLI uppercases the value. |
+| `--path` | Yes | OpenAPI path, such as `/openapi/object/record/page`. |
+| `--body` | No | Inline JSON body. |
+| `--body-file` | No | Path to JSON body file. |
+| stdin JSON with `--stdin-json` | No | Body or envelope. |
+| `--read-only` | Required for intentionally read-only non-`GET`/`HEAD` calls | Allows a `POST` read request without `--yes`. Useful because many Youxin read APIs use `POST`. |
+| `--yes` | Required for mutations | Required for non-`GET`/`HEAD` requests unless `--read-only` is present. |
+| Credentials | Yes | Access token or OpenAPI key/secret. |
+| Context | Yes | `appId` and `userId`; `accountId` is passed through when supplied. |
+
+Output is the raw normalized OpenAPI response:
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "page": {
+    "total": 29,
+    "pages": 3
+  },
+  "data": []
+}
+```
+
+Read-only `POST` example:
+
+```bash
+youxin-cli invoke \
+  --method POST \
+  --path /openapi/object/record/page \
+  --body '{"formCode":"Account__s","page":1,"num":1}' \
+  --read-only
+```
+
+Mutating raw request example:
+
+```bash
+youxin-cli invoke \
+  --method POST \
+  --path /openapi/object/record/delete \
+  --body '{"formCode":"Account__s","recordIds":[123]}' \
+  --yes
+```
+
+## Field Value Shapes & Filter Value Rules
+
+Never guess what a field's value looks like. Field values differ by `fieldType`, and the shape used for reading (query results), writing (upsert), and filtering is often different.
+
+### Golden Rule: Resolve Value Domains Before Filtering Or Writing
+
+- **Single/multi-select fields**: run `object fields` first and use `fieldOptions[].optionId` as the filter/written value — never the option name. Filtering by option name silently matches nothing.
+- **Lookup fields**: query the referenced object first to obtain the target `recordId`, then filter the lookup field by that numeric `recordId`.
+
+### Per-Type Value Shapes
+
+| fieldType | Query result (`fieldData[...]`) | Upsert write value | Filter `value` |
+| --- | --- | --- | --- |
+| 文本 | String | String | String |
+| 数值 | Number | Number | Number |
+| 日期 | String `"yyyy-MM-dd HH:mm:ss"` | String `"yyyy-MM-dd HH:mm:ss"` | Same string format |
+| 单选 | `{ "name": "供应商", "value": "supplier" }` | `{ "name": "...", "value": "<optionId>" }` | optionId string |
+| 查找 | `[{ "recordId": 259541, "formCode": "fml__Port__c", "rowData": { ... } }]` | `[{ "recordId": 259541, "formCode": "fml__Port__c" }]` — same shape as read, minus `rowData` | Numeric `recordId` of the referenced record |
+| 附件 | `[{ "url": "...", "fileName": "...", "ext": ".pdf", "size": 123 }]` | Inspect a sample record before writing | Inspect a sample record before filtering |
+
+Notes on each shape:
+
+- **单选**: the query result is an object with `name` (display) and `value` (optionId). Filter and `queryCriteria` match the optionId only. When writing via upsert, pass the full `{ name, value }` object.
+- **查找**: the query result is an array (even for single-value lookups) of `{ recordId, formCode }`; when the field is requested via a dot path in `externalFields`, each item also carries `rowData` with the referenced record's fields. System fields like `CreatorId` and `OwnerId` use the same lookup shape pointing at `User__s`. Writing a lookup takes the same array shape without `rowData`: `[{"recordId": 259541, "formCode": "fml__Port__c"}]`.
+- **多选**: read/write/filter shapes vary — inspect a sample record and the field's `fieldOptions` before writing.
+- The raw query response also mixes in system fields (`recordId`, `OrgId`, `app_id`, `RecordType`, `sort`, `CreatorId`, ...). Pass an explicit `externalFields` list to keep output clean.
+
+### Filter Condition Semantics
+
+| Condition | Value form | Example |
+| --- | --- | --- |
+| `contains` | Bare string | `{"key":"Name__c","condition":"contains","value":"码头"}` |
+| `like` | Requires `%` wildcards; a bare value matches nothing | `{"key":"Name__c","condition":"like","value":"%码头%"}` |
+| `in` / `notIn` | Array of values | `{"key":"recordId","condition":"in","value":[259772,259771]}` |
+| `isNull` / `isNotNull` | Omit `value` | `{"key":"File__c","condition":"isNull"}` |
+
+### Filtering Lookup Fields — Two Working Forms
+
+Given a lookup field `Portid__c` (查找 → `fml__Port__c`), both forms work:
+
+```json
+{ "key": "Portid__c", "condition": "equal", "value": 259541 }
+```
+
+```json
+{ "key": "Portid__c.Name__c", "condition": "equal", "value": "大仓" }
+```
+
+The first filters by the referenced record's ID; the second filters by a field of the referenced record via a dot-path key.
+
+### Caveats
+
+- `in` with an array value works on text and numeric fields, but on single-select fields it fails with a `服务繁忙` server error. Prefer `equal` on the optionId, or multiple `filter` entries (AND) / `search` entries (OR).
+- Dot-path `externalFields` (e.g. `Portid__c.Name__c`) returns the value nested in the lookup array's `rowData`, not flattened.
+- `like` without `%` wildcards silently matches nothing — use `contains` for substring matching.
+
+
 
 Use this section when the user asks for useful fields, display fields, export field paths, sync field paths, comma-separated field IDs, or lookup drilldowns.
 
@@ -281,173 +699,38 @@ Field Path, Label, Source Field, Type, Reason
 
 Keep curation task-focused. Avoid exposing noisy audit/system fields unless the user asks for them.
 
-### `object query`
-
-Query object records.
-
-```bash
-youxin-cli object query --form-code Account__s --body-file ./query.json
-```
-
-Body fields:
-
-| Body field | Description |
-| --- | --- |
-| `page` | Page number. Defaults to `1`. |
-| `num` | Page size. Defaults to `10`. |
-| `recordIds` | Numeric record IDs to fetch. |
-| `externalFields` | Fields to return. Supports dot-path drilldown where the API supports it. |
-| `fieldSorts` | Sort descriptors, for example `{ "fieldKey": "CreatedAt", "sortBy": "desc" }`. |
-| `queryCriteria` | Exact-match criteria object keyed by field ID. |
-| `search` | OR filter array. |
-| `filter` | AND filter array. |
-
-Filter conditions include:
-
-```text
-equal, unEqual, greater, smaller, greaterEqual, smallerEqual, in, notIn,
-contains, notContains, like, isNull, isNotNull, begin_with, end_with
-```
-
-Output:
-
-```json
-{
-  "page": {
-    "total": 29,
-    "pages": 3
-  },
-  "data": [
-    {
-      "recordId": 123,
-      "fieldData": {
-        "Name": "Example"
-      }
-    }
-  ]
-}
-```
-
-### `object upsert`
-
-Insert or update object records. Requires user confirmation and `--yes`.
-
-```bash
-youxin-cli object upsert --form-code Account__s --body-file ./upsert.json --yes
-```
-
-Body fields:
-
-- `fieldDatas`: array of field-data objects.
-- `autoNumberSettable`
-- `bizRuleCloseable`
-- `processCloseable`
-- `clearExistedSubRecord`
-- `subFormCodes`
-
-Output:
-
-```json
-{
-  "data": [
-    {
-      "successOrNot": true,
-      "recordId": 123,
-      "failMsg": null,
-      "successMsg": "success",
-      "state": "Insert",
-      "formCode": "Account__s",
-      "uniqKv": null,
-      "importNo": "IMPORT_NO",
-      "parentUniqKv": null,
-      "parentRecordId": null,
-      "parentFormCode": null,
-      "parentImportNo": null
-    }
-  ]
-}
-```
-
-### `object delete`
-
-Delete object records by record ID. Requires user confirmation and `--yes`.
-
-```bash
-youxin-cli object delete --form-code Account__s --record-ids 123,456 --yes
-```
-
-Output:
-
-```json
-{
-  "data": [
-    {
-      "successOrNot": true,
-      "recordId": 123,
-      "failMsg": null,
-      "successMsg": "success",
-      "state": "Delete",
-      "formCode": "Account__s"
-    }
-  ]
-}
-```
-
-### `file upload`
-
-Upload a local file. Requires user confirmation and `--yes`.
-
-```bash
-youxin-cli file upload --file ./example.pdf --file-name example.pdf --operate-type file --yes
-```
-
-Arguments:
-
-- `--file`: required local path.
-- `--operate-type`: `image`, `audio`, `video`, or `file`.
-- `--file-name`: optional API file name.
-
-Output:
-
-```json
-{
-  "url": "https://..."
-}
-```
-
-### `invoke`
-
-Advanced raw OpenAPI call.
-
-```bash
-youxin-cli invoke --method POST --path /openapi/object/record/page --body-file ./payload.json --read-only
-```
-
-Arguments:
-
-- `--method`: required.
-- `--path`: required.
-- `--body`, `--body-file`, or stdin JSON.
-- `--read-only`: use for known read-only non-`GET`/`HEAD` calls.
-- `--yes`: use only after user confirmation for mutating calls.
-
-Output is the raw normalized OpenAPI response:
-
-```json
-{
-  "code": 0,
-  "msg": "success",
-  "page": {
-    "total": 29,
-    "pages": 3
-  },
-  "data": []
-}
-```
-
 ## Error Behavior
 
-- Success writes output to stdout and exits `0`.
-- Usage errors and safety refusals exit `2`.
-- Unexpected failures exit `1`.
-- Error output redacts obvious secret fields and bearer tokens.
+On success, the CLI writes output to stdout and exits with code `0`.
+
+On error, the CLI writes a concise error to stderr and exits non-zero:
+
+- Exit code `2` is used for CLI usage errors and safety refusals.
+- Exit code `1` is used for unexpected failures, including upstream API errors such as `服务繁忙` (the CLI retries such transient errors once before failing).
+
+The error formatter redacts obvious secret-like text in error messages, including JSON fields named `key`, `secret`, `token`, `authorization`, and `refreshToken`, plus bearer tokens.
+
+## Practical Patterns
+
+### Use Env Vars For Repeated Work
+
+```bash
+export YOUXIN_OPENAPI_KEY='YOUR_OPENAPI_KEY'
+export YOUXIN_OPENAPI_SECRET='YOUR_OPENAPI_SECRET'
+export YOUXIN_APP_ID='YOUR_APP_ID'
+export YOUXIN_USER_ID='YOUR_USER_ID'
+
+youxin-cli object fields --form-code Account__s --format table --useful
+```
+
+### Reuse A Token Explicitly
+
+```bash
+youxin-cli auth token > /tmp/youxin-token.json
+
+export YOUXIN_ACCESS_TOKEN="$(jq -r '.accessToken' /tmp/youxin-token.json)"
+export YOUXIN_APP_ID='YOUR_APP_ID'
+export YOUXIN_USER_ID='YOUR_USER_ID'
+
+youxin-cli object fields --form-code Account__s --format json
+```
