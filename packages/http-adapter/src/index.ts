@@ -13,21 +13,25 @@ export {
   createHttpAdapterServer,
   type CreateHttpAdapterServerOptions,
   type HttpAdapter,
-  type HttpAdapterEvent,
   type HttpAdapterHostFactory,
   type HttpAdapterHostFactoryOptions,
-  type HttpAdapterServerHost,
-  type HttpSessionDescriptor,
   type HttpSessionListEntry,
-  type HttpSessionStatus,
-  type HttpTurnStatus,
   type PersistedSessionLister,
-  type SessionPort,
-  type SessionPortActivation,
-  type SessionPortTurnEvent,
-  type SessionPortTurnListener,
-  type SessionPortTurnSubmission,
 } from "./http-server.js";
+export type {
+  HttpAdapterEvent,
+  HttpAdapterServerHost,
+  HttpSessionDescriptor,
+  HttpSessionStatus,
+  HttpTurnStatus,
+} from "./session-controller.js";
+export type {
+  SessionPort,
+  SessionPortActivation,
+  SessionPortTurnEvent,
+  SessionPortTurnListener,
+  SessionPortTurnSubmission,
+} from "./session-port.js";
 export { pruneSessionFile } from "./session-pruner.js";
 export {
   toHttpSessionMessages,

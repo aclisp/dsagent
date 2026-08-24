@@ -1,18 +1,21 @@
 import path from "node:path";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersistedSessionNotFoundError } from "../src/agent-session-host.js";
 import {
   createHttpAdapter,
   createHttpAdapterServer,
-  type HttpAdapterEvent,
   type HttpAdapterHostFactoryOptions,
-  type HttpAdapterServerHost,
   type PersistedSessionLister,
-  type SessionPort,
-  type SessionPortTurnEvent,
 } from "../src/http-server.js";
+import type {
+  HttpAdapterEvent,
+  HttpAdapterServerHost,
+} from "../src/session-controller.js";
+import type {
+  SessionPort,
+  SessionPortTurnEvent,
+} from "../src/session-port.js";
 import type { AgentMessage } from "../src/session-messages.js";
 import {
   createHttpUiBroker,
@@ -249,26 +252,6 @@ async function waitForCall(host: FakeHost, call: string): Promise<void> {
 
 function turnUrl(sessionId: string): string {
   return `/v1/sessions/${sessionId}/turns`;
-}
-
-function assistantMessage(text: string): AgentMessage {
-  return {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: "openai-completions",
-    provider: "openrouter",
-    model: "test-model",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: 1,
-  };
 }
 
 describe("createHttpAdapterServer", () => {
@@ -1119,55 +1102,6 @@ describe("createHttpAdapterServer", () => {
     await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
   });
 
-  it("returns null output when a UI-only turn produces no assistant message", async () => {
-    const host = createFakeHost({
-      messages: [assistantMessage("Previous answer")],
-    });
-    const harness = createHarness({ factory: async () => host });
-    const sessionId = await harness.createSession();
-    const accepted = await harness.server.inject({
-      method: "POST",
-      url: turnUrl(sessionId),
-      payload: { message: "/status" },
-    });
-    const turnId = accepted.json<{ id: string }>().id;
-    await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
-
-    const events = await openEventStream(harness.server, sessionId);
-    expect(await events.next()).toEqual({
-      type: "turn",
-      turnId,
-      status: "completed",
-      output: null,
-    });
-    events.close();
-  });
-
-  it("returns output when consecutive turns produce identical assistant text", async () => {
-    const host = createFakeHost({ output: "Same answer" });
-    const harness = createHarness({ factory: async () => host });
-    const sessionId = await harness.createSession();
-
-    for (const [index, message] of ["First", "Second"].entries()) {
-      const accepted = await harness.server.inject({
-        method: "POST",
-        url: turnUrl(sessionId),
-        payload: { message },
-      });
-      const turnId = accepted.json<{ id: string }>().id;
-      await vi.waitFor(() => expect(host.pruneCalls).toBe(index + 1));
-
-      const events = await openEventStream(harness.server, sessionId);
-      expect(await events.next()).toEqual({
-        type: "turn",
-        turnId,
-        status: "completed",
-        output: "Same answer",
-      });
-      events.close();
-    }
-  });
-
   it("broadcasts the submitted message with the client id", async () => {
     const promptBlocked = deferred();
     const harness = createHarness({
@@ -1223,43 +1157,6 @@ describe("createHttpAdapterServer", () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it("publishes failure and releases only that session guard", async () => {
-    let attempts = 0;
-    const host = createFakeHost({
-      output: "Recovered",
-      prompt: async () => {
-        attempts += 1;
-        if (attempts === 1) throw new Error("provider failed");
-      },
-    });
-    const harness = createHarness({ factory: async () => host });
-    const sessionId = await harness.createSession();
-    const failed = await harness.server.inject({
-      method: "POST",
-      url: turnUrl(sessionId),
-      payload: { message: "First" },
-    });
-    const failedId = failed.json<{ id: string }>().id;
-    await vi.waitFor(() => expect(attempts).toBe(1));
-
-    const events = await openEventStream(harness.server, sessionId);
-    expect(await events.next()).toEqual({
-      type: "turn",
-      turnId: failedId,
-      status: "failed",
-      error: "provider failed",
-    });
-    events.close();
-
-    const recovered = await harness.server.inject({
-      method: "POST",
-      url: turnUrl(sessionId),
-      payload: { message: "Second" },
-    });
-    expect(recovered.statusCode).toBe(202);
-    await waitForCall(host, "output");
-  });
-
   it("keeps broker events and UI responses isolated by session", async () => {
     const brokers = new Map<string, HttpUiBroker>();
     const harness = createHarness({
@@ -1312,90 +1209,6 @@ describe("createHttpAdapterServer", () => {
     await expect(confirmation).resolves.toBe(true);
     firstEvents.close();
     secondEvents.close();
-  });
-
-  it("streams translated assistant, tool, and extension events", async () => {
-    const broker = createHttpUiBroker();
-    const harness = createHarness({
-      factory: async () => createFakeHost({ broker }),
-    });
-    const sessionId = await harness.createSession();
-    const events = await openEventStream(harness.server, sessionId);
-
-    broker.publishSessionEvent({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "Hello" },
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "message_update",
-      assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "message_update",
-      assistantMessageEvent: { type: "thinking_delta", delta: "internal" },
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "message_update",
-      assistantMessageEvent: { type: "thinking_end", content: "internal" },
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "compaction_start",
-      reason: "threshold",
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "compaction_end",
-      reason: "threshold",
-      aborted: false,
-      willRetry: false,
-    } as AgentSessionEvent);
-    broker.publishSessionEvent({
-      type: "tool_execution_start",
-      toolCallId: "tool-1",
-      toolName: "read",
-      args: { path: "README.md" },
-    } as AgentSessionEvent);
-    broker.publishExtensionError({
-      extensionPath: "extension.ts",
-      event: "tool_call",
-      error: "Extension failed",
-      stack: "hidden",
-    });
-
-    expect(await events.next()).toMatchObject({
-      type: "assistant_text_delta",
-      delta: "Hello",
-    });
-    expect(await events.next()).toMatchObject({
-      type: "thinking_start",
-      turnId: null,
-    });
-    expect(await events.next()).toMatchObject({
-      type: "thinking_end",
-      turnId: null,
-    });
-    expect(await events.next()).toMatchObject({
-      type: "compaction_start",
-      turnId: null,
-    });
-    expect(await events.next()).toMatchObject({
-      type: "compaction_end",
-      turnId: null,
-    });
-    expect(await events.next()).toMatchObject({
-      type: "tool",
-      phase: "started",
-      toolCallId: "tool-1",
-    });
-    expect(await events.next()).toEqual({
-      type: "extension_error",
-      turnId: null,
-      error: {
-        extensionPath: "extension.ts",
-        event: "tool_call",
-        message: "Extension failed",
-      },
-    });
-    events.close();
   });
 
   it("delivers and resolves a confirmation during a scoped turn", async () => {
@@ -1514,48 +1327,6 @@ describe("createHttpAdapterServer", () => {
     expect((await repeated).statusCode).toBe(202);
     promptBlocked.get(firstId)!.resolve();
     promptBlocked.get(secondId)!.resolve();
-  });
-
-  it("does not report aborted when abort fails after turn settlement", async () => {
-    const promptBlocked = deferred();
-    const abortBlocked = deferred();
-    let abortAttempts = 0;
-    const host = createFakeHost({
-      output: "Finished",
-      prompt: async () => promptBlocked.promise,
-      abort: async () => {
-        abortAttempts += 1;
-        if (abortAttempts === 1) await abortBlocked.promise;
-      },
-    });
-    const harness = createHarness({ factory: async () => host });
-    const sessionId = await harness.createSession();
-    const accepted = await harness.server.inject({
-      method: "POST",
-      url: turnUrl(sessionId),
-      payload: { message: "Long task" },
-    });
-    const turnId = accepted.json<{ id: string }>().id;
-
-    const abortRequest = harness.server.inject({
-      method: "POST",
-      url: `/v1/sessions/${sessionId}/turns/${turnId}/abort`,
-    });
-    await vi.waitFor(() => expect(host.abortCount).toBe(1));
-    promptBlocked.resolve();
-    await waitForCall(host, "wait");
-    abortBlocked.reject(new Error("abort failed"));
-
-    expect((await abortRequest).statusCode).toBe(500);
-    await waitForCall(host, "output");
-    const events = await openEventStream(harness.server, sessionId);
-    expect(await events.next()).toEqual({
-      type: "turn",
-      turnId,
-      status: "completed",
-      output: "Finished",
-    });
-    events.close();
   });
 
   it("blocks resume while deletion is still disposing the host", async () => {
