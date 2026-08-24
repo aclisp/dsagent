@@ -39,10 +39,11 @@
   "scripts": {
     "build:core": "pnpm --dir packages/core build",
     "build:http-adapter": "pnpm --dir packages/http-adapter build",
+    "build:chat-client": "pnpm --dir packages/chat-client build",
     "build:web-ui": "pnpm --dir packages/web-ui build",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
-    "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:web-ui && pnpm bundle:server",
+    "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:chat-client && pnpm build:web-ui && pnpm bundle:server",
     "build:windows-sandbox": "node scripts/build-windows-sandbox.mjs",
     "build": "pnpm build:packages && tsc -p tsconfig.json && pnpm bundle:vision",
     "postbuild": "node -e \"const fs=require('node:fs'); for (const file of ['dist/cli.js','dist/vision-cli.js']) fs.chmodSync(file, 0o755)\"",

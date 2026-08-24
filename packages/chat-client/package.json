@@ -1,5 +1,5 @@
 {
-  "name": "@thinkany/dscode-http-adapter",
+  "name": "@thinkany/dscode-chat-client",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,10 +9,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./session-port": {
-      "types": "./dist/session-port.d.ts",
-      "import": "./dist/session-port.js"
     }
   },
   "scripts": {
@@ -21,12 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "catalog:",
-    "@earendil-works/pi-ai": "catalog:",
-    "@earendil-works/pi-coding-agent": "catalog:",
-    "@fastify/cors": "catalog:",
-    "@thinkany/dscode-core": "workspace:*",
-    "fastify": "catalog:"
+    "@thinkany/dscode-http-adapter": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
