@@ -56,13 +56,25 @@ export type ChatMessageHandlingResult =
 
 export interface HeadlessChatClient {
   handleMessage(message: InboundGroupMessage): Promise<ChatMessageHandlingResult>;
-  registerTurnForGroupDelivery(turnId: string): boolean;
+  registerTurnForGroupDelivery(
+    turnId: string,
+    listener?: ProactiveDeliveryListener,
+  ): boolean;
   dispose(): void;
 }
 
+export interface ProactiveDeliveryEvent {
+  turnId: string;
+  status: "delivered" | "failed" | "abandoned";
+}
+
+export type ProactiveDeliveryListener = (
+  event: ProactiveDeliveryEvent,
+) => void | Promise<void>;
+
 type TurnDeliveryTarget =
   | { type: "reply"; messageId: string; dedupeKey: string }
-  | { type: "send" };
+  | { type: "send"; listener?: ProactiveDeliveryListener };
 
 const defaultLogger: ChatClientLogger = {
   error(context, message) {
@@ -142,10 +154,16 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
     return { status: "accepted", turnId: submission.turnId };
   }
 
-  registerTurnForGroupDelivery(turnId: string): boolean {
+  registerTurnForGroupDelivery(
+    turnId: string,
+    listener?: ProactiveDeliveryListener,
+  ): boolean {
     this.assertActive();
     if (this.turnTargets.has(turnId)) return false;
-    this.turnTargets.set(turnId, { type: "send" });
+    this.turnTargets.set(turnId, {
+      type: "send",
+      ...(listener !== undefined ? { listener } : {}),
+    });
     return true;
   }
 
@@ -153,6 +171,11 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
     if (this.disposed) return;
     this.disposed = true;
     this.unsubscribe();
+    for (const [turnId, target] of this.turnTargets) {
+      if (target.type === "send") {
+        this.notifyProactiveDelivery(target, { turnId, status: "abandoned" });
+      }
+    }
     this.turnTargets.clear();
     this.dedupe.clear();
   }
@@ -177,20 +200,33 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
       );
       return;
     }
-    await this.deliverWithRetry(
+    const status = await this.deliverWithRetry(
       "send",
       () => this.options.delivery.send(this.options.groupChatId, text),
       { turnId: event.turnId },
     );
+    this.notifyProactiveDelivery(target, { turnId: event.turnId, status });
+  }
+
+  private notifyProactiveDelivery(
+    target: Extract<TurnDeliveryTarget, { type: "send" }>,
+    event: ProactiveDeliveryEvent,
+  ): void {
+    try {
+      const result = target.listener?.(event);
+      if (result) void result.catch(() => undefined);
+    } catch {
+      // Delivery outcome observers are diagnostic only and must not affect delivery.
+    }
   }
 
   private async deliverWithRetry(
     delivery: "reply" | "send",
     deliver: () => Promise<ChatDeliveryResult>,
     context: { dedupeKey?: string; turnId?: string },
-  ): Promise<void> {
+  ): Promise<ProactiveDeliveryEvent["status"]> {
     for (let attempt = 1; attempt <= DELIVERY_RETRY_DELAYS_MS.length + 1; attempt += 1) {
-      if (this.disposed) return;
+      if (this.disposed) return "abandoned";
       let result: ChatDeliveryResult;
       try {
         result = await deliver();
@@ -199,10 +235,10 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
           { attempt, delivery, ...context },
           "Chat delivery failed without a classification",
         );
-        return;
+        return "failed";
       }
 
-      if (result.status === "delivered") return;
+      if (result.status === "delivered") return "delivered";
       if (
         result.status === "permanent_failure" ||
         attempt > DELIVERY_RETRY_DELAYS_MS.length
@@ -211,7 +247,7 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
           { attempt, delivery, ...context },
           "Chat delivery failed",
         );
-        return;
+        return "failed";
       }
 
       const retryAfterMs = result.retryAfterMs;
@@ -223,6 +259,7 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
           : fallbackDelay(attempt);
       await sleep(delay);
     }
+    return "failed";
   }
 }
 

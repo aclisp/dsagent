@@ -1,7 +1,7 @@
 # DSCode chat server — compose equivalent of the docker run in packages/web-ui/README.md.
 #
 # Requires a .env next to this file with DSCODE_INSTANCE_NAME, DSCODE_HOST_PORT,
-# WORKSPACE_ID, OPENROUTER_API_KEY, MODEL, and VISION_MODEL. Build the image first:
+# WORKSPACE_ID, TZ, OPENROUTER_API_KEY, MODEL, and VISION_MODEL. Build the image first:
 #   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .   # lean base
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .                # derived tool image
 # Then:
@@ -22,6 +22,7 @@ services:
     environment:
       # The workspace id is the deployment's bearer credential — high-entropy, shared only out-of-band.
       WORKSPACES: "${WORKSPACE_ID:?set WORKSPACE_ID in .env}=/workspace"
+      TZ: "${TZ:?set TZ to an IANA timezone in .env}"
       RUNTIME_ARGS: >-
         --permission full --network --sandbox danger-full-access
         --provider openrouter --model ${MODEL:?set MODEL in .env}

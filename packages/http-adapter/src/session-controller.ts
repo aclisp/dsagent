@@ -101,6 +101,7 @@ interface AbortAttempt {
 
 interface ActiveTurn {
   id: string;
+  clientId?: string;
   abortAttempt?: Promise<AbortAttempt>;
 }
 
@@ -117,6 +118,7 @@ export class SessionController {
     | Extract<HttpAdapterEvent, { type: "turn" }>
     | undefined;
   private disposePromise: Promise<void> | undefined;
+  private readonly unsubscribeHeadlessUiFallback: () => void;
 
   constructor(
     readonly id: string,
@@ -124,7 +126,29 @@ export class SessionController {
     private readonly host: HttpAdapterServerHost,
     private readonly log: SessionControllerLogger,
     private readonly publishTerminalTurn: (event: SessionPortTurnEvent) => void,
-  ) {}
+  ) {
+    this.unsubscribeHeadlessUiFallback = host.subscribe((event) => {
+      if (
+        event.type !== "ui_request" ||
+        this.activeTurn === undefined ||
+        this.activeTurn.clientId !== undefined
+      ) {
+        return;
+      }
+      try {
+        host.uiBroker.respond(
+          event.request.method === "confirm"
+            ? { requestId: event.request.id, confirmed: false }
+            : { requestId: event.request.id, cancelled: true },
+        );
+      } catch (error) {
+        this.log.error(
+          { err: error, turnId: this.activeTurn.id },
+          "Headless UI request fallback failed",
+        );
+      }
+    });
+  }
 
   get descriptor(): HttpSessionDescriptor {
     return {
@@ -324,7 +348,10 @@ export class SessionController {
   ): { id: string; status: "running" } | undefined {
     if (this.activeTurn) return undefined;
 
-    const turn: ActiveTurn = { id: randomUUID() };
+    const turn: ActiveTurn = {
+      id: randomUUID(),
+      ...(clientId !== undefined ? { clientId } : {}),
+    };
     this.activeTurn = turn;
     // The running event carries the submission so every attached client can render
     // the user line; the submitter recognizes itself via clientId.
@@ -333,46 +360,56 @@ export class SessionController {
       ...(clientId !== undefined ? { clientId } : {}),
     });
 
-    void (async () => {
-      let failed = false;
-      let failure: unknown;
-      let output: string | undefined;
-      try {
-        output = await this.host.prompt(message);
-        await this.host.waitForIdle();
-      } catch (error) {
-        failed = true;
-        failure = error;
-      }
+    // Give Session Port callers a microtask checkpoint to associate the accepted
+    // turnId before even a synchronously failing Host can publish a terminal event.
+    queueMicrotask(() => {
+      queueMicrotask(() => {
+        void (async () => {
+          let failed = false;
+          let failure: unknown;
+          let output: string | undefined;
+          try {
+            output = await this.host.prompt(message);
+            await this.host.waitForIdle();
+          } catch (error) {
+            failed = true;
+            failure = error;
+          }
 
-      const abortResult = turn.abortAttempt ? await turn.abortAttempt : undefined;
-      if (abortResult?.ok) {
-        this.publishTurn(turn.id, "aborted");
-      } else if (failed) {
-        this.log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
-        this.publishTurn(turn.id, "failed", { error: failureMessage(failure) });
-      } else {
-        try {
-          this.publishTurn(turn.id, "completed", {
-            output: output ?? null,
-          });
-        } catch (error) {
-          this.log.error({ err: error, turnId: turn.id }, "Agent turn failed");
-          this.publishTurn(turn.id, "failed", { error: failureMessage(error) });
-        }
-      }
-      // Prune before releasing activeTurn so no new turn can append to the file
-      // while it is being rewritten.
-      try {
-        this.host.prunePersistedSession?.();
-      } catch (error) {
-        this.log.error(
-          { err: error, turnId: turn.id },
-          "Session file pruning failed",
-        );
-      }
-      if (this.activeTurn === turn) this.activeTurn = undefined;
-    })();
+          const abortResult = turn.abortAttempt
+            ? await turn.abortAttempt
+            : undefined;
+          if (abortResult?.ok) {
+            this.publishTurn(turn.id, "aborted");
+          } else if (failed) {
+            this.log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
+            this.publishTurn(turn.id, "failed", { error: failureMessage(failure) });
+          } else {
+            try {
+              this.publishTurn(turn.id, "completed", {
+                output: output ?? null,
+              });
+            } catch (error) {
+              this.log.error({ err: error, turnId: turn.id }, "Agent turn failed");
+              this.publishTurn(turn.id, "failed", {
+                error: failureMessage(error),
+              });
+            }
+          }
+          // Prune before releasing activeTurn so no new turn can append to the file
+          // while it is being rewritten.
+          try {
+            this.host.prunePersistedSession?.();
+          } catch (error) {
+            this.log.error(
+              { err: error, turnId: turn.id },
+              "Session file pruning failed",
+            );
+          }
+          if (this.activeTurn === turn) this.activeTurn = undefined;
+        })();
+      });
+    });
 
     return { id: turn.id, status: "running" };
   }
@@ -423,6 +460,7 @@ export class SessionController {
 
     const attempt = (async () => {
       this.closeEventStreams();
+      this.unsubscribeHeadlessUiFallback();
       try {
         await this.host.abort();
       } finally {

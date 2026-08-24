@@ -9,6 +9,10 @@ if (!workspacesConfig?.trim()) {
   throw new Error("WORKSPACES is required (comma-separated id=path pairs; ids are secrets)");
 }
 const workspaces = parseWorkspaces(workspacesConfig);
+const timezone = process.env.TZ;
+if (!timezone?.trim()) {
+  throw new Error("TZ is required and must be a valid IANA timezone");
+}
 for (const cwd of Object.values(workspaces)) {
   await mkdir(cwd, { recursive: true });
 }
@@ -30,6 +34,7 @@ const server = await createWebUiServer({
   requireWorkspaceIdForSessionList: true,
   maxUploadBytes,
   chatAgentName,
+  timezone,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
 });

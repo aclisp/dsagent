@@ -11,11 +11,16 @@ import {
   type WebUiChatProvider,
 } from "./chat-provider.js";
 import { registerFileRoutes } from "./files.js";
+import {
+  assertValidScheduleTimezone,
+  createTaskScheduler,
+} from "./task-scheduler.js";
 
 export interface CreateWebUiServerOptions
   extends CreateHttpAdapterServerOptions {
   chatAgentName: string;
   maxUploadBytes: number;
+  timezone: string;
   chatProvider?: WebUiChatProvider;
 }
 
@@ -30,12 +35,16 @@ export async function createWebUiServer(
   const {
     chatAgentName,
     maxUploadBytes,
+    timezone,
     chatProvider,
     ...httpAdapterOptions
   } = options;
+  assertValidScheduleTimezone(timezone);
   const firstWorkspaceId = Object.keys(options.workspaces)[0];
-  if (chatProvider !== undefined && firstWorkspaceId === undefined) {
-    throw new Error("A Chat Provider requires at least one workspace");
+  const firstWorkspacePath =
+    firstWorkspaceId === undefined ? undefined : options.workspaces[firstWorkspaceId];
+  if (firstWorkspaceId === undefined || firstWorkspacePath === undefined) {
+    throw new Error("The Web UI Server requires at least one workspace");
   }
 
   const { server, sessionPort } = createHttpAdapter(httpAdapterOptions);
@@ -103,16 +112,34 @@ export async function createWebUiServer(
     return reply.type("image/png").send(favicon);
   });
 
-  if (chatProvider !== undefined && firstWorkspaceId !== undefined) {
-    const binding = bindWebUiChatProvider({
+  const binding =
+    chatProvider === undefined
+      ? undefined
+      : bindWebUiChatProvider({
+          workspaceId: firstWorkspaceId,
+          sessionPort,
+          provider: chatProvider,
+        });
+  let scheduler: Awaited<ReturnType<typeof createTaskScheduler>>;
+  try {
+    scheduler = await createTaskScheduler({
       workspaceId: firstWorkspaceId,
+      workspacePath: firstWorkspacePath,
+      timezone,
       sessionPort,
-      provider: chatProvider,
+      logger: server.log,
+      ...(binding !== undefined ? { groupDelivery: binding } : {}),
     });
-    server.addHook("onClose", () => {
-      binding.dispose();
-    });
+  } catch (error) {
+    binding?.dispose();
+    await server.close();
+    throw error;
   }
+
+  server.addHook("preClose", async () => {
+    await scheduler.dispose();
+    binding?.dispose();
+  });
 
   return server;
 }

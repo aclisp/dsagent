@@ -225,10 +225,13 @@ describe("HeadlessChatClient", () => {
 
   it("sends explicitly registered Turn output as a new group message", async () => {
     const harness = createHarness();
+    const outcomes: Array<{ turnId: string; status: string }> = [];
 
-    expect(harness.client.registerTurnForGroupDelivery("scheduled-turn")).toBe(
-      true,
-    );
+    expect(
+      harness.client.registerTurnForGroupDelivery("scheduled-turn", (event) => {
+        outcomes.push(event);
+      }),
+    ).toBe(true);
     expect(harness.client.registerTurnForGroupDelivery("scheduled-turn")).toBe(
       false,
     );
@@ -239,6 +242,9 @@ describe("HeadlessChatClient", () => {
     });
     expect(harness.delivery.sends).toEqual([
       { groupChatId: "bound-group", text: "定时总结" },
+    ]);
+    expect(outcomes).toEqual([
+      { turnId: "scheduled-turn", status: "delivered" },
     ]);
 
     await harness.sessionPort.emit({
@@ -330,7 +336,11 @@ describe("HeadlessChatClient", () => {
 
   it("unsubscribes and rejects new work after disposal", async () => {
     const harness = createHarness();
+    const outcomes: Array<{ turnId: string; status: string }> = [];
     expect(harness.sessionPort.listenerCount).toBe(1);
+    harness.client.registerTurnForGroupDelivery("scheduled-turn", (event) => {
+      outcomes.push(event);
+    });
 
     harness.client.dispose();
     harness.client.dispose();
@@ -341,5 +351,8 @@ describe("HeadlessChatClient", () => {
     expect(() =>
       harness.client.registerTurnForGroupDelivery("turn-1"),
     ).toThrow("disposed");
+    expect(outcomes).toEqual([
+      { turnId: "scheduled-turn", status: "abandoned" },
+    ]);
   });
 });

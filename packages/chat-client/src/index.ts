@@ -9,4 +9,6 @@ export {
   type CreateHeadlessChatClientOptions,
   type HeadlessChatClient,
   type InboundGroupMessage,
+  type ProactiveDeliveryEvent,
+  type ProactiveDeliveryListener,
 } from "./chat-client.js";

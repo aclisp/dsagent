@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -105,34 +108,52 @@ class FakeChatProvider implements WebUiChatProvider {
   }
 }
 
-const WORKSPACES = {
-  first_workspace_01: "/workspace/first",
-  second_workspace_02: "/workspace/second",
-} as const;
-
 interface Harness {
   server: FastifyInstance;
   provider?: FakeChatProvider;
   hosts: ControlledHost[];
   factoryCalls: HttpAdapterHostFactoryOptions[];
   listCalls: string[];
+  workspaces: Record<string, string>;
 }
 
 const servers: FastifyInstance[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
+  vi.useRealTimers();
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { force: true, recursive: true }),
+    ),
+  );
 });
 
-async function createHarness(withProvider: boolean): Promise<Harness> {
+async function createHarness(
+  withProvider: boolean,
+  scheduleSource?: string,
+): Promise<Harness> {
   const provider = withProvider ? new FakeChatProvider() : undefined;
   const hosts: ControlledHost[] = [];
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
   const listCalls: string[] = [];
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "dscode-web-ui-"));
+  temporaryDirectories.push(workspaceRoot);
+  const workspaces = {
+    first_workspace_01: path.join(workspaceRoot, "first"),
+    second_workspace_02: path.join(workspaceRoot, "second"),
+  };
+  if (scheduleSource !== undefined) {
+    const scheduleDirectory = path.join(workspaces.first_workspace_01, ".dscode");
+    await mkdir(scheduleDirectory, { recursive: true });
+    await writeFile(path.join(scheduleDirectory, "schedules.yaml"), scheduleSource);
+  }
   const server = await createWebUiServer({
-    workspaces: WORKSPACES,
+    workspaces,
     chatAgentName: "Steve Code",
     maxUploadBytes: 1024,
+    timezone: "Asia/Shanghai",
     logger: false,
     requireWorkspaceIdForSessionList: true,
     createHost: async (options) => {
@@ -154,6 +175,7 @@ async function createHarness(withProvider: boolean): Promise<Harness> {
     hosts,
     factoryCalls,
     listCalls,
+    workspaces,
     ...(provider !== undefined ? { provider } : {}),
   };
 }
@@ -198,6 +220,40 @@ async function waitForSessionIdle(server: FastifyInstance): Promise<void> {
 }
 
 describe("Web UI Server Chat Provider composition", () => {
+  it("delivers a scheduled group Turn through the bound Headless Chat Client", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
+    const harness = await createHarness(
+      true,
+      `version: 1
+tasks:
+  - id: scheduled-report
+    enabled: true
+    type: once
+    at: "2026-08-24T12:00:01Z"
+    delivery: group
+    prompt: 生成定时总结
+`,
+    );
+    const provider = harness.provider;
+    if (!provider) throw new Error("Missing Fake Chat Provider");
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(harness.hosts).toHaveLength(1));
+    const host = harness.hosts[0];
+    if (!host) throw new Error("Session Host was not created");
+    expect(host.prompts).toEqual([
+      "[Scheduled task: scheduled-report]\n\n生成定时总结",
+    ]);
+
+    host.completeNext("定时总结结果");
+    await vi.waitFor(() =>
+      expect(provider.sends).toEqual([
+        { groupChatId: "bound-group", text: "定时总结结果" },
+      ]),
+    );
+  });
+
   it("runs Provider and browser Turns through the same in-process Session", async () => {
     const harness = await createHarness(true);
     const provider = harness.provider;
@@ -215,8 +271,8 @@ describe("Web UI Server Chat Provider composition", () => {
     const accepted = await provider.emit(inbound());
     expect(accepted).toMatchObject({ status: "accepted" });
     expect(harness.factoryCalls).toHaveLength(1);
-    expect(harness.factoryCalls[0]?.cwd).toBe("/workspace/first");
-    expect(harness.listCalls).toEqual(["/workspace/first"]);
+    expect(harness.factoryCalls[0]?.cwd).toBe(harness.workspaces.first_workspace_01);
+    expect(harness.listCalls).toEqual([harness.workspaces.first_workspace_01]);
     const host = harness.hosts[0];
     if (!host) throw new Error("Session Host was not created");
     expect(host.prompts).toEqual([

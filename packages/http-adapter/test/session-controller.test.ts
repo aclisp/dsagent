@@ -217,6 +217,31 @@ async function waitForCall(host: FakeHost, call: string): Promise<void> {
 }
 
 describe("SessionController", () => {
+  it("immediately rejects interactive UI requests for headless Turns", async () => {
+    const broker = createHttpUiBroker();
+    const results: unknown[] = [];
+    const observedMethods: string[] = [];
+    broker.subscribe((event) => {
+      if (event.type === "ui_request") observedMethods.push(event.request.method);
+    });
+    const harness = createHarness({
+      broker,
+      prompt: async () => {
+        results.push(await broker.uiContext.confirm("Confirm", "Details"));
+        results.push(await broker.uiContext.select("Select", ["one", "two"]));
+        results.push(await broker.uiContext.input("Input"));
+        results.push(await broker.uiContext.editor("Editor"));
+      },
+    });
+
+    startTurn(harness.controller, "Headless request");
+
+    await vi.waitFor(() => expect(harness.terminalEvents).toHaveLength(1));
+    expect(results).toEqual([false, undefined, undefined, undefined]);
+    expect(observedMethods).toEqual(["confirm", "select", "input", "editor"]);
+    expect(harness.terminalEvents[0]?.status).toBe("completed");
+  });
+
   it("owns the descriptor, messages, and one-active-Turn guard", async () => {
     const promptBlocked = deferred();
     const messages: AgentMessage[] = [
@@ -474,7 +499,7 @@ describe("SessionController", () => {
     const repeated = harness.controller.dispose();
     expect(repeated).toBe(first);
     expect(harness.host.abortCount).toBe(1);
-    expect(harness.host.unsubscribeCount).toBe(1);
+    expect(harness.host.unsubscribeCount).toBe(2);
 
     disposeBlocked.resolve();
     await expect(Promise.all([first, repeated])).resolves.toEqual([

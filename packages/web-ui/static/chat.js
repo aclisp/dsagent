@@ -40,6 +40,8 @@ const TURN_TRIM_BUFFER = 20;
 const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
+const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*\]\n\n([\s\S]*)$/;
+const SCHEDULED_TASK_SUMMARY_LENGTH = 120;
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
   minute: "2-digit",
@@ -281,7 +283,7 @@ function ensureTimeSeparator(timestamp) {
 
 function timelineUserRows(children = [...messagesElement.children]) {
   return children.filter(
-    (element) => element.classList.contains("message-row") && element.dataset.role === "user",
+    (element) => element.dataset.role === "user",
   );
 }
 
@@ -429,6 +431,43 @@ function parseUploadedMessage(raw) {
     .filter(Boolean)
     .map((path) => ({ name: path.split("/").pop() || path, path }));
   return { text: match[2], attachments };
+}
+
+function parseScheduledTaskMessage(raw) {
+  const match = SCHEDULED_TASK_PREFIX.exec(raw);
+  if (!match) return null;
+  const firstLine = match[1]
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) ?? "";
+  const normalized = firstLine.replace(/\s+/g, " ");
+  const characters = [...normalized];
+  return characters.length <= SCHEDULED_TASK_SUMMARY_LENGTH
+    ? normalized
+    : `${characters.slice(0, SCHEDULED_TASK_SUMMARY_LENGTH).join("")}…`;
+}
+
+function appendScheduledTaskEvent(summary, timestamp = Date.now()) {
+  ensureTimeSeparator(timestamp);
+  const event = document.createElement("article");
+  event.className = "scheduled-task-event";
+  event.dataset.role = "user";
+  event.dataset.timestamp = String(timestamp);
+  const title = document.createElement("strong");
+  title.textContent = "定时任务";
+  const content = document.createElement("span");
+  content.textContent = summary;
+  event.append(title, content);
+  messagesElement.appendChild(event);
+  afterContentChange();
+  return event;
+}
+
+function appendUserTimelineMessage(raw, timestamp = Date.now()) {
+  const scheduledSummary = parseScheduledTaskMessage(raw);
+  return scheduledSummary === null
+    ? appendMessage("user", raw, timestamp)
+    : appendScheduledTaskEvent(scheduledSummary, timestamp);
 }
 
 function createAttachmentList(attachments) {
@@ -796,7 +835,7 @@ function renderTurnUserMessage(event) {
         && event.clientId === state.clientId
       )
     );
-  if (!matchesOptimisticTurn) appendMessage("user", event.message);
+  if (!matchesOptimisticTurn) appendUserTimelineMessage(event.message);
   state.lastRenderedUserTurnId = event.turnId;
 }
 
@@ -1350,7 +1389,7 @@ function renderHistoryMessage(message, currentTurn) {
   if (message.role === "user") {
     finishHistoricalWorkProcess(currentTurn);
     const raw = message.content.map((block) => block.text).join("\n");
-    appendMessage("user", raw, message.timestamp);
+    appendUserTimelineMessage(raw, message.timestamp);
     return newTurnContext(raw);
   }
   if (message.role === "assistant") {

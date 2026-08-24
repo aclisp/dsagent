@@ -26,6 +26,7 @@ services:
     environment:
       # The workspace id is the deployment's bearer credential — high-entropy, shared only out-of-band.
       WORKSPACES: "${WORKSPACE_ID:?set WORKSPACE_ID in .env}=/workspace"
+      TZ: "${TZ:?set TZ to an IANA timezone in .env}"
       RUNTIME_ARGS: >-
         --permission full --network --sandbox danger-full-access
         --provider openrouter --model ${MODEL:?set MODEL in .env}

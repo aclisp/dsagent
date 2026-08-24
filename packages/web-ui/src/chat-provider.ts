@@ -4,6 +4,7 @@ import {
   type ChatDelivery,
   type ChatMessageHandlingResult,
   type InboundGroupMessage,
+  type ProactiveDeliveryListener,
 } from "@thinkany/dscode-chat-client";
 import type { SessionPort } from "@thinkany/dscode-http-adapter/session-port";
 
@@ -24,6 +25,10 @@ export interface BindWebUiChatProviderOptions {
 }
 
 export interface WebUiChatProviderBinding {
+  registerTurnForGroupDelivery(
+    turnId: string,
+    listener?: ProactiveDeliveryListener,
+  ): boolean;
   dispose(): void;
 }
 
@@ -50,6 +55,9 @@ export function bindWebUiChatProvider(
 
   let disposed = false;
   return {
+    registerTurnForGroupDelivery(turnId, listener) {
+      return client.registerTurnForGroupDelivery(turnId, listener);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

@@ -20,6 +20,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts
 COPY packages/core/package.json packages/core/package.json
 COPY packages/http-adapter/package.json packages/http-adapter/package.json
+COPY packages/chat-client/package.json packages/chat-client/package.json
 COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN pnpm install --prod --frozen-lockfile
 

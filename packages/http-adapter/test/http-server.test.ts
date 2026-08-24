@@ -393,6 +393,37 @@ describe("createHttpAdapterServer", () => {
     );
   });
 
+  it("returns the accepted turn ID before a synchronous Host failure is published", async () => {
+    let submissionReturned = false;
+    let terminalBeforeSubmission = false;
+    const terminalEvents: SessionPortTurnEvent[] = [];
+    const harness = createHarness({
+      listPersistedSessions: async () => [],
+      factory: async () => {
+        const host = createFakeHost();
+        host.prompt = () => {
+          throw new Error("synchronous failure");
+        };
+        return host;
+      },
+    });
+    harness.sessionPort.subscribe((event) => {
+      terminalBeforeSubmission ||= !submissionReturned;
+      terminalEvents.push(event);
+    });
+
+    const submission = await harness.sessionPort.submitTurn("main", "Fail fast");
+    submissionReturned = true;
+
+    expect(submission.status).toBe("accepted");
+    await vi.waitFor(() => expect(terminalEvents).toHaveLength(1));
+    expect(terminalBeforeSubmission).toBe(false);
+    expect(terminalEvents[0]).toEqual({
+      status: "failed",
+      turnId: submission.status === "accepted" ? submission.turnId : "missing",
+    });
+  });
+
   it("shares single-Turn concurrency and lifecycle events between the Port and HTTP", async () => {
     const promptBlocked = deferred();
     const terminalEvents: SessionPortTurnEvent[] = [];
@@ -1227,7 +1258,7 @@ describe("createHttpAdapterServer", () => {
     const accepted = await harness.server.inject({
       method: "POST",
       url: turnUrl(sessionId),
-      payload: { message: "Apply the fix" },
+      payload: { message: "Apply the fix", clientId: "browser-client" },
     });
     const turnId = accepted.json<{ id: string }>().id;
 
@@ -1236,6 +1267,7 @@ describe("createHttpAdapterServer", () => {
       turnId,
       status: "running",
       message: "Apply the fix",
+      clientId: "browser-client",
     });
     const requestEvent = await events.next();
     if (requestEvent.type !== "ui_request") throw new Error("Missing UI request");
@@ -1391,7 +1423,7 @@ describe("createHttpAdapterServer", () => {
       url: `/v1/sessions/${firstId}`,
     });
     expect(deleted.statusCode).toBe(204);
-    expect(harness.hosts.get(firstId)!.unsubscribeCount).toBe(1);
+    expect(harness.hosts.get(firstId)!.unsubscribeCount).toBe(2);
     expect(harness.hosts.get(firstId)!.disposeCount).toBe(1);
     expect(harness.hosts.get(secondId)!.disposeCount).toBe(0);
 
@@ -1429,7 +1461,7 @@ describe("createHttpAdapterServer", () => {
 
     for (const id of [firstId, secondId]) {
       const host = harness.hosts.get(id)!;
-      expect(host.unsubscribeCount).toBe(1);
+      expect(host.unsubscribeCount).toBe(2);
       expect(host.abortCount).toBe(1);
       expect(host.disposeCount).toBe(1);
     }

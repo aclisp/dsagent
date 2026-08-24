@@ -11,11 +11,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/cors": "catalog:",
     "@fastify/multipart": "catalog:",
     "@thinkany/dscode-chat-client": "workspace:*",
     "@thinkany/dscode-http-adapter": "workspace:*",
+    "croner": "catalog:",
     "fastify": "catalog:",
-    "marked": "catalog:"
+    "marked": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

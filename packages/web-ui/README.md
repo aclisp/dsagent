@@ -20,6 +20,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing; IDs are **secrets** — use a random high-entropy value per deployment |
+| `TZ` | *(required)* | Valid IANA timezone used by every recurring task; the Server fails startup when it is missing or invalid |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
 | `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
@@ -39,6 +40,15 @@ browser clients.
 The binding adds no HTTP routes and is removed when the Server closes. Provider transport,
 credentials, protocol startup, and the first real IM implementation remain outside the Web UI
 Server composition boundary.
+
+## Scheduled tasks
+
+The Server watches the first workspace's `.dscode/schedules.yaml` and writes scheduler-owned
+runtime state to `.dscode/schedules.status.json`. Both one-time and Croner-native recurring tasks
+run through the same shared Session as browser and Provider requests. `delivery: session` keeps the
+result in Web UI; `delivery: group` additionally registers completed output with the optional
+Headless Chat Client. There is no task CRUD route, central queue, persistent delivery outbox, or
+restart catch-up.
 
 ## Workspaces as a secret
 
@@ -75,6 +85,7 @@ docker run -d --name dscode \
   -v "$PWD/deploy/default-files/AGENTS.md":/root/.dscode/AGENTS.md:ro \
   -v "$PWD/deploy/locked-workspace-pi":/workspace/.pi:ro \
   -e "WORKSPACES='<workspace-id>=/workspace'" \
+  -e TZ='Asia/Shanghai' \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
   -e DSCODE_SUBAGENT_DEPTH=1 \
   -e DSCODE_VISION_MODEL='<vision model>' \
@@ -87,7 +98,7 @@ docker run -d --name dscode \
 
 The same deployment is available as the generic `docker-compose.example.yml` at the repo root.
 Copy it and `.env.example` into `.local/<instance>/`, then configure that instance's `.env`:
-`DSCODE_INSTANCE_NAME`, `DSCODE_HOST_PORT`, `WORKSPACE_ID`, `OPENROUTER_API_KEY`, `MODEL`, and
+`DSCODE_INSTANCE_NAME`, `DSCODE_HOST_PORT`, `WORKSPACE_ID`, `TZ`, `OPENROUTER_API_KEY`, `MODEL`,
 `VISION_MODEL`, and `DSCODE_PROMPT_PROFILE`. Run `docker compose up -d` from the instance directory
 to create or update it;
 `docker compose down` stops it without touching its project-scoped named volumes. Creating another
@@ -163,7 +174,7 @@ root process inside the same container.
 
 ### Default skills
 
-The image ships four skills — `dscode-vision`, `grill-me`, `skill-creator`, and `youxin-cli` —
+The image ships five skills — `dscode-vision`, `grill-me`, `scheduled-tasks`, `skill-creator`, and `youxin-cli` —
 bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.

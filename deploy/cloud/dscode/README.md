@@ -124,6 +124,7 @@ DSCODE_IMAGE=dscode-server
 DSCODE_HOST_PORT=<host-port>
 
 WORKSPACE_ID=<random-high-entropy-id>
+TZ=Asia/Shanghai
 OPENROUTER_API_KEY=<openrouter-api-key>
 MODEL=<openrouter-model-id>
 VISION_MODEL=<vision-capable-openrouter-model-id>
@@ -141,6 +142,10 @@ openssl rand -hex 16
 The workspace ID is a bearer credential embedded in the chat URL. Anyone who
 knows it can reach the full-access agent, so distribute it only through a trusted
 channel.
+
+`TZ` must be an explicit valid IANA timezone. It controls recurring schedules and is required even
+when no tasks currently exist; changing it changes the wall-clock interpretation of every Cron
+task.
 
 ## 4. Start or update the service
 
