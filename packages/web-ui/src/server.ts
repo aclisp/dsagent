@@ -1,9 +1,7 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import process from "node:process";
-import multipart from "@fastify/multipart";
-import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
-import { renderChatPage, resolveChatAgentName } from "./chat-page.js";
-import { registerFileRoutes } from "./files.js";
+import { resolveChatAgentName } from "./chat-page.js";
+import { createWebUiServer } from "./web-ui-server.js";
 import { parseWorkspaces } from "./workspaces.js";
 
 const workspacesConfig = process.env.WORKSPACES;
@@ -25,80 +23,15 @@ const corsOrigins = process.env.CORS_ORIGINS?.trim()
   ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
   : undefined;
 
-const server = createHttpAdapterServer({
+const server = await createWebUiServer({
   workspaces,
   logger: false,
-  maxSessionFileBytes: 1024*1024,
+  maxSessionFileBytes: 1024 * 1024,
   requireWorkspaceIdForSessionList: true,
+  maxUploadBytes,
+  chatAgentName,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
-});
-
-await server.register(multipart);
-registerFileRoutes(server, workspaces, { maxUploadBytes });
-
-const staticFile = (name: string): Promise<Buffer> =>
-  readFile(new URL(`../static/${name}`, import.meta.url));
-const markedModule = (): Promise<Buffer> =>
-  readFile(new URL(import.meta.resolve("marked")));
-
-// Pages are served only with a configured workspace id, which is also the secret
-// credential. The friendly chat owns /chat; the raw terminal remains at /debug.
-server.get<{ Params: { workspaceId: string } }>(
-  "/chat/:workspaceId",
-  async (request, reply) => {
-    if (!workspaces[request.params.workspaceId]) {
-      return reply.code(404).send({ error: "workspace_not_found" });
-    }
-    const html = await staticFile("chat.html");
-    return reply.type("text/html; charset=utf-8").send(renderChatPage(html, chatAgentName));
-  },
-);
-
-server.get<{ Params: { workspaceId: string } }>(
-  "/debug/:workspaceId",
-  async (request, reply) => {
-    if (!workspaces[request.params.workspaceId]) {
-      return reply.code(404).send({ error: "workspace_not_found" });
-    }
-    const html = await staticFile("index.html");
-    return reply.type("text/html; charset=utf-8").send(html);
-  },
-);
-
-server.get("/chat.js", async (_request, reply) => {
-  const script = await staticFile("chat.js");
-  return reply.type("text/javascript; charset=utf-8").send(script);
-});
-
-server.get("/chat.css", async (_request, reply) => {
-  const css = await staticFile("chat.css");
-  return reply.type("text/css; charset=utf-8").send(css);
-});
-
-server.get("/marked.esm.js", async (_request, reply) => {
-  const script = await markedModule();
-  return reply.type("text/javascript; charset=utf-8").send(script);
-});
-
-server.get("/termino.js", async (_request, reply) => {
-  const script = await staticFile("termino.js");
-  return reply.type("text/javascript; charset=utf-8").send(script);
-});
-
-server.get("/app.js", async (_request, reply) => {
-  const script = await staticFile("app.js");
-  return reply.type("text/javascript; charset=utf-8").send(script);
-});
-
-server.get("/style.css", async (_request, reply) => {
-  const css = await staticFile("style.css");
-  return reply.type("text/css; charset=utf-8").send(css);
-});
-
-server.get("/favicon.png", async (_request, reply) => {
-  const favicon = await staticFile("favicon.png");
-  return reply.type("image/png").send(favicon);
 });
 
 const host = process.env.HOST ?? "127.0.0.1";

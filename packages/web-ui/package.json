@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fastify/multipart": "catalog:",
+    "@thinkany/dscode-chat-client": "workspace:*",
     "@thinkany/dscode-http-adapter": "workspace:*",
     "fastify": "catalog:",
     "marked": "catalog:"

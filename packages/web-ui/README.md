@@ -28,6 +28,18 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 | `CORS_ORIGINS` | — | Comma-separated exact HTTP(S) origins allowed to call `/health` and `/v1/*`. Wildcards are rejected; `/share/*` remains unavailable to cross-origin JavaScript |
 
+## Headless Chat Provider composition
+
+`createWebUiServer` accepts an optional `chatProvider` for in-process group chat integration. The
+Provider publishes normalized messages through `subscribe`, implements `reply` and `send`, and
+supplies the one fixed `groupChatId`. The Server binds it to the first configured workspace through
+the shared `SessionPort`; receiving a Provider message lazily activates the same Session used by the
+browser clients.
+
+The binding adds no HTTP routes and is removed when the Server closes. Provider transport,
+credentials, protocol startup, and the first real IM implementation remain outside the Web UI
+Server composition boundary.
+
 ## Workspaces as a secret
 
 There is no default or discoverable workspace. The chat page is served only at

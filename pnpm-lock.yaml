@@ -207,6 +207,9 @@ importers:
       '@fastify/multipart':
         specifier: 'catalog:'
         version: 10.1.0
+      '@thinkany/dscode-chat-client':
+        specifier: workspace:*
+        version: link:../chat-client
       '@thinkany/dscode-http-adapter':
         specifier: workspace:*
         version: link:../http-adapter
