@@ -3,7 +3,6 @@ import type { ServerResponse } from "node:http";
 import path from "node:path";
 import cors from "@fastify/cors";
 import Fastify, {
-  type FastifyBaseLogger,
   type FastifyInstance,
   type FastifyLoggerOptions,
   type FastifyReply,
@@ -66,6 +65,37 @@ export interface CreateHttpAdapterServerOptions {
   /** Browser origins allowed to call /health and routes under /v1; omitted disables CORS. */
   corsOrigins?: readonly string[];
   logger?: boolean | FastifyLoggerOptions;
+}
+
+export interface SessionPortActivation {
+  sessionId: string;
+}
+
+export type SessionPortTurnSubmission =
+  | { status: "accepted"; turnId: string }
+  | { status: "busy" };
+
+export type SessionPortTurnEvent =
+  | { status: "completed"; turnId: string; output: string | null }
+  | { status: "failed"; turnId: string }
+  | { status: "aborted"; turnId: string };
+
+export type SessionPortTurnListener = (
+  event: SessionPortTurnEvent,
+) => void | Promise<void>;
+
+export interface SessionPort {
+  activate(workspaceId: string): Promise<SessionPortActivation>;
+  submitTurn(
+    workspaceId: string,
+    message: string,
+  ): Promise<SessionPortTurnSubmission>;
+  subscribe(listener: SessionPortTurnListener): () => void;
+}
+
+export interface HttpAdapter {
+  server: FastifyInstance;
+  sessionPort: SessionPort;
 }
 
 export type HttpSessionStatus = "idle" | "running" | "aborting";
@@ -174,6 +204,10 @@ interface ActiveTurn {
   abortAttempt?: Promise<AbortAttempt>;
 }
 
+interface SessionControllerLogger {
+  error(bindings: Record<string, unknown>, message: string): void;
+}
+
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -268,6 +302,8 @@ class SessionController {
     readonly id: string,
     readonly workspaceId: string,
     private readonly host: HttpAdapterServerHost,
+    private readonly log: SessionControllerLogger,
+    private readonly publishTerminalTurn: (event: SessionPortTurnEvent) => void,
   ) {}
 
   get descriptor(): HttpSessionDescriptor {
@@ -336,6 +372,15 @@ class SessionController {
     };
     this.latestTurnEvent = event;
     this.publish(event);
+    if (status === "completed") {
+      this.publishTerminalTurn({
+        status,
+        turnId,
+        output: extras.output ?? null,
+      });
+    } else if (status === "failed" || status === "aborted") {
+      this.publishTerminalTurn({ status, turnId });
+    }
   }
 
   private translateBrokerEvent(
@@ -454,7 +499,6 @@ class SessionController {
   startTurn(
     message: string,
     clientId: string | undefined,
-    log: FastifyBaseLogger,
   ): { id: string; status: "running" } | undefined {
     if (this.activeTurn) return undefined;
 
@@ -483,7 +527,7 @@ class SessionController {
       if (abortResult?.ok) {
         this.publishTurn(turn.id, "aborted");
       } else if (failed) {
-        log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
+        this.log.error({ err: failure, turnId: turn.id }, "Agent turn failed");
         this.publishTurn(turn.id, "failed", { error: failureMessage(failure) });
       } else {
         try {
@@ -491,7 +535,7 @@ class SessionController {
             output: output ?? null,
           });
         } catch (error) {
-          log.error({ err: error, turnId: turn.id }, "Agent turn failed");
+          this.log.error({ err: error, turnId: turn.id }, "Agent turn failed");
           this.publishTurn(turn.id, "failed", { error: failureMessage(error) });
         }
       }
@@ -500,7 +544,10 @@ class SessionController {
       try {
         this.host.prunePersistedSession?.();
       } catch (error) {
-        log.error({ err: error, turnId: turn.id }, "Session file pruning failed");
+        this.log.error(
+          { err: error, turnId: turn.id },
+          "Session file pruning failed",
+        );
       }
       if (this.activeTurn === turn) this.activeTurn = undefined;
     })();
@@ -514,7 +561,6 @@ class SessionController {
 
   async abortTurn(
     turnId: string,
-    log: FastifyBaseLogger,
   ): Promise<"not_found" | "aborting" | "failed"> {
     const turn = this.activeTurn;
     if (!turn || turn.id !== turnId) return "not_found";
@@ -531,7 +577,10 @@ class SessionController {
     const result = await attempt;
     if (result.ok) return "aborting";
 
-    log.error({ err: result.error, turnId: turn.id }, "Agent turn abort failed");
+    this.log.error(
+      { err: result.error, turnId: turn.id },
+      "Agent turn abort failed",
+    );
     if (this.activeTurn === turn && turn.abortAttempt === attempt) {
       delete turn.abortAttempt;
       // No extras: re-sending the submission would make clients re-render it.
@@ -566,9 +615,9 @@ class SessionController {
   }
 }
 
-export function createHttpAdapterServer(
+export function createHttpAdapter(
   options: CreateHttpAdapterServerOptions,
-): FastifyInstance {
+): HttpAdapter {
   const corsOrigins = normalizeCorsOrigins(options.corsOrigins);
   const server = Fastify({
     logger: options.logger ?? false,
@@ -612,9 +661,165 @@ export function createHttpAdapterServer(
   const disposingSessions = new Map<string, SessionController>();
   const activatingSessions = new Set<string>();
   const activatingWorkspaces = new Set<string>();
+  const workspaceActivations = new Map<
+    string,
+    Promise<SessionController>
+  >();
+  const terminalTurnListeners = new Set<SessionPortTurnListener>();
+  let closing = false;
 
   const getSession = (sessionId: string): SessionController | undefined =>
     sessions.get(sessionId);
+
+  const getWorkspaceSession = (
+    workspaceId: string,
+    controllers: Iterable<SessionController> = sessions.values(),
+  ): SessionController | undefined =>
+    [...controllers].find(
+      (controller) => controller.workspaceId === workspaceId,
+    );
+
+  const publishTerminalTurn = (event: SessionPortTurnEvent): void => {
+    for (const listener of terminalTurnListeners) {
+      try {
+        const result = listener(event);
+        if (result) {
+          void result.catch((error: unknown) => {
+            server.log.error(
+              { err: error, turnId: event.turnId },
+              "Session Port listener failed",
+            );
+          });
+        }
+      } catch (error) {
+        server.log.error(
+          { err: error, turnId: event.turnId },
+          "Session Port listener failed",
+        );
+      }
+    }
+  };
+
+  const createController = async (
+    workspaceId: string,
+    cwd: string,
+    session: HttpAdapterHostFactoryOptions["session"],
+  ): Promise<SessionController> => {
+    const host = await createHost({
+      cwd,
+      session,
+      ...(options.runtimeArgs !== undefined
+        ? { runtimeArgs: options.runtimeArgs }
+        : {}),
+      ...(options.maxSessionFileBytes !== undefined
+        ? { maxSessionFileBytes: options.maxSessionFileBytes }
+        : {}),
+    });
+    const controller = new SessionController(
+      session.id,
+      workspaceId,
+      host,
+      server.log,
+      publishTerminalTurn,
+    );
+    sessions.set(session.id, controller);
+    return controller;
+  };
+
+  const activateSession = (
+    workspaceId: string,
+    cwd: string,
+    session: HttpAdapterHostFactoryOptions["session"],
+  ): Promise<SessionController> => {
+    activatingSessions.add(session.id);
+    activatingWorkspaces.add(workspaceId);
+    let activation!: Promise<SessionController>;
+    activation = (async () => {
+      try {
+        return await createController(workspaceId, cwd, session);
+      } finally {
+        activatingSessions.delete(session.id);
+        activatingWorkspaces.delete(workspaceId);
+        if (workspaceActivations.get(workspaceId) === activation) {
+          workspaceActivations.delete(workspaceId);
+        }
+      }
+    })();
+    workspaceActivations.set(workspaceId, activation);
+    return activation;
+  };
+
+  const activateWorkspace = async (
+    workspaceId: string,
+  ): Promise<SessionController> => {
+    if (closing) throw new Error("HTTP adapter is closing");
+    if (workspaceId.trim().length === 0) {
+      throw new Error("Workspace ID must not be blank");
+    }
+    const cwd = workspaces.get(workspaceId);
+    if (!cwd) throw new Error(`Workspace not found: ${workspaceId}`);
+
+    const active = getWorkspaceSession(workspaceId);
+    if (active) return active;
+    const pending = workspaceActivations.get(workspaceId);
+    if (pending) return pending;
+    if (getWorkspaceSession(workspaceId, disposingSessions.values())) {
+      throw new Error(`Workspace session is being disposed: ${workspaceId}`);
+    }
+
+    let sessionId: string | undefined;
+    let activation!: Promise<SessionController>;
+    activatingWorkspaces.add(workspaceId);
+    activation = (async () => {
+      try {
+        const summaries = await listSessions(cwd);
+        const latest = summaries[0];
+        sessionId = latest?.id ?? randomUUID();
+        if (
+          sessions.has(sessionId) ||
+          disposingSessions.has(sessionId) ||
+          activatingSessions.has(sessionId)
+        ) {
+          throw new Error(`Session is already active: ${sessionId}`);
+        }
+        activatingSessions.add(sessionId);
+        const session: HttpAdapterHostFactoryOptions["session"] = latest
+          ? { type: "resume", id: sessionId }
+          : { type: "persistent", id: sessionId };
+        return await createController(workspaceId, cwd, session);
+      } finally {
+        if (sessionId !== undefined) activatingSessions.delete(sessionId);
+        activatingWorkspaces.delete(workspaceId);
+        if (workspaceActivations.get(workspaceId) === activation) {
+          workspaceActivations.delete(workspaceId);
+        }
+      }
+    })();
+    workspaceActivations.set(workspaceId, activation);
+    return activation;
+  };
+
+  const sessionPort: SessionPort = {
+    async activate(workspaceId) {
+      const controller = await activateWorkspace(workspaceId);
+      return { sessionId: controller.id };
+    },
+    async submitTurn(workspaceId, message) {
+      if (message.trim().length === 0) {
+        throw new Error("Turn message must not be blank");
+      }
+      const controller = await activateWorkspace(workspaceId);
+      const turn = controller.startTurn(message, undefined);
+      return turn
+        ? { status: "accepted", turnId: turn.id }
+        : { status: "busy" };
+    },
+    subscribe(listener) {
+      if (closing) throw new Error("HTTP adapter is closing");
+      terminalTurnListeners.add(listener);
+      return () => terminalTurnListeners.delete(listener);
+    },
+  };
 
   server.get("/health", async () => ({ status: "ok" }));
 
@@ -697,24 +902,11 @@ export function createHttpAdapterServer(
         return reply.code(409).send({ error: "workspace_session_active" });
       }
 
-      activatingSessions.add(sessionId);
-      activatingWorkspaces.add(workspaceId);
       try {
         const session: HttpAdapterHostFactoryOptions["session"] = resumed
           ? { type: "resume", id: sessionId }
           : { type: "persistent", id: sessionId };
-        const host = await createHost({
-          cwd,
-          session,
-          ...(options.runtimeArgs !== undefined
-            ? { runtimeArgs: options.runtimeArgs }
-            : {}),
-          ...(options.maxSessionFileBytes !== undefined
-            ? { maxSessionFileBytes: options.maxSessionFileBytes }
-            : {}),
-        });
-        const controller = new SessionController(sessionId, workspaceId, host);
-        sessions.set(sessionId, controller);
+        const controller = await activateSession(workspaceId, cwd, session);
         return reply.code(201).send({
           ...controller.descriptor,
           resumed,
@@ -733,9 +925,6 @@ export function createHttpAdapterServer(
           "Agent session creation failed",
         );
         return reply.code(500).send({ error: "session_creation_failed" });
-      } finally {
-        activatingSessions.delete(sessionId);
-        activatingWorkspaces.delete(workspaceId);
       }
     },
   );
@@ -815,7 +1004,6 @@ export function createHttpAdapterServer(
       const turn = controller.startTurn(
         request.body.message,
         request.body.clientId,
-        request.log,
       );
       if (!turn) return reply.code(409).send({ error: "turn_in_progress" });
       return reply.code(202).send(turn);
@@ -869,7 +1057,7 @@ export function createHttpAdapterServer(
         return reply.code(404).send({ error: "session_not_found" });
       }
 
-      const result = await controller.abortTurn(request.params.turnId, request.log);
+      const result = await controller.abortTurn(request.params.turnId);
       if (result === "not_found") {
         return reply.code(404).send({ error: "turn_not_found" });
       }
@@ -883,6 +1071,7 @@ export function createHttpAdapterServer(
   );
 
   server.addHook("preClose", async () => {
+    closing = true;
     for (const controller of [
       ...sessions.values(),
       ...disposingSessions.values(),
@@ -892,12 +1081,14 @@ export function createHttpAdapterServer(
   });
 
   server.addHook("onClose", async () => {
+    await Promise.allSettled([...workspaceActivations.values()]);
     const controllers = new Set([
       ...sessions.values(),
       ...disposingSessions.values(),
     ]);
     sessions.clear();
     disposingSessions.clear();
+    terminalTurnListeners.clear();
     const results = await Promise.allSettled(
       [...controllers].map((controller) => controller.dispose()),
     );
@@ -908,5 +1099,11 @@ export function createHttpAdapterServer(
     }
   });
 
-  return server;
+  return { server, sessionPort };
+}
+
+export function createHttpAdapterServer(
+  options: CreateHttpAdapterServerOptions,
+): FastifyInstance {
+  return createHttpAdapter(options).server;
 }

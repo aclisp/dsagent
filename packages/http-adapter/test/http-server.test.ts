@@ -4,11 +4,14 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersistedSessionNotFoundError } from "../src/agent-session-host.js";
 import {
+  createHttpAdapter,
   createHttpAdapterServer,
   type HttpAdapterEvent,
   type HttpAdapterHostFactoryOptions,
   type HttpAdapterServerHost,
   type PersistedSessionLister,
+  type SessionPort,
+  type SessionPortTurnEvent,
 } from "../src/http-server.js";
 import type { AgentMessage } from "../src/session-messages.js";
 import {
@@ -35,6 +38,7 @@ interface EventStream {
 
 interface Harness {
   server: FastifyInstance;
+  sessionPort: SessionPort;
   hosts: Map<string, FakeHost>;
   factoryCalls: HttpAdapterHostFactoryOptions[];
   createSession(workspaceId?: string): Promise<string>;
@@ -136,7 +140,7 @@ function createHarness(options?: {
 }): Harness {
   const hosts = new Map<string, FakeHost>();
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
-  const server = createHttpAdapterServer({
+  const { server, sessionPort } = createHttpAdapter({
     workspaces: options?.workspaces ?? WORKSPACES,
     ...(options?.runtimeArgs !== undefined
       ? { runtimeArgs: options.runtimeArgs }
@@ -163,6 +167,7 @@ function createHarness(options?: {
 
   return {
     server,
+    sessionPort,
     hosts,
     factoryCalls,
     async createSession(workspaceId = "main") {
@@ -332,6 +337,209 @@ describe("createHttpAdapterServer", () => {
       headers: { origin },
     });
     expect(share.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("keeps the Session Port lazy and shares restoration of the latest session", async () => {
+    const listingBlocked = deferred();
+    let listCalls = 0;
+    const harness = createHarness({
+      listPersistedSessions: async () => {
+        listCalls += 1;
+        await listingBlocked.promise;
+        return [
+          {
+            id: "latest-session",
+            firstMessage: "Latest",
+            messageCount: 3,
+            modified: new Date("2026-08-24T00:00:00Z"),
+          },
+        ];
+      },
+    });
+
+    expect(listCalls).toBe(0);
+    expect(harness.factoryCalls).toEqual([]);
+
+    const first = harness.sessionPort.activate("main");
+    await vi.waitFor(() => expect(listCalls).toBe(1));
+    const second = harness.sessionPort.activate("main");
+    listingBlocked.resolve();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { sessionId: "latest-session" },
+      { sessionId: "latest-session" },
+    ]);
+    expect(harness.factoryCalls).toHaveLength(1);
+    expect(harness.factoryCalls[0]).toMatchObject({
+      cwd: path.resolve(WORKSPACES.main),
+      session: { type: "resume", id: "latest-session" },
+    });
+
+    const active = await harness.server.inject({
+      method: "GET",
+      url: "/v1/sessions/latest-session",
+    });
+    expect(active.statusCode).toBe(200);
+  });
+
+  it("creates a persisted session when an in-process submission has no history", async () => {
+    const terminalEvents: SessionPortTurnEvent[] = [];
+    const harness = createHarness({
+      listPersistedSessions: async () => [],
+    });
+    harness.sessionPort.subscribe((event) => {
+      terminalEvents.push(event);
+    });
+
+    const submission = await harness.sessionPort.submitTurn("main", "Hello");
+    expect(submission.status).toBe("accepted");
+    expect(harness.factoryCalls).toHaveLength(1);
+    expect(harness.factoryCalls[0]).toMatchObject({
+      cwd: path.resolve(WORKSPACES.main),
+      session: { type: "persistent" },
+    });
+    await vi.waitFor(() =>
+      expect(terminalEvents).toEqual([
+        {
+          status: "completed",
+          turnId:
+            submission.status === "accepted" ? submission.turnId : "missing",
+          output: null,
+        },
+      ]),
+    );
+  });
+
+  it("shares single-Turn concurrency and lifecycle events between the Port and HTTP", async () => {
+    const promptBlocked = deferred();
+    const terminalEvents: SessionPortTurnEvent[] = [];
+    const harness = createHarness({
+      listPersistedSessions: async () => [],
+      factory: async () =>
+        createFakeHost({
+          output: "Completed in process",
+          prompt: async () => promptBlocked.promise,
+        }),
+    });
+    harness.sessionPort.subscribe((event) => {
+      terminalEvents.push(event);
+    });
+    const { sessionId } = await harness.sessionPort.activate("main");
+    const stream = await openEventStream(harness.server, sessionId);
+
+    const accepted = await harness.sessionPort.submitTurn("main", "Do work");
+    expect(accepted.status).toBe("accepted");
+    expect(await harness.sessionPort.submitTurn("main", "Overlap")).toEqual({
+      status: "busy",
+    });
+    const httpOverlap = await harness.server.inject({
+      method: "POST",
+      url: turnUrl(sessionId),
+      payload: { message: "HTTP overlap" },
+    });
+    expect(httpOverlap.statusCode).toBe(409);
+    expect(httpOverlap.json()).toEqual({ error: "turn_in_progress" });
+    expect(terminalEvents).toEqual([]);
+
+    expect(await stream.next()).toEqual({
+      type: "turn",
+      turnId: accepted.status === "accepted" ? accepted.turnId : "missing",
+      status: "running",
+      message: "Do work",
+    });
+    promptBlocked.resolve();
+    await vi.waitFor(() =>
+      expect(terminalEvents).toEqual([
+        {
+          status: "completed",
+          turnId: accepted.status === "accepted" ? accepted.turnId : "missing",
+          output: "Completed in process",
+        },
+      ]),
+    );
+    expect(await stream.next()).toEqual({
+      type: "turn",
+      turnId: accepted.status === "accepted" ? accepted.turnId : "missing",
+      status: "completed",
+      output: "Completed in process",
+    });
+    stream.close();
+  });
+
+  it("publishes terminal events for HTTP-originated turns without replaying progress", async () => {
+    const promptBlocked = deferred();
+    const terminalEvents: SessionPortTurnEvent[] = [];
+    const harness = createHarness({
+      factory: async () =>
+        createFakeHost({
+          output: "From HTTP",
+          prompt: async () => promptBlocked.promise,
+        }),
+    });
+    const sessionId = await harness.createSession();
+    harness.sessionPort.subscribe((event) => {
+      terminalEvents.push(event);
+    });
+
+    const response = await harness.server.inject({
+      method: "POST",
+      url: turnUrl(sessionId),
+      payload: { message: "Browser turn", clientId: "browser" },
+    });
+    const turnId = response.json<{ id: string }>().id;
+    expect(response.statusCode).toBe(202);
+    expect(terminalEvents).toEqual([]);
+
+    promptBlocked.resolve();
+    await vi.waitFor(() =>
+      expect(terminalEvents).toEqual([
+        { status: "completed", turnId, output: "From HTTP" },
+      ]),
+    );
+  });
+
+  it("publishes failed and aborted terminal events without output", async () => {
+    const abortPromptBlocked = deferred();
+    const terminalEvents: SessionPortTurnEvent[] = [];
+    const harness = createHarness({
+      listPersistedSessions: async () => [],
+      factory: async (options) =>
+        options.cwd === path.resolve(WORKSPACES.main)
+          ? createFakeHost({
+              prompt: async () => {
+                throw new Error("provider failed");
+              },
+            })
+          : createFakeHost({ prompt: async () => abortPromptBlocked.promise }),
+    });
+    harness.sessionPort.subscribe((event) => {
+      terminalEvents.push(event);
+    });
+
+    const failed = await harness.sessionPort.submitTurn("main", "Fail");
+    await vi.waitFor(() => expect(terminalEvents).toHaveLength(1));
+    expect(terminalEvents[0]).toEqual({
+      status: "failed",
+      turnId: failed.status === "accepted" ? failed.turnId : "missing",
+    });
+
+    const aborted = await harness.sessionPort.submitTurn("other", "Abort");
+    const otherSessionId = harness.factoryCalls.find(
+      (call) => call.cwd === path.resolve(WORKSPACES.other),
+    )!.session.id;
+    const abortResponse = await harness.server.inject({
+      method: "POST",
+      url: `/v1/sessions/${otherSessionId}/turns/${
+        aborted.status === "accepted" ? aborted.turnId : "missing"
+      }/abort`,
+    });
+    expect(abortResponse.statusCode).toBe(202);
+    abortPromptBlocked.resolve();
+    await vi.waitFor(() => expect(terminalEvents).toHaveLength(2));
+    expect(terminalEvents[1]).toEqual({
+      status: "aborted",
+      turnId: aborted.status === "accepted" ? aborted.turnId : "missing",
+    });
   });
 
   it("reports health and manages an active persistent session", async () => {

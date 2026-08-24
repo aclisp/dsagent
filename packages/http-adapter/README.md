@@ -20,6 +20,35 @@ const server = createHttpAdapterServer({
 await server.listen({ host: "127.0.0.1", port: 8787 });
 ```
 
+## In-process Session Port
+
+Use `createHttpAdapter` when another component in the same process needs to join the Session
+without calling loopback HTTP or consuming SSE:
+
+```ts
+import { createHttpAdapter } from "@thinkany/dscode-http-adapter";
+
+const { server, sessionPort } = createHttpAdapter({
+  workspaces: { main: "/path/to/workspace" },
+});
+
+const unsubscribe = sessionPort.subscribe((event) => {
+  if (event.status === "completed") {
+    console.log(event.turnId, event.output);
+  }
+});
+
+const submission = await sessionPort.submitTurn("main", "Review the current changes");
+if (submission.status === "busy") {
+  console.log("The shared Session already has an active Turn");
+}
+```
+
+`activate(workspaceId)` and `submitTurn(workspaceId, message)` lazily restore the workspace's most
+recent persisted Session, creating one when no history exists. Port and HTTP submissions share the
+same controller and one-active-Turn guard. Port subscribers receive only terminal `completed`,
+`failed`, and `aborted` events; completed events include `output`, which can be `null`.
+
 Each HTTP session owns an isolated agent with its own tools, MCP connections, approvals, and
 conversation state. Workspace IDs map to server-controlled paths, so clients never supply a raw
 `cwd`. Turns are asynchronous: submit a turn, watch `GET /v1/sessions/:id/events` for progress, and

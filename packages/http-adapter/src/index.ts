@@ -9,8 +9,10 @@ export {
   type PersistedSessionSummary,
 } from "./agent-session-host.js";
 export {
+  createHttpAdapter,
   createHttpAdapterServer,
   type CreateHttpAdapterServerOptions,
+  type HttpAdapter,
   type HttpAdapterEvent,
   type HttpAdapterHostFactory,
   type HttpAdapterHostFactoryOptions,
@@ -20,6 +22,11 @@ export {
   type HttpSessionStatus,
   type HttpTurnStatus,
   type PersistedSessionLister,
+  type SessionPort,
+  type SessionPortActivation,
+  type SessionPortTurnEvent,
+  type SessionPortTurnListener,
+  type SessionPortTurnSubmission,
 } from "./http-server.js";
 export { pruneSessionFile } from "./session-pruner.js";
 export {
