@@ -41,6 +41,7 @@ const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
 const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*\]\n\n([\s\S]*)$/;
+const GROUP_MESSAGE_PREFIX = /^\[Group message(?: from ([^\]\r\n]+))?\]\r?\n\r?\n([\s\S]*)$/;
 const SCHEDULED_TASK_SUMMARY_LENGTH = 120;
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
@@ -447,6 +448,22 @@ function parseScheduledTaskMessage(raw) {
     : `${characters.slice(0, SCHEDULED_TASK_SUMMARY_LENGTH).join("")}…`;
 }
 
+function parseGroupMessagePrompt(raw) {
+  const match = GROUP_MESSAGE_PREFIX.exec(raw);
+  if (!match) return null;
+  return {
+    text: match[2],
+    senderName: match[1] || null,
+  };
+}
+
+function appendMessageSource(meta, senderName) {
+  const source = document.createElement("span");
+  source.className = "message-source";
+  source.textContent = senderName ? `群聊 · ${senderName}` : "群聊";
+  meta.appendChild(source);
+}
+
 function appendScheduledTaskEvent(summary, timestamp = Date.now()) {
   ensureTimeSeparator(timestamp);
   const event = document.createElement("article");
@@ -465,9 +482,20 @@ function appendScheduledTaskEvent(summary, timestamp = Date.now()) {
 
 function appendUserTimelineMessage(raw, timestamp = Date.now()) {
   const scheduledSummary = parseScheduledTaskMessage(raw);
-  return scheduledSummary === null
-    ? appendMessage("user", raw, timestamp)
-    : appendScheduledTaskEvent(scheduledSummary, timestamp);
+  if (scheduledSummary !== null) {
+    return appendScheduledTaskEvent(scheduledSummary, timestamp);
+  }
+  const groupMessage = parseGroupMessagePrompt(raw);
+  const message = appendMessage(
+    "user",
+    groupMessage?.text ?? raw,
+    timestamp,
+  );
+  if (groupMessage !== null) {
+    appendMessageSource(message.meta, groupMessage.senderName);
+    afterContentChange();
+  }
+  return message;
 }
 
 function createAttachmentList(attachments) {

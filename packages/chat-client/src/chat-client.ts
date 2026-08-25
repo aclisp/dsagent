@@ -54,6 +54,23 @@ export type ChatMessageHandlingResult =
   | { status: "busy" }
   | { status: "accepted"; turnId: string };
 
+export type ChatProviderListener = (
+  message: InboundGroupMessage,
+) => Promise<ChatMessageHandlingResult>;
+
+/**
+ * Protocol-neutral inbound/outbound chat provider contract.
+ *
+ * Concrete transports implement this interface; the headless chat client
+ * owns message handling and delivery policy independently of that transport.
+ */
+export interface ChatProvider extends ChatDelivery {
+  readonly groupChatId: string;
+  subscribe(listener: ChatProviderListener): () => void;
+  start?(): void | Promise<void>;
+  dispose?(): void | Promise<void>;
+}
+
 export interface HeadlessChatClient {
   handleMessage(message: InboundGroupMessage): Promise<ChatMessageHandlingResult>;
   registerTurnForGroupDelivery(

@@ -1,9 +1,10 @@
 # @thinkany/dscode-web-ui
 
-Minimal example UI for `@thinkany/dscode-http-adapter`: a terminal-style chat served by
-the adapter's own Fastify server. It exists to verify the adapter's REST + SSE surface
-against a live client — it is not a product frontend. `static/` holds `index.html`
-(markup), `app.js` (page logic), `style.css` (styling), and the vendored `termino.js`.
+The Web UI for the DSCode digital employee. It serves a friendly, mobile-first chat at `/chat`, a
+raw diagnostic view at `/debug`, scheduled-task execution, and the optional Chat Provider binding.
+The two browser clients in `static/app.js` and `static/chat.js` call the adapter's REST endpoints
+with `fetch` and subscribe to its SSE event stream with `EventSource`. `static/` also holds the two
+page implementations and the vendored `termino.js`.
 
 ## Run
 
@@ -28,6 +29,11 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 | `CORS_ORIGINS` | — | Comma-separated exact HTTP(S) origins allowed to call `/health` and `/v1/*`. Wildcards are rejected; `/share/*` remains unavailable to cross-origin JavaScript |
+| `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with the other required `IM_WECOM_*` values enables the one-group Chat Provider |
+| `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
+| `IM_WECOM_GROUP_CHAT_ID` | — | The one fixed WeCom group bound to this container; other groups are ignored |
+| `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` anywhere in text |
+| `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
 
 ## Headless Chat Provider composition
 
@@ -37,18 +43,103 @@ supplies the one fixed `groupChatId`. The Server binds it to the first configure
 the shared `SessionPort`; receiving a Provider message lazily activates the same Session used by the
 browser clients.
 
-The binding adds no HTTP routes and is removed when the Server closes. Provider transport,
-credentials, protocol startup, and the first real IM implementation remain outside the Web UI
-Server composition boundary.
+The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
+`@thinkany/dscode-wecom` package, when all required `IM_WECOM_*` values are configured. It uses the official
+[`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk) WebSocket long connection;
+the SDK owns authentication, heartbeat, reconnect, and frame acknowledgements. The Provider only
+accepts text messages from the configured group that contain the exact `@BOT_NAME` mention, ignores quotes,
+ordinary/single-chat messages, other groups, other bots, and unsupported message types, then strips
+the exact `@BOT_NAME` mention before handing the message to the provider-neutral Chat Client. Replies use the
+original callback frame as a final stream response; scheduled group output uses a new Markdown
+message. WeCom text delivery is capped at 20,480 UTF-8 bytes; an oversized output is treated as a
+permanent delivery failure and remains visible in the Web UI Session.
+
+The mention must be inserted with WeCom's mention picker. Pasting ordinary text that visibly contains
+`@BOT_NAME` does not create a platform mention, so WeCom does not send a WebSocket callback and the Provider
+cannot process it. Matching `@BOT_NAME` anywhere in `text.content` applies only after such a callback exists.
+
+The implementation and discovery command live in `packages/wecom`; the Web UI keeps the SDK as a
+runtime dependency because the server bundle intentionally leaves third-party imports external.
+
+The binding adds no HTTP routes and is removed when the Server closes. If none of the required
+WeCom variables are set, the Provider remains disabled. Partial configuration fails Server startup
+instead of silently starting an unusable connection.
+
+### Discovering the WeCom group ID
+
+The normal Server requires `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, `IM_WECOM_GROUP_CHAT_ID`, and
+`IM_WECOM_BOT_NAME`. If the group ID is not known yet, build the WeCom package and run the
+standalone discovery command with the Bot ID, Secret, and Bot Name:
+
+```sh
+pnpm --dir packages/wecom build
+IM_WECOM_BOT_ID='<wecom bot id>' \
+IM_WECOM_SECRET='<wecom bot secret>' \
+IM_WECOM_BOT_NAME='<wecom bot display name>' \
+pnpm wecom-discover
+```
+
+The command connects to the WeCom WebSocket, waits for one text message containing a real, picker-inserted
+exact `@BOT_NAME` mention in the target group, prints `IM_WECOM_GROUP_CHAT_ID=<chatid>`, and exits. It does not reply,
+start a DSCode Session, invoke an Agent, or write configuration. Copy that value into the normal
+Server environment before starting it. Use `--timeout <seconds>` to change the five-minute wait.
+
+The same artifact is included in the production Docker image. Run it as a one-shot command before
+starting the normal Server when the group ID is not known yet:
+
+```sh
+docker run --rm --entrypoint node \
+  -e IM_WECOM_BOT_ID='<wecom bot id>' \
+  -e IM_WECOM_SECRET='<wecom bot secret>' \
+  -e IM_WECOM_BOT_NAME='<wecom bot display name>' \
+  dscode-server packages/wecom/dist/wecom-discover.js
+```
 
 ## Scheduled tasks
 
 The Server watches the first workspace's `.dscode/schedules.yaml` and writes scheduler-owned
 runtime state to `.dscode/schedules.status.json`. Both one-time and Croner-native recurring tasks
 run through the same shared Session as browser and Provider requests. `delivery: session` keeps the
-result in Web UI; `delivery: group` additionally registers completed output with the optional
-Headless Chat Client. There is no task CRUD route, central queue, persistent delivery outbox, or
-restart catch-up.
+result in Web UI; `delivery: group` additionally sends completed output to the configured group when
+an IM Provider is available. The source file has this shape:
+
+```yaml
+version: 1
+tasks:
+  - id: contract-reminder
+    enabled: true
+    type: once
+    at: "2026-08-26T09:00:00+08:00"
+    delivery: session
+    prompt: |
+      提醒我跟进合同签署。
+
+  - id: weekday-report
+    enabled: true
+    type: cron
+    cron: "0 18 * * 1-5"
+    delivery: group
+    prompt: |
+      检查今天的工作情况并给出总结。
+```
+
+The built-in `scheduled-tasks` skill edits this file when a user asks the Agent to manage a task. It
+uses `session` for Web UI requests and `group` for group requests unless the user explicitly chooses
+otherwise, and reads the status file before confirming a change. It does not expose internal IDs or
+Cron expressions in ordinary confirmations.
+
+Use `type: once` with an RFC 3339 timestamp containing `Z` or an explicit offset, or `type: cron` with
+Croner's native syntax. Recurring tasks inherit the configured `TZ`; occurrences must be at least five
+minutes apart. The file accepts at most 100 tasks, prompts are limited to 32 KiB, and IDs use lowercase
+letters, digits, and hyphens with a 64-character limit. Invalid files are rejected as a whole, while
+the previous valid configuration keeps running. A finite recurring schedule becomes disabled when it
+has no future occurrence; an expired one-time task remains in the file after it is consumed.
+
+There is no task CRUD route, central queue, or persistent delivery outbox. Missed occurrences are not
+replayed after restart, downtime, or a late callback; an overlapping recurring occurrence is skipped.
+Submission retries are bounded, accepted Turns are not rerun, and failures do not produce periodic
+group notifications. A `group` task still executes without a configured Provider, with its result
+remaining in the Web UI. The full product rules are in [docs/AI_WORKER.md](../../docs/AI_WORKER.md).
 
 ## Workspaces as a secret
 
@@ -73,6 +164,11 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
 
 # Run (yolo + volumes + security).
+# To enable WeCom, add all four options below to this command:
+#   -e IM_WECOM_BOT_ID='<wecom bot id>'
+#   -e IM_WECOM_SECRET='<wecom bot secret>'
+#   -e IM_WECOM_GROUP_CHAT_ID='<fixed group chat id>'
+#   -e IM_WECOM_BOT_NAME='<wecom bot display name>'
 DSCODE_PROMPT_PROFILE=steve
 docker run -d --name dscode \
   -p 8899:8899 \
@@ -269,7 +365,13 @@ see each other's input: the `running` turn event carries the submitted message, 
 page skips only its own (matched by `clientId`). Thinking and compaction show as transient indicators, and the agent's
 live working status counts up in the disabled input line (the TUI's
 "esc to interrupt" suffix becomes " · Stop to interrupt"). The Stop button aborts
-the running turn. Refreshing the page reattaches and re-renders. 
+the running turn. Refreshing the page reattaches and re-renders.
+
+The friendly `/chat/<workspaceId>` view hides internal protocol markers: group-originated user
+messages show a group source badge (and sender name when available), while scheduled-task messages
+appear as centered event cards without task IDs, Cron expressions, or run metadata. The diagnostic
+`/debug/<workspaceId>` view keeps the raw events and technical details. Both views attach to the same
+workspace Session, so a task or group message is visible in the shared conversation.
 
 ## Input behavior
 
@@ -279,7 +381,6 @@ inserts a newline.
 
 ## v1 limitations
 
-- Plain-text rendering — assistant markdown is shown raw.
 - Input is disabled while a turn runs; dialogs and the Stop button are the only
   interactions mid-turn.
 - One attached session at a time (matches the adapter's one-session-per-workspace rule).

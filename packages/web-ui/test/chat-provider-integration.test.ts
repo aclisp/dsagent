@@ -7,6 +7,7 @@ import {
   BUSY_REPLY,
   type ChatDeliveryResult,
   type ChatMessageHandlingResult,
+  type ChatProvider,
   type InboundGroupMessage,
 } from "@thinkany/dscode-chat-client";
 import {
@@ -16,7 +17,6 @@ import {
   type HttpUiBroker,
   type HttpUiBrokerListener,
 } from "@thinkany/dscode-http-adapter";
-import type { WebUiChatProvider } from "../src/chat-provider.js";
 import { createWebUiServer } from "../src/web-ui-server.js";
 
 interface Deferred<T> {
@@ -68,10 +68,12 @@ class ControlledHost implements HttpAdapterServerHost {
   }
 }
 
-class FakeChatProvider implements WebUiChatProvider {
+class FakeChatProvider implements ChatProvider {
   readonly groupChatId = "bound-group";
   readonly replies: Array<{ messageId: string; text: string }> = [];
   readonly sends: Array<{ groupChatId: string; text: string }> = [];
+  startCalls = 0;
+  disposeCalls = 0;
   private readonly listeners = new Set<
     (message: InboundGroupMessage) => Promise<ChatMessageHandlingResult>
   >();
@@ -105,6 +107,14 @@ class FakeChatProvider implements WebUiChatProvider {
 
   get listenerCount(): number {
     return this.listeners.size;
+  }
+
+  start(): void {
+    this.startCalls += 1;
+  }
+
+  dispose(): void {
+    this.disposeCalls += 1;
   }
 }
 
@@ -327,9 +337,11 @@ tasks:
     );
     expect(withProvider.factoryCalls).toEqual([]);
     expect(provider.listenerCount).toBe(1);
+    expect(provider.startCalls).toBe(1);
 
     await withProvider.server.close();
     expect(provider.listenerCount).toBe(0);
+    expect(provider.disposeCalls).toBe(1);
     await expect(provider.emit(inbound())).rejects.toThrow("not bound");
   });
 });

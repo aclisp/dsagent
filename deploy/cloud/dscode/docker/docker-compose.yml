@@ -30,6 +30,11 @@ services:
       DSCODE_SUBAGENT_DEPTH: "1"
       DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
       CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
+      IM_WECOM_BOT_ID: "${IM_WECOM_BOT_ID:-}"
+      IM_WECOM_SECRET: "${IM_WECOM_SECRET:-}"
+      IM_WECOM_GROUP_CHAT_ID: "${IM_WECOM_GROUP_CHAT_ID:-}"
+      IM_WECOM_BOT_NAME: "${IM_WECOM_BOT_NAME:-}"
+      IM_WECOM_WS_URL: "${IM_WECOM_WS_URL:-}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
     volumes:
       - type: bind

@@ -1,26 +1,15 @@
 import {
   createHeadlessChatClient,
   type ChatClientLogger,
-  type ChatDelivery,
-  type ChatMessageHandlingResult,
-  type InboundGroupMessage,
+  type ChatProvider,
   type ProactiveDeliveryListener,
 } from "@thinkany/dscode-chat-client";
 import type { SessionPort } from "@thinkany/dscode-http-adapter/session-port";
 
-export type WebUiChatProviderListener = (
-  message: InboundGroupMessage,
-) => Promise<ChatMessageHandlingResult>;
-
-export interface WebUiChatProvider extends ChatDelivery {
-  readonly groupChatId: string;
-  subscribe(listener: WebUiChatProviderListener): () => void;
-}
-
 export interface BindWebUiChatProviderOptions {
   workspaceId: string;
   sessionPort: SessionPort;
-  provider: WebUiChatProvider;
+  provider: ChatProvider;
   logger?: ChatClientLogger;
 }
 

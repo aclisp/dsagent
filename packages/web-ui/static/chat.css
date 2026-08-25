@@ -307,6 +307,18 @@ button {
   display: none;
 }
 
+.message-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  color: #5f8256;
+  background: rgb(81 125 69 / 10%);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .message-state {
   margin-left: 6px;
   color: #c33f3f;

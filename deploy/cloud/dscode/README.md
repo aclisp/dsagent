@@ -131,6 +131,13 @@ VISION_MODEL=<vision-capable-openrouter-model-id>
 
 DSCODE_PROMPT_PROFILE=<profile-directory-name>
 CHAT_AGENT_NAME=<display-name>
+
+# Optional WeCom smart-bot provider (all four required values enable it)
+# IM_WECOM_BOT_ID=<wecom-bot-id>
+# IM_WECOM_SECRET=<wecom-bot-secret>
+# IM_WECOM_GROUP_CHAT_ID=<fixed-group-chat-id>
+# IM_WECOM_BOT_NAME=<display-name-used-in-@-mentions>
+# IM_WECOM_WS_URL=wss://openws.work.weixin.qq.com
 ```
 
 Generate a suitable workspace ID with:
@@ -146,6 +153,26 @@ channel.
 `TZ` must be an explicit valid IANA timezone. It controls recurring schedules and is required even
 when no tasks currently exist; changing it changes the wall-clock interpretation of every Cron
 task.
+
+When the four required `IM_WECOM_*` values are present, the container opens the WeCom smart-bot
+WebSocket long connection and binds exactly one group. `IM_WECOM_SECRET` is a credential and must
+be kept in the private `docker/.env` file; `IM_WECOM_BOT_NAME` is the exact display name used to
+find and remove the `@BOT_NAME` mention anywhere in a message.
+
+If the group `chatid` is not known yet, use the one-shot discovery command from the built image
+before starting Compose:
+
+```sh
+docker run --rm --entrypoint node \
+  -e IM_WECOM_BOT_ID='<wecom-bot-id>' \
+  -e IM_WECOM_SECRET='<wecom-bot-secret>' \
+  -e IM_WECOM_BOT_NAME='<wecom-bot-display-name>' \
+  dscode-server packages/wecom/dist/wecom-discover.js
+```
+
+Mention the bot once in the target group. The command prints `IM_WECOM_GROUP_CHAT_ID=<chatid>` and
+exits without replying or starting the DSCode Server; copy that value into `docker/.env` before
+starting Compose.
 
 ## 4. Start or update the service
 

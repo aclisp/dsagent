@@ -4,11 +4,11 @@ import {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
 } from "@thinkany/dscode-http-adapter";
+import type { ChatProvider } from "@thinkany/dscode-chat-client";
 import type { FastifyInstance } from "fastify";
 import { renderChatPage } from "./chat-page.js";
 import {
   bindWebUiChatProvider,
-  type WebUiChatProvider,
 } from "./chat-provider.js";
 import { registerFileRoutes } from "./files.js";
 import {
@@ -21,7 +21,7 @@ export interface CreateWebUiServerOptions
   chatAgentName: string;
   maxUploadBytes: number;
   timezone: string;
-  chatProvider?: WebUiChatProvider;
+  chatProvider?: ChatProvider;
 }
 
 const staticFile = (name: string): Promise<Buffer> =>
@@ -120,8 +120,15 @@ export async function createWebUiServer(
           sessionPort,
           provider: chatProvider,
         });
+  let providerDisposed = false;
+  const disposeProvider = async (): Promise<void> => {
+    if (providerDisposed) return;
+    providerDisposed = true;
+    await chatProvider?.dispose?.();
+  };
   let scheduler: Awaited<ReturnType<typeof createTaskScheduler>>;
   try {
+    await chatProvider?.start?.();
     scheduler = await createTaskScheduler({
       workspaceId: firstWorkspaceId,
       workspacePath: firstWorkspacePath,
@@ -131,14 +138,28 @@ export async function createWebUiServer(
       ...(binding !== undefined ? { groupDelivery: binding } : {}),
     });
   } catch (error) {
-    binding?.dispose();
-    await server.close();
+    try {
+      binding?.dispose();
+    } finally {
+      try {
+        await disposeProvider();
+      } finally {
+        await server.close();
+      }
+    }
     throw error;
   }
 
   server.addHook("preClose", async () => {
-    await scheduler.dispose();
-    binding?.dispose();
+    try {
+      await scheduler.dispose();
+    } finally {
+      try {
+        binding?.dispose();
+      } finally {
+        await disposeProvider();
+      }
+    }
   });
 
   return server;

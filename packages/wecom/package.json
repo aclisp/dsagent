@@ -1,26 +1,29 @@
 {
-  "name": "@thinkany/dscode-web-ui",
+  "name": "@thinkany/dscode-wecom",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./dist/server.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./discover": {
+      "types": "./dist/wecom-discover.d.ts",
+      "import": "./dist/wecom-discover.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "wecom-discover": "node dist/wecom-discover.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "catalog:",
-    "@fastify/multipart": "catalog:",
     "@thinkany/dscode-chat-client": "workspace:*",
-    "@thinkany/dscode-http-adapter": "workspace:*",
-    "@thinkany/dscode-wecom": "workspace:*",
-    "@wecom/aibot-node-sdk": "catalog:",
-    "croner": "catalog:",
-    "fastify": "catalog:",
-    "marked": "catalog:",
-    "yaml": "catalog:"
+    "@wecom/aibot-node-sdk": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

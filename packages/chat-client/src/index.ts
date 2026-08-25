@@ -6,6 +6,8 @@ export {
   type ChatDelivery,
   type ChatDeliveryResult,
   type ChatMessageHandlingResult,
+  type ChatProvider,
+  type ChatProviderListener,
   type CreateHeadlessChatClientOptions,
   type HeadlessChatClient,
   type InboundGroupMessage,

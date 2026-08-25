@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import process from "node:process";
+import { createWeComChatProviderFromEnv } from "@thinkany/dscode-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
 import { createWebUiServer } from "./web-ui-server.js";
 import { parseWorkspaces } from "./workspaces.js";
@@ -26,6 +27,7 @@ const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
 const corsOrigins = process.env.CORS_ORIGINS?.trim()
   ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
   : undefined;
+const chatProvider = createWeComChatProviderFromEnv();
 
 const server = await createWebUiServer({
   workspaces,
@@ -37,6 +39,7 @@ const server = await createWebUiServer({
   timezone,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
+  ...(chatProvider !== undefined ? { chatProvider } : {}),
 });
 
 const host = process.env.HOST ?? "127.0.0.1";
