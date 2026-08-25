@@ -136,8 +136,10 @@ const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
-  ".yaml": "application/yaml",
-  ".yml": "application/yaml",
+  // Browsers do not provide a built-in viewer for application/yaml. Serve YAML
+  // as safe plain text so inline share links render instead of downloading.
+  ".yaml": "text/plain; charset=utf-8",
+  ".yml": "text/plain; charset=utf-8",
   ".webmanifest": "application/manifest+json",
   ".wasm": "application/wasm",
   ".woff": "font/woff",

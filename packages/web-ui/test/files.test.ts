@@ -158,6 +158,22 @@ describe("workspace file routes", () => {
     expect(response.headers["content-type"]).toContain("text/plain");
   });
 
+  it("serves YAML files inline as plain text", async () => {
+    const { server, workspace } = await setupServer();
+    await writeFile(path.join(workspace, "uploads", "schedules.yaml"), "version: 1\n");
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/share/ws/uploads/schedules.yaml",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe("version: 1\n");
+    expect(response.headers["content-disposition"]).toContain("inline");
+    expect(response.headers["content-type"]).toContain("text/plain");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
   it("serves HTML pages inline with the HTML content type", async () => {
     const { server, workspace } = await setupServer();
     for (const name of ["page.html", "page.htm"]) {
