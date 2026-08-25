@@ -17,6 +17,12 @@ if (!timezone?.trim()) {
 for (const cwd of Object.values(workspaces)) {
   await mkdir(cwd, { recursive: true });
 }
+const firstWorkspaceId = Object.keys(workspaces)[0];
+const firstWorkspacePath =
+  firstWorkspaceId === undefined ? undefined : workspaces[firstWorkspaceId];
+if (firstWorkspacePath === undefined) {
+  throw new Error("WORKSPACES resolved to no workspaces");
+}
 
 const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
   ? process.env.RUNTIME_ARGS.trim().split(/\s+/)
@@ -27,7 +33,10 @@ const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
 const corsOrigins = process.env.CORS_ORIGINS?.trim()
   ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
   : undefined;
-const chatProvider = createWeComChatProviderFromEnv();
+const chatProvider = createWeComChatProviderFromEnv(process.env, {
+  workspacePath: firstWorkspacePath,
+  maxUploadBytes,
+});
 
 const server = await createWebUiServer({
   workspaces,

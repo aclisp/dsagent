@@ -46,13 +46,31 @@ browser clients.
 The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
 `@thinkany/dscode-wecom` package, when all required `IM_WECOM_*` values are configured. It uses the official
 [`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk) WebSocket long connection;
-the SDK owns authentication, heartbeat, reconnect, and frame acknowledgements. The Provider only
-accepts text messages from the configured group that contain the exact `@BOT_NAME` mention, ignores quotes,
-ordinary/single-chat messages, other groups, other bots, and unsupported message types, then strips
-the exact `@BOT_NAME` mention before handing the message to the provider-neutral Chat Client. Replies use the
-original callback frame as a final stream response; scheduled group output uses a new Markdown
-message. WeCom text delivery is capped at 20,480 UTF-8 bytes; an oversized output is treated as a
-permanent delivery failure and remains visible in the Web UI Session.
+the SDK owns authentication, heartbeat, reconnect, frame acknowledgements, media decryption, and
+media upload. The Provider accepts text messages and supported `mixed` messages from the configured
+group that contain the exact `@BOT_NAME` mention, ignores ordinary/single-chat messages, other groups,
+other bots, and unsupported message types, then strips the exact `@BOT_NAME` mention before handing the
+message to the provider-neutral Chat Client. Incoming mixed images and supported quoted images/files are
+downloaded immediately into the workspace's `uploads/` directory and represented with the same
+`[Uploaded files: ...]` prompt marker used by the Chat UI. Replies use the original callback frame as a
+final stream response; scheduled group output uses a new Markdown message. WeCom text delivery is capped
+at 20,480 UTF-8 bytes; an oversized output is treated as a permanent delivery failure and remains visible
+in the Web UI Session. Before either text delivery path, DSCode bearer URLs (`/chat/<workspaceId>`,
+`/debug/<workspaceId>`, `/share/<workspaceId>/...`, and workspace-scoped query URLs) are replaced with
+`[私密链接已隐藏]`; ordinary external URLs remain unchanged.
+
+WeCom's protocol does not deliver standalone image/file callbacks for group chats; those message types are
+documented as single-chat-only. The first version therefore supports group images through `mixed` messages
+and group attachments through supported quoted media. A direct group file upload that produces no callback
+cannot be recovered by the server. Incoming media is capped by `MAX_UPLOAD_BYTES` (100 MiB by default),
+and files remain in `uploads/` with the same persistence semantics as browser uploads.
+
+When an assistant explicitly cites a workspace-relative file in backticks (for example
+`` `reports/result.pdf` ``), the WeCom Provider uploads and sends that file after the text response.
+Only explicitly cited files inside the current workspace are eligible; it never scans the workspace.
+Outbound media is best-effort, limited to five files per response, and bounded by the WeCom SDK's roughly
+50 MiB upload limit. Text delivery remains authoritative, so a failed attachment does not cause the text
+response to be retried or add a failure notice to the group.
 
 The mention must be inserted with WeCom's mention picker. Pasting ordinary text that visibly contains
 `@BOT_NAME` does not create a platform mention, so WeCom does not send a WebSocket callback and the Provider

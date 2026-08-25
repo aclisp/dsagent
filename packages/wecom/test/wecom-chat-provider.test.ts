@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import type { WSClientOptions } from "@wecom/aibot-node-sdk";
 import type {
   ChatMessageHandlingResult,
@@ -26,8 +29,20 @@ class FakeWeComClient {
     chatId: string;
     body: { msgtype: "markdown"; markdown: { content: string } };
   }> = [];
+  readonly downloadFileCalls: Array<{ url: string; aesKey: string | undefined }> = [];
+  readonly uploadMediaCalls: Array<{
+    buffer: Buffer;
+    options: { type: "image" | "file"; filename: string };
+  }> = [];
+  readonly sendMediaMessageCalls: Array<{
+    chatId: string;
+    mediaType: "image" | "file";
+    mediaId: string;
+  }> = [];
   replyError: unknown;
   sendError: unknown;
+  downloadError: unknown;
+  uploadError: unknown;
   private connects = 0;
   private disconnects = 0;
   private readonly listeners = new Map<string, Set<Listener>>();
@@ -83,6 +98,44 @@ class FakeWeComClient {
       : Promise.reject(this.sendError);
   }
 
+  downloadFile(url: string, aesKey?: string): Promise<{ buffer: Buffer; filename?: string }> {
+    this.downloadFileCalls.push({ url, aesKey });
+    if (this.downloadError !== undefined) {
+      return Promise.reject(this.downloadError);
+    }
+    if (url.includes("image")) {
+      return Promise.resolve({
+        buffer: Buffer.from([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ]),
+        filename: "photo.png",
+      });
+    }
+    return Promise.resolve({
+      buffer: Buffer.from("report"),
+      filename: "report.pdf",
+    });
+  }
+
+  uploadMedia(
+    buffer: Buffer,
+    options: { type: "image" | "file"; filename: string },
+  ): Promise<{ media_id: string }> {
+    this.uploadMediaCalls.push({ buffer, options });
+    return this.uploadError === undefined
+      ? Promise.resolve({ media_id: `media-${this.uploadMediaCalls.length}` })
+      : Promise.reject(this.uploadError);
+  }
+
+  sendMediaMessage(
+    chatId: string,
+    mediaType: "image" | "file",
+    mediaId: string,
+  ): Promise<unknown> {
+    this.sendMediaMessageCalls.push({ chatId, mediaType, mediaId });
+    return Promise.resolve({});
+  }
+
   emit(event: string, ...args: unknown[]): void {
     for (const listener of this.listeners.get(event) ?? []) {
       listener(...args);
@@ -110,7 +163,7 @@ function frame(
   };
 }
 
-function createHarness(options: { botName?: string } = {}): {
+function createHarness(options: { botName?: string; workspacePath?: string } = {}): {
   client: FakeWeComClient;
   provider: WeComChatProvider;
 } {
@@ -120,6 +173,10 @@ function createHarness(options: { botName?: string } = {}): {
     secret: "secret-1",
     groupChatId: "group-1",
     botName: options.botName ?? "Steve",
+    ...(options.workspacePath !== undefined
+      ? { workspacePath: options.workspacePath }
+      : {}),
+    logger: { error() {} },
     clientFactory: () => client as unknown as WeComClient,
   });
   return { client, provider };
@@ -139,6 +196,15 @@ async function collectMessage(
   client.emit("message.text", messageFrame);
   await Promise.resolve();
   return messages;
+}
+
+async function waitForAsyncMessage(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await Promise.resolve();
+}
+
+async function createTempWorkspace(): Promise<string> {
+  return mkdtemp(path.join(os.tmpdir(), "dscode-wecom-provider-"));
 }
 
 describe("WeCom Chat Provider", () => {
@@ -174,7 +240,6 @@ describe("WeCom Chat Provider", () => {
       frame("请检查"),
       frame("@Other 请检查"),
       frame("请 @Other 检查"),
-      frame("@Steve 引用检查", { quote: { msgtype: "text" } }),
       frame("@Steve 私聊", { chattype: "single" }),
       frame("@Steve 其他群", { chatid: "other-group" }),
       frame("@Steve 其他机器人", { aibotid: "other-bot" }),
@@ -188,6 +253,143 @@ describe("WeCom Chat Provider", () => {
 
     expect(messages).toEqual([]);
     provider.dispose();
+  });
+
+  it("downloads mixed group images and exposes the Chat UI attachment marker", async () => {
+    const workspace = await createTempWorkspace();
+    const { client, provider } = createHarness({ workspacePath: workspace });
+    const messages: InboundGroupMessage[] = [];
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+    client.emit(
+      "message.mixed",
+      frame("ignored", {
+        msgtype: "mixed",
+        mixed: {
+          msg_item: [
+            {
+              msgtype: "text",
+              text: { content: "请 @Steve 读这张图" },
+            },
+            {
+              msgtype: "image",
+              image: { url: "https://example.invalid/image", aeskey: "aes-1" },
+            },
+          ],
+        },
+        quote: {
+          msgtype: "text",
+          text: { content: "引用的上下文" },
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(messages).toHaveLength(1));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-photo\.png\]\n请 读这张图$/u,
+    );
+    expect(client.downloadFileCalls).toEqual([
+      { url: "https://example.invalid/image", aesKey: "aes-1" },
+    ]);
+    const storedPath = messages[0]?.text.match(/(uploads\/[^\]]+)/u)?.[1];
+    expect(storedPath).toBeDefined();
+    await expect(
+      readFile(path.join(workspace, storedPath as string)),
+    ).resolves.toHaveLength(8);
+    provider.dispose();
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("accepts a quoted group file and continues with an attachment failure note", async () => {
+    const workspace = await createTempWorkspace();
+    const { client, provider } = createHarness({ workspacePath: workspace });
+    const messages: InboundGroupMessage[] = [];
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+    client.emit(
+      "message.text",
+      frame("@Steve 总结引用的文件", {
+        quote: {
+          msgtype: "file",
+          file: { url: "https://example.invalid/file", aeskey: "aes-2" },
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(messages).toHaveLength(1));
+    expect(messages[0]?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf\]\n总结引用的文件$/u,
+    );
+
+    client.downloadError = new Error("temporary download failure");
+    client.emit(
+      "message.text",
+      frame("@Steve 再试一次", {
+        msgid: "message-2",
+        quote: {
+          msgtype: "file",
+          file: { url: "https://example.invalid/file-2" },
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(messages).toHaveLength(2));
+    expect(messages[1]?.text).toBe(
+      "再试一次\n\n文件附件下载失败，请基于可用内容继续处理。",
+    );
+    provider.dispose();
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("delivers explicitly cited artifacts after text without making media failure retryable", async () => {
+    const workspace = await createTempWorkspace();
+    await import("node:fs/promises").then(({ mkdir }) =>
+      mkdir(path.join(workspace, "uploads"), { recursive: true }),
+    );
+    await writeFile(path.join(workspace, "uploads", "result.pdf"), "result");
+    const { client, provider } = createHarness({ workspacePath: workspace });
+    await collectMessage(provider, client, frame());
+
+    await expect(provider.reply("message-1", "结果见 `uploads/result.pdf`")).resolves.toEqual({
+      status: "delivered",
+    });
+    expect(client.replyStreamCalls[0]?.content).toBe(
+      "结果见 `uploads/result.pdf`",
+    );
+    expect(client.uploadMediaCalls).toHaveLength(1);
+    expect(client.uploadMediaCalls[0]?.options).toEqual({
+      type: "file",
+      filename: "result.pdf",
+    });
+    expect(client.sendMediaMessageCalls).toEqual([
+      { chatId: "group-1", mediaType: "file", mediaId: "media-1" },
+    ]);
+    await expect(
+      provider.send("group-1", "定时结果见 `uploads/result.pdf`"),
+    ).resolves.toEqual({ status: "delivered" });
+    expect(client.sendMessageCalls.at(-1)?.body.markdown.content).toBe(
+      "定时结果见 `uploads/result.pdf`",
+    );
+    expect(client.sendMediaMessageCalls.at(-1)).toEqual({
+      chatId: "group-1",
+      mediaType: "file",
+      mediaId: "media-2",
+    });
+
+    const second = createHarness({ workspacePath: workspace });
+    await collectMessage(second.provider, second.client, frame("@Steve 再做一次"));
+    second.client.uploadError = new Error("upload failed");
+    await expect(
+      second.provider.reply("message-1", "结果见 `uploads/result.pdf`"),
+    ).resolves.toEqual({ status: "delivered" });
+    second.provider.dispose();
+    provider.dispose();
+    await rm(workspace, { recursive: true, force: true });
   });
 
   it("uses the original frame for replies and the fixed group for proactive sends", async () => {
@@ -217,6 +419,28 @@ describe("WeCom Chat Provider", () => {
     await expect(provider.reply("unknown", "重试")).resolves.toEqual({
       status: "permanent_failure",
     });
+    provider.dispose();
+  });
+
+  it("redacts private Web UI URLs before sending reply or proactive text", async () => {
+    const { client, provider } = createHarness();
+    await collectMessage(provider, client, frame());
+    const text =
+      "结果见 https://example.com/share/k9x7q2m4v8w1z5t3/uploads/result.pdf；文档说明见 https://example.com/docs。";
+
+    await expect(provider.reply("message-1", text)).resolves.toEqual({
+      status: "delivered",
+    });
+    expect(client.replyStreamCalls[0]?.content).toBe(
+      "结果见 [私密链接已隐藏]；文档说明见 https://example.com/docs。",
+    );
+
+    await expect(provider.send("group-1", text)).resolves.toEqual({
+      status: "delivered",
+    });
+    expect(client.sendMessageCalls[0]?.body.markdown.content).toBe(
+      "结果见 [私密链接已隐藏]；文档说明见 https://example.com/docs。",
+    );
     provider.dispose();
   });
 
