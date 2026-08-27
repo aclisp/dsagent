@@ -14,3 +14,17 @@ export {
   type ProactiveDeliveryEvent,
   type ProactiveDeliveryListener,
 } from "./chat-client.js";
+export {
+  ConversationAliasRegistry,
+  ConversationAliasRegistryError,
+  createConversationAliasRegistry,
+  type ConversationAddress,
+  type ConversationAliasRegistryErrorReason,
+  type ConversationAliasRegistryOptions,
+  type ConversationReference,
+  type ConversationResolution,
+  type ConversationType,
+  type SenderAddress,
+  type SenderReference,
+  type SenderResolution,
+} from "./conversation-registry.js";
