@@ -101,7 +101,6 @@ export interface WeComChatProviderLogger {
 export interface CreateWeComChatProviderOptions {
   botId: string;
   secret: string;
-  groupChatId: string;
   botName: string;
   wsUrl?: string;
   workspacePath?: string;
@@ -152,51 +151,16 @@ function nonBlankText(value: unknown): string | undefined {
 }
 
 /**
- * Convert a raw SDK message into the provider-neutral group message. The
- * WeCom protocol keeps the visible @ mention in text.content. The configured
- * bot name is required because the mention may occur anywhere in the text.
+ * Convert a raw SDK message into the provider-neutral conversation message.
+ * The WeCom protocol keeps the visible @ mention in text.content. The
+ * configured bot name is required for group messages because the mention may
+ * occur anywhere in the text.
  */
 export function normalizeWeComMessage(
   frame: WeComMessageFrame,
   options: Pick<CreateWeComChatProviderOptions, "botId" | "botName">,
 ): InboundChatMessage | undefined {
-  if (nonBlankText(frame.headers?.req_id) === undefined) return undefined;
-  const body = frame.body;
-  if (!body || body.msgtype !== "text") return undefined;
-  if (body.aibotid !== options.botId) return undefined;
-  if (body.chattype !== "group") return undefined;
-  if (body.quote !== undefined) return undefined;
-
-  const messageId = nonBlankText(body.msgid);
-  const conversationId = nonBlankText(body.chatid);
-  const senderId = nonBlankText(body.from?.userid);
-  const content = nonBlankText(body.text?.content);
-  if (
-    messageId === undefined ||
-    conversationId === undefined ||
-    senderId === undefined ||
-    content === undefined
-  ) {
-    return undefined;
-  }
-  if (senderId === options.botId || senderId === body.aibotid) return undefined;
-
-  const parsedMention = parseWeComBotMention(content, options.botName);
-  if (!parsedMention.matched) return undefined;
-  const text = parsedMention.text;
-  if (text.length === 0) return undefined;
-
-  return {
-    dedupeKey: messageId,
-    messageId,
-    conversation: {
-      providerId: "wecom",
-      type: "group",
-      address: conversationId,
-    },
-    sender: { providerId: "wecom", address: senderId },
-    text,
-  };
+  return parseWeComInboundMessage(frame, options)?.message;
 }
 
 interface ParsedWeComInboundMessage {
@@ -204,34 +168,42 @@ interface ParsedWeComInboundMessage {
   media: WeComMediaReference[];
 }
 
-interface GroupMessageIdentity {
+interface MessageIdentity {
   body: WeComMessageBody;
   messageId: string;
   senderId: string;
-  conversationId: string;
+  conversation: ChatConversation;
 }
 
-function groupMessageIdentity(
+function messageIdentity(
   frame: WeComMessageFrame,
   options: Pick<CreateWeComChatProviderOptions, "botId">,
-): GroupMessageIdentity | undefined {
+): MessageIdentity | undefined {
   if (nonBlankText(frame.headers?.req_id) === undefined) return undefined;
   const body = frame.body;
   if (!body || body.aibotid !== options.botId) return undefined;
-  if (body.chattype !== "group") return undefined;
-
-  const messageId = nonBlankText(body.msgid);
-  const conversationId = nonBlankText(body.chatid);
-  const senderId = nonBlankText(body.from?.userid);
-  if (
-    messageId === undefined ||
-    conversationId === undefined ||
-    senderId === undefined
-  ) {
+  if (body.chattype !== "group" && body.chattype !== "single") {
     return undefined;
   }
+
+  const messageId = nonBlankText(body.msgid);
+  const senderId = nonBlankText(body.from?.userid);
+  if (messageId === undefined || senderId === undefined) return undefined;
   if (senderId === options.botId || senderId === body.aibotid) return undefined;
-  return { body, messageId, senderId, conversationId };
+
+  const conversationId =
+    body.chattype === "group" ? nonBlankText(body.chatid) : senderId;
+  if (conversationId === undefined) return undefined;
+  return {
+    body,
+    messageId,
+    senderId,
+    conversation: {
+      providerId: "wecom",
+      type: body.chattype === "group" ? "group" : "direct",
+      address: conversationId,
+    },
+  };
 }
 
 function mediaReference(
@@ -311,24 +283,30 @@ function parseWeComInboundMessage(
   frame: WeComMessageFrame,
   options: Pick<CreateWeComChatProviderOptions, "botId" | "botName">,
 ): ParsedWeComInboundMessage | undefined {
-  const identity = groupMessageIdentity(frame, options);
+  const identity = messageIdentity(frame, options);
   if (identity === undefined) return undefined;
 
-  const { body, messageId, senderId, conversationId } = identity;
+  const { body, messageId, senderId, conversation } = identity;
   let textParts: string[] = [];
   let media: WeComMediaReference[] = [];
   if (body.msgtype === "text") {
     const text = nonBlankText(body.text?.content);
-    if (text === undefined) return undefined;
-    textParts = [text];
+    if (text !== undefined) textParts = [text];
   } else if (body.msgtype === "mixed") {
     const parsed = parseMixedContent(body.mixed);
     textParts = parsed.textParts;
     media = parsed.media;
     if (textParts.length === 0 && media.length === 0) return undefined;
+  } else if (
+    conversation.type === "direct" &&
+    (body.msgtype === "image" || body.msgtype === "file")
+  ) {
+    const reference = mediaReference(body.msgtype, body[body.msgtype]);
+    if (reference === undefined) return undefined;
+    media = [reference];
   } else {
-    // The official protocol only delivers standalone image/file messages in
-    // single chat. This Provider intentionally remains group-only.
+    // Standalone image/file callbacks are supported for direct chats only;
+    // voice, video, card events and unsupported group payloads are ignored.
     return undefined;
   }
 
@@ -336,24 +314,21 @@ function parseWeComInboundMessage(
   media = dedupeMediaReferences([...media, ...quoted.media]);
 
   const content = textParts.join("\n").trim();
-  const parsedMention = parseWeComBotMention(content, options.botName);
-  if (!parsedMention.matched) return undefined;
-  if (parsedMention.text.length === 0 && media.length === 0) return undefined;
+  let text = content;
+  if (conversation.type === "group") {
+    const parsedMention = parseWeComBotMention(content, options.botName);
+    if (!parsedMention.matched) return undefined;
+    text = parsedMention.text;
+  }
+  if (text.length === 0 && media.length === 0) return undefined;
 
   return {
     message: {
       dedupeKey: messageId,
       messageId,
-      conversation: {
-        providerId: "wecom",
-        type: "group",
-        address: conversationId,
-      },
+      conversation,
       sender: { providerId: "wecom", address: senderId },
-      text:
-        parsedMention.text.length > 0
-          ? parsedMention.text
-          : "请查看我上传的文件",
+      text: text.length > 0 ? text : "请查看我上传的文件",
     },
     media,
   };
@@ -422,7 +397,6 @@ function textFitsWeComLimit(text: string): boolean {
 
 export class WeComChatProvider implements ChatProvider {
   readonly providerId = "wecom";
-  readonly groupChatId: string;
   private readonly botId: string;
   private readonly botName: string;
   private readonly client: WeComClient;
@@ -445,7 +419,6 @@ export class WeComChatProvider implements ChatProvider {
   constructor(options: CreateWeComChatProviderOptions) {
     this.botId = requiredOption("botId", options.botId);
     const secret = requiredOption("secret", options.secret);
-    this.groupChatId = requiredOption("groupChatId", options.groupChatId);
     this.botName = requiredOption("botName", options.botName);
     this.logger = options.logger ?? defaultLogger;
     const workspacePath = options.workspacePath?.trim();
@@ -489,6 +462,14 @@ export class WeComChatProvider implements ChatProvider {
       "message.mixed",
       this.handleMessage as unknown as EventListener,
     );
+    this.client.on(
+      "message.image",
+      this.handleMessage as unknown as EventListener,
+    );
+    this.client.on(
+      "message.file",
+      this.handleMessage as unknown as EventListener,
+    );
     this.client.on("error", this.handleClientError as EventListener);
   }
 
@@ -521,10 +502,7 @@ export class WeComChatProvider implements ChatProvider {
     if (this.disposed || !textFitsWeComLimit(safeText)) {
       return { status: "permanent_failure" };
     }
-    if (
-      target.conversation.providerId !== this.providerId ||
-      target.conversation.type !== "group"
-    ) {
+    if (target.conversation.providerId !== this.providerId) {
       return { status: "permanent_failure" };
     }
     const pending = this.pendingReplies.get(target.messageId);
@@ -563,7 +541,6 @@ export class WeComChatProvider implements ChatProvider {
     if (
       this.disposed ||
       conversation.providerId !== this.providerId ||
-      conversation.type !== "group" ||
       !textFitsWeComLimit(safeText)
     ) {
       return { status: "permanent_failure" };
@@ -594,6 +571,14 @@ export class WeComChatProvider implements ChatProvider {
     );
     this.client.off(
       "message.mixed",
+      this.handleMessage as unknown as EventListener,
+    );
+    this.client.off(
+      "message.image",
+      this.handleMessage as unknown as EventListener,
+    );
+    this.client.off(
+      "message.file",
       this.handleMessage as unknown as EventListener,
     );
     this.client.off("error", this.handleClientError as EventListener);
@@ -697,7 +682,7 @@ export class WeComChatProvider implements ChatProvider {
 
   private async deliverOutboundArtifacts(
     text: string,
-    groupChatId = this.groupChatId,
+    conversationAddress: string,
   ): Promise<void> {
     try {
       if (this.workspacePath === undefined) return;
@@ -718,7 +703,7 @@ export class WeComChatProvider implements ChatProvider {
       }
       await sendWeComOutboundArtifacts(
         uploadClient,
-        groupChatId,
+        conversationAddress,
         collected.artifacts,
         this.logger,
       );
@@ -751,20 +736,17 @@ export function createWeComChatProviderFromEnv(
 ): WeComChatProvider | undefined {
   const botId = envValue(env, "IM_WECOM_BOT_ID");
   const secret = envValue(env, "IM_WECOM_SECRET");
-  const groupChatId = envValue(env, "IM_WECOM_GROUP_CHAT_ID");
   const botName = envValue(env, "IM_WECOM_BOT_NAME");
   const wsUrl = envValue(env, "IM_WECOM_WS_URL");
   const configured =
     botId !== undefined ||
     secret !== undefined ||
-    groupChatId !== undefined ||
     botName !== undefined;
   if (!configured) return undefined;
 
   const missing = [
     ["IM_WECOM_BOT_ID", botId],
     ["IM_WECOM_SECRET", secret],
-    ["IM_WECOM_GROUP_CHAT_ID", groupChatId],
     ["IM_WECOM_BOT_NAME", botName],
   ]
     .filter(([, value]) => value === undefined)
@@ -778,7 +760,6 @@ export function createWeComChatProviderFromEnv(
   return createWeComChatProvider({
     botId: botId as string,
     secret: secret as string,
-    groupChatId: groupChatId as string,
     botName: botName as string,
     ...(wsUrl !== undefined ? { wsUrl } : {}),
     ...(runtime.workspacePath !== undefined

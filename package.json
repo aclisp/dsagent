@@ -42,7 +42,6 @@
     "build:chat-client": "pnpm --dir packages/chat-client build",
     "build:wecom": "pnpm --dir packages/wecom build",
     "build:web-ui": "pnpm --dir packages/web-ui build",
-    "wecom-discover": "pnpm --dir packages/wecom wecom-discover",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
     "build:packages": "pnpm build:core && pnpm build:http-adapter && pnpm build:chat-client && pnpm build:wecom && pnpm build:web-ui && pnpm bundle:server",

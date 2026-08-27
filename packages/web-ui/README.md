@@ -29,10 +29,9 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 | `CORS_ORIGINS` | — | Comma-separated exact HTTP(S) origins allowed to call `/health` and `/v1/*`. Wildcards are rejected; `/share/*` remains unavailable to cross-origin JavaScript |
-| `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with the other required `IM_WECOM_*` values enables the WeCom Chat Provider |
+| `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with `IM_WECOM_SECRET` and `IM_WECOM_BOT_NAME` enables the WeCom Chat Provider |
 | `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
-| `IM_WECOM_GROUP_CHAT_ID` | — | Current Slice 3 WeCom adapter configuration; it is not a Scheduler target and is removed with the remaining WeCom deployment cleanup in Slice 4 |
-| `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` anywhere in text |
+| `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` from group text |
 | `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
 
 ## Headless Chat Provider composition
@@ -45,14 +44,15 @@ alias registry and `SessionPort`; all inbound messages therefore use the same Se
 boundary while each reply remains tied to its original conversation and Provider.
 
 The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
-`@thinkany/dscode-wecom` package, when all required `IM_WECOM_*` values are configured. It uses the official
+`@thinkany/dscode-wecom` package, when `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, and `IM_WECOM_BOT_NAME` are
+configured. It uses the official
 [`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk) WebSocket long connection;
 the SDK owns authentication, heartbeat, reconnect, frame acknowledgements, media decryption, and
-media upload. The Provider accepts text messages and supported `mixed` messages from any group that
-contain the exact `@BOT_NAME` mention. This Slice keeps the concrete WeCom adapter group-only; direct-chat
-normalization is completed in Slice 4. It ignores other bots and unsupported message types, then strips
-the exact `@BOT_NAME` mention before handing the message to the provider-neutral Chat Client. Incoming
-mixed images and supported quoted images/files are
+media upload. The Provider accepts text and supported `mixed` messages from any group that contain the exact
+`@BOT_NAME` mention, plus direct text, `mixed`, image, and file messages without a mention. It ignores other
+bots and unsupported message types, then strips the exact `@BOT_NAME` mention from group messages before
+handing the message to the provider-neutral Chat Client. Incoming mixed/standalone images and supported
+quoted images/files are
 downloaded immediately into the workspace's `uploads/` directory and represented with the same
 `[Uploaded files: ...]` prompt marker used by the Chat UI. Replies use the original callback frame as a
 final stream response; source scheduled output is sent as a new Markdown message to the conversation that
@@ -62,60 +62,29 @@ in the Web UI Session. Before either text delivery path, DSCode bearer URLs (`/c
 `/debug/<workspaceId>`, `/share/<workspaceId>/...`, and workspace-scoped query URLs) are replaced with
 `[私密链接已隐藏]`; ordinary external URLs remain unchanged.
 
-WeCom's protocol does not deliver standalone image/file callbacks for group chats; those message types are
-documented as single-chat-only. The first version therefore supports group images through `mixed` messages
-and group attachments through supported quoted media. A direct group file upload that produces no callback
-cannot be recovered by the server. Incoming media is capped by `MAX_UPLOAD_BYTES` (100 MiB by default),
-and files remain in `uploads/` with the same persistence semantics as browser uploads.
+WeCom's protocol delivers standalone image/file callbacks for single chats; group images continue to use
+`mixed` messages and group attachments use supported quoted media. Incoming media is capped by
+`MAX_UPLOAD_BYTES` (100 MiB by default), and files remain in `uploads/` with the same persistence semantics
+as browser uploads.
 
 When an assistant explicitly cites a workspace-relative file in backticks (for example
 `` `reports/result.pdf` ``), the WeCom Provider uploads and sends that file after the text response.
 Only explicitly cited files inside the current workspace are eligible; it never scans the workspace.
 Outbound media is best-effort, limited to five files per response, and bounded by the WeCom SDK's roughly
 50 MiB upload limit. Text delivery remains authoritative, so a failed attachment does not cause the text
-response to be retried or add a failure notice to the group.
+response to be retried or add a failure notice to the conversation.
 
-The mention must be inserted with WeCom's mention picker. Pasting ordinary text that visibly contains
-`@BOT_NAME` does not create a platform mention, so WeCom does not send a WebSocket callback and the Provider
-cannot process it. Matching `@BOT_NAME` anywhere in `text.content` applies only after such a callback exists.
+For groups, the mention must be inserted with WeCom's mention picker. Pasting ordinary text that visibly
+contains `@BOT_NAME` does not create a platform mention, so WeCom does not send a WebSocket callback and the
+Provider cannot process it. Matching `@BOT_NAME` anywhere in `text.content` applies only after such a callback
+exists; direct messages do not require a mention.
 
-The implementation and discovery command live in `packages/wecom`; the Web UI keeps the SDK as a
-runtime dependency because the server bundle intentionally leaves third-party imports external.
+The implementation lives in `packages/wecom`; the Web UI keeps the SDK as a runtime dependency because the
+server bundle intentionally leaves third-party imports external.
 
 The binding adds no HTTP routes and is removed when the Server closes. If none of the required
 WeCom variables are set, the Provider remains disabled. Partial configuration fails Server startup
 instead of silently starting an unusable connection.
-
-### Discovering the WeCom group ID
-
-The normal Server currently requires `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`,
-`IM_WECOM_GROUP_CHAT_ID`, and `IM_WECOM_BOT_NAME`; the group ID is retained only by the current WeCom
-adapter and is not used to choose Scheduler delivery. If it is not known yet, build the WeCom package and run the standalone
-discovery command with the Bot ID, Secret, and Bot Name:
-
-```sh
-pnpm --dir packages/wecom build
-IM_WECOM_BOT_ID='<wecom bot id>' \
-IM_WECOM_SECRET='<wecom bot secret>' \
-IM_WECOM_BOT_NAME='<wecom bot display name>' \
-pnpm wecom-discover
-```
-
-The command connects to the WeCom WebSocket, waits for one text message containing a real, picker-inserted
-exact `@BOT_NAME` mention in any group, prints `IM_WECOM_GROUP_CHAT_ID=<chatid>`, and exits. It does not reply,
-start a DSCode Session, invoke an Agent, or write configuration. Copy that value into the normal
-Server environment before starting it. Use `--timeout <seconds>` to change the five-minute wait.
-
-The same artifact is included in the production Docker image. Run it as a one-shot command before
-starting the normal Server when the group ID is not known yet:
-
-```sh
-docker run --rm --entrypoint node \
-  -e IM_WECOM_BOT_ID='<wecom bot id>' \
-  -e IM_WECOM_SECRET='<wecom bot secret>' \
-  -e IM_WECOM_BOT_NAME='<wecom bot display name>' \
-  dscode-server packages/wecom/dist/wecom-discover.js
-```
 
 ## Scheduled tasks
 
@@ -186,11 +155,10 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
 
 # Run (yolo + volumes + security).
-# To enable the current Slice 3 WeCom adapter, add all four options below. The group ID is an adapter
-# setting only; inbound messages from other groups are still accepted when they contain a real mention:
+# To enable the WeCom adapter, add these three required options below. Inbound messages from every group
+# are accepted when they contain a real mention; direct messages do not require a mention:
 #   -e IM_WECOM_BOT_ID='<wecom bot id>'
 #   -e IM_WECOM_SECRET='<wecom bot secret>'
-#   -e IM_WECOM_GROUP_CHAT_ID='<current WeCom adapter group ID>'
 #   -e IM_WECOM_BOT_NAME='<wecom bot display name>'
 DSCODE_PROMPT_PROFILE=steve
 docker run -d --name dscode \

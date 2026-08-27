@@ -44,14 +44,11 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
-# The runtime contains only the bundled server, standalone discovery command, and vision CLI,
-# public static assets, package metadata needed by Node's resolver, and production dependencies.
+# The runtime contains only the bundled server and vision CLI,
+# public static assets, the web server's package metadata, and production dependencies.
 # Source, tests, declarations, and source maps never cross into this stage.
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=prod-deps /app/packages/wecom/node_modules ./packages/wecom/node_modules
 COPY --from=prod-deps /app/packages/web-ui/node_modules ./packages/web-ui/node_modules
-COPY --from=build /app/packages/wecom/package.json ./packages/wecom/package.json
-COPY --from=build /app/packages/wecom/dist/wecom-discover.js ./packages/wecom/dist/wecom-discover.js
 COPY --from=build /app/packages/web-ui/package.json ./packages/web-ui/package.json
 COPY --from=build /app/packages/web-ui/dist/server.js ./packages/web-ui/dist/server.js
 COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static

@@ -1,5 +1,4 @@
 export {
-  BUSY_REPLY,
   DIRECT_BUSY_REPLY,
   EMPTY_COMPLETION_REPLY,
   GROUP_BUSY_REPLY,
@@ -16,7 +15,6 @@ export {
   type CreateHeadlessChatClientOptions,
   type HeadlessChatClient,
   type InboundChatMessage,
-  type InboundGroupMessage,
   type ProactiveDeliveryEvent,
   type ProactiveDeliveryListener,
 } from "./chat-client.js";

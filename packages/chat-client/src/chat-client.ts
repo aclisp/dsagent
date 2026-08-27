@@ -16,8 +16,6 @@ export const GROUP_BUSY_REPLY =
   "我正在处理其他工作，刚才的请求没有被记录。请稍后重新 @我发送一次。";
 export const DIRECT_BUSY_REPLY =
   "我正在处理其他工作，刚才的请求没有被记录。请稍后重新发送一次。";
-/** @deprecated Use GROUP_BUSY_REPLY for group conversations. */
-export const BUSY_REPLY = GROUP_BUSY_REPLY;
 export const EMPTY_COMPLETION_REPLY = "任务已经完成";
 
 const DELIVERY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000];
@@ -36,9 +34,6 @@ export interface InboundChatMessage {
   sender: ChatSender;
   text: string;
 }
-
-/** @deprecated Use InboundChatMessage. */
-export type InboundGroupMessage = InboundChatMessage;
 
 export interface ChatReplyTarget {
   messageId: string;

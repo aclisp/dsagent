@@ -20,6 +20,12 @@ import {
   type HttpUiBroker,
   type HttpUiBrokerListener,
 } from "@thinkany/dscode-http-adapter";
+import {
+  createWeComChatProvider,
+  type WeComClient,
+  type WeComMarkdownMessage,
+  type WeComMessageFrame,
+} from "@thinkany/dscode-wecom";
 import { createWebUiServer } from "../src/web-ui-server.js";
 
 interface Deferred<T> {
@@ -123,6 +129,49 @@ class FakeChatProvider implements ChatProvider {
 
   dispose(): void {
     this.disposeCalls += 1;
+  }
+}
+
+class ControlledWeComClient implements WeComClient {
+  readonly sendMessageCalls: Array<{
+    chatId: string;
+    body: WeComMarkdownMessage;
+  }> = [];
+  private readonly listeners = new Map<
+    string,
+    Set<(...args: unknown[]) => void>
+  >();
+
+  on(event: string, listener: (...args: unknown[]) => void): this {
+    const listeners = this.listeners.get(event) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(event, listeners);
+    return this;
+  }
+
+  off(event: string, listener: (...args: unknown[]) => void): this {
+    this.listeners.get(event)?.delete(listener);
+    return this;
+  }
+
+  connect(): this {
+    return this;
+  }
+
+  disconnect(): void {}
+
+  replyStream(
+    _frame: Pick<WeComMessageFrame, "headers">,
+    _streamId: string,
+    _content: string,
+    _finish?: boolean,
+  ): Promise<unknown> {
+    return Promise.resolve({});
+  }
+
+  sendMessage(chatId: string, body: WeComMarkdownMessage): Promise<unknown> {
+    this.sendMessageCalls.push({ chatId, body });
+    return Promise.resolve({});
   }
 }
 
@@ -304,6 +353,106 @@ async function waitForSessionIdle(server: FastifyInstance): Promise<void> {
 }
 
 describe("Web UI Server Chat Provider composition", () => {
+  it("routes a source scheduled Turn through the real WeCom direct conversation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
+    const workspaceRoot = await mkdtemp(
+      path.join(os.tmpdir(), "dscode-wecom-ui-"),
+    );
+    temporaryDirectories.push(workspaceRoot);
+    const workspacePath = path.join(workspaceRoot, "workspace");
+    const scheduleDirectory = path.join(workspacePath, ".dscode");
+    await mkdir(scheduleDirectory, { recursive: true });
+    await writeFile(
+      path.join(scheduleDirectory, "schedules.yaml"),
+      `version: 1
+tasks:
+  - id: direct-report
+    enabled: true
+    type: once
+    at: "2026-08-24T12:00:01Z"
+    delivery: source
+    prompt: 生成单聊总结
+`,
+    );
+    await writeFile(
+      path.join(scheduleDirectory, "conversations.json"),
+      JSON.stringify({
+        version: 1,
+        conversations: [
+          {
+            alias: "conv-wecom-direct",
+            providerId: "wecom",
+            type: "direct",
+            address: "wecom-direct-user",
+          },
+        ],
+        senders: [],
+      }),
+    );
+    await writeFile(
+      path.join(scheduleDirectory, "schedules.status.json"),
+      JSON.stringify({
+        version: 1,
+        timezone: "Asia/Shanghai",
+        tasks: [
+          {
+            id: "direct-report",
+            definitionHash: "persisted-source-baseline",
+            delivery: "source",
+            sourceAlias: "conv-wecom-direct",
+          },
+        ],
+      }),
+    );
+
+    const client = new ControlledWeComClient();
+    const provider = createWeComChatProvider({
+      botId: "wecom-bot",
+      secret: "wecom-secret",
+      botName: "Steve",
+      workspacePath,
+      clientFactory: () => client,
+      logger: { error() {} },
+    });
+    const hosts: ControlledHost[] = [];
+    const server = await createWebUiServer({
+      workspaces: { first_workspace_01: workspacePath },
+      chatAgentName: "Steve Code",
+      maxUploadBytes: 1024,
+      timezone: "Asia/Shanghai",
+      logger: false,
+      requireWorkspaceIdForSessionList: true,
+      createHost: async () => {
+        const host = new ControlledHost();
+        hosts.push(host);
+        return host;
+      },
+      listPersistedSessions: async () => [],
+      chatProvider: provider,
+    });
+    servers.push(server);
+    await server.ready();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(hosts).toHaveLength(1));
+    expect(hosts[0]?.prompts).toEqual([
+      "[Scheduled task: direct-report; source=conv-wecom-direct]\n\n生成单聊总结",
+    ]);
+    hosts[0]?.completeNext("单聊总结结果");
+    await vi.waitFor(() =>
+      expect(client.sendMessageCalls).toEqual([
+        {
+          chatId: "wecom-direct-user",
+          body: {
+            msgtype: "markdown",
+            markdown: { content: "单聊总结结果" },
+          },
+        },
+      ]),
+    );
+  });
+
   it("delivers a source scheduled Turn through the bound Provider conversation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));

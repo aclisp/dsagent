@@ -1,6 +1,6 @@
 # ADR-0001：IM 部署实例、共享 Session 与任务来源投递边界
 
-- 状态：已接受，Slice 1-3 已验收，Slice 4 待实施
+- 状态：已接受，Slice 1-3 已验收，Slice 4 已实现，待人工验收
 - 日期：2026-08-27
 
 ## 背景
@@ -220,7 +220,7 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 
 ## 实施 Slices
 
-> 状态：Slice 1-3 已验收，Slice 4 待实施。每个 Slice 独立
+> 状态：Slice 1-3 已验收，Slice 4 已实现并通过本 Slice gate，等待人工验收。每个 Slice 独立
 > 实现、验证并停止等待验收；验收前不自动进入下一 Slice，不暂存、不提交。
 
 ### Slice 1：conversation identity 与持久化基础
@@ -285,6 +285,9 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 ### Slice 4：企业微信全 conversation 接入与部署清理
 
 目标是让首个真实 Provider 完成群聊、单聊和 source 主动投递，并删除固定群聊控制面。
+
+> 状态：已实现，待人工验收。验证：四个受影响 package 的 test、typecheck、build，根 `pnpm build`
+> 和 diff check 全部通过；包含真实 `WeComChatProvider` 与 Scheduler 的单聊 source 集成测试。
 
 - 删除 `IM_WECOM_GROUP_CHAT_ID`、`groupChatId` 构造参数和固定群过滤；群聊地址使用 `chatid`，单聊
   地址使用发送者 `userid`，原始值只进入 Provider/registry 内部。

@@ -9,15 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./discover": {
-      "types": "./dist/wecom-discover.d.ts",
-      "import": "./dist/wecom-discover.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "wecom-discover": "node dist/wecom-discover.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -117,8 +117,8 @@ Slice 开发历史。部署与信任边界的决策依据见
 - 企业微信接入是可选能力；未配置或运行时不可用时，Web UI、Scheduler 和其他 Provider 仍可运行。
 - 配置缺字段或格式非法时 Server 启动失败；配置完整但连接、鉴权或 Provider 启动失败时隔离该
   Provider，不拖垮其他入口。
-- 不配置固定群聊，不存在 `IM_WECOM_GROUP_CHAT_ID`、群聊发现流程、企业微信专用控制 API、按钮或
-  任务管理后台。
+- Provider 不使用固定群聊或发现流程；除 Bot ID、Secret、Bot Name 和可选 WS URL 外，不需要额外的
+  群聊配置、企业微信专用控制 API、按钮或任务管理后台。
 - 群聊只有带真实 mention 的合法消息才触发。可见文本中出现 `@数字员工` 不等于平台真实 mention；
   对已经收到的有效回调，mention 可以出现在文本任意位置，交给 Agent 前去掉该 mention。
 - 单聊中的合法消息直接触发，不要求 mention。
@@ -165,6 +165,6 @@ Slice 开发历史。部署与信任边界的决策依据见
 - source 任务结果只主动发送到原 conversation；不可用、失败和重启场景不回退、不广播、不排队、
   不补投。
 - 任务继续满足时区、间隔、数量、大小、at-most-once、重叠、迟到、busy 重试和状态持久化规则。
-- 任务管理和消息接入不依赖固定群聊配置、发现流程、企业微信专用控制面或 `delivery: group`。
+- 任务管理和消息接入只使用 `delivery: session | source` 语义，不依赖固定群聊或企业微信专用控制面。
 - 浏览器 HTTP、SSE、workspace 访问和共享 Session 行为保持不变；`packages/core` 不需要修改。
 - 同凭证多实例连接所有权不由应用保证。

@@ -126,20 +126,20 @@ tasks:
       errors: [{ path: "$", message: "YAML aliases are not supported" }],
     });
 
-    const legacyDelivery = parseScheduleSource(
+    const invalidDelivery = parseScheduleSource(
       `version: 1
 tasks:
-  - id: legacy-delivery
+  - id: invalid-delivery
     enabled: true
     type: once
     at: "2027-01-01T09:00:00+08:00"
-    delivery: group
-    prompt: Legacy values are not accepted
+    delivery: invalid
+    prompt: Unsupported values are not accepted
 `,
       "Asia/Shanghai",
       NOW,
     );
-    expect(legacyDelivery).toMatchObject({
+    expect(invalidDelivery).toMatchObject({
       valid: false,
       errors: [
         {

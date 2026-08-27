@@ -184,7 +184,6 @@ function createHarness(options: { botName?: string; workspacePath?: string } = {
   const provider = createWeComChatProvider({
     botId: "bot-1",
     secret: "secret-1",
-    groupChatId: "group-1",
     botName: options.botName ?? "Steve",
     ...(options.workspacePath !== undefined
       ? { workspacePath: options.workspacePath }
@@ -245,7 +244,7 @@ describe("WeCom Chat Provider", () => {
     provider.dispose();
   });
 
-  it("does not filter inbound groups by the legacy default conversation", async () => {
+  it("accepts inbound messages from any group", async () => {
     const { client, provider } = createHarness();
     const messages = await collectMessage(
       provider,
@@ -258,6 +257,53 @@ describe("WeCom Chat Provider", () => {
       type: "group",
       address: "other-group",
     });
+    provider.dispose();
+  });
+
+  it("normalizes direct text without a mention and routes delivery to the sender", async () => {
+    const { client, provider } = createHarness();
+    const messages = await collectMessage(
+      provider,
+      client,
+      frame("请检查当前工作", {
+        msgid: "direct-message",
+        chattype: "single",
+        from: { userid: "direct-user" },
+      }),
+    );
+
+    expect(messages[0]).toEqual({
+      dedupeKey: "direct-message",
+      messageId: "direct-message",
+      conversation: {
+        providerId: "wecom",
+        type: "direct",
+        address: "direct-user",
+      },
+      sender: { providerId: "wecom", address: "direct-user" },
+      text: "请检查当前工作",
+    });
+
+    await expect(
+      provider.reply(
+        {
+          messageId: "direct-message",
+          conversation: {
+            providerId: "wecom",
+            type: "direct",
+            address: "direct-user",
+          },
+        },
+        "已完成",
+      ),
+    ).resolves.toEqual({ status: "delivered" });
+    await expect(
+      provider.send(
+        { providerId: "wecom", type: "direct", address: "direct-user" },
+        "主动提醒",
+      ),
+    ).resolves.toEqual({ status: "delivered" });
+    expect(client.sendMessageCalls.at(-1)?.chatId).toBe("direct-user");
     provider.dispose();
   });
 
@@ -274,7 +320,6 @@ describe("WeCom Chat Provider", () => {
       frame("请检查"),
       frame("@Other 请检查"),
       frame("请 @Other 检查"),
-      frame("@Steve 私聊", { chattype: "single" }),
       frame("@Steve 其他机器人", { aibotid: "other-bot" }),
       frame("@Steve 机器人自己", { from: { userid: "bot-1" } }),
       frame("@Steve 图片", { msgtype: "image" }),
@@ -379,6 +424,102 @@ describe("WeCom Chat Provider", () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
+  it("accepts direct mixed and standalone image/file messages without a mention", async () => {
+    const workspace = await createTempWorkspace();
+    const { client, provider } = createHarness({ workspacePath: workspace });
+    const messages: InboundChatMessage[] = [];
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+
+    client.emit(
+      "message.mixed",
+      frame("ignored", {
+        msgid: "direct-mixed",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        msgtype: "mixed",
+        mixed: {
+          msg_item: [
+            { msgtype: "text", text: { content: "请读这张图" } },
+            {
+              msgtype: "image",
+              image: { url: "https://example.invalid/direct-image" },
+            },
+          ],
+        },
+      }),
+    );
+    client.emit(
+      "message.image",
+      frame("ignored", {
+        msgid: "direct-image",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        msgtype: "image",
+        image: { url: "https://example.invalid/image" },
+      }),
+    );
+    client.emit(
+      "message.file",
+      frame("ignored", {
+        msgid: "direct-file",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        msgtype: "file",
+        file: { url: "https://example.invalid/file" },
+        quote: { msgtype: "image", image: { url: "https://example.invalid/image-quote" } },
+      }),
+    );
+    client.emit(
+      "message.text",
+      frame(" ", {
+        msgid: "direct-quote",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        quote: {
+          msgtype: "file",
+          file: { url: "https://example.invalid/quote-only" },
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(messages).toHaveLength(4));
+
+    const directMixed = messages.find(
+      (message) => message.messageId === "direct-mixed",
+    );
+    const directImage = messages.find(
+      (message) => message.messageId === "direct-image",
+    );
+    const directFile = messages.find(
+      (message) => message.messageId === "direct-file",
+    );
+    const directQuote = messages.find(
+      (message) => message.messageId === "direct-quote",
+    );
+    expect(directMixed?.conversation).toEqual({
+      providerId: "wecom",
+      type: "direct",
+      address: "direct-user",
+    });
+    expect(directMixed?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-photo\.png\]\n请读这张图$/u,
+    );
+    expect(directImage?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-photo\.png\]\n请查看我上传的文件$/u,
+    );
+    expect(directFile?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf, uploads\/wecom-[a-f0-9]{12}-2-photo\.png\]\n请查看我上传的文件$/u,
+    );
+    expect(directQuote?.text).toMatch(
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf\]\n请查看我上传的文件$/u,
+    );
+    provider.dispose();
+    await rm(workspace, { recursive: true, force: true });
+  });
+
   it("delivers explicitly cited artifacts after text without making media failure retryable", async () => {
     const workspace = await createTempWorkspace();
     await import("node:fs/promises").then(({ mkdir }) =>
@@ -440,7 +581,7 @@ describe("WeCom Chat Provider", () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it("uses the original frame for replies and the fixed group for proactive sends", async () => {
+  it("uses the original frame for replies and the requested conversation for proactive sends", async () => {
     const { client, provider } = createHarness();
     await collectMessage(provider, client, frame());
 
@@ -515,7 +656,6 @@ describe("WeCom Chat Provider", () => {
     const provider = createWeComChatProvider({
       botId: "bot-1",
       secret: "secret-1",
-      groupChatId: "group-1",
       botName: "Steve",
       clientFactory: (options) => {
         clientOptions = options;
@@ -535,24 +675,19 @@ describe("WeCom Chat Provider", () => {
     expect(createWeComChatProviderFromEnv({})).toBeUndefined();
     expect(() =>
       createWeComChatProviderFromEnv({ IM_WECOM_BOT_ID: "bot-1" }),
-    ).toThrow(
-      "IM_WECOM_SECRET, IM_WECOM_GROUP_CHAT_ID, IM_WECOM_BOT_NAME",
-    );
+    ).toThrow("IM_WECOM_SECRET, IM_WECOM_BOT_NAME");
     expect(() =>
       createWeComChatProviderFromEnv({
         IM_WECOM_BOT_ID: "bot-1",
         IM_WECOM_SECRET: "secret-1",
-        IM_WECOM_GROUP_CHAT_ID: "group-1",
       }),
     ).toThrow("IM_WECOM_BOT_NAME");
 
     const provider = createWeComChatProviderFromEnv({
       IM_WECOM_BOT_ID: "bot-1",
       IM_WECOM_SECRET: "secret-1",
-      IM_WECOM_GROUP_CHAT_ID: "group-1",
       IM_WECOM_BOT_NAME: "Steve",
     });
-    expect(provider?.groupChatId).toBe("group-1");
     provider?.dispose();
   });
 });
