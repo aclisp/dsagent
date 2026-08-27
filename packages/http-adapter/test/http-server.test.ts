@@ -368,11 +368,15 @@ describe("createHttpAdapterServer", () => {
 
   it("creates a persisted session when an in-process submission has no history", async () => {
     const terminalEvents: SessionPortTurnEvent[] = [];
+    const startedEvents: Array<{ turnId: string; context?: SessionPortTurnContext }> = [];
     const harness = createHarness({
       listPersistedSessions: async () => [],
     });
     harness.sessionPort.subscribe((event) => {
       terminalEvents.push(event);
+    });
+    harness.sessionPort.subscribeTurnStarted?.((event) => {
+      startedEvents.push(event);
     });
 
     const context: SessionPortTurnContext = {
@@ -384,6 +388,12 @@ describe("createHttpAdapterServer", () => {
       context,
     );
     expect(submission.status).toBe("accepted");
+    expect(startedEvents).toEqual([
+      {
+        turnId: submission.status === "accepted" ? submission.turnId : "missing",
+        context,
+      },
+    ]);
     expect(harness.factoryCalls).toHaveLength(1);
     expect(harness.factoryCalls[0]).toMatchObject({
       cwd: path.resolve(WORKSPACES.main),

@@ -21,6 +21,8 @@ import type {
   SessionPort,
   SessionPortTurnEvent,
   SessionPortTurnListener,
+  SessionPortTurnStartedEvent,
+  SessionPortTurnStartedListener,
 } from "./session-port.js";
 import { toHttpSessionMessages } from "./session-messages.js";
 import {
@@ -222,6 +224,7 @@ export function createHttpAdapter(
     Promise<SessionController>
   >();
   const terminalTurnListeners = new Set<SessionPortTurnListener>();
+  const turnStartedListeners = new Set<SessionPortTurnStartedListener>();
   let closing = false;
 
   const getSession = (sessionId: string): SessionController | undefined =>
@@ -251,6 +254,27 @@ export function createHttpAdapter(
         server.log.error(
           { err: error, turnId: event.turnId },
           "Session Port listener failed",
+        );
+      }
+    }
+  };
+
+  const publishTurnStarted = (event: SessionPortTurnStartedEvent): void => {
+    for (const listener of turnStartedListeners) {
+      try {
+        const result = listener(event);
+        if (result) {
+          void result.catch((error: unknown) => {
+            server.log.error(
+              { err: error, turnId: event.turnId },
+              "Session Port turn-start listener failed",
+            );
+          });
+        }
+      } catch (error) {
+        server.log.error(
+          { err: error, turnId: event.turnId },
+          "Session Port turn-start listener failed",
         );
       }
     }
@@ -366,14 +390,22 @@ export function createHttpAdapter(
       }
       const controller = await activateWorkspace(workspaceId);
       const turn = controller.startTurn(message, undefined, context);
-      return turn
-        ? { status: "accepted", turnId: turn.id }
-        : { status: "busy" };
+      if (!turn) return { status: "busy" };
+      publishTurnStarted({
+        turnId: turn.id,
+        ...(context !== undefined ? { context } : {}),
+      });
+      return { status: "accepted", turnId: turn.id };
     },
     subscribe(listener) {
       if (closing) throw new Error("HTTP adapter is closing");
       terminalTurnListeners.add(listener);
       return () => terminalTurnListeners.delete(listener);
+    },
+    subscribeTurnStarted(listener) {
+      if (closing) throw new Error("HTTP adapter is closing");
+      turnStartedListeners.add(listener);
+      return () => turnStartedListeners.delete(listener);
     },
   };
 
@@ -645,6 +677,7 @@ export function createHttpAdapter(
     sessions.clear();
     disposingSessions.clear();
     terminalTurnListeners.clear();
+    turnStartedListeners.clear();
     const results = await Promise.allSettled(
       [...controllers].map((controller) => controller.dispose()),
     );

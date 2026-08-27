@@ -5,7 +5,9 @@ import path from "node:path";
 import type { ProactiveDeliveryListener } from "@thinkany/dscode-chat-client";
 import type {
   SessionPort,
+  SessionPortTurnContext,
   SessionPortTurnEvent,
+  SessionPortTurnStartedEvent,
 } from "@thinkany/dscode-http-adapter/session-port";
 import { Cron } from "croner";
 import {
@@ -30,6 +32,11 @@ const SUBMISSION_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000];
 const MAX_INACTIVE_NORMALIZATION_ATTEMPTS = 200;
 
 type ScheduleStatus = "active" | "paused" | "exhausted";
+type SourceBindingStatus = "bound" | "pending" | "unavailable";
+interface PendingSourceBinding {
+  epoch: number;
+  sourceTurnGeneration?: number;
+}
 type SkipReason =
   | "overlap"
   | "late"
@@ -102,6 +109,8 @@ interface TaskRuntime {
   definitionHash: string;
   scheduleStatus: ScheduleStatus;
   nextRunAt: string | null;
+  sourceAlias?: string;
+  sourceBindingStatus?: SourceBindingStatus;
   currentRun?: RuntimeRun;
   lastRun?: RuntimeRun;
   lastSkip?: SkipSnapshot;
@@ -113,11 +122,17 @@ interface TurnContext {
   run: RuntimeRun;
 }
 
-export interface ScheduledGroupDeliveryPort {
-  registerTurnForGroupDelivery(
+export type SourceDeliveryRegistration =
+  | "registered"
+  | "unavailable"
+  | "failed";
+
+export interface ScheduledSourceDeliveryPort {
+  registerTurnForSourceDelivery(
     turnId: string,
+    conversationAlias: string,
     listener?: ProactiveDeliveryListener,
-  ): boolean;
+  ): SourceDeliveryRegistration;
 }
 
 export interface TaskSchedulerLogger {
@@ -130,7 +145,7 @@ export interface CreateTaskSchedulerOptions {
   workspacePath: string;
   timezone: string;
   sessionPort: SessionPort;
-  groupDelivery?: ScheduledGroupDeliveryPort;
+  sourceDelivery?: ScheduledSourceDeliveryPort;
   logger: TaskSchedulerLogger;
   now?: () => Date;
   random?: () => number;
@@ -148,6 +163,9 @@ export interface TaskScheduler {
 interface PersistedTaskState {
   id?: unknown;
   definitionHash?: unknown;
+  delivery?: unknown;
+  sourceAlias?: unknown;
+  sourceBindingStatus?: unknown;
   scheduleStatus?: unknown;
   currentRun?: unknown;
   lastRun?: unknown;
@@ -251,10 +269,27 @@ function nextRunAt(task: ScheduleTask): string | null {
 
 function initialDeliveryStatus(
   delivery: ScheduleDelivery,
-  available: boolean,
+  sourceDeliveryAvailable: boolean,
 ): DeliveryStatus {
   if (delivery === "session") return "not_applicable";
-  return available ? "pending" : "unavailable";
+  return sourceDeliveryAvailable ? "pending" : "unavailable";
+}
+
+function sourceAliasFromContext(
+  event: SessionPortTurnStartedEvent | SessionPortTurnEvent,
+): string | undefined {
+  const source = event.context?.source;
+  if (source?.type !== "im") return undefined;
+  const alias = source.conversationAlias.trim();
+  return alias.length > 0 ? alias : undefined;
+}
+
+function scheduledPrompt(task: ScheduleTask, sourceAlias?: string): string {
+  const marker =
+    task.delivery === "source" && sourceAlias !== undefined
+      ? `[Scheduled task: ${task.id}; source=${sourceAlias}]`
+      : `[Scheduled task: ${task.id}]`;
+  return `${marker}\n\n${task.prompt}`;
 }
 
 function jitteredDelay(delay: number, random: () => number): number {
@@ -270,7 +305,16 @@ class DefaultTaskScheduler implements TaskScheduler {
   private readonly retryDelaysMs: readonly number[];
   private readonly runtimes = new Map<string, TaskRuntime>();
   private readonly turnContexts = new Map<string, TurnContext>();
+  private readonly pendingSourceBindings = new Map<string, PendingSourceBinding>();
+  private readonly deliveryByTaskId = new Map<string, ScheduleDelivery>();
   private readonly unsubscribeSessionPort: () => void;
+  private readonly unsubscribeTurnStarted: () => void;
+  private readonly activeSourceTurns = new Map<
+    string,
+    { alias: string; generation: number }
+  >();
+  private sourceTurnGeneration = 0;
+  private turnEpoch = 0;
   private observedConfig: ScheduleConfig | undefined;
   private activeContentHash: string | null = null;
   private watcher: FSWatcher | undefined;
@@ -295,6 +339,10 @@ class DefaultTaskScheduler implements TaskScheduler {
     this.unsubscribeSessionPort = options.sessionPort.subscribe((event) =>
       this.handleTurnTerminal(event),
     );
+    this.unsubscribeTurnStarted =
+      options.sessionPort.subscribeTurnStarted?.((event) =>
+        this.handleTurnStarted(event),
+      ) ?? (() => undefined);
   }
 
   static async create(
@@ -313,6 +361,7 @@ class DefaultTaskScheduler implements TaskScheduler {
       return scheduler;
     } catch (error) {
       scheduler.unsubscribeSessionPort();
+      scheduler.unsubscribeTurnStarted();
       scheduler.stopJobs();
       throw error;
     }
@@ -323,6 +372,23 @@ class DefaultTaskScheduler implements TaskScheduler {
     const attempt = this.reloadChain.then(() => this.loadAndApply(false));
     this.reloadChain = attempt.catch(() => undefined);
     return attempt;
+  }
+
+  private handleTurnStarted(event: SessionPortTurnStartedEvent): void {
+    const alias = sourceAliasFromContext(event);
+    if (alias === undefined) return;
+    this.sourceTurnGeneration += 1;
+    this.activeSourceTurns.set(event.turnId, {
+      alias,
+      generation: this.sourceTurnGeneration,
+    });
+  }
+
+  private currentSourceTurn():
+    | { alias: string; generation: number }
+    | undefined {
+    const turns = [...this.activeSourceTurns.values()];
+    return turns.at(-1);
   }
 
   private async readPersistedStatus(): Promise<Map<string, PersistedTaskState>> {
@@ -400,6 +466,7 @@ class DefaultTaskScheduler implements TaskScheduler {
     initial: boolean,
     restored = new Map<string, PersistedTaskState>(),
   ): Promise<void> {
+    if (initial) this.restoreDeliveryBaselines(restored);
     let config = await loadScheduleConfig(
       this.scheduleFilePath,
       this.options.timezone,
@@ -416,15 +483,30 @@ class DefaultTaskScheduler implements TaskScheduler {
     }
     if (config.valid) config = await this.normalizeInactiveTasks(config);
     this.loadedAt = this.now().toISOString();
-    this.observedConfig = config;
 
     if (!config.valid) {
+      this.observedConfig = config;
       const written = await this.persistStatus(initial);
       if (!written && initial) throw new Error("Could not write schedules.status.json");
       return;
     }
 
-    this.applyValidConfig(config, restored);
+    const immutableErrors = this.deliveryImmutabilityErrors(config);
+    if (immutableErrors.length > 0) {
+      this.observedConfig = {
+        valid: false,
+        contentHash: config.contentHash,
+        raw: config.raw ?? "",
+        errors: immutableErrors,
+      };
+      const written = await this.persistStatus(initial);
+      if (!written && initial) throw new Error("Could not write schedules.status.json");
+      return;
+    }
+
+    this.observedConfig = config;
+
+    this.applyValidConfig(config, restored, initial);
     for (const [taskId, scheduledAt] of missedOnce) {
       const runtime = this.runtimes.get(taskId);
       if (runtime) this.recordSkip(runtime, scheduledAt, "late");
@@ -438,17 +520,49 @@ class DefaultTaskScheduler implements TaskScheduler {
     this.scheduleJobs();
   }
 
+  private restoreDeliveryBaselines(
+    restored: Map<string, PersistedTaskState>,
+  ): void {
+    this.deliveryByTaskId.clear();
+    for (const [taskId, state] of restored) {
+      if (state.delivery === "session" || state.delivery === "source") {
+        this.deliveryByTaskId.set(taskId, state.delivery);
+      }
+    }
+  }
+
+  private deliveryImmutabilityErrors(
+    config: ValidScheduleConfig,
+  ): ScheduleValidationError[] {
+    const errors: ScheduleValidationError[] = [];
+    for (const [index, task] of config.tasks.entries()) {
+      const existing =
+        this.runtimes.get(task.id)?.task.delivery ?? this.deliveryByTaskId.get(task.id);
+      if (existing !== undefined && existing !== task.delivery) {
+        errors.push({
+          path: `tasks[${index}].delivery`,
+          message: "Task delivery is immutable; delete and recreate the task to change it",
+        });
+      }
+    }
+    return errors;
+  }
+
   private applyValidConfig(
     config: ValidScheduleConfig,
     restored: Map<string, PersistedTaskState>,
+    initial: boolean,
   ): void {
     const previous = new Map(this.runtimes);
+    const previousPending = new Map(this.pendingSourceBindings);
+    const nextPending = new Map<string, PendingSourceBinding>();
     this.stopJobs();
     this.runtimes.clear();
 
     for (const task of config.tasks) {
       const definitionHash = scheduleDefinitionHash(task);
       const old = previous.get(task.id);
+      const saved = restored.get(task.id);
       let runtime: TaskRuntime;
       if (old?.definitionHash === definitionHash) {
         runtime = old;
@@ -472,7 +586,6 @@ class DefaultTaskScheduler implements TaskScheduler {
           scheduleStatus: scheduleStatus(task),
           nextRunAt: nextRunAt(task),
         };
-        const saved = restored.get(task.id);
         if (saved?.definitionHash === definitionHash) {
           const savedLastRun = copyRun(saved.lastRun);
           const savedLastSkip = copySkip(saved.lastSkip);
@@ -492,6 +605,45 @@ class DefaultTaskScheduler implements TaskScheduler {
           }
         }
       }
+
+      if (task.delivery === "source") {
+        const savedAlias =
+          typeof saved?.sourceAlias === "string" && saved.sourceAlias.trim().length > 0
+            ? saved.sourceAlias.trim()
+            : undefined;
+        const sourceAlias = runtime.sourceAlias ?? old?.sourceAlias ?? savedAlias;
+        if (sourceAlias !== undefined) {
+          runtime.sourceAlias = sourceAlias;
+          runtime.sourceBindingStatus = "bound";
+        } else {
+          const previousCandidate = previousPending.get(task.id);
+          const activeSource = this.currentSourceTurn();
+          let candidate = previousCandidate;
+          if (candidate === undefined && old === undefined && !initial) {
+            candidate = {
+              epoch: this.turnEpoch,
+              ...(activeSource !== undefined
+                ? { sourceTurnGeneration: activeSource.generation }
+                : {}),
+            };
+          }
+          if (
+            candidate !== undefined &&
+            activeSource !== undefined &&
+            candidate.sourceTurnGeneration === activeSource.generation
+          ) {
+            runtime.sourceAlias = activeSource.alias;
+            runtime.sourceBindingStatus = "bound";
+          } else {
+            runtime.sourceBindingStatus =
+              candidate === undefined ? "unavailable" : "pending";
+            if (candidate !== undefined) nextPending.set(task.id, candidate);
+          }
+        }
+      } else {
+        delete runtime.sourceAlias;
+        delete runtime.sourceBindingStatus;
+      }
       this.runtimes.set(task.id, runtime);
       previous.delete(task.id);
     }
@@ -500,6 +652,14 @@ class DefaultTaskScheduler implements TaskScheduler {
       if (runtime.currentRun?.status === "submitting") {
         this.cancelSubmittingRun(runtime, "configuration_changed");
       }
+    }
+    this.pendingSourceBindings.clear();
+    for (const [taskId, candidate] of nextPending) {
+      if (this.runtimes.has(taskId)) this.pendingSourceBindings.set(taskId, candidate);
+    }
+    this.deliveryByTaskId.clear();
+    for (const task of config.tasks) {
+      this.deliveryByTaskId.set(task.id, task.delivery);
     }
     this.activeContentHash = config.contentHash;
   }
@@ -563,11 +723,20 @@ class DefaultTaskScheduler implements TaskScheduler {
       loadedAt: this.loadedAt,
       taskCount: config?.valid === true ? config.tasks.length : 0,
       activeTaskCount: this.runtimes.size,
-      groupDeliveryAvailable: this.options.groupDelivery !== undefined,
+      sourceDeliveryAvailable: this.options.sourceDelivery !== undefined,
       operational: true,
       tasks: [...this.runtimes.values()].map((runtime) => ({
         id: runtime.task.id,
         definitionHash: runtime.definitionHash,
+        delivery: runtime.task.delivery,
+        ...(runtime.task.delivery === "source"
+          ? {
+              sourceBindingStatus: runtime.sourceBindingStatus ?? "unavailable",
+              ...(runtime.sourceAlias !== undefined
+                ? { sourceAlias: runtime.sourceAlias }
+                : {}),
+            }
+          : {}),
         scheduleStatus: runtime.scheduleStatus,
         nextRunAt: runtime.nextRunAt,
         ...(runtime.currentRun !== undefined
@@ -629,6 +798,9 @@ class DefaultTaskScheduler implements TaskScheduler {
     if (this.disposed || !this.statusWritable || !this.observedConfig?.valid) return;
     for (const runtime of this.runtimes.values()) {
       if (!runtime.task.enabled || runtime.job) continue;
+      if (runtime.task.delivery === "source" && runtime.sourceAlias === undefined) {
+        continue;
+      }
       this.scheduleJob(runtime);
     }
   }
@@ -755,7 +927,7 @@ class DefaultTaskScheduler implements TaskScheduler {
         attempt: 1,
         deliveryStatus: initialDeliveryStatus(
           runtime.task.delivery,
-          this.options.groupDelivery !== undefined,
+          this.options.sourceDelivery !== undefined,
         ),
         cancelled: false,
       };
@@ -797,9 +969,19 @@ class DefaultTaskScheduler implements TaskScheduler {
 
       let submission: Awaited<ReturnType<SessionPort["submitTurn"]>>;
       try {
+        const sourceContext: SessionPortTurnContext | undefined =
+          runtime.task.delivery === "source" && runtime.sourceAlias !== undefined
+            ? {
+                source: {
+                  type: "im",
+                  conversationAlias: runtime.sourceAlias,
+                },
+              }
+            : undefined;
         submission = await this.options.sessionPort.submitTurn(
           this.options.workspaceId,
-          `[Scheduled task: ${runtime.task.id}]\n\n${runtime.task.prompt}`,
+          scheduledPrompt(runtime.task, runtime.sourceAlias),
+          sourceContext,
         );
         if (attempt === 1) releaseInitialSubmission();
       } catch (error) {
@@ -818,16 +1000,29 @@ class DefaultTaskScheduler implements TaskScheduler {
         run.startedAt = this.now().toISOString();
         run.turnId = submission.turnId;
         this.turnContexts.set(submission.turnId, { runtime, run });
-        if (
-          runtime.task.delivery === "group" &&
-          this.options.groupDelivery !== undefined
-        ) {
-          const registered =
-            this.options.groupDelivery.registerTurnForGroupDelivery(
-              submission.turnId,
-              (event) => this.handleDeliveryOutcome(event.turnId, event.status),
-            );
-          if (!registered) run.deliveryStatus = "failed";
+        if (runtime.task.delivery === "source") {
+          const sourceAlias = runtime.sourceAlias;
+          if (sourceAlias === undefined || this.options.sourceDelivery === undefined) {
+            run.deliveryStatus = "unavailable";
+          } else {
+            let registration: SourceDeliveryRegistration;
+            try {
+              registration = this.options.sourceDelivery.registerTurnForSourceDelivery(
+                submission.turnId,
+                sourceAlias,
+                (event) => this.handleDeliveryOutcome(event.turnId, event.status),
+              );
+            } catch (error) {
+              this.options.logger.error(
+                { err: error, taskId: runtime.task.id, runId: run.runId },
+                "Scheduled source delivery registration failed",
+              );
+              registration = "failed";
+            }
+            if (registration !== "registered") {
+              run.deliveryStatus = registration;
+            }
+          }
         }
         await this.persistStatus(false);
         return;
@@ -884,21 +1079,91 @@ class DefaultTaskScheduler implements TaskScheduler {
     this.recordSkip(runtime, new Date(run.scheduledAt), reason);
   }
 
+  private bindPendingSourceTasks(
+    alias: string,
+    sourceTurn: { alias: string; generation: number } | undefined,
+  ): boolean {
+    let changed = false;
+    for (const [taskId, candidate] of this.pendingSourceBindings) {
+      const matches =
+        sourceTurn === undefined
+          ? candidate.epoch === this.turnEpoch
+          : candidate.sourceTurnGeneration === sourceTurn.generation;
+      if (!matches) continue;
+      const runtime = this.runtimes.get(taskId);
+      if (
+        runtime === undefined ||
+        runtime.task.delivery !== "source" ||
+        runtime.sourceAlias !== undefined
+      ) {
+        this.pendingSourceBindings.delete(taskId);
+        continue;
+      }
+      runtime.sourceAlias = alias;
+      runtime.sourceBindingStatus = "bound";
+      this.pendingSourceBindings.delete(taskId);
+      changed = true;
+    }
+    return changed;
+  }
+
+  private finalizePendingSourceTasks(): boolean {
+    let changed = false;
+    for (const [taskId, candidate] of this.pendingSourceBindings) {
+      if (candidate.epoch > this.turnEpoch) continue;
+      const runtime = this.runtimes.get(taskId);
+      if (runtime !== undefined && runtime.sourceAlias === undefined) {
+        runtime.sourceBindingStatus = "unavailable";
+        changed = true;
+      }
+      this.pendingSourceBindings.delete(taskId);
+    }
+    return changed;
+  }
+
   private async handleTurnTerminal(event: SessionPortTurnEvent): Promise<void> {
+    const sourceAlias = sourceAliasFromContext(event);
+    const sourceTurn = this.activeSourceTurns.get(event.turnId);
+    let bindingChanged = false;
+    if (sourceAlias !== undefined || this.pendingSourceBindings.size > 0) {
+      try {
+        await this.reload();
+      } catch (error) {
+        this.options.logger.error(
+          { err: error, turnId: event.turnId },
+          "Scheduled source binding reload failed",
+        );
+      }
+    }
+    if (sourceAlias !== undefined) {
+      bindingChanged = this.bindPendingSourceTasks(sourceAlias, sourceTurn);
+    }
+    if (this.finalizePendingSourceTasks()) bindingChanged = true;
+    if (sourceTurn !== undefined || sourceAlias !== undefined) {
+      this.activeSourceTurns.delete(event.turnId);
+    }
+    this.turnEpoch += 1;
+
     const context = this.turnContexts.get(event.turnId);
-    if (!context) return;
-    this.turnContexts.delete(event.turnId);
-    const { runtime, run } = context;
-    run.status = event.status;
-    run.finishedAt = this.now().toISOString();
-    if (event.status !== "completed" && run.deliveryStatus === "pending") {
-      run.deliveryStatus = "not_applicable";
+    if (context !== undefined) {
+      this.turnContexts.delete(event.turnId);
+      const { runtime, run } = context;
+      run.status = event.status;
+      run.finishedAt = this.now().toISOString();
+      if (event.status !== "completed" && run.deliveryStatus === "pending") {
+        run.deliveryStatus = "not_applicable";
+      }
+      if (runtime.currentRun === run) {
+        delete runtime.currentRun;
+        runtime.lastRun = run;
+      }
     }
-    if (runtime.currentRun === run) {
-      delete runtime.currentRun;
-      runtime.lastRun = run;
+    if (bindingChanged) {
+      await this.persistStatus(false);
+      this.scheduleJobs();
+    } else if (context !== undefined) {
+      await this.persistStatus(false);
     }
-    await this.persistStatus(false);
   }
 
   private async handleDeliveryOutcome(
@@ -926,6 +1191,7 @@ class DefaultTaskScheduler implements TaskScheduler {
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.stopJobs();
     this.unsubscribeSessionPort();
+    this.unsubscribeTurnStarted();
     const finishedAt = this.now().toISOString();
     for (const runtime of this.runtimes.values()) {
       const run = runtime.currentRun;
@@ -939,6 +1205,8 @@ class DefaultTaskScheduler implements TaskScheduler {
       runtime.lastRun = run;
     }
     this.turnContexts.clear();
+    this.activeSourceTurns.clear();
+    this.pendingSourceBindings.clear();
     await this.persistStatus(true);
   }
 }

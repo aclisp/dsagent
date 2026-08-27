@@ -31,6 +31,8 @@ export type {
   SessionPortTurnContext,
   SessionPortTurnEvent,
   SessionPortTurnListener,
+  SessionPortTurnStartedEvent,
+  SessionPortTurnStartedListener,
   SessionPortTurnSourceContext,
   SessionPortTurnSubmission,
 } from "./session-port.js";

@@ -73,7 +73,6 @@ class ControlledHost implements HttpAdapterServerHost {
 
 class FakeChatProvider implements ChatProvider {
   readonly providerId: string;
-  readonly defaultConversation: ChatConversation;
   readonly replies: Array<{ target: ChatReplyTarget; text: string }> = [];
   readonly sends: Array<{ conversation: ChatConversation; text: string }> = [];
   startCalls = 0;
@@ -85,11 +84,6 @@ class FakeChatProvider implements ChatProvider {
     private readonly startFailure?: Error,
   ) {
     this.providerId = providerId;
-    this.defaultConversation = {
-      providerId,
-      type: "group",
-      address: `${providerId}-bound-group`,
-    };
   }
 
   subscribe(listener: ChatProviderListener): () => void {
@@ -159,6 +153,7 @@ async function createHarness(
   withProvider: boolean,
   scheduleSource?: string,
   additionalProviders: FakeChatProvider[] = [],
+  persistedSourceAlias?: string,
 ): Promise<Harness> {
   const provider = withProvider ? new FakeChatProvider() : undefined;
   const providers = [
@@ -178,6 +173,38 @@ async function createHarness(
     const scheduleDirectory = path.join(workspaces.first_workspace_01, ".dscode");
     await mkdir(scheduleDirectory, { recursive: true });
     await writeFile(path.join(scheduleDirectory, "schedules.yaml"), scheduleSource);
+    if (persistedSourceAlias !== undefined) {
+      await writeFile(
+        path.join(scheduleDirectory, "conversations.json"),
+        JSON.stringify({
+          version: 1,
+          conversations: [
+            {
+              alias: persistedSourceAlias,
+              providerId: "fake",
+              type: "group",
+              address: "fake-bound-group",
+            },
+          ],
+          senders: [],
+        }),
+      );
+      await writeFile(
+        path.join(scheduleDirectory, "schedules.status.json"),
+        JSON.stringify({
+          version: 1,
+          timezone: "Asia/Shanghai",
+          tasks: [
+            {
+              id: "scheduled-report",
+              definitionHash: "persisted-source-baseline",
+              delivery: "source",
+              sourceAlias: persistedSourceAlias,
+            },
+          ],
+        }),
+      );
+    }
   }
   const server = await createWebUiServer({
     workspaces,
@@ -277,7 +304,7 @@ async function waitForSessionIdle(server: FastifyInstance): Promise<void> {
 }
 
 describe("Web UI Server Chat Provider composition", () => {
-  it("delivers a scheduled group Turn through the bound Headless Chat Client", async () => {
+  it("delivers a source scheduled Turn through the bound Provider conversation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
     const harness = await createHarness(
@@ -288,9 +315,11 @@ tasks:
     enabled: true
     type: once
     at: "2026-08-24T12:00:01Z"
-    delivery: group
+    delivery: source
     prompt: 生成定时总结
 `,
+      [],
+      "conv-scheduled-source",
     );
     const provider = harness.provider;
     if (!provider) throw new Error("Missing Fake Chat Provider");
@@ -300,14 +329,20 @@ tasks:
     const host = harness.hosts[0];
     if (!host) throw new Error("Session Host was not created");
     expect(host.prompts).toEqual([
-      "[Scheduled task: scheduled-report]\n\n生成定时总结",
+      expect.stringMatching(
+        /^\[Scheduled task: scheduled-report; source=conv-scheduled-source\]\n\n生成定时总结$/,
+      ),
     ]);
 
     host.completeNext("定时总结结果");
     await vi.waitFor(() =>
       expect(provider.sends).toEqual([
         {
-          conversation: provider.defaultConversation,
+          conversation: {
+            providerId: "fake",
+            type: "group",
+            address: "fake-bound-group",
+          },
           text: "定时总结结果",
         },
       ]),

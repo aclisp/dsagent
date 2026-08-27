@@ -1,6 +1,6 @@
 # ADR-0001：IM 部署实例、共享 Session 与任务来源投递边界
 
-- 状态：已接受，Slice 1 已实现，待验收
+- 状态：已接受，Slice 1-3 已验收，Slice 4 待实施
 - 日期：2026-08-27
 
 ## 背景
@@ -220,14 +220,14 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 
 ## 实施 Slices
 
-> 状态：Slice 1-2 已实现并分别通过本 Slice gate，等待人工验收；Slice 3-4 待实施。每个 Slice 独立
+> 状态：Slice 1-3 已验收，Slice 4 待实施。每个 Slice 独立
 > 实现、验证并停止等待验收；验收前不自动进入下一 Slice，不暂存、不提交。
 
 ### Slice 1：conversation identity 与持久化基础
 
 目标是先建立通道无关且不依赖现有固定群聊接口的身份边界，不切换运行时行为。
 
-> 状态：已实现，待人工验收。验证：`packages/chat-client` test、typecheck、build 全部通过。
+> 状态：已验收。验证：`packages/chat-client` test、typecheck、build 全部通过。
 
 - 在 `packages/chat-client` 定义 Provider identity、`group | direct` conversation reference、sender
   reference 和 opaque alias 数据模型。
@@ -244,7 +244,7 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 
 目标是把 Headless Chat Client 从固定群聊切换到 conversation 模型，并保持浏览器契约不变。
 
-> 状态：已实现，待人工验收。验证：`packages/chat-client`、`packages/http-adapter`、`packages/web-ui`
+> 状态：已验收。验证：`packages/chat-client`、`packages/http-adapter`、`packages/web-ui`
 > 及受影响的 `packages/wecom` test、typecheck、build 全部通过。
 
 - 用通用入站消息替换 `InboundGroupMessage`、`groupChatId` 和固定群过滤；去重键包含 Provider
@@ -263,6 +263,9 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 ### Slice 3：Scheduler 的 `session | source` 语义
 
 目标是让任务来源绑定成为 Scheduler 强制执行的路由元数据，而不是 Skill 约定。
+
+> 状态：已验收。验证：`packages/web-ui`、`packages/chat-client`、
+> `packages/http-adapter`、`packages/wecom` test、typecheck、build，以及根构建和 diff check 全部通过。
 
 - 任务 schema 只接受 `delivery: session | source`；不实现 `group` 兼容或迁移。
 - 新增 Scheduler-owned source binding 状态，保存 `taskId -> conversation alias`。新 source 任务只从

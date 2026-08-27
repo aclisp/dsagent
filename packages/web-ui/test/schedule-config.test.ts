@@ -40,7 +40,7 @@ tasks:
     enabled: true
     type: cron
     cron: "*/5 * * * *"
-    delivery: group
+    delivery: source
     prompt: Every five minutes
   - id: six-part
     enabled: true
@@ -125,6 +125,29 @@ tasks:
       valid: false,
       errors: [{ path: "$", message: "YAML aliases are not supported" }],
     });
+
+    const legacyDelivery = parseScheduleSource(
+      `version: 1
+tasks:
+  - id: legacy-delivery
+    enabled: true
+    type: once
+    at: "2027-01-01T09:00:00+08:00"
+    delivery: group
+    prompt: Legacy values are not accepted
+`,
+      "Asia/Shanghai",
+      NOW,
+    );
+    expect(legacyDelivery).toMatchObject({
+      valid: false,
+      errors: [
+        {
+          path: "tasks[0].delivery",
+          message: "Expected session or source",
+        },
+      ],
+    });
   });
 
   it("treats a missing file as an empty valid configuration", async () => {
@@ -152,7 +175,7 @@ tasks:
     enabled: true
     type: cron
     cron: "0 * * * *"
-    delivery: group
+    delivery: source
     prompt: Keep me
 `;
     await writeFile(filePath, source);

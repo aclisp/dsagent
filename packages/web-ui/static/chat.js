@@ -40,7 +40,7 @@ const TURN_TRIM_BUFFER = 20;
 const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
-const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*\]\n\n([\s\S]*)$/;
+const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*(?:; source=conv-[a-z0-9][a-z0-9-]*)?\]\n\n([\s\S]*)$/;
 const IM_MESSAGE_PREFIX = /^\[IM message: (group|direct)=[a-z0-9][a-z0-9-]*; sender=[a-z0-9][a-z0-9-]*\]\r?\n\r?\n([\s\S]*)$/;
 const GROUP_MESSAGE_PREFIX = /^\[Group message(?: from ([^\]\r\n]+))?\]\r?\n\r?\n([\s\S]*)$/;
 const SCHEDULED_TASK_SUMMARY_LENGTH = 120;

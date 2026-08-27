@@ -11,15 +11,16 @@ Manage the current workspace's `.dscode/schedules.yaml`. Treat
 ## Resolve the request
 
 - Ask only when the time, task instructions, or delivery scope is materially ambiguous.
-- A request received through Web UI defaults to `delivery: session` (“仅在 Web UI 查看”).
-- A request whose current prompt begins with `[Group message` defaults to `delivery: group`
-  (“同时发送到群聊”). Explicit user wording overrides either default.
-- Read `schedules.status.json` for the Server timezone and group-delivery availability. Convert the
+- A request received through Web UI must use `delivery: session` (“仅在 Web UI 查看”).
+- A request whose current prompt begins with `[IM message: group=` or `[IM message: direct=` must use
+  `delivery: source` (“结果回到当前会话”). The current IM conversation is the only source target;
+  do not offer a target picker or accept a user-supplied alias/address.
+- Read `schedules.status.json` for the Server timezone and source-delivery availability. Convert the
   user's time into that timezone and confirm it naturally; do not teach or display Cron syntax to
-  ordinary users.
-- Warn when `delivery: group` is requested but `groupDeliveryAvailable` is false: the task remains
-  valid and will run, but this occurrence's result will only be visible in Web UI unless a Provider
-  is bound by the time a future occurrence runs.
+  ordinary users. Never read, copy, invent, or write `sourceAlias`; Scheduler owns that binding.
+- If a source task is reported as `pending` or `unavailable`, keep the task definition but do not claim
+  that source binding was accepted. The task may still execute when a persisted binding is available;
+  an unavailable occurrence remains visible in Web UI and is not queued or re-routed.
 
 ## Edit the source of truth
 
@@ -41,7 +42,7 @@ tasks:
     enabled: true
     type: cron
     cron: "0 18 * * 1-5"
-    delivery: group
+    delivery: source
     prompt: |
       检查今天的工作情况并给出总结。
 ```
@@ -51,7 +52,8 @@ Required invariants:
 - Use only `type: once` with an RFC 3339 timestamp containing `Z` or an explicit offset, or
   `type: cron` with a Croner-native pattern.
 - Cron occurrences must be at least five minutes apart.
-- Always write `delivery: session` or `delivery: group` explicitly.
+- Always write `delivery: session` or `delivery: source` explicitly. Delivery is immutable after a task
+  is created; to change it, delete the old task and create a new one from the intended entry point.
 - IDs use lowercase letters, digits, and hyphens, are at most 64 characters, and remain stable
   across edits. Generate a meaningful unique ID for a new task, but do not expose it unless needed
   for technical diagnosis.
@@ -72,5 +74,5 @@ file is missing, stale, or reports the scheduler as non-operational, do not clai
 created successfully.
 
 Confirm with the actual natural-language time or recurrence and either “仅在 Web UI 查看” or
-“同时发送到群聊”. Do not include the internal ID, Cron pattern, run metadata, or status-file
+“结果回到当前会话”. Do not include the internal ID, Cron pattern, alias, run metadata, or status-file
 details in an ordinary confirmation.

@@ -22,10 +22,6 @@ export interface WebUiChatProviderBinding {
     conversation: ChatConversation,
     listener?: ProactiveDeliveryListener,
   ): boolean;
-  registerTurnForGroupDelivery(
-    turnId: string,
-    listener?: ProactiveDeliveryListener,
-  ): boolean;
   dispose(): void;
 }
 
@@ -38,9 +34,6 @@ export function bindWebUiChatProvider(
     conversationRegistry: options.conversationRegistry,
     sessionPort: options.sessionPort,
     delivery: options.provider,
-    ...(options.provider.defaultConversation !== undefined
-      ? { defaultConversation: options.provider.defaultConversation }
-      : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
 
@@ -58,9 +51,6 @@ export function bindWebUiChatProvider(
   return {
     registerTurnForDelivery(turnId, conversation, listener) {
       return client.registerTurnForDelivery(turnId, conversation, listener);
-    },
-    registerTurnForGroupDelivery(turnId, listener) {
-      return client.registerTurnForGroupDelivery(turnId, listener);
     },
     dispose() {
       if (disposed) return;

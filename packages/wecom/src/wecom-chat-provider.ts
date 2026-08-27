@@ -423,7 +423,6 @@ function textFitsWeComLimit(text: string): boolean {
 export class WeComChatProvider implements ChatProvider {
   readonly providerId = "wecom";
   readonly groupChatId: string;
-  readonly defaultConversation: ChatConversation;
   private readonly botId: string;
   private readonly botName: string;
   private readonly client: WeComClient;
@@ -447,11 +446,6 @@ export class WeComChatProvider implements ChatProvider {
     this.botId = requiredOption("botId", options.botId);
     const secret = requiredOption("secret", options.secret);
     this.groupChatId = requiredOption("groupChatId", options.groupChatId);
-    this.defaultConversation = {
-      providerId: this.providerId,
-      type: "group",
-      address: this.groupChatId,
-    };
     this.botName = requiredOption("botName", options.botName);
     this.logger = options.logger ?? defaultLogger;
     const workspacePath = options.workspacePath?.trim();

@@ -18,6 +18,7 @@ import { registerFileRoutes } from "./files.js";
 import {
   assertValidScheduleTimezone,
   createTaskScheduler,
+  type ScheduledSourceDeliveryPort,
 } from "./task-scheduler.js";
 
 export interface CreateWebUiServerOptions
@@ -198,6 +199,31 @@ export async function createWebUiServer(
       }
     }
   };
+  const sourceDelivery: ScheduledSourceDeliveryPort = {
+    registerTurnForSourceDelivery(turnId, conversationAlias, listener) {
+      const resolved = conversationRegistry.resolveConversation(conversationAlias);
+      if (resolved.status !== "resolved") return "unavailable";
+      const active = activeProviders.find(
+        ({ provider }) => providerId(provider) === resolved.reference.providerId,
+      );
+      if (active === undefined) return "unavailable";
+      try {
+        return active.binding.registerTurnForDelivery(
+          turnId,
+          resolved.reference,
+          listener,
+        )
+          ? "registered"
+          : "failed";
+      } catch (error) {
+        server.log.error(
+          { err: error, turnId, providerId: resolved.reference.providerId },
+          "Scheduled source delivery registration failed",
+        );
+        return "failed";
+      }
+    },
+  };
   let scheduler: Awaited<ReturnType<typeof createTaskScheduler>>;
   try {
     scheduler = await createTaskScheduler({
@@ -206,9 +232,7 @@ export async function createWebUiServer(
       timezone,
       sessionPort,
       logger: server.log,
-      ...(activeProviders.length === 1 && activeProviders[0] !== undefined
-        ? { groupDelivery: activeProviders[0].binding }
-        : {}),
+      ...(activeProviders.length > 0 ? { sourceDelivery } : {}),
     });
   } catch (error) {
     try {

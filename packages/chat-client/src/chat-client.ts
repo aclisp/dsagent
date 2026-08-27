@@ -78,11 +78,6 @@ export interface CreateHeadlessChatClientOptions {
   conversationRegistry: ConversationAliasRegistry;
   sessionPort: SessionPort;
   delivery: ChatDelivery;
-  /**
-   * Temporary bridge for the pre-source Scheduler contract. Slice 3 replaces
-   * this with an explicit source conversation binding.
-   */
-  defaultConversation?: ChatConversation;
   logger?: ChatClientLogger;
 }
 
@@ -105,11 +100,6 @@ export type ChatProviderListener = (
  */
 export interface ChatProvider extends ChatDelivery {
   readonly providerId: string;
-  /**
-   * Temporary default used only by the existing Scheduler group-delivery port.
-   * It is not an inbound filter and is removed when Scheduler adopts source.
-   */
-  readonly defaultConversation?: ChatConversation;
   subscribe(listener: ChatProviderListener): () => void;
   start?(): void | Promise<void>;
   dispose?(): void | Promise<void>;
@@ -120,11 +110,6 @@ export interface HeadlessChatClient {
   registerTurnForDelivery(
     turnId: string,
     conversation: ChatConversation,
-    listener?: ProactiveDeliveryListener,
-  ): boolean;
-  /** @deprecated Temporary bridge for the pre-source Scheduler contract. */
-  registerTurnForGroupDelivery(
-    turnId: string,
     listener?: ProactiveDeliveryListener,
   ): boolean;
   dispose(): void;
@@ -248,14 +233,6 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
       ...options,
       workspaceId,
       providerId,
-      ...(options.defaultConversation !== undefined
-        ? {
-            defaultConversation: normalizeConversation(
-              options.defaultConversation,
-              providerId,
-            ),
-          }
-        : {}),
     };
     this.logger = options.logger ?? defaultLogger;
     this.unsubscribe = options.sessionPort.subscribe((event) =>
@@ -358,15 +335,6 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
       ...(listener !== undefined ? { listener } : {}),
     });
     return true;
-  }
-
-  registerTurnForGroupDelivery(
-    turnId: string,
-    listener?: ProactiveDeliveryListener,
-  ): boolean {
-    const conversation = this.options.defaultConversation;
-    if (conversation === undefined || conversation.type !== "group") return false;
-    return this.registerTurnForDelivery(turnId, conversation, listener);
   }
 
   dispose(): void {

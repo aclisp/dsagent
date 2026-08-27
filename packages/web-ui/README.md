@@ -31,7 +31,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `CORS_ORIGINS` | — | Comma-separated exact HTTP(S) origins allowed to call `/health` and `/v1/*`. Wildcards are rejected; `/share/*` remains unavailable to cross-origin JavaScript |
 | `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with the other required `IM_WECOM_*` values enables the WeCom Chat Provider |
 | `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
-| `IM_WECOM_GROUP_CHAT_ID` | — | Temporary default conversation used by the legacy Scheduler group-delivery bridge; it is no longer an inbound group filter |
+| `IM_WECOM_GROUP_CHAT_ID` | — | Current Slice 3 WeCom adapter configuration; it is not a Scheduler target and is removed with the remaining WeCom deployment cleanup in Slice 4 |
 | `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` anywhere in text |
 | `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
 
@@ -55,8 +55,8 @@ the exact `@BOT_NAME` mention before handing the message to the provider-neutral
 mixed images and supported quoted images/files are
 downloaded immediately into the workspace's `uploads/` directory and represented with the same
 `[Uploaded files: ...]` prompt marker used by the Chat UI. Replies use the original callback frame as a
-final stream response; scheduled output currently uses the temporary default conversation as a new Markdown
-message. WeCom text delivery is capped
+final stream response; source scheduled output is sent as a new Markdown message to the conversation that
+created the task. WeCom text delivery is capped
 at 20,480 UTF-8 bytes; an oversized output is treated as a permanent delivery failure and remains visible
 in the Web UI Session. Before either text delivery path, DSCode bearer URLs (`/chat/<workspaceId>`,
 `/debug/<workspaceId>`, `/share/<workspaceId>/...`, and workspace-scoped query URLs) are replaced with
@@ -89,8 +89,8 @@ instead of silently starting an unusable connection.
 ### Discovering the WeCom group ID
 
 The normal Server currently requires `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`,
-`IM_WECOM_GROUP_CHAT_ID`, and `IM_WECOM_BOT_NAME`; the group ID is only the temporary default used by
-the legacy Scheduler bridge. If it is not known yet, build the WeCom package and run the standalone
+`IM_WECOM_GROUP_CHAT_ID`, and `IM_WECOM_BOT_NAME`; the group ID is retained only by the current WeCom
+adapter and is not used to choose Scheduler delivery. If it is not known yet, build the WeCom package and run the standalone
 discovery command with the Bot ID, Secret, and Bot Name:
 
 ```sh
@@ -122,8 +122,8 @@ docker run --rm --entrypoint node \
 The Server watches the first workspace's `.dscode/schedules.yaml` and writes scheduler-owned
 runtime state to `.dscode/schedules.status.json`. Both one-time and Croner-native recurring tasks
 run through the same shared Session as browser and Provider requests. `delivery: session` keeps the
-result in Web UI; `delivery: group` is a temporary legacy bridge that sends completed output to the
-configured default conversation when an IM Provider is available. The source file has this shape:
+result in Web UI; `delivery: source` sends completed output to the originating IM conversation recorded
+by the Scheduler. The source file has this shape:
 
 ```yaml
 version: 1
@@ -140,16 +140,15 @@ tasks:
     enabled: true
     type: cron
     cron: "0 18 * * 1-5"
-    delivery: group
+    delivery: source
     prompt: |
       检查今天的工作情况并给出总结。
 ```
 
-The built-in `scheduled-tasks` skill edits this file when a user asks the Agent to manage a task. The
-current Scheduler bridge uses `session` for Web UI requests and the legacy `group` value for group
-requests unless the user explicitly chooses otherwise; Slice 3 replaces that value with source-bound
-delivery. The skill reads the status file before confirming a change and does not expose internal IDs or
-Cron expressions in ordinary confirmations.
+The built-in `scheduled-tasks` skill edits this file when a user asks the Agent to manage a task. Web UI
+requests use `session`; IM requests use `source`, which is bound automatically to the current group or
+direct conversation. The skill never writes or exposes the internal source alias, reads the status file
+before confirming a change, and does not expose internal IDs or Cron expressions in ordinary confirmations.
 
 Use `type: once` with an RFC 3339 timestamp containing `Z` or an explicit offset, or `type: cron` with
 Croner's native syntax. Recurring tasks inherit the configured `TZ`; occurrences must be at least five
@@ -161,8 +160,8 @@ has no future occurrence; an expired one-time task remains in the file after it 
 There is no task CRUD route, central queue, or persistent delivery outbox. Missed occurrences are not
 replayed after restart, downtime, or a late callback; an overlapping recurring occurrence is skipped.
 Submission retries are bounded, accepted Turns are not rerun, and failures do not produce periodic
-group notifications. A `group` task still executes without a configured Provider, with its result
-remaining in the Web UI. The full product rules are in [docs/AI_WORKER.md](../../docs/AI_WORKER.md).
+notifications. A `source` task still executes when its Provider or alias is unavailable, with its result
+remaining in the Web UI and no fallback or queued delivery. The full product rules are in [docs/AI_WORKER.md](../../docs/AI_WORKER.md).
 
 ## Workspaces as a secret
 
@@ -187,12 +186,11 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
 
 # Run (yolo + volumes + security).
-# To enable the current WeCom bridge, add all four options below to this command. The group ID is
-# temporarily used for Scheduler delivery; inbound messages from other groups are still accepted when
-# they contain a real mention:
+# To enable the current Slice 3 WeCom adapter, add all four options below. The group ID is an adapter
+# setting only; inbound messages from other groups are still accepted when they contain a real mention:
 #   -e IM_WECOM_BOT_ID='<wecom bot id>'
 #   -e IM_WECOM_SECRET='<wecom bot secret>'
-#   -e IM_WECOM_GROUP_CHAT_ID='<temporary scheduler default conversation>'
+#   -e IM_WECOM_GROUP_CHAT_ID='<current WeCom adapter group ID>'
 #   -e IM_WECOM_BOT_NAME='<wecom bot display name>'
 DSCODE_PROMPT_PROFILE=steve
 docker run -d --name dscode \

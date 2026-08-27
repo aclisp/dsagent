@@ -15,6 +15,11 @@ export interface SessionPortTurnContext {
   readonly source?: SessionPortTurnSourceContext;
 }
 
+export interface SessionPortTurnStartedEvent {
+  readonly turnId: string;
+  readonly context?: SessionPortTurnContext;
+}
+
 export type SessionPortTurnSubmission =
   | { status: "accepted"; turnId: string }
   | { status: "busy" };
@@ -33,6 +38,10 @@ export type SessionPortTurnListener = (
   event: SessionPortTurnEvent,
 ) => void | Promise<void>;
 
+export type SessionPortTurnStartedListener = (
+  event: SessionPortTurnStartedEvent,
+) => void | Promise<void>;
+
 export interface SessionPort {
   activate(workspaceId: string): Promise<SessionPortActivation>;
   submitTurn(
@@ -41,4 +50,8 @@ export interface SessionPort {
     context?: SessionPortTurnContext,
   ): Promise<SessionPortTurnSubmission>;
   subscribe(listener: SessionPortTurnListener): () => void;
+  /** Internal lifecycle hook; omitted by lightweight test or embedded ports. */
+  subscribeTurnStarted?(
+    listener: SessionPortTurnStartedListener,
+  ): () => void;
 }

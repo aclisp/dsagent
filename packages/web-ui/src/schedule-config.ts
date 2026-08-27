@@ -18,7 +18,7 @@ const TASK_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RFC3339_WITH_OFFSET =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
 
-export type ScheduleDelivery = "session" | "group";
+export type ScheduleDelivery = "session" | "source";
 
 interface ScheduleTaskBase {
   id: string;
@@ -196,10 +196,10 @@ function parseTask(
   if (typeof value.enabled !== "boolean") {
     errors.push({ path: `${basePath}.enabled`, message: "Expected a boolean" });
   }
-  if (value.delivery !== "session" && value.delivery !== "group") {
+  if (value.delivery !== "session" && value.delivery !== "source") {
     errors.push({
       path: `${basePath}.delivery`,
-      message: "Expected session or group",
+      message: "Expected session or source",
     });
   }
   if (
@@ -220,7 +220,7 @@ function parseTask(
   if (
     typeof id !== "string" ||
     typeof value.enabled !== "boolean" ||
-    (value.delivery !== "session" && value.delivery !== "group") ||
+    (value.delivery !== "session" && value.delivery !== "source") ||
     typeof value.prompt !== "string"
   ) {
     return undefined;

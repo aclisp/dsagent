@@ -130,7 +130,6 @@ function createHarness() {
       workspaceId: "main",
       providerId: "wecom",
       conversationRegistry: registry,
-      defaultConversation: conversation(),
       sessionPort,
       delivery,
       logger: {
@@ -335,19 +334,6 @@ describe("HeadlessChatClient", () => {
     ]);
     expect(outcomes).toEqual([{ turnId: "scheduled-turn", status: "delivered" }]);
 
-    expect(
-      harness.client.registerTurnForGroupDelivery("legacy-scheduled-turn"),
-    ).toBe(true);
-    await harness.sessionPort.emit({
-      status: "completed",
-      turnId: "legacy-scheduled-turn",
-      output: "旧接口",
-    });
-    expect(harness.delivery.sends).toHaveLength(2);
-    expect(harness.delivery.sends[1]).toEqual({
-      conversation: conversation(),
-      text: "旧接口",
-    });
   });
 
   it("does not let proactive registration replace a reply target", async () => {
@@ -454,7 +440,7 @@ describe("HeadlessChatClient", () => {
     const harness = await createHarness();
     const outcomes: Array<{ turnId: string; status: string }> = [];
     expect(harness.sessionPort.listenerCount).toBe(1);
-    harness.client.registerTurnForGroupDelivery("scheduled-turn", (event) => {
+    harness.client.registerTurnForDelivery("scheduled-turn", conversation(), (event) => {
       outcomes.push(event);
     });
 
