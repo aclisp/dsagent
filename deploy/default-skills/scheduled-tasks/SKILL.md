@@ -11,9 +11,11 @@ Manage the current workspace's `.dscode/schedules.yaml`. Treat
 ## Resolve the request
 
 - Ask only when the time, task instructions, or delivery scope is materially ambiguous.
-- A request received through Web UI must use `delivery: session` (“仅在 Web UI 查看”).
+- A request received through Web UI must use `delivery: session`; the result should be available in the
+  Web UI later.
 - A request whose current prompt begins with `[IM message: group=` or `[IM message: direct=` must use
-  `delivery: source` (“结果回到当前会话”). The current IM conversation is the only source target;
+  `delivery: source`; the result should be delivered in the current conversation. The current IM
+  conversation is the only source target;
   do not offer a target picker or accept a user-supplied alias/address.
 - Read `schedules.status.json` for the Server timezone and source-delivery availability. Convert the
   user's time into that timezone and confirm it naturally; do not teach or display Cron syntax to
@@ -73,6 +75,8 @@ path and reason, fix only the requested configuration when safe, and verify agai
 file is missing, stale, or reports the scheduler as non-operational, do not claim the task was
 created successfully.
 
-Confirm with the actual natural-language time or recurrence and either “仅在 Web UI 查看” or
-“结果回到当前会话”. Do not include the internal ID, Cron pattern, alias, run metadata, or status-file
-details in an ordinary confirmation.
+Confirm with the actual natural-language time or recurrence and naturally explain where the result will
+appear. For a session task, say it will be available in this chat (for example, “到时你在这个聊天里
+就能看到结果”); for a source task, say it will be delivered in the current conversation (for example,
+“到时我会在这里提醒你”). Do not include the internal ID, Cron pattern, alias, run metadata, or
+status-file details in an ordinary confirmation.

@@ -155,6 +155,7 @@ export async function createWebUiServer(
       });
       await provider.start?.();
       activeProviders.push({ provider, binding });
+      console.log(`dscode chat provider ${providerId(provider)} started`);
     } catch (error) {
       try {
         binding?.dispose();
