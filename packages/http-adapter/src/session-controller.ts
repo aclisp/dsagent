@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import type { SessionPortTurnEvent } from "./session-port.js";
+import type {
+  SessionPortTurnContext,
+  SessionPortTurnEvent,
+} from "./session-port.js";
 import type { AgentMessage } from "./session-messages.js";
 import type {
   HttpUiBroker,
@@ -102,6 +105,7 @@ interface AbortAttempt {
 interface ActiveTurn {
   id: string;
   clientId?: string;
+  context?: SessionPortTurnContext;
   abortAttempt?: Promise<AbortAttempt>;
 }
 
@@ -223,9 +227,18 @@ export class SessionController {
         status,
         turnId,
         output: extras.output ?? null,
+        ...(this.activeTurn?.context !== undefined
+          ? { context: this.activeTurn.context }
+          : {}),
       });
     } else if (status === "failed" || status === "aborted") {
-      this.publishTerminalTurn({ status, turnId });
+      this.publishTerminalTurn({
+        status,
+        turnId,
+        ...(this.activeTurn?.context !== undefined
+          ? { context: this.activeTurn.context }
+          : {}),
+      });
     }
   }
 
@@ -345,12 +358,14 @@ export class SessionController {
   startTurn(
     message: string,
     clientId: string | undefined,
+    context?: SessionPortTurnContext,
   ): { id: string; status: "running" } | undefined {
     if (this.activeTurn) return undefined;
 
     const turn: ActiveTurn = {
       id: randomUUID(),
       ...(clientId !== undefined ? { clientId } : {}),
+      ...(context !== undefined ? { context } : {}),
     };
     this.activeTurn = turn;
     // The running event carries the submission so every attached client can render

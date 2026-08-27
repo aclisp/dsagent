@@ -29,31 +29,34 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-file upload size cap |
 | `CORS_ORIGINS` | — | Comma-separated exact HTTP(S) origins allowed to call `/health` and `/v1/*`. Wildcards are rejected; `/share/*` remains unavailable to cross-origin JavaScript |
-| `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with the other required `IM_WECOM_*` values enables the one-group Chat Provider |
+| `IM_WECOM_BOT_ID` | — | Optional WeCom smart-bot ID; together with the other required `IM_WECOM_*` values enables the WeCom Chat Provider |
 | `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
-| `IM_WECOM_GROUP_CHAT_ID` | — | The one fixed WeCom group bound to this container; other groups are ignored |
+| `IM_WECOM_GROUP_CHAT_ID` | — | Temporary default conversation used by the legacy Scheduler group-delivery bridge; it is no longer an inbound group filter |
 | `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` anywhere in text |
 | `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
 
 ## Headless Chat Provider composition
 
-`createWebUiServer` accepts an optional `chatProvider` for in-process group chat integration. The
-Provider publishes normalized messages through `subscribe`, implements `reply` and `send`, and
-supplies the one fixed `groupChatId`. The Server binds it to the first configured workspace through
-the shared `SessionPort`; receiving a Provider message lazily activates the same Session used by the
-browser clients.
+`createWebUiServer` accepts `chatProviders` for in-process multi-Provider integration (the singular
+`chatProvider` option remains a temporary compatibility bridge). Each Provider publishes normalized
+conversation messages through `subscribe`, implements conversation-aware `reply` and `send`, and has
+its own lifecycle. The Server binds every Provider to the first configured workspace through one shared
+alias registry and `SessionPort`; all inbound messages therefore use the same Session and global busy
+boundary while each reply remains tied to its original conversation and Provider.
 
 The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
 `@thinkany/dscode-wecom` package, when all required `IM_WECOM_*` values are configured. It uses the official
 [`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk) WebSocket long connection;
 the SDK owns authentication, heartbeat, reconnect, frame acknowledgements, media decryption, and
-media upload. The Provider accepts text messages and supported `mixed` messages from the configured
-group that contain the exact `@BOT_NAME` mention, ignores ordinary/single-chat messages, other groups,
-other bots, and unsupported message types, then strips the exact `@BOT_NAME` mention before handing the
-message to the provider-neutral Chat Client. Incoming mixed images and supported quoted images/files are
+media upload. The Provider accepts text messages and supported `mixed` messages from any group that
+contain the exact `@BOT_NAME` mention. This Slice keeps the concrete WeCom adapter group-only; direct-chat
+normalization is completed in Slice 4. It ignores other bots and unsupported message types, then strips
+the exact `@BOT_NAME` mention before handing the message to the provider-neutral Chat Client. Incoming
+mixed images and supported quoted images/files are
 downloaded immediately into the workspace's `uploads/` directory and represented with the same
 `[Uploaded files: ...]` prompt marker used by the Chat UI. Replies use the original callback frame as a
-final stream response; scheduled group output uses a new Markdown message. WeCom text delivery is capped
+final stream response; scheduled output currently uses the temporary default conversation as a new Markdown
+message. WeCom text delivery is capped
 at 20,480 UTF-8 bytes; an oversized output is treated as a permanent delivery failure and remains visible
 in the Web UI Session. Before either text delivery path, DSCode bearer URLs (`/chat/<workspaceId>`,
 `/debug/<workspaceId>`, `/share/<workspaceId>/...`, and workspace-scoped query URLs) are replaced with
@@ -85,9 +88,10 @@ instead of silently starting an unusable connection.
 
 ### Discovering the WeCom group ID
 
-The normal Server requires `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, `IM_WECOM_GROUP_CHAT_ID`, and
-`IM_WECOM_BOT_NAME`. If the group ID is not known yet, build the WeCom package and run the
-standalone discovery command with the Bot ID, Secret, and Bot Name:
+The normal Server currently requires `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`,
+`IM_WECOM_GROUP_CHAT_ID`, and `IM_WECOM_BOT_NAME`; the group ID is only the temporary default used by
+the legacy Scheduler bridge. If it is not known yet, build the WeCom package and run the standalone
+discovery command with the Bot ID, Secret, and Bot Name:
 
 ```sh
 pnpm --dir packages/wecom build
@@ -98,7 +102,7 @@ pnpm wecom-discover
 ```
 
 The command connects to the WeCom WebSocket, waits for one text message containing a real, picker-inserted
-exact `@BOT_NAME` mention in the target group, prints `IM_WECOM_GROUP_CHAT_ID=<chatid>`, and exits. It does not reply,
+exact `@BOT_NAME` mention in any group, prints `IM_WECOM_GROUP_CHAT_ID=<chatid>`, and exits. It does not reply,
 start a DSCode Session, invoke an Agent, or write configuration. Copy that value into the normal
 Server environment before starting it. Use `--timeout <seconds>` to change the five-minute wait.
 
@@ -118,8 +122,8 @@ docker run --rm --entrypoint node \
 The Server watches the first workspace's `.dscode/schedules.yaml` and writes scheduler-owned
 runtime state to `.dscode/schedules.status.json`. Both one-time and Croner-native recurring tasks
 run through the same shared Session as browser and Provider requests. `delivery: session` keeps the
-result in Web UI; `delivery: group` additionally sends completed output to the configured group when
-an IM Provider is available. The source file has this shape:
+result in Web UI; `delivery: group` is a temporary legacy bridge that sends completed output to the
+configured default conversation when an IM Provider is available. The source file has this shape:
 
 ```yaml
 version: 1
@@ -141,9 +145,10 @@ tasks:
       检查今天的工作情况并给出总结。
 ```
 
-The built-in `scheduled-tasks` skill edits this file when a user asks the Agent to manage a task. It
-uses `session` for Web UI requests and `group` for group requests unless the user explicitly chooses
-otherwise, and reads the status file before confirming a change. It does not expose internal IDs or
+The built-in `scheduled-tasks` skill edits this file when a user asks the Agent to manage a task. The
+current Scheduler bridge uses `session` for Web UI requests and the legacy `group` value for group
+requests unless the user explicitly chooses otherwise; Slice 3 replaces that value with source-bound
+delivery. The skill reads the status file before confirming a change and does not expose internal IDs or
 Cron expressions in ordinary confirmations.
 
 Use `type: once` with an RFC 3339 timestamp containing `Z` or an explicit offset, or `type: cron` with
@@ -182,10 +187,12 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
 
 # Run (yolo + volumes + security).
-# To enable WeCom, add all four options below to this command:
+# To enable the current WeCom bridge, add all four options below to this command. The group ID is
+# temporarily used for Scheduler delivery; inbound messages from other groups are still accepted when
+# they contain a real mention:
 #   -e IM_WECOM_BOT_ID='<wecom bot id>'
 #   -e IM_WECOM_SECRET='<wecom bot secret>'
-#   -e IM_WECOM_GROUP_CHAT_ID='<fixed group chat id>'
+#   -e IM_WECOM_GROUP_CHAT_ID='<temporary scheduler default conversation>'
 #   -e IM_WECOM_BOT_NAME='<wecom bot display name>'
 DSCODE_PROMPT_PROFILE=steve
 docker run -d --name dscode \
@@ -385,8 +392,8 @@ live working status counts up in the disabled input line (the TUI's
 "esc to interrupt" suffix becomes " · Stop to interrupt"). The Stop button aborts
 the running turn. Refreshing the page reattaches and re-renders.
 
-The friendly `/chat/<workspaceId>` view hides internal protocol markers: group-originated user
-messages show a group source badge (and sender name when available), while scheduled-task messages
+The friendly `/chat/<workspaceId>` view hides internal protocol markers: IM-originated user messages
+show only a “群聊” or “单聊” source badge, while scheduled-task messages
 appear as centered event cards without task IDs, Cron expressions, or run metadata. The diagnostic
 `/debug/<workspaceId>` view keeps the raw events and technical details. Both views attach to the same
 workspace Session, so a task or group message is visible in the shared conversation.

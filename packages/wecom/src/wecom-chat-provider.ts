@@ -16,9 +16,11 @@ import {
 import type {
   ChatDeliveryResult,
   ChatMessageHandlingResult,
-  InboundGroupMessage,
   ChatProvider,
   ChatProviderListener,
+  ChatReplyTarget,
+  InboundChatMessage,
+  ChatConversation,
 } from "@thinkany/dscode-chat-client";
 import { parseWeComBotMention } from "./wecom-mention.js";
 import { redactWeComPrivateUrls } from "./wecom-url-redaction.js";
@@ -120,6 +122,7 @@ export type WeComEnvironment = Readonly<
 interface PendingReply {
   frame: Pick<WeComMessageFrame, "headers">;
   streamId: string;
+  conversation: ChatConversation;
 }
 
 const defaultLogger: WeComChatProviderLogger = {
@@ -155,21 +158,25 @@ function nonBlankText(value: unknown): string | undefined {
  */
 export function normalizeWeComMessage(
   frame: WeComMessageFrame,
-  options: Pick<CreateWeComChatProviderOptions, "botId" | "botName" | "groupChatId">,
-): InboundGroupMessage | undefined {
+  options: Pick<CreateWeComChatProviderOptions, "botId" | "botName">,
+): InboundChatMessage | undefined {
   if (nonBlankText(frame.headers?.req_id) === undefined) return undefined;
   const body = frame.body;
   if (!body || body.msgtype !== "text") return undefined;
   if (body.aibotid !== options.botId) return undefined;
-  if (body.chattype !== "group" || body.chatid !== options.groupChatId) {
-    return undefined;
-  }
+  if (body.chattype !== "group") return undefined;
   if (body.quote !== undefined) return undefined;
 
   const messageId = nonBlankText(body.msgid);
+  const conversationId = nonBlankText(body.chatid);
   const senderId = nonBlankText(body.from?.userid);
   const content = nonBlankText(body.text?.content);
-  if (messageId === undefined || senderId === undefined || content === undefined) {
+  if (
+    messageId === undefined ||
+    conversationId === undefined ||
+    senderId === undefined ||
+    content === undefined
+  ) {
     return undefined;
   }
   if (senderId === options.botId || senderId === body.aibotid) return undefined;
@@ -180,15 +187,20 @@ export function normalizeWeComMessage(
   if (text.length === 0) return undefined;
 
   return {
-    dedupeKey: `wecom:${messageId}`,
-    groupChatId: options.groupChatId,
+    dedupeKey: messageId,
     messageId,
+    conversation: {
+      providerId: "wecom",
+      type: "group",
+      address: conversationId,
+    },
+    sender: { providerId: "wecom", address: senderId },
     text,
   };
 }
 
 interface ParsedWeComInboundMessage {
-  message: InboundGroupMessage;
+  message: InboundChatMessage;
   media: WeComMediaReference[];
 }
 
@@ -196,24 +208,30 @@ interface GroupMessageIdentity {
   body: WeComMessageBody;
   messageId: string;
   senderId: string;
+  conversationId: string;
 }
 
 function groupMessageIdentity(
   frame: WeComMessageFrame,
-  options: Pick<CreateWeComChatProviderOptions, "botId" | "groupChatId">,
+  options: Pick<CreateWeComChatProviderOptions, "botId">,
 ): GroupMessageIdentity | undefined {
   if (nonBlankText(frame.headers?.req_id) === undefined) return undefined;
   const body = frame.body;
   if (!body || body.aibotid !== options.botId) return undefined;
-  if (body.chattype !== "group" || body.chatid !== options.groupChatId) {
-    return undefined;
-  }
+  if (body.chattype !== "group") return undefined;
 
   const messageId = nonBlankText(body.msgid);
+  const conversationId = nonBlankText(body.chatid);
   const senderId = nonBlankText(body.from?.userid);
-  if (messageId === undefined || senderId === undefined) return undefined;
+  if (
+    messageId === undefined ||
+    conversationId === undefined ||
+    senderId === undefined
+  ) {
+    return undefined;
+  }
   if (senderId === options.botId || senderId === body.aibotid) return undefined;
-  return { body, messageId, senderId };
+  return { body, messageId, senderId, conversationId };
 }
 
 function mediaReference(
@@ -291,12 +309,12 @@ function dedupeMediaReferences(
 
 function parseWeComInboundMessage(
   frame: WeComMessageFrame,
-  options: Pick<CreateWeComChatProviderOptions, "botId" | "botName" | "groupChatId">,
+  options: Pick<CreateWeComChatProviderOptions, "botId" | "botName">,
 ): ParsedWeComInboundMessage | undefined {
   const identity = groupMessageIdentity(frame, options);
   if (identity === undefined) return undefined;
 
-  const { body, messageId } = identity;
+  const { body, messageId, senderId, conversationId } = identity;
   let textParts: string[] = [];
   let media: WeComMediaReference[] = [];
   if (body.msgtype === "text") {
@@ -324,9 +342,14 @@ function parseWeComInboundMessage(
 
   return {
     message: {
-      dedupeKey: `wecom:${messageId}`,
-      groupChatId: options.groupChatId,
+      dedupeKey: messageId,
       messageId,
+      conversation: {
+        providerId: "wecom",
+        type: "group",
+        address: conversationId,
+      },
+      sender: { providerId: "wecom", address: senderId },
       text:
         parsedMention.text.length > 0
           ? parsedMention.text
@@ -343,10 +366,10 @@ function mediaFailureText(
 }
 
 function appendInboundMediaPrompt(
-  message: InboundGroupMessage,
+  message: InboundChatMessage,
   storedPaths: readonly string[],
   failedKinds: readonly WeComMediaReference["kind"][],
-): InboundGroupMessage {
+): InboundChatMessage {
   let text = message.text;
   if (storedPaths.length > 0) {
     text = `[Uploaded files: ${storedPaths.join(", ")}]\n${text}`;
@@ -398,7 +421,9 @@ function textFitsWeComLimit(text: string): boolean {
 }
 
 export class WeComChatProvider implements ChatProvider {
+  readonly providerId = "wecom";
   readonly groupChatId: string;
+  readonly defaultConversation: ChatConversation;
   private readonly botId: string;
   private readonly botName: string;
   private readonly client: WeComClient;
@@ -422,6 +447,11 @@ export class WeComChatProvider implements ChatProvider {
     this.botId = requiredOption("botId", options.botId);
     const secret = requiredOption("secret", options.secret);
     this.groupChatId = requiredOption("groupChatId", options.groupChatId);
+    this.defaultConversation = {
+      providerId: this.providerId,
+      type: "group",
+      address: this.groupChatId,
+    };
     this.botName = requiredOption("botName", options.botName);
     this.logger = options.logger ?? defaultLogger;
     const workspacePath = options.workspacePath?.trim();
@@ -492,13 +522,26 @@ export class WeComChatProvider implements ChatProvider {
     };
   }
 
-  async reply(messageId: string, text: string): Promise<ChatDeliveryResult> {
+  async reply(target: ChatReplyTarget, text: string): Promise<ChatDeliveryResult> {
     const safeText = redactWeComPrivateUrls(text);
     if (this.disposed || !textFitsWeComLimit(safeText)) {
       return { status: "permanent_failure" };
     }
-    const pending = this.pendingReplies.get(messageId);
+    if (
+      target.conversation.providerId !== this.providerId ||
+      target.conversation.type !== "group"
+    ) {
+      return { status: "permanent_failure" };
+    }
+    const pending = this.pendingReplies.get(target.messageId);
     if (pending === undefined) return { status: "permanent_failure" };
+    if (
+      pending.conversation.providerId !== target.conversation.providerId ||
+      pending.conversation.type !== target.conversation.type ||
+      pending.conversation.address !== target.conversation.address
+    ) {
+      return { status: "permanent_failure" };
+    }
     try {
       await this.client.replyStream(
         pending.frame,
@@ -506,33 +549,37 @@ export class WeComChatProvider implements ChatProvider {
         safeText,
         true,
       );
-      this.pendingReplies.delete(messageId);
-      await this.deliverOutboundArtifacts(safeText);
+      this.pendingReplies.delete(target.messageId);
+      await this.deliverOutboundArtifacts(safeText, target.conversation.address);
       return { status: "delivered" };
     } catch (error) {
       const result = classifyDeliveryError(error);
       if (result.status === "permanent_failure") {
-        this.pendingReplies.delete(messageId);
+        this.pendingReplies.delete(target.messageId);
       }
       return result;
     }
   }
 
-  async send(groupChatId: string, text: string): Promise<ChatDeliveryResult> {
+  async send(
+    conversation: ChatConversation,
+    text: string,
+  ): Promise<ChatDeliveryResult> {
     const safeText = redactWeComPrivateUrls(text);
     if (
       this.disposed ||
-      groupChatId !== this.groupChatId ||
+      conversation.providerId !== this.providerId ||
+      conversation.type !== "group" ||
       !textFitsWeComLimit(safeText)
     ) {
       return { status: "permanent_failure" };
     }
     try {
-      await this.client.sendMessage(groupChatId, {
+      await this.client.sendMessage(conversation.address, {
         msgtype: "markdown",
         markdown: { content: safeText },
       });
-      await this.deliverOutboundArtifacts(safeText, groupChatId);
+      await this.deliverOutboundArtifacts(safeText, conversation.address);
       return { status: "delivered" };
     } catch (error) {
       return classifyDeliveryError(error);
@@ -566,7 +613,6 @@ export class WeComChatProvider implements ChatProvider {
       parsed = parseWeComInboundMessage(frame, {
         botId: this.botId,
         botName: this.botName,
-        groupChatId: this.groupChatId,
       });
     } catch {
       this.logger.error("WeCom inbound message parsing failed");
@@ -584,6 +630,7 @@ export class WeComChatProvider implements ChatProvider {
       this.pendingReplies.set(parsed.message.messageId, {
         frame,
         streamId: generateReqId("dscode"),
+        conversation: parsed.message.conversation,
       });
 
       let message = parsed.message;
@@ -623,7 +670,7 @@ export class WeComChatProvider implements ChatProvider {
     }
   }
 
-  private dispatch(message: InboundGroupMessage): void {
+  private dispatch(message: InboundChatMessage): void {
     for (const listener of this.listeners) {
       try {
         const result: Promise<ChatMessageHandlingResult> = listener(message);

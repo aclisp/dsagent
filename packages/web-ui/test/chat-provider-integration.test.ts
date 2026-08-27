@@ -4,11 +4,14 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  BUSY_REPLY,
+  GROUP_BUSY_REPLY,
   type ChatDeliveryResult,
+  type ChatConversation,
   type ChatMessageHandlingResult,
   type ChatProvider,
-  type InboundGroupMessage,
+  type ChatProviderListener,
+  type ChatReplyTarget,
+  type InboundChatMessage,
 } from "@thinkany/dscode-chat-client";
 import {
   createHttpUiBroker,
@@ -69,39 +72,49 @@ class ControlledHost implements HttpAdapterServerHost {
 }
 
 class FakeChatProvider implements ChatProvider {
-  readonly groupChatId = "bound-group";
-  readonly replies: Array<{ messageId: string; text: string }> = [];
-  readonly sends: Array<{ groupChatId: string; text: string }> = [];
+  readonly providerId: string;
+  readonly defaultConversation: ChatConversation;
+  readonly replies: Array<{ target: ChatReplyTarget; text: string }> = [];
+  readonly sends: Array<{ conversation: ChatConversation; text: string }> = [];
   startCalls = 0;
   disposeCalls = 0;
-  private readonly listeners = new Set<
-    (message: InboundGroupMessage) => Promise<ChatMessageHandlingResult>
-  >();
+  private readonly listeners = new Set<ChatProviderListener>();
 
-  subscribe(
-    listener: (
-      message: InboundGroupMessage,
-    ) => Promise<ChatMessageHandlingResult>,
-  ): () => void {
+  constructor(
+    providerId = "fake",
+    private readonly startFailure?: Error,
+  ) {
+    this.providerId = providerId;
+    this.defaultConversation = {
+      providerId,
+      type: "group",
+      address: `${providerId}-bound-group`,
+    };
+  }
+
+  subscribe(listener: ChatProviderListener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  async emit(message: InboundGroupMessage): Promise<ChatMessageHandlingResult> {
+  async emit(message: InboundChatMessage): Promise<ChatMessageHandlingResult> {
     const listener = this.listeners.values().next().value;
     if (!listener) throw new Error("Chat Provider is not bound");
     return listener(message);
   }
 
-  async reply(messageId: string, text: string): Promise<ChatDeliveryResult> {
-    this.replies.push({ messageId, text });
+  async reply(target: ChatReplyTarget, text: string): Promise<ChatDeliveryResult> {
+    this.replies.push({ target, text });
     return { status: "delivered" };
   }
 
-  async send(groupChatId: string, text: string): Promise<ChatDeliveryResult> {
-    this.sends.push({ groupChatId, text });
+  async send(
+    conversation: ChatConversation,
+    text: string,
+  ): Promise<ChatDeliveryResult> {
+    this.sends.push({ conversation, text });
     return { status: "delivered" };
   }
 
@@ -111,6 +124,7 @@ class FakeChatProvider implements ChatProvider {
 
   start(): void {
     this.startCalls += 1;
+    if (this.startFailure) throw this.startFailure;
   }
 
   dispose(): void {
@@ -121,6 +135,7 @@ class FakeChatProvider implements ChatProvider {
 interface Harness {
   server: FastifyInstance;
   provider?: FakeChatProvider;
+  providers: FakeChatProvider[];
   hosts: ControlledHost[];
   factoryCalls: HttpAdapterHostFactoryOptions[];
   listCalls: string[];
@@ -143,8 +158,13 @@ afterEach(async () => {
 async function createHarness(
   withProvider: boolean,
   scheduleSource?: string,
+  additionalProviders: FakeChatProvider[] = [],
 ): Promise<Harness> {
   const provider = withProvider ? new FakeChatProvider() : undefined;
+  const providers = [
+    ...(provider === undefined ? [] : [provider]),
+    ...additionalProviders,
+  ];
   const hosts: ControlledHost[] = [];
   const factoryCalls: HttpAdapterHostFactoryOptions[] = [];
   const listCalls: string[] = [];
@@ -176,7 +196,11 @@ async function createHarness(
       listCalls.push(cwd);
       return [];
     },
-    ...(provider !== undefined ? { chatProvider: provider } : {}),
+    ...(providers.length === 1
+      ? { chatProvider: providers[0] }
+      : providers.length > 1
+        ? { chatProviders: providers }
+        : {}),
   });
   await server.ready();
   servers.push(server);
@@ -186,18 +210,41 @@ async function createHarness(
     factoryCalls,
     listCalls,
     workspaces,
+    providers,
     ...(provider !== undefined ? { provider } : {}),
   };
 }
 
 function inbound(
-  overrides: Partial<InboundGroupMessage> = {},
-): InboundGroupMessage {
+  overrides: Partial<InboundChatMessage> = {},
+): InboundChatMessage {
   return {
     dedupeKey: "event-1",
-    groupChatId: "bound-group",
     messageId: "message-1",
-    senderName: "张三",
+    conversation: {
+      providerId: "fake",
+      type: "group",
+      address: "fake-bound-group",
+    },
+    sender: { providerId: "fake", address: "user-1" },
+    text: "检查当前工作",
+    ...overrides,
+  };
+}
+
+function providerInbound(
+  providerId: string,
+  overrides: Partial<InboundChatMessage> = {},
+): InboundChatMessage {
+  return {
+    dedupeKey: `${providerId}-event-1`,
+    messageId: `${providerId}-message-1`,
+    conversation: {
+      providerId,
+      type: "group",
+      address: `${providerId}-bound-group`,
+    },
+    sender: { providerId, address: `${providerId}-user-1` },
     text: "检查当前工作",
     ...overrides,
   };
@@ -259,7 +306,10 @@ tasks:
     host.completeNext("定时总结结果");
     await vi.waitFor(() =>
       expect(provider.sends).toEqual([
-        { groupChatId: "bound-group", text: "定时总结结果" },
+        {
+          conversation: provider.defaultConversation,
+          text: "定时总结结果",
+        },
       ]),
     );
   });
@@ -274,35 +324,59 @@ tasks:
     expect(harness.listCalls).toEqual([]);
 
     await expect(
-      provider.emit(inbound({ groupChatId: "another-group" })),
-    ).resolves.toEqual({ status: "ignored" });
-    expect(harness.factoryCalls).toEqual([]);
+      provider.emit(
+        inbound({
+          dedupeKey: "other-event",
+          messageId: "other-message",
+          conversation: {
+            providerId: "fake",
+            type: "group",
+            address: "another-group",
+          },
+        }),
+      ),
+    ).resolves.toMatchObject({ status: "accepted" });
+    expect(harness.factoryCalls).toHaveLength(1);
 
-    const accepted = await provider.emit(inbound());
-    expect(accepted).toMatchObject({ status: "accepted" });
+    const accepted = await provider.emit(
+      inbound({ dedupeKey: "event-2", messageId: "message-2" }),
+    );
+    expect(accepted).toEqual({ status: "busy" });
     expect(harness.factoryCalls).toHaveLength(1);
     expect(harness.factoryCalls[0]?.cwd).toBe(harness.workspaces.first_workspace_01);
     expect(harness.listCalls).toEqual([harness.workspaces.first_workspace_01]);
     const host = harness.hosts[0];
     if (!host) throw new Error("Session Host was not created");
-    expect(host.prompts).toEqual([
-      "[Group message from 张三]\n\n检查当前工作",
-    ]);
+    expect(host.prompts[0]).toMatch(
+      /^\[IM message: group=conv-[a-z0-9-]+; sender=sender-[a-z0-9-]+\]\n\n检查当前工作$/,
+    );
 
-    await expect(
-      provider.emit(
-        inbound({ dedupeKey: "event-2", messageId: "message-2" }),
-      ),
-    ).resolves.toEqual({ status: "busy" });
     expect(provider.replies).toEqual([
-      { messageId: "message-2", text: BUSY_REPLY },
+      {
+        target: {
+          messageId: "message-2",
+          conversation: {
+            providerId: "fake",
+            type: "group",
+            address: "fake-bound-group",
+          },
+        },
+        text: GROUP_BUSY_REPLY,
+      },
     ]);
 
-    host.completeNext("群聊结果");
+    host.completeNext("另一个群聊结果");
     await vi.waitFor(() =>
       expect(provider.replies).toContainEqual({
-        messageId: "message-1",
-        text: "群聊结果",
+        target: {
+          messageId: "other-message",
+          conversation: {
+            providerId: "fake",
+            type: "group",
+            address: "another-group",
+          },
+        },
+        text: "另一个群聊结果",
       }),
     );
     await waitForSessionIdle(harness.server);
@@ -315,7 +389,9 @@ tasks:
     });
     expect(browserTurn.statusCode).toBe(202);
     expect(host.prompts).toEqual([
-      "[Group message from 张三]\n\n检查当前工作",
+      expect.stringMatching(
+        /^\[IM message: group=conv-[a-z0-9-]+; sender=sender-[a-z0-9-]+\]\n\n检查当前工作$/,
+      ),
       "浏览器请求",
     ]);
 
@@ -343,5 +419,76 @@ tasks:
     expect(provider.listenerCount).toBe(0);
     expect(provider.disposeCalls).toBe(1);
     await expect(provider.emit(inbound())).rejects.toThrow("not bound");
+  });
+
+  it("composes multiple Providers over one Session and keeps reply targets isolated", async () => {
+    const secondProvider = new FakeChatProvider("second");
+    const harness = await createHarness(true, undefined, [secondProvider]);
+    const firstProvider = harness.provider;
+    if (!firstProvider) throw new Error("Missing first Fake Chat Provider");
+
+    expect(harness.providers).toHaveLength(2);
+    expect(firstProvider.listenerCount).toBe(1);
+    expect(secondProvider.listenerCount).toBe(1);
+
+    await expect(firstProvider.emit(inbound())).resolves.toMatchObject({
+      status: "accepted",
+    });
+    const secondResult = await secondProvider.emit(
+      providerInbound("second"),
+    );
+    expect(secondResult).toEqual({ status: "busy" });
+    expect(secondProvider.replies).toEqual([
+      {
+        target: {
+          messageId: "second-message-1",
+          conversation: {
+            providerId: "second",
+            type: "group",
+            address: "second-bound-group",
+          },
+        },
+        text: GROUP_BUSY_REPLY,
+      },
+    ]);
+
+    const host = harness.hosts[0];
+    if (!host) throw new Error("Session Host was not created");
+    host.completeNext("第一个 Provider 的结果");
+    await vi.waitFor(() =>
+      expect(firstProvider.replies).toContainEqual({
+        target: {
+          messageId: "message-1",
+          conversation: {
+            providerId: "fake",
+            type: "group",
+            address: "fake-bound-group",
+          },
+        },
+        text: "第一个 Provider 的结果",
+      }),
+    );
+    expect(secondProvider.replies).toHaveLength(1);
+  });
+
+  it("isolates a Provider startup failure while keeping other Providers and HTTP alive", async () => {
+    const failingProvider = new FakeChatProvider(
+      "broken",
+      new Error("connection failed"),
+    );
+    const harness = await createHarness(true, undefined, [failingProvider]);
+    const workingProvider = harness.provider;
+    if (!workingProvider) throw new Error("Missing working Fake Chat Provider");
+
+    expect(workingProvider.listenerCount).toBe(1);
+    expect(workingProvider.startCalls).toBe(1);
+    expect(failingProvider.startCalls).toBe(1);
+    expect(failingProvider.listenerCount).toBe(0);
+    expect(failingProvider.disposeCalls).toBe(1);
+
+    await expect(workingProvider.emit(inbound())).resolves.toMatchObject({
+      status: "accepted",
+    });
+    expect(harness.factoryCalls).toHaveLength(1);
   });
 });

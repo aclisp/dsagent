@@ -1,24 +1,33 @@
 import type {
   SessionPort,
   SessionPortActivation,
+  SessionPortTurnContext,
   SessionPortTurnEvent,
   SessionPortTurnListener,
   SessionPortTurnSubmission,
 } from "@thinkany/dscode-http-adapter/session-port";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  BUSY_REPLY,
+  DIRECT_BUSY_REPLY,
   EMPTY_COMPLETION_REPLY,
+  GROUP_BUSY_REPLY,
+  createConversationAliasRegistry,
   createHeadlessChatClient,
   type ChatClientLogger,
+  type ChatConversation,
   type ChatDelivery,
   type ChatDeliveryResult,
-  type InboundGroupMessage,
+  type ChatReplyTarget,
+  type InboundChatMessage,
 } from "../src/index.js";
 
 class FakeSessionPort implements SessionPort {
   readonly activations: string[] = [];
-  readonly submissions: Array<{ workspaceId: string; message: string }> = [];
+  readonly submissions: Array<{
+    workspaceId: string;
+    message: string;
+    context?: SessionPortTurnContext;
+  }> = [];
   readonly results: SessionPortTurnSubmission[] = [];
   private readonly listeners = new Set<SessionPortTurnListener>();
   private nextTurn = 1;
@@ -31,8 +40,13 @@ class FakeSessionPort implements SessionPort {
   async submitTurn(
     workspaceId: string,
     message: string,
+    context?: SessionPortTurnContext,
   ): Promise<SessionPortTurnSubmission> {
-    this.submissions.push({ workspaceId, message });
+    this.submissions.push({
+      workspaceId,
+      message,
+      ...(context !== undefined ? { context } : {}),
+    });
     return (
       this.results.shift() ?? {
         status: "accepted",
@@ -56,30 +70,43 @@ class FakeSessionPort implements SessionPort {
 }
 
 class FakeDelivery implements ChatDelivery {
-  readonly replies: Array<{ messageId: string; text: string }> = [];
-  readonly sends: Array<{ groupChatId: string; text: string }> = [];
+  readonly replies: Array<{ target: ChatReplyTarget; text: string }> = [];
+  readonly sends: Array<{ conversation: ChatConversation; text: string }> = [];
   readonly replyResults: ChatDeliveryResult[] = [];
   readonly sendResults: ChatDeliveryResult[] = [];
 
-  async reply(messageId: string, text: string): Promise<ChatDeliveryResult> {
-    this.replies.push({ messageId, text });
+  async reply(
+    target: ChatReplyTarget,
+    text: string,
+  ): Promise<ChatDeliveryResult> {
+    this.replies.push({ target, text });
     return this.replyResults.shift() ?? { status: "delivered" };
   }
 
-  async send(groupChatId: string, text: string): Promise<ChatDeliveryResult> {
-    this.sends.push({ groupChatId, text });
+  async send(
+    conversation: ChatConversation,
+    text: string,
+  ): Promise<ChatDeliveryResult> {
+    this.sends.push({ conversation, text });
     return this.sendResults.shift() ?? { status: "delivered" };
   }
 }
 
+function conversation(
+  type: ChatConversation["type"] = "group",
+  address = "group-1",
+): ChatConversation {
+  return { providerId: "wecom", type, address };
+}
+
 function inbound(
-  overrides: Partial<InboundGroupMessage> = {},
-): InboundGroupMessage {
+  overrides: Partial<InboundChatMessage> = {},
+): InboundChatMessage {
   return {
     dedupeKey: "event-1",
-    groupChatId: "bound-group",
     messageId: "message-1",
-    senderName: "张三",
+    conversation: conversation(),
+    sender: { providerId: "wecom", address: "user-1" },
     text: "检查当前工作",
     ...overrides,
   };
@@ -92,18 +119,28 @@ function createHarness() {
     context: Parameters<ChatClientLogger["error"]>[0];
     message: string;
   }> = [];
-  const client = createHeadlessChatClient({
-    workspaceId: "main",
-    groupChatId: "bound-group",
-    sessionPort,
-    delivery,
-    logger: {
-      error(context, message) {
-        logErrors.push({ context, message });
-      },
-    },
+  const conversationRegistry = createConversationAliasRegistry({
+    random: (() => {
+      let next = 1;
+      return () => `token-${next++}`;
+    })(),
   });
-  return { client, sessionPort, delivery, logErrors };
+  return conversationRegistry.then((registry) => {
+    const client = createHeadlessChatClient({
+      workspaceId: "main",
+      providerId: "wecom",
+      conversationRegistry: registry,
+      defaultConversation: conversation(),
+      sessionPort,
+      delivery,
+      logger: {
+        error(context, message) {
+          logErrors.push({ context, message });
+        },
+      },
+    });
+    return { client, sessionPort, delivery, logErrors };
+  });
 }
 
 afterEach(() => {
@@ -112,89 +149,135 @@ afterEach(() => {
 });
 
 describe("HeadlessChatClient", () => {
-  it("filters the bound group, deduplicates, and formats sender markers", async () => {
-    const harness = createHarness();
-
-    await expect(
-      harness.client.handleMessage(
-        inbound({ groupChatId: "another-group" }),
-      ),
-    ).resolves.toEqual({ status: "ignored" });
-    expect(harness.sessionPort.submissions).toEqual([]);
+  it("accepts every Provider conversation and formats opaque source markers", async () => {
+    const harness = await createHarness();
 
     await expect(harness.client.handleMessage(inbound())).resolves.toEqual({
       status: "accepted",
       turnId: "turn-1",
     });
+    await expect(
+      harness.client.handleMessage(
+        inbound({
+          dedupeKey: "event-2",
+          messageId: "message-2",
+          conversation: conversation("direct", "user-2"),
+        }),
+      ),
+    ).resolves.toEqual({ status: "accepted", turnId: "turn-2" });
+
     expect(harness.sessionPort.submissions).toEqual([
       {
         workspaceId: "main",
-        message: "[Group message from 张三]\n\n检查当前工作",
+        message: "[IM message: group=conv-token-1; sender=sender-token-2]\n\n检查当前工作",
+        context: {
+          source: { type: "im", conversationAlias: "conv-token-1" },
+        },
+      },
+      {
+        workspaceId: "main",
+        message: "[IM message: direct=conv-token-3; sender=sender-token-2]\n\n检查当前工作",
+        context: {
+          source: { type: "im", conversationAlias: "conv-token-3" },
+        },
       },
     ]);
     await expect(harness.client.handleMessage(inbound())).resolves.toEqual({
       status: "duplicate",
     });
-    expect(harness.sessionPort.submissions).toHaveLength(1);
-
-    await harness.client.handleMessage({
-      dedupeKey: "event-2",
-      groupChatId: "bound-group",
-      messageId: "message-2",
-      text: "生成总结",
-    });
-    expect(harness.sessionPort.submissions[1]).toEqual({
-      workspaceId: "main",
-      message: "[Group message]\n\n生成总结",
-    });
   });
 
-  it("replies with the fixed busy message and records no Turn", async () => {
-    const harness = createHarness();
-    harness.sessionPort.results.push({ status: "busy" });
+  it("uses conversation-specific busy messages and records no Turn", async () => {
+    const harness = await createHarness();
+    harness.sessionPort.results.push({ status: "busy" }, { status: "busy" });
 
     await expect(harness.client.handleMessage(inbound())).resolves.toEqual({
       status: "busy",
     });
+    await expect(
+      harness.client.handleMessage(
+        inbound({
+          dedupeKey: "event-2",
+          messageId: "message-2",
+          conversation: conversation("direct", "user-2"),
+        }),
+      ),
+    ).resolves.toEqual({ status: "busy" });
     expect(harness.delivery.replies).toEqual([
-      { messageId: "message-1", text: BUSY_REPLY },
+      {
+        target: {
+          messageId: "message-1",
+          conversation: conversation(),
+        },
+        text: GROUP_BUSY_REPLY,
+      },
+      {
+        target: {
+          messageId: "message-2",
+          conversation: conversation("direct", "user-2"),
+        },
+        text: DIRECT_BUSY_REPLY,
+      },
     ]);
-    await expect(harness.client.handleMessage(inbound())).resolves.toEqual({
-      status: "duplicate",
-    });
-    expect(harness.delivery.replies).toHaveLength(1);
   });
 
-  it("replies only to completed Turns that it submitted", async () => {
-    const harness = createHarness();
-    const accepted = await harness.client.handleMessage(inbound());
-    if (accepted.status !== "accepted") throw new Error("Turn was not accepted");
+  it("replies only to completed Turns that it submitted and preserves targets", async () => {
+    const harness = await createHarness();
+    const first = await harness.client.handleMessage(inbound());
+    const second = await harness.client.handleMessage(
+      inbound({
+        dedupeKey: "event-2",
+        messageId: "message-2",
+        conversation: conversation("direct", "user-2"),
+      }),
+    );
+    if (first.status !== "accepted" || second.status !== "accepted") {
+      throw new Error("Turns were not accepted");
+    }
 
     await harness.sessionPort.emit({
       status: "completed",
       turnId: "browser-turn",
       output: "Browser result",
     });
-    expect(harness.delivery.replies).toEqual([]);
+    expect(harness.delivery.replies).toHaveLength(0);
 
     await harness.sessionPort.emit({
       status: "completed",
-      turnId: accepted.turnId,
-      output: "检查完成",
+      turnId: second.turnId,
+      output: "单聊完成",
+    });
+    await harness.sessionPort.emit({
+      status: "completed",
+      turnId: first.turnId,
+      output: "群聊完成",
     });
     expect(harness.delivery.replies).toEqual([
-      { messageId: "message-1", text: "检查完成" },
+      {
+        target: {
+          messageId: "message-2",
+          conversation: conversation("direct", "user-2"),
+        },
+        text: "单聊完成",
+      },
+      {
+        target: {
+          messageId: "message-1",
+          conversation: conversation(),
+        },
+        text: "群聊完成",
+      },
     ]);
     await harness.sessionPort.emit({
       status: "completed",
-      turnId: accepted.turnId,
-      output: "Duplicate terminal event",
+      turnId: first.turnId,
+      output: "重复终态",
     });
-    expect(harness.delivery.replies).toHaveLength(1);
+    expect(harness.delivery.replies).toHaveLength(2);
   });
 
   it("uses the completion fallback and suppresses failed or aborted Turns", async () => {
-    const harness = createHarness();
+    const harness = await createHarness();
 
     const empty = await harness.client.handleMessage(inbound());
     const failed = await harness.client.handleMessage(
@@ -219,65 +302,78 @@ describe("HeadlessChatClient", () => {
     await harness.sessionPort.emit({ status: "failed", turnId: failed.turnId });
     await harness.sessionPort.emit({ status: "aborted", turnId: aborted.turnId });
     expect(harness.delivery.replies).toEqual([
-      { messageId: "message-1", text: EMPTY_COMPLETION_REPLY },
+      {
+        target: {
+          messageId: "message-1",
+          conversation: conversation(),
+        },
+        text: EMPTY_COMPLETION_REPLY,
+      },
     ]);
   });
 
-  it("sends explicitly registered Turn output as a new group message", async () => {
-    const harness = createHarness();
+  it("sends explicitly registered Turn output to its selected conversation", async () => {
+    const harness = await createHarness();
     const outcomes: Array<{ turnId: string; status: string }> = [];
+    const target = conversation("group", "group-2");
 
     expect(
-      harness.client.registerTurnForGroupDelivery("scheduled-turn", (event) => {
+      harness.client.registerTurnForDelivery("scheduled-turn", target, (event) => {
         outcomes.push(event);
       }),
     ).toBe(true);
-    expect(harness.client.registerTurnForGroupDelivery("scheduled-turn")).toBe(
-      false,
-    );
+    expect(
+      harness.client.registerTurnForDelivery("scheduled-turn", target),
+    ).toBe(false);
     await harness.sessionPort.emit({
       status: "completed",
       turnId: "scheduled-turn",
       output: "定时总结",
     });
     expect(harness.delivery.sends).toEqual([
-      { groupChatId: "bound-group", text: "定时总结" },
+      { conversation: target, text: "定时总结" },
     ]);
-    expect(outcomes).toEqual([
-      { turnId: "scheduled-turn", status: "delivered" },
-    ]);
+    expect(outcomes).toEqual([{ turnId: "scheduled-turn", status: "delivered" }]);
 
+    expect(
+      harness.client.registerTurnForGroupDelivery("legacy-scheduled-turn"),
+    ).toBe(true);
     await harness.sessionPort.emit({
       status: "completed",
-      turnId: "unregistered-turn",
-      output: "Should stay in Web UI",
+      turnId: "legacy-scheduled-turn",
+      output: "旧接口",
     });
-    expect(harness.delivery.sends).toHaveLength(1);
+    expect(harness.delivery.sends).toHaveLength(2);
+    expect(harness.delivery.sends[1]).toEqual({
+      conversation: conversation(),
+      text: "旧接口",
+    });
   });
 
   it("does not let proactive registration replace a reply target", async () => {
-    const harness = createHarness();
+    const harness = await createHarness();
     const accepted = await harness.client.handleMessage(inbound());
     if (accepted.status !== "accepted") throw new Error("Turn was not accepted");
 
-    expect(harness.client.registerTurnForGroupDelivery(accepted.turnId)).toBe(
-      false,
-    );
+    expect(
+      harness.client.registerTurnForDelivery(
+        accepted.turnId,
+        conversation("group", "group-2"),
+      ),
+    ).toBe(false);
     await harness.sessionPort.emit({
       status: "completed",
       turnId: accepted.turnId,
-      output: "Reply result",
+      output: "回复结果",
     });
-    expect(harness.delivery.replies).toEqual([
-      { messageId: "message-1", text: "Reply result" },
-    ]);
-    expect(harness.delivery.sends).toEqual([]);
+    expect(harness.delivery.replies).toHaveLength(1);
+    expect(harness.delivery.sends).toHaveLength(0);
   });
 
   it("retries temporary delivery failures five times with jittered backoff", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0.5);
-    const harness = createHarness();
+    const harness = await createHarness();
     harness.sessionPort.results.push({ status: "busy" });
     for (let attempt = 0; attempt < 6; attempt += 1) {
       harness.delivery.replyResults.push({ status: "retryable" });
@@ -296,7 +392,9 @@ describe("HeadlessChatClient", () => {
         context: {
           attempt: 6,
           delivery: "reply",
-          dedupeKey: "event-1",
+          dedupeKey: "wecom:event-1",
+          providerId: "wecom",
+          conversationAlias: "conv-token-1",
         },
         message: "Chat delivery failed",
       },
@@ -305,7 +403,7 @@ describe("HeadlessChatClient", () => {
 
   it("prefers retryAfter and does not retry permanent failures", async () => {
     vi.useFakeTimers();
-    const harness = createHarness();
+    const harness = await createHarness();
     harness.sessionPort.results.push({ status: "busy" });
     harness.delivery.replyResults.push(
       { status: "retryable", retryAfterMs: 123 },
@@ -330,12 +428,30 @@ describe("HeadlessChatClient", () => {
     ).resolves.toEqual({ status: "busy" });
     expect(harness.delivery.replies).toHaveLength(3);
     expect(harness.logErrors.at(-1)).toMatchObject({
-      context: { attempt: 1, delivery: "reply", dedupeKey: "event-2" },
+      context: {
+        attempt: 1,
+        delivery: "reply",
+        dedupeKey: "wecom:event-2",
+        providerId: "wecom",
+      },
     });
   });
 
+  it("rejects mismatched Provider identities without routing", async () => {
+    const harness = await createHarness();
+
+    await expect(
+      harness.client.handleMessage(
+        inbound({
+          conversation: { providerId: "feishu", type: "group", address: "g-1" },
+        }),
+      ),
+    ).rejects.toThrow("Conversation Provider does not match");
+    expect(harness.sessionPort.submissions).toHaveLength(0);
+  });
+
   it("unsubscribes and rejects new work after disposal", async () => {
-    const harness = createHarness();
+    const harness = await createHarness();
     const outcomes: Array<{ turnId: string; status: string }> = [];
     expect(harness.sessionPort.listenerCount).toBe(1);
     harness.client.registerTurnForGroupDelivery("scheduled-turn", (event) => {
@@ -349,7 +465,7 @@ describe("HeadlessChatClient", () => {
       "disposed",
     );
     expect(() =>
-      harness.client.registerTurnForGroupDelivery("turn-1"),
+      harness.client.registerTurnForDelivery("turn-1", conversation()),
     ).toThrow("disposed");
     expect(outcomes).toEqual([
       { turnId: "scheduled-turn", status: "abandoned" },

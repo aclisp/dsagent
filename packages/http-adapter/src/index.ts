@@ -28,8 +28,10 @@ export type {
 export type {
   SessionPort,
   SessionPortActivation,
+  SessionPortTurnContext,
   SessionPortTurnEvent,
   SessionPortTurnListener,
+  SessionPortTurnSourceContext,
   SessionPortTurnSubmission,
 } from "./session-port.js";
 export { pruneSessionFile } from "./session-pruner.js";

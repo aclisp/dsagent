@@ -220,7 +220,7 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 
 ## 实施 Slices
 
-> 状态：Slice 1 已实现并通过本 Slice gate，等待人工验收；Slice 2-4 待实施。每个 Slice 独立
+> 状态：Slice 1-2 已实现并分别通过本 Slice gate，等待人工验收；Slice 3-4 待实施。每个 Slice 独立
 > 实现、验证并停止等待验收；验收前不自动进入下一 Slice，不暂存、不提交。
 
 ### Slice 1：conversation identity 与持久化基础
@@ -243,6 +243,9 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 ### Slice 2：多 conversation Chat Client 与内部 Turn source context
 
 目标是把 Headless Chat Client 从固定群聊切换到 conversation 模型，并保持浏览器契约不变。
+
+> 状态：已实现，待人工验收。验证：`packages/chat-client`、`packages/http-adapter`、`packages/web-ui`
+> 及受影响的 `packages/wecom` test、typecheck、build 全部通过。
 
 - 用通用入站消息替换 `InboundGroupMessage`、`groupChatId` 和固定群过滤；去重键包含 Provider
   identity，回复目标保存原始 conversation/reply reference。

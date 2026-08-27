@@ -1,21 +1,48 @@
 import type {
   SessionPort,
+  SessionPortTurnContext,
   SessionPortTurnEvent,
 } from "@thinkany/dscode-http-adapter/session-port";
+import type {
+  ConversationAddress,
+  ConversationAliasRegistry,
+  ConversationReference,
+  SenderAddress,
+  SenderReference,
+} from "./conversation-registry.js";
 import { DedupeCache } from "./dedupe-cache.js";
 
-export const BUSY_REPLY =
+export const GROUP_BUSY_REPLY =
   "我正在处理其他工作，刚才的请求没有被记录。请稍后重新 @我发送一次。";
+export const DIRECT_BUSY_REPLY =
+  "我正在处理其他工作，刚才的请求没有被记录。请稍后重新发送一次。";
+/** @deprecated Use GROUP_BUSY_REPLY for group conversations. */
+export const BUSY_REPLY = GROUP_BUSY_REPLY;
 export const EMPTY_COMPLETION_REPLY = "任务已经完成";
 
 const DELIVERY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000];
 
-export interface InboundGroupMessage {
+/** Provider-normalized conversation identity. The address stays inside the
+ * Provider/Chat Client boundary and is never included in a Prompt. */
+export type ChatConversation = ConversationAddress;
+
+/** Provider-normalized sender identity. */
+export type ChatSender = SenderAddress;
+
+export interface InboundChatMessage {
   dedupeKey: string;
-  groupChatId: string;
   messageId: string;
-  senderName?: string;
+  conversation: ChatConversation;
+  sender: ChatSender;
   text: string;
+}
+
+/** @deprecated Use InboundChatMessage. */
+export type InboundGroupMessage = InboundChatMessage;
+
+export interface ChatReplyTarget {
+  messageId: string;
+  conversation: ChatConversation;
 }
 
 export type ChatDeliveryResult =
@@ -24,8 +51,11 @@ export type ChatDeliveryResult =
   | { status: "permanent_failure" };
 
 export interface ChatDelivery {
-  reply(messageId: string, text: string): Promise<ChatDeliveryResult>;
-  send(groupChatId: string, text: string): Promise<ChatDeliveryResult>;
+  reply(target: ChatReplyTarget, text: string): Promise<ChatDeliveryResult>;
+  send(
+    conversation: ChatConversation,
+    text: string,
+  ): Promise<ChatDeliveryResult>;
 }
 
 export interface ChatClientLogger {
@@ -35,6 +65,8 @@ export interface ChatClientLogger {
       delivery: "reply" | "send";
       dedupeKey?: string;
       turnId?: string;
+      providerId?: string;
+      conversationAlias?: string;
     },
     message: string,
   ): void;
@@ -42,9 +74,15 @@ export interface ChatClientLogger {
 
 export interface CreateHeadlessChatClientOptions {
   workspaceId: string;
-  groupChatId: string;
+  providerId: string;
+  conversationRegistry: ConversationAliasRegistry;
   sessionPort: SessionPort;
   delivery: ChatDelivery;
+  /**
+   * Temporary bridge for the pre-source Scheduler contract. Slice 3 replaces
+   * this with an explicit source conversation binding.
+   */
+  defaultConversation?: ChatConversation;
   logger?: ChatClientLogger;
 }
 
@@ -55,24 +93,36 @@ export type ChatMessageHandlingResult =
   | { status: "accepted"; turnId: string };
 
 export type ChatProviderListener = (
-  message: InboundGroupMessage,
+  message: InboundChatMessage,
 ) => Promise<ChatMessageHandlingResult>;
 
 /**
- * Protocol-neutral inbound/outbound chat provider contract.
+ * Protocol-neutral inbound/outbound chat Provider contract.
  *
- * Concrete transports implement this interface; the headless chat client
- * owns message handling and delivery policy independently of that transport.
+ * A Provider owns protocol parsing, credentials, mention checks, and the raw
+ * reply reference. The Chat Client owns aliases, shared Session submission,
+ * prompt markers, dedupe, and delivery retry policy.
  */
 export interface ChatProvider extends ChatDelivery {
-  readonly groupChatId: string;
+  readonly providerId: string;
+  /**
+   * Temporary default used only by the existing Scheduler group-delivery port.
+   * It is not an inbound filter and is removed when Scheduler adopts source.
+   */
+  readonly defaultConversation?: ChatConversation;
   subscribe(listener: ChatProviderListener): () => void;
   start?(): void | Promise<void>;
   dispose?(): void | Promise<void>;
 }
 
 export interface HeadlessChatClient {
-  handleMessage(message: InboundGroupMessage): Promise<ChatMessageHandlingResult>;
+  handleMessage(message: InboundChatMessage): Promise<ChatMessageHandlingResult>;
+  registerTurnForDelivery(
+    turnId: string,
+    conversation: ChatConversation,
+    listener?: ProactiveDeliveryListener,
+  ): boolean;
+  /** @deprecated Temporary bridge for the pre-source Scheduler contract. */
   registerTurnForGroupDelivery(
     turnId: string,
     listener?: ProactiveDeliveryListener,
@@ -90,8 +140,17 @@ export type ProactiveDeliveryListener = (
 ) => void | Promise<void>;
 
 type TurnDeliveryTarget =
-  | { type: "reply"; messageId: string; dedupeKey: string }
-  | { type: "send"; listener?: ProactiveDeliveryListener };
+  | {
+      type: "reply";
+      target: ChatReplyTarget;
+      dedupeKey: string;
+      conversationAlias: string;
+    }
+  | {
+      type: "send";
+      conversation: ChatConversation;
+      listener?: ProactiveDeliveryListener;
+    };
 
 const defaultLogger: ChatClientLogger = {
   error(context, message) {
@@ -99,11 +158,69 @@ const defaultLogger: ChatClientLogger = {
   },
 };
 
-function formatPrompt(message: InboundGroupMessage): string {
-  const marker =
-    message.senderName === undefined
-      ? "[Group message]"
-      : `[Group message from ${message.senderName}]`;
+function requiredText(value: string, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${name} must not be blank`);
+  }
+  return value.trim();
+}
+
+function normalizeConversation(
+  value: ChatConversation,
+  providerId: string,
+): ChatConversation {
+  if (value === null || typeof value !== "object") {
+    throw new Error("Conversation must be an object");
+  }
+  const conversation = value as ChatConversation;
+  if (conversation.providerId !== providerId) {
+    throw new Error("Conversation Provider does not match Chat Client Provider");
+  }
+  const address = requiredText(conversation.address, "Conversation address");
+  if (conversation.type !== "group" && conversation.type !== "direct") {
+    throw new Error("Conversation type must be group or direct");
+  }
+  return {
+    providerId,
+    type: conversation.type,
+    address,
+  };
+}
+
+function normalizeSender(value: ChatSender, providerId: string): ChatSender {
+  if (value === null || typeof value !== "object") {
+    throw new Error("Sender must be an object");
+  }
+  const sender = value as ChatSender;
+  if (sender.providerId !== providerId) {
+    throw new Error("Sender Provider does not match Chat Client Provider");
+  }
+  return {
+    providerId,
+    address: requiredText(sender.address, "Sender address"),
+  };
+}
+
+function targetFromReference(
+  reference: ConversationReference,
+  messageId: string,
+): ChatReplyTarget {
+  return {
+    messageId,
+    conversation: {
+      providerId: reference.providerId,
+      type: reference.type,
+      address: reference.address,
+    },
+  };
+}
+
+function formatPrompt(
+  message: InboundChatMessage,
+  conversation: ConversationReference,
+  sender: SenderReference,
+): string {
+  const marker = `[IM message: ${conversation.type}=${conversation.alias}; sender=${sender.alias}]`;
   return `${marker}\n\n${message.text}`;
 }
 
@@ -124,39 +241,94 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
   private readonly unsubscribe: () => void;
   private disposed = false;
 
-  constructor(private readonly options: CreateHeadlessChatClientOptions) {
-    if (options.workspaceId.trim().length === 0) {
-      throw new Error("Workspace ID must not be blank");
-    }
-    if (options.groupChatId.trim().length === 0) {
-      throw new Error("Group chat ID must not be blank");
-    }
+  constructor(options: CreateHeadlessChatClientOptions) {
+    const workspaceId = requiredText(options.workspaceId, "Workspace ID");
+    const providerId = requiredText(options.providerId, "Provider ID");
+    this.options = {
+      ...options,
+      workspaceId,
+      providerId,
+      ...(options.defaultConversation !== undefined
+        ? {
+            defaultConversation: normalizeConversation(
+              options.defaultConversation,
+              providerId,
+            ),
+          }
+        : {}),
+    };
     this.logger = options.logger ?? defaultLogger;
     this.unsubscribe = options.sessionPort.subscribe((event) =>
       this.handleTerminalEvent(event),
     );
   }
 
+  private readonly options: CreateHeadlessChatClientOptions;
+
   async handleMessage(
-    message: InboundGroupMessage,
+    message: InboundChatMessage,
   ): Promise<ChatMessageHandlingResult> {
     this.assertActive();
-    if (message.groupChatId !== this.options.groupChatId) {
-      return { status: "ignored" };
-    }
-    if (!this.dedupe.rememberIfNew(message.dedupeKey)) {
+    const conversation = normalizeConversation(
+      message.conversation,
+      this.options.providerId,
+    );
+    const sender = normalizeSender(message.sender, this.options.providerId);
+    const dedupeKey = `${this.options.providerId}:${requiredText(
+      message.dedupeKey,
+      "Dedupe key",
+    )}`;
+    if (!this.dedupe.rememberIfNew(dedupeKey)) {
       return { status: "duplicate" };
     }
 
+    let conversationReference: ConversationReference;
+    let senderReference: SenderReference;
+    try {
+      conversationReference =
+        await this.options.conversationRegistry.registerConversation(
+          conversation,
+        );
+      senderReference = await this.options.conversationRegistry.registerSender(
+        sender,
+      );
+    } catch {
+      this.logger.error(
+        {
+          attempt: 1,
+          delivery: "reply",
+          dedupeKey,
+          providerId: this.options.providerId,
+        },
+        "Chat identity registration failed",
+      );
+      return { status: "ignored" };
+    }
+
+    const target = targetFromReference(conversationReference, message.messageId);
+    const context: SessionPortTurnContext = {
+      source: {
+        type: "im",
+        conversationAlias: conversationReference.alias,
+      },
+    };
     const submission = await this.options.sessionPort.submitTurn(
       this.options.workspaceId,
-      formatPrompt(message),
+      formatPrompt(message, conversationReference, senderReference),
+      context,
     );
     if (submission.status === "busy") {
       await this.deliverWithRetry(
         "reply",
-        () => this.options.delivery.reply(message.messageId, BUSY_REPLY),
-        { dedupeKey: message.dedupeKey },
+        () =>
+          this.options.delivery.reply(
+            target,
+            conversation.type === "direct" ? DIRECT_BUSY_REPLY : GROUP_BUSY_REPLY,
+          ),
+        {
+          dedupeKey,
+          conversationAlias: conversationReference.alias,
+        },
       );
       return { status: "busy" };
     }
@@ -164,24 +336,37 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
     if (!this.disposed) {
       this.turnTargets.set(submission.turnId, {
         type: "reply",
-        messageId: message.messageId,
-        dedupeKey: message.dedupeKey,
+        target,
+        dedupeKey,
+        conversationAlias: conversationReference.alias,
       });
     }
     return { status: "accepted", turnId: submission.turnId };
+  }
+
+  registerTurnForDelivery(
+    turnId: string,
+    conversation: ChatConversation,
+    listener?: ProactiveDeliveryListener,
+  ): boolean {
+    this.assertActive();
+    if (this.turnTargets.has(turnId)) return false;
+    const normalized = normalizeConversation(conversation, this.options.providerId);
+    this.turnTargets.set(turnId, {
+      type: "send",
+      conversation: normalized,
+      ...(listener !== undefined ? { listener } : {}),
+    });
+    return true;
   }
 
   registerTurnForGroupDelivery(
     turnId: string,
     listener?: ProactiveDeliveryListener,
   ): boolean {
-    this.assertActive();
-    if (this.turnTargets.has(turnId)) return false;
-    this.turnTargets.set(turnId, {
-      type: "send",
-      ...(listener !== undefined ? { listener } : {}),
-    });
-    return true;
+    const conversation = this.options.defaultConversation;
+    if (conversation === undefined || conversation.type !== "group") return false;
+    return this.registerTurnForDelivery(turnId, conversation, listener);
   }
 
   dispose(): void {
@@ -212,15 +397,20 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
     if (target.type === "reply") {
       await this.deliverWithRetry(
         "reply",
-        () => this.options.delivery.reply(target.messageId, text),
-        { dedupeKey: target.dedupeKey, turnId: event.turnId },
+        () => this.options.delivery.reply(target.target, text),
+        {
+          dedupeKey: target.dedupeKey,
+          turnId: event.turnId,
+          providerId: this.options.providerId,
+          conversationAlias: target.conversationAlias,
+        },
       );
       return;
     }
     const status = await this.deliverWithRetry(
       "send",
-      () => this.options.delivery.send(this.options.groupChatId, text),
-      { turnId: event.turnId },
+      () => this.options.delivery.send(target.conversation, text),
+      { turnId: event.turnId, providerId: this.options.providerId },
     );
     this.notifyProactiveDelivery(target, { turnId: event.turnId, status });
   }
@@ -240,16 +430,25 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
   private async deliverWithRetry(
     delivery: "reply" | "send",
     deliver: () => Promise<ChatDeliveryResult>,
-    context: { dedupeKey?: string; turnId?: string },
+    context: {
+      dedupeKey?: string;
+      turnId?: string;
+      providerId?: string;
+      conversationAlias?: string;
+    },
   ): Promise<ProactiveDeliveryEvent["status"]> {
-    for (let attempt = 1; attempt <= DELIVERY_RETRY_DELAYS_MS.length + 1; attempt += 1) {
+    for (
+      let attempt = 1;
+      attempt <= DELIVERY_RETRY_DELAYS_MS.length + 1;
+      attempt += 1
+    ) {
       if (this.disposed) return "abandoned";
       let result: ChatDeliveryResult;
       try {
         result = await deliver();
       } catch {
         this.logger.error(
-          { attempt, delivery, ...context },
+          { attempt, delivery, providerId: this.options.providerId, ...context },
           "Chat delivery failed without a classification",
         );
         return "failed";
@@ -261,7 +460,7 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
         attempt > DELIVERY_RETRY_DELAYS_MS.length
       ) {
         this.logger.error(
-          { attempt, delivery, ...context },
+          { attempt, delivery, providerId: this.options.providerId, ...context },
           "Chat delivery failed",
         );
         return "failed";

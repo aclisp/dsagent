@@ -360,12 +360,12 @@ export function createHttpAdapter(
       const controller = await activateWorkspace(workspaceId);
       return { sessionId: controller.id };
     },
-    async submitTurn(workspaceId, message) {
+    async submitTurn(workspaceId, message, context) {
       if (message.trim().length === 0) {
         throw new Error("Turn message must not be blank");
       }
       const controller = await activateWorkspace(workspaceId);
-      const turn = controller.startTurn(message, undefined);
+      const turn = controller.startTurn(message, undefined, context);
       return turn
         ? { status: "accepted", turnId: turn.id }
         : { status: "busy" };

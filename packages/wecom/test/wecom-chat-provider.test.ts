@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { WSClientOptions } from "@wecom/aibot-node-sdk";
 import type {
   ChatMessageHandlingResult,
-  InboundGroupMessage,
+  ChatConversation,
+  ChatReplyTarget,
+  InboundChatMessage,
 } from "@thinkany/dscode-chat-client";
 import {
   createWeComChatProvider,
@@ -163,6 +165,17 @@ function frame(
   };
 }
 
+function groupConversation(address = "group-1"): ChatConversation {
+  return { providerId: "wecom", type: "group", address };
+}
+
+function replyTarget(
+  messageId: string,
+  address = "group-1",
+): ChatReplyTarget {
+  return { messageId, conversation: groupConversation(address) };
+}
+
 function createHarness(options: { botName?: string; workspacePath?: string } = {}): {
   client: FakeWeComClient;
   provider: WeComChatProvider;
@@ -186,8 +199,8 @@ async function collectMessage(
   provider: WeComChatProvider,
   client: FakeWeComClient,
   messageFrame: WeComMessageFrame,
-): Promise<InboundGroupMessage[]> {
-  const messages: InboundGroupMessage[] = [];
+): Promise<InboundChatMessage[]> {
+  const messages: InboundChatMessage[] = [];
   provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
     messages.push(message);
     return { status: "ignored" };
@@ -208,7 +221,7 @@ async function createTempWorkspace(): Promise<string> {
 }
 
 describe("WeCom Chat Provider", () => {
-  it("normalizes an exact mention from any position in the configured group", async () => {
+  it("normalizes an exact mention from any position in any group", async () => {
     const { client, provider } = createHarness();
     const messages = await collectMessage(
       provider,
@@ -218,18 +231,39 @@ describe("WeCom Chat Provider", () => {
 
     expect(messages).toEqual([
       {
-        dedupeKey: "wecom:message-1",
-        groupChatId: "group-1",
+        dedupeKey: "message-1",
         messageId: "message-1",
+        conversation: {
+          providerId: "wecom",
+          type: "group",
+          address: "group-1",
+        },
+        sender: { providerId: "wecom", address: "user-1" },
         text: "请 检查当前工作",
       },
     ]);
     provider.dispose();
   });
 
+  it("does not filter inbound groups by the legacy default conversation", async () => {
+    const { client, provider } = createHarness();
+    const messages = await collectMessage(
+      provider,
+      client,
+      frame("@Steve 另一个群的请求", { chatid: "other-group" }),
+    );
+
+    expect(messages[0]?.conversation).toEqual({
+      providerId: "wecom",
+      type: "group",
+      address: "other-group",
+    });
+    provider.dispose();
+  });
+
   it("ignores non-triggering WeCom frames", async () => {
     const { client, provider } = createHarness({ botName: "Steve" });
-    const messages: InboundGroupMessage[] = [];
+    const messages: InboundChatMessage[] = [];
     provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
       messages.push(message);
       return { status: "ignored" };
@@ -241,7 +275,6 @@ describe("WeCom Chat Provider", () => {
       frame("@Other 请检查"),
       frame("请 @Other 检查"),
       frame("@Steve 私聊", { chattype: "single" }),
-      frame("@Steve 其他群", { chatid: "other-group" }),
       frame("@Steve 其他机器人", { aibotid: "other-bot" }),
       frame("@Steve 机器人自己", { from: { userid: "bot-1" } }),
       frame("@Steve 图片", { msgtype: "image" }),
@@ -258,7 +291,7 @@ describe("WeCom Chat Provider", () => {
   it("downloads mixed group images and exposes the Chat UI attachment marker", async () => {
     const workspace = await createTempWorkspace();
     const { client, provider } = createHarness({ workspacePath: workspace });
-    const messages: InboundGroupMessage[] = [];
+    const messages: InboundChatMessage[] = [];
     provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
       messages.push(message);
       return { status: "ignored" };
@@ -307,7 +340,7 @@ describe("WeCom Chat Provider", () => {
   it("accepts a quoted group file and continues with an attachment failure note", async () => {
     const workspace = await createTempWorkspace();
     const { client, provider } = createHarness({ workspacePath: workspace });
-    const messages: InboundGroupMessage[] = [];
+    const messages: InboundChatMessage[] = [];
     provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
       messages.push(message);
       return { status: "ignored" };
@@ -353,9 +386,18 @@ describe("WeCom Chat Provider", () => {
     );
     await writeFile(path.join(workspace, "uploads", "result.pdf"), "result");
     const { client, provider } = createHarness({ workspacePath: workspace });
-    await collectMessage(provider, client, frame());
+    await collectMessage(
+      provider,
+      client,
+      frame("@Steve 请在另一个群回复", { chatid: "other-group" }),
+    );
 
-    await expect(provider.reply("message-1", "结果见 `uploads/result.pdf`")).resolves.toEqual({
+    await expect(
+      provider.reply(
+        replyTarget("message-1", "other-group"),
+        "结果见 `uploads/result.pdf`",
+      ),
+    ).resolves.toEqual({
       status: "delivered",
     });
     expect(client.replyStreamCalls[0]?.content).toBe(
@@ -367,10 +409,13 @@ describe("WeCom Chat Provider", () => {
       filename: "result.pdf",
     });
     expect(client.sendMediaMessageCalls).toEqual([
-      { chatId: "group-1", mediaType: "file", mediaId: "media-1" },
+      { chatId: "other-group", mediaType: "file", mediaId: "media-1" },
     ]);
     await expect(
-      provider.send("group-1", "定时结果见 `uploads/result.pdf`"),
+      provider.send(
+        groupConversation(),
+        "定时结果见 `uploads/result.pdf`",
+      ),
     ).resolves.toEqual({ status: "delivered" });
     expect(client.sendMessageCalls.at(-1)?.body.markdown.content).toBe(
       "定时结果见 `uploads/result.pdf`",
@@ -385,7 +430,10 @@ describe("WeCom Chat Provider", () => {
     await collectMessage(second.provider, second.client, frame("@Steve 再做一次"));
     second.client.uploadError = new Error("upload failed");
     await expect(
-      second.provider.reply("message-1", "结果见 `uploads/result.pdf`"),
+      second.provider.reply(
+        replyTarget("message-1"),
+        "结果见 `uploads/result.pdf`",
+      ),
     ).resolves.toEqual({ status: "delivered" });
     second.provider.dispose();
     provider.dispose();
@@ -396,7 +444,7 @@ describe("WeCom Chat Provider", () => {
     const { client, provider } = createHarness();
     await collectMessage(provider, client, frame());
 
-    await expect(provider.reply("message-1", "已完成")).resolves.toEqual({
+    await expect(provider.reply(replyTarget("message-1"), "已完成")).resolves.toEqual({
       status: "delivered",
     });
     expect(client.replyStreamCalls).toHaveLength(1);
@@ -407,7 +455,7 @@ describe("WeCom Chat Provider", () => {
     });
     expect(client.replyStreamCalls[0]?.streamId).toMatch(/^dscode_/u);
 
-    await expect(provider.send("group-1", "定时结果")).resolves.toEqual({
+    await expect(provider.send(groupConversation(), "定时结果")).resolves.toEqual({
       status: "delivered",
     });
     expect(client.sendMessageCalls).toEqual([
@@ -416,7 +464,7 @@ describe("WeCom Chat Provider", () => {
         body: { msgtype: "markdown", markdown: { content: "定时结果" } },
       },
     ]);
-    await expect(provider.reply("unknown", "重试")).resolves.toEqual({
+    await expect(provider.reply(replyTarget("unknown"), "重试")).resolves.toEqual({
       status: "permanent_failure",
     });
     provider.dispose();
@@ -428,14 +476,14 @@ describe("WeCom Chat Provider", () => {
     const text =
       "结果见 https://example.com/share/k9x7q2m4v8w1z5t3/uploads/result.pdf；文档说明见 https://example.com/docs。";
 
-    await expect(provider.reply("message-1", text)).resolves.toEqual({
+    await expect(provider.reply(replyTarget("message-1"), text)).resolves.toEqual({
       status: "delivered",
     });
     expect(client.replyStreamCalls[0]?.content).toBe(
       "结果见 [私密链接已隐藏]；文档说明见 https://example.com/docs。",
     );
 
-    await expect(provider.send("group-1", text)).resolves.toEqual({
+    await expect(provider.send(groupConversation(), text)).resolves.toEqual({
       status: "delivered",
     });
     expect(client.sendMessageCalls[0]?.body.markdown.content).toBe(
@@ -449,7 +497,7 @@ describe("WeCom Chat Provider", () => {
     await collectMessage(provider, client, frame());
     client.replyError = new Error("socket closed");
 
-    await expect(provider.reply("message-1", "稍后")).resolves.toEqual({
+    await expect(provider.reply(replyTarget("message-1"), "稍后")).resolves.toEqual({
       status: "retryable",
     });
     expect(client.connectCount).toBe(1);

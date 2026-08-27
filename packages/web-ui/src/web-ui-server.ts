@@ -1,10 +1,14 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import multipart from "@fastify/multipart";
 import {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
 } from "@thinkany/dscode-http-adapter";
-import type { ChatProvider } from "@thinkany/dscode-chat-client";
+import {
+  createConversationAliasRegistry,
+  type ChatProvider,
+} from "@thinkany/dscode-chat-client";
 import type { FastifyInstance } from "fastify";
 import { renderChatPage } from "./chat-page.js";
 import {
@@ -21,6 +25,9 @@ export interface CreateWebUiServerOptions
   chatAgentName: string;
   maxUploadBytes: number;
   timezone: string;
+  /** Preferred multi-Provider form. All Providers share one Session Port. */
+  chatProviders?: readonly ChatProvider[];
+  /** @deprecated Use chatProviders. */
   chatProvider?: ChatProvider;
 }
 
@@ -36,6 +43,7 @@ export async function createWebUiServer(
     chatAgentName,
     maxUploadBytes,
     timezone,
+    chatProviders,
     chatProvider,
     ...httpAdapterOptions
   } = options;
@@ -47,6 +55,18 @@ export async function createWebUiServer(
     throw new Error("The Web UI Server requires at least one workspace");
   }
 
+  if (chatProviders !== undefined && chatProvider !== undefined) {
+    throw new Error("Specify chatProviders or chatProvider, not both");
+  }
+  const providers =
+    chatProviders !== undefined
+      ? [...chatProviders]
+      : chatProvider === undefined
+        ? []
+        : [chatProvider];
+  const conversationRegistry = await createConversationAliasRegistry({
+    filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
+  });
   const { server, sessionPort } = createHttpAdapter(httpAdapterOptions);
   await server.register(multipart);
   registerFileRoutes(server, options.workspaces, { maxUploadBytes });
@@ -112,40 +132,89 @@ export async function createWebUiServer(
     return reply.type("image/png").send(favicon);
   });
 
-  const binding =
-    chatProvider === undefined
-      ? undefined
-      : bindWebUiChatProvider({
-          workspaceId: firstWorkspaceId,
-          sessionPort,
-          provider: chatProvider,
-        });
-  let providerDisposed = false;
-  const disposeProvider = async (): Promise<void> => {
-    if (providerDisposed) return;
-    providerDisposed = true;
-    await chatProvider?.dispose?.();
+  const activeProviders: Array<{
+    provider: ChatProvider;
+    binding: Awaited<ReturnType<typeof bindWebUiChatProvider>>;
+  }> = [];
+  const providerId = (provider: ChatProvider): string => {
+    try {
+      return provider.providerId;
+    } catch {
+      return "unknown";
+    }
+  };
+  for (const provider of providers) {
+    let binding: Awaited<ReturnType<typeof bindWebUiChatProvider>> | undefined;
+    try {
+      binding = bindWebUiChatProvider({
+        workspaceId: firstWorkspaceId,
+        sessionPort,
+        provider,
+        conversationRegistry,
+      });
+      await provider.start?.();
+      activeProviders.push({ provider, binding });
+    } catch (error) {
+      try {
+        binding?.dispose();
+      } catch (disposeError) {
+        server.log.error(
+          { err: disposeError, providerId: providerId(provider) },
+          "Chat Provider cleanup failed after startup error",
+        );
+      }
+      try {
+        await provider.dispose?.();
+      } catch (disposeError) {
+        server.log.error(
+          { err: disposeError, providerId: providerId(provider) },
+          "Chat Provider disposal failed after startup error",
+        );
+      }
+      server.log.error(
+        { err: error, providerId: providerId(provider) },
+        "Chat Provider isolated after startup failure",
+      );
+    }
+  }
+
+  const disposeProviders = async (): Promise<void> => {
+    for (const { provider, binding } of activeProviders) {
+      try {
+        binding.dispose();
+      } catch (error) {
+        server.log.error(
+          { err: error, providerId: providerId(provider) },
+          "Chat Provider binding disposal failed",
+        );
+      }
+      try {
+        await provider.dispose?.();
+      } catch (error) {
+        server.log.error(
+          { err: error, providerId: providerId(provider) },
+          "Chat Provider disposal failed",
+        );
+      }
+    }
   };
   let scheduler: Awaited<ReturnType<typeof createTaskScheduler>>;
   try {
-    await chatProvider?.start?.();
     scheduler = await createTaskScheduler({
       workspaceId: firstWorkspaceId,
       workspacePath: firstWorkspacePath,
       timezone,
       sessionPort,
       logger: server.log,
-      ...(binding !== undefined ? { groupDelivery: binding } : {}),
+      ...(activeProviders.length === 1 && activeProviders[0] !== undefined
+        ? { groupDelivery: activeProviders[0].binding }
+        : {}),
     });
   } catch (error) {
     try {
-      binding?.dispose();
+      await disposeProviders();
     } finally {
-      try {
-        await disposeProvider();
-      } finally {
-        await server.close();
-      }
+      await server.close();
     }
     throw error;
   }
@@ -154,11 +223,7 @@ export async function createWebUiServer(
     try {
       await scheduler.dispose();
     } finally {
-      try {
-        binding?.dispose();
-      } finally {
-        await disposeProvider();
-      }
+      await disposeProviders();
     }
   });
 

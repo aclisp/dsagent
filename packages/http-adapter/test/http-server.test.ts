@@ -14,6 +14,7 @@ import type {
 } from "../src/session-controller.js";
 import type {
   SessionPort,
+  SessionPortTurnContext,
   SessionPortTurnEvent,
 } from "../src/session-port.js";
 import type { AgentMessage } from "../src/session-messages.js";
@@ -374,7 +375,14 @@ describe("createHttpAdapterServer", () => {
       terminalEvents.push(event);
     });
 
-    const submission = await harness.sessionPort.submitTurn("main", "Hello");
+    const context: SessionPortTurnContext = {
+      source: { type: "im", conversationAlias: "conv-example" },
+    };
+    const submission = await harness.sessionPort.submitTurn(
+      "main",
+      "Hello",
+      context,
+    );
     expect(submission.status).toBe("accepted");
     expect(harness.factoryCalls).toHaveLength(1);
     expect(harness.factoryCalls[0]).toMatchObject({
@@ -388,6 +396,7 @@ describe("createHttpAdapterServer", () => {
           turnId:
             submission.status === "accepted" ? submission.turnId : "missing",
           output: null,
+          context,
         },
       ]),
     );

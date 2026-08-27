@@ -6,7 +6,10 @@ import {
   type HttpAdapterEvent,
   type HttpAdapterServerHost,
 } from "../src/session-controller.js";
-import type { SessionPortTurnEvent } from "../src/session-port.js";
+import type {
+  SessionPortTurnContext,
+  SessionPortTurnEvent,
+} from "../src/session-port.js";
 import type { AgentMessage } from "../src/session-messages.js";
 import {
   createHttpUiBroker,
@@ -143,8 +146,9 @@ function startTurn(
   controller: SessionController,
   message: string,
   clientId?: string,
+  context?: SessionPortTurnContext,
 ): { id: string; status: "running" } {
-  const turn = controller.startTurn(message, clientId);
+  const turn = controller.startTurn(message, clientId, context);
   if (!turn) throw new Error("Expected the Turn to start");
   return turn;
 }
@@ -303,6 +307,42 @@ describe("SessionController", () => {
     });
     live.close();
     replay.close();
+  });
+
+  it("keeps internal IM source context on Port terminal events but out of SSE", async () => {
+    const promptBlocked = deferred();
+    const harness = createHarness({ prompt: async () => promptBlocked.promise });
+    const live = await openEventStream(harness.controller);
+    const context: SessionPortTurnContext = {
+      source: { type: "im", conversationAlias: "conv-example" },
+    };
+
+    const turn = startTurn(harness.controller, "来自 IM", undefined, context);
+    expect(await live.next()).toEqual({
+      type: "turn",
+      turnId: turn.id,
+      status: "running",
+      message: "来自 IM",
+    });
+
+    promptBlocked.resolve();
+    expect(await live.next()).toEqual({
+      type: "turn",
+      turnId: turn.id,
+      status: "completed",
+      output: null,
+    });
+    await vi.waitFor(() =>
+      expect(harness.terminalEvents).toEqual([
+        {
+          status: "completed",
+          turnId: turn.id,
+          output: null,
+          context,
+        },
+      ]),
+    );
+    live.close();
   });
 
   it("publishes output for consecutive Turns with identical assistant text", async () => {

@@ -41,6 +41,7 @@ const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
 const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*\]\n\n([\s\S]*)$/;
+const IM_MESSAGE_PREFIX = /^\[IM message: (group|direct)=[a-z0-9][a-z0-9-]*; sender=[a-z0-9][a-z0-9-]*\]\r?\n\r?\n([\s\S]*)$/;
 const GROUP_MESSAGE_PREFIX = /^\[Group message(?: from ([^\]\r\n]+))?\]\r?\n\r?\n([\s\S]*)$/;
 const SCHEDULED_TASK_SUMMARY_LENGTH = 120;
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -457,10 +458,16 @@ function parseGroupMessagePrompt(raw) {
   };
 }
 
-function appendMessageSource(meta, senderName) {
+function parseImMessagePrompt(raw) {
+  const match = IM_MESSAGE_PREFIX.exec(raw);
+  if (!match) return null;
+  return { text: match[2], type: match[1] };
+}
+
+function appendMessageSource(meta, type) {
   const source = document.createElement("span");
   source.className = "message-source";
-  source.textContent = senderName ? `群聊 · ${senderName}` : "群聊";
+  source.textContent = type === "direct" ? "单聊" : "群聊";
   meta.appendChild(source);
 }
 
@@ -485,14 +492,18 @@ function appendUserTimelineMessage(raw, timestamp = Date.now()) {
   if (scheduledSummary !== null) {
     return appendScheduledTaskEvent(scheduledSummary, timestamp);
   }
-  const groupMessage = parseGroupMessagePrompt(raw);
+  const imMessage = parseImMessagePrompt(raw);
+  const groupMessage = imMessage === null ? parseGroupMessagePrompt(raw) : null;
   const message = appendMessage(
     "user",
-    groupMessage?.text ?? raw,
+    imMessage?.text ?? groupMessage?.text ?? raw,
     timestamp,
   );
-  if (groupMessage !== null) {
-    appendMessageSource(message.meta, groupMessage.senderName);
+  if (imMessage !== null) {
+    appendMessageSource(message.meta, imMessage.type);
+    afterContentChange();
+  } else if (groupMessage !== null) {
+    appendMessageSource(message.meta, "group");
     afterContentChange();
   }
   return message;
