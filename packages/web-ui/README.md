@@ -36,12 +36,11 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 ## Headless Chat Provider composition
 
-`createWebUiServer` accepts `chatProviders` for in-process multi-Provider integration (the singular
-`chatProvider` option remains a temporary compatibility bridge). Each Provider publishes normalized
-conversation messages through `subscribe`, implements conversation-aware `reply` and `send`, and has
-its own lifecycle. The Server binds every Provider to the first configured workspace through one shared
-alias registry and `SessionPort`; all inbound messages therefore use the same Session and global busy
-boundary while each reply remains tied to its original conversation and Provider.
+`createWebUiServer` accepts `chatProviders` for in-process multi-Provider integration. Each Provider
+publishes normalized conversation messages through `subscribe`, implements conversation-aware `reply`
+and `send`, and has its own lifecycle. The Server binds every Provider to the first configured workspace
+through one shared alias registry and `SessionPort`; all inbound messages therefore use the same Session
+and global busy boundary while each reply remains tied to its original conversation and Provider.
 
 The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
 `@thinkany/dscode-wecom` package, when `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, and `IM_WECOM_BOT_NAME` are

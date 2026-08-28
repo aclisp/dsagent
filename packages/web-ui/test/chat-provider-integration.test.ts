@@ -272,11 +272,7 @@ async function createHarness(
       listCalls.push(cwd);
       return [];
     },
-    ...(providers.length === 1
-      ? { chatProvider: providers[0] }
-      : providers.length > 1
-        ? { chatProviders: providers }
-        : {}),
+    chatProviders: providers,
   });
   await server.ready();
   servers.push(server);
@@ -429,7 +425,7 @@ tasks:
         return host;
       },
       listPersistedSessions: async () => [],
-      chatProvider: provider,
+      chatProviders: [provider],
     });
     servers.push(server);
     await server.ready();

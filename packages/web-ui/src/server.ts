@@ -48,7 +48,7 @@ const server = await createWebUiServer({
   timezone,
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
-  ...(chatProvider !== undefined ? { chatProvider } : {}),
+  ...(chatProvider !== undefined ? { chatProviders: [chatProvider] } : {}),
 });
 
 const host = process.env.HOST ?? "127.0.0.1";

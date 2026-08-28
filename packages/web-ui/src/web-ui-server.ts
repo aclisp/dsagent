@@ -28,8 +28,6 @@ export interface CreateWebUiServerOptions
   timezone: string;
   /** Preferred multi-Provider form. All Providers share one Session Port. */
   chatProviders?: readonly ChatProvider[];
-  /** @deprecated Use chatProviders. */
-  chatProvider?: ChatProvider;
 }
 
 const staticFile = (name: string): Promise<Buffer> =>
@@ -45,7 +43,6 @@ export async function createWebUiServer(
     maxUploadBytes,
     timezone,
     chatProviders,
-    chatProvider,
     ...httpAdapterOptions
   } = options;
   assertValidScheduleTimezone(timezone);
@@ -56,15 +53,7 @@ export async function createWebUiServer(
     throw new Error("The Web UI Server requires at least one workspace");
   }
 
-  if (chatProviders !== undefined && chatProvider !== undefined) {
-    throw new Error("Specify chatProviders or chatProvider, not both");
-  }
-  const providers =
-    chatProviders !== undefined
-      ? [...chatProviders]
-      : chatProvider === undefined
-        ? []
-        : [chatProvider];
+  const providers = chatProviders === undefined ? [] : [...chatProviders];
   const conversationRegistry = await createConversationAliasRegistry({
     filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
   });
