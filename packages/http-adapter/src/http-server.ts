@@ -690,9 +690,3 @@ export function createHttpAdapter(
 
   return { server, sessionPort };
 }
-
-export function createHttpAdapterServer(
-  options: CreateHttpAdapterServerOptions,
-): FastifyInstance {
-  return createHttpAdapter(options).server;
-}

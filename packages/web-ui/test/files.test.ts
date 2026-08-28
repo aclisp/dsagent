@@ -4,7 +4,7 @@ import path from "node:path";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHttpAdapterServer } from "../../http-adapter/src/http-server.js";
+import { createHttpAdapter } from "../../http-adapter/src/http-server.js";
 import { registerFileRoutes } from "../src/files.js";
 
 const BOUNDARY = "----dscode-test-boundary";
@@ -40,10 +40,10 @@ async function setupServer(options?: {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "dscode-webui-files-"));
   await mkdir(path.join(workspace, "uploads"), { recursive: true });
   const server = options?.corsOrigins
-    ? createHttpAdapterServer({
+    ? createHttpAdapter({
         workspaces: { ws: workspace },
         corsOrigins: options.corsOrigins,
-      })
+      }).server
     : Fastify();
   await server.register(multipart);
   registerFileRoutes(server, { ws: workspace }, { maxUploadBytes: 1024 * 1024 });

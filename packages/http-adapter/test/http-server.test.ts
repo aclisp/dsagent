@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersistedSessionNotFoundError } from "../src/agent-session-host.js";
 import {
   createHttpAdapter,
-  createHttpAdapterServer,
   type HttpAdapterHostFactoryOptions,
   type PersistedSessionLister,
 } from "../src/http-server.js";
@@ -255,7 +254,7 @@ function turnUrl(sessionId: string): string {
   return `/v1/sessions/${sessionId}/turns`;
 }
 
-describe("createHttpAdapterServer", () => {
+describe("createHttpAdapter", () => {
   it.each([
     [["*"], "wildcard"],
     [["https://app.example.com/"], "exact HTTP(S) origin"],
@@ -263,7 +262,7 @@ describe("createHttpAdapterServer", () => {
     [["ftp://app.example.com"], "exact HTTP(S) origin"],
     [[""], "blank entries"],
   ])("rejects invalid CORS origins: %s", (corsOrigins, message) => {
-    expect(() => createHttpAdapterServer({ workspaces: WORKSPACES, corsOrigins })).toThrow(
+    expect(() => createHttpAdapter({ workspaces: WORKSPACES, corsOrigins })).toThrow(
       message,
     );
   });

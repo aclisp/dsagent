@@ -4,14 +4,14 @@ HTTP adapter that runs the DSCode agent in-process and exposes it over REST + SS
 an agent-backed chat-bot app.
 
 The package runs a real DSCode session **in-process** via `createAgentSessionHost` — no separate
-worker process, no JSONL protocol. A Fastify server (`createHttpAdapterServer`) maps one HTTP session
+worker process, no JSONL protocol. A Fastify server (`createHttpAdapter`) maps one HTTP session
 to one agent session, streams assistant, tool, status, and interactive UI events over SSE, and
 forwards approvals and questions back to the client.
 
 ```ts
-import { createHttpAdapterServer } from "@thinkany/dscode-http-adapter";
+import { createHttpAdapter } from "@thinkany/dscode-http-adapter";
 
-const server = createHttpAdapterServer({
+const { server } = createHttpAdapter({
   workspaces: {
     main: "/path/to/workspace",
   },
@@ -56,13 +56,13 @@ answer `confirm` / `select` / `input` / `editor` requests as they arrive.
 
 Sessions are persisted to the per-home session store shared with the CLI (`~/.dscode/sessions`) and
 can be resumed by ID. Session files are append-only logs and are never rewritten by default.
-Opt in to pruning with `createHttpAdapterServer({ maxSessionFileBytes })`: once a file exceeds the
+Opt in to pruning with `createHttpAdapter({ maxSessionFileBytes })`: once a file exceeds the
 limit, it is rewritten down to its active context at turn end — compacted-out history and dead
 branches are dropped, the live conversation is unchanged.
 
 ## Runtime arguments
 
-`createHttpAdapterServer({ runtimeArgs })` forwards a fixed allowlist of DSCode CLI flags to every
+`createHttpAdapter({ runtimeArgs })` forwards a fixed allowlist of DSCode CLI flags to every
 session — values: `--provider --base-url --transport --harness --permission --sandbox --effort
 --model --tools`; booleans: `--network --web --no-tools --no-resume`. Anything else is rejected
 with `Unsupported direct session argument`. The agent's working directory is always the workspace

@@ -10,7 +10,6 @@ export {
 } from "./agent-session-host.js";
 export {
   createHttpAdapter,
-  createHttpAdapterServer,
   type CreateHttpAdapterServerOptions,
   type HttpAdapter,
   type HttpAdapterHostFactory,
