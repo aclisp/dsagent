@@ -42,7 +42,6 @@ const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
 const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*(?:; source=[a-z0-9][a-z0-9-]*)?\]\n\n([\s\S]*)$/;
 const IM_MESSAGE_PREFIX = /^\[IM message: (group|direct)=[a-z0-9][a-z0-9-]*; sender=[a-z0-9][a-z0-9-]*\]\r?\n\r?\n([\s\S]*)$/;
-const SCHEDULED_TASK_SUMMARY_LENGTH = 120;
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
   minute: "2-digit",
@@ -436,16 +435,7 @@ function parseUploadedMessage(raw) {
 
 function parseScheduledTaskMessage(raw) {
   const match = SCHEDULED_TASK_PREFIX.exec(raw);
-  if (!match) return null;
-  const firstLine = match[1]
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? "";
-  const normalized = firstLine.replace(/\s+/g, " ");
-  const characters = [...normalized];
-  return characters.length <= SCHEDULED_TASK_SUMMARY_LENGTH
-    ? normalized
-    : `${characters.slice(0, SCHEDULED_TASK_SUMMARY_LENGTH).join("")}…`;
+  return match ? match[1].trim() : null;
 }
 
 function parseImMessagePrompt(raw) {
@@ -461,26 +451,29 @@ function appendMessageSource(meta, type) {
   meta.appendChild(source);
 }
 
-function appendScheduledTaskEvent(summary, timestamp = Date.now()) {
+function appendScheduledTaskEvent(prompt, timestamp = Date.now()) {
   ensureTimeSeparator(timestamp);
-  const event = document.createElement("article");
+  const event = document.createElement("details");
   event.className = "scheduled-task-event";
   event.dataset.role = "user";
   event.dataset.timestamp = String(timestamp);
+  const summary = document.createElement("summary");
   const title = document.createElement("strong");
   title.textContent = "定时任务";
-  const content = document.createElement("span");
-  content.textContent = summary;
-  event.append(title, content);
+  const promptText = document.createElement("span");
+  promptText.className = "scheduled-task-prompt";
+  promptText.textContent = prompt;
+  summary.append(title, promptText);
+  event.append(summary);
   messagesElement.appendChild(event);
   afterContentChange();
   return event;
 }
 
 function appendUserTimelineMessage(raw, timestamp = Date.now()) {
-  const scheduledSummary = parseScheduledTaskMessage(raw);
-  if (scheduledSummary !== null) {
-    return appendScheduledTaskEvent(scheduledSummary, timestamp);
+  const scheduledPrompt = parseScheduledTaskMessage(raw);
+  if (scheduledPrompt !== null) {
+    return appendScheduledTaskEvent(scheduledPrompt, timestamp);
   }
   const imMessage = parseImMessagePrompt(raw);
   const message = appendMessage(
