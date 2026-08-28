@@ -49,6 +49,8 @@ const server = await createWebUiServer({
   ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
   ...(chatProvider !== undefined ? { chatProviders: [chatProvider] } : {}),
+  onChatProviderStarted: (providerId) =>
+    console.log(`dscode chat provider ${providerId} started`),
 });
 
 const host = process.env.HOST ?? "127.0.0.1";

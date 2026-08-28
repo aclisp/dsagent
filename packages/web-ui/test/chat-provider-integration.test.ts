@@ -601,6 +601,30 @@ tasks:
     await expect(provider.emit(inbound())).rejects.toThrow("not bound");
   });
 
+  it("notifies the host after each Provider starts successfully", async () => {
+    const startedProviderIds: string[] = [];
+    const provider = new FakeChatProvider();
+    const secondProvider = new FakeChatProvider("second");
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "dscode-web-ui-started-"));
+    temporaryDirectories.push(workspaceRoot);
+    const server = await createWebUiServer({
+      workspaces: {
+        first_workspace_01: path.join(workspaceRoot, "first"),
+      },
+      chatAgentName: "Steve Code",
+      maxUploadBytes: 1024,
+      timezone: "Asia/Shanghai",
+      logger: false,
+      requireWorkspaceIdForSessionList: true,
+      listPersistedSessions: async () => [],
+      chatProviders: [provider, secondProvider],
+      onChatProviderStarted: (providerId) => startedProviderIds.push(providerId),
+    });
+    servers.push(server);
+
+    expect(startedProviderIds).toEqual(["fake", "second"]);
+  });
+
   it("composes multiple Providers over one Session and keeps reply targets isolated", async () => {
     const secondProvider = new FakeChatProvider("second");
     const harness = await createHarness(true, undefined, [secondProvider]);

@@ -28,6 +28,7 @@ export interface CreateWebUiServerOptions
   timezone: string;
   /** Preferred multi-Provider form. All Providers share one Session Port. */
   chatProviders?: readonly ChatProvider[];
+  onChatProviderStarted?: (providerId: string) => void;
 }
 
 const staticFile = (name: string): Promise<Buffer> =>
@@ -43,6 +44,7 @@ export async function createWebUiServer(
     maxUploadBytes,
     timezone,
     chatProviders,
+    onChatProviderStarted,
     ...httpAdapterOptions
   } = options;
   assertValidScheduleTimezone(timezone);
@@ -144,7 +146,7 @@ export async function createWebUiServer(
       });
       await provider.start?.();
       activeProviders.push({ provider, binding });
-      console.log(`dscode chat provider ${providerId(provider)} started`);
+      onChatProviderStarted?.(providerId(provider));
     } catch (error) {
       try {
         binding?.dispose();
