@@ -1,7 +1,8 @@
 # ADR-0001：IM 部署实例、共享 Session 与任务来源投递边界
 
-- 状态：已接受，Slice 1-3 已验收，Slice 4 已实现，待人工验收
+- 状态：已接受，Slice 1-4 已验收；引用与语音后续增强已实现，待人工验收
 - 日期：2026-08-27
+- 更新：2026-08-29
 
 ## 背景
 
@@ -130,9 +131,10 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 3. 当前 Compose 部署无法从应用内保证同一个 Bot ID 只有一个有效连接所有者。应用不实现 lease、
    协调服务、统一 ingress 或其他连接所有权机制；误启动多个同凭证实例属于不受支持的部署方式。
 4. 将来如果出现一个 Bot ID 服务多个独立实例的真实需求，再单独评估权威 ingress 或连接协调方案。
-5. 企业微信群聊保留真实 mention 触发；单聊合法消息不要求 mention。群聊支持文本、图文混排和
-   引用图片/文件；单聊增加文本、图文混排、独立图片、独立文件和引用图片/文件。语音、视频和卡片
-   事件不在本期范围。
+5. 企业微信群聊保留外层真实 mention 触发；引用中的 mention 不触发，但外层只有真实 mention 且
+   引用有效时仍创建 Turn。群聊支持文本、图文混排，以及引用的文本、图文混排、语音转写、图片和
+   文件；单聊在此基础上增加独立图片、独立文件和独立语音转写。独立群聊语音、视频和卡片事件不在
+   支持范围。
 
 ### 7. 实现边界
 
@@ -213,14 +215,14 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 9. 同一 `bot_id/secret` 多实例连接所有权不由应用保证；连接所有权协调机制不在本 ADR 范围内。
 10. 任务创建后不能改变 `session`/`source` 或 source 绑定；source Scheduled Turn 创建的新任务继承
     原 source。
-11. 群聊继续要求真实 mention，单聊无需 mention；约定范围内的群聊和单聊图片/文件可以进入共享
-    Session 并回送明确引用的产物。
+11. 群聊继续要求外层真实 mention，单聊无需 mention；约定范围内的引用内容、语音转写、图片和文件
+    可以进入共享 Session，并回送明确引用的产物。
 12. 单个 Provider 运行时失败不拖垮其他 Provider、Web UI 或 Scheduler；`unavailable` 与发送失败
     遵循已确认的重试和不补投语义。
 
 ## 实施 Slices
 
-> 状态：Slice 1-3 已验收，Slice 4 已实现并通过本 Slice gate，等待人工验收。每个 Slice 独立
+> 状态：Slice 1-4 已验收；后续引用与语音增强已实现，等待人工验收。每个 Slice 独立
 > 实现、验证并停止等待验收；验收前不自动进入下一 Slice，不暂存、不提交。
 
 ### Slice 1：conversation identity 与持久化基础
@@ -302,6 +304,22 @@ Provider。多个 Provider 收到的群聊和单聊仍属于同一组织、同�
 - Green gate：四个受影响 package 的 test、typecheck、build，根 `pnpm build` 和 diff check。
 - Live gate 留给人工验收：至少两个企业微信群、两个单聊、群/单聊 source 任务、Web UI session
   任务、busy、Provider 暂时不可用、入站/出站附件及 Server 重启不补投。
+
+### Slice 4 后续增强：引用内容与单聊语音
+
+> 状态：已实现，待人工验收。该增强不改动 provider-neutral Chat Client 协议，只扩展企业微信
+> Provider 的入站解析与 Prompt 组装。
+
+- 支持引用文本、引用图文混排和引用语音转写；保留引用图片/文件，继续忽略引用视频。
+- 群聊仍只由外层真实 mention 触发。去掉 mention 后没有正文但引用有效时，使用固定提示请求 Agent
+  回应引用；引用中的 mention 永远不满足触发条件。
+- 当前正文在前，引用文本在后并逐行转换为 Markdown quote block；只有引用附件时使用引用附件提示。
+- 支持独立单聊语音，把企业微信提供的转写文本直接作为当前正文；独立群聊语音继续忽略。
+- 当前附件和引用附件继续合并到同一个 `[Uploaded files: ...]` 列表，不扩展通用媒体结构或保留附件
+  来源。引用为空、损坏或不受支持时不影响有效正文；整条消息没有可用内容时静默忽略。
+- Green gate：`packages/wecom` test、typecheck、build 和 diff check。
+- Live gate：群聊正文加引用、群聊仅 mention 加引用、引用 mixed、引用语音、单聊独立语音，以及无
+  外层 mention、空引用和引用视频的静默忽略行为。
 
 ### 每个 Slice 的执行纪律
 

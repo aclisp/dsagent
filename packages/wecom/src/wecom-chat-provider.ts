@@ -10,6 +10,7 @@ import {
   type MixedMsgItem,
   type QuoteContent,
   type TextContent,
+  type VoiceContent,
   type WSClientOptions,
   type WsFrame,
 } from "@wecom/aibot-node-sdk";
@@ -45,6 +46,7 @@ export type WeComMessageBody = Partial<BaseMessage> & {
   image?: ImageContent;
   file?: FileContent;
   mixed?: MixedContent;
+  voice?: VoiceContent;
   quote?: QuoteContent;
 };
 
@@ -243,26 +245,71 @@ function parseMixedContent(
   return { textParts, media };
 }
 
-function parseQuotedMedia(
+interface ParsedQuotedContent {
+  text: string;
+  media: WeComMediaReference[];
+}
+
+function parseQuotedContent(
   quote: unknown,
-): { media: WeComMediaReference[] } {
+): ParsedQuotedContent {
   if (quote === undefined || quote === null || typeof quote !== "object") {
-    return { media: [] };
+    return { text: "", media: [] };
   }
   const content = quote as QuoteContent;
+  if (content.msgtype === "text") {
+    return { text: nonBlankText(content.text?.content) ?? "", media: [] };
+  }
   if (content.msgtype === "image") {
     const reference = mediaReference("image", content.image);
-    return { media: reference === undefined ? [] : [reference] };
+    return {
+      text: "",
+      media: reference === undefined ? [] : [reference],
+    };
   }
   if (content.msgtype === "file") {
     const reference = mediaReference("file", content.file);
-    return { media: reference === undefined ? [] : [reference] };
+    return {
+      text: "",
+      media: reference === undefined ? [] : [reference],
+    };
   }
   if (content.msgtype === "mixed") {
     const parsed = parseMixedContent(content.mixed);
-    return { media: parsed.media };
+    return { text: parsed.textParts.join("\n").trim(), media: parsed.media };
   }
-  return { media: [] };
+  if (content.msgtype === "voice") {
+    return { text: nonBlankText(content.voice?.content) ?? "", media: [] };
+  }
+  return { text: "", media: [] };
+}
+
+function markdownQuote(text: string): string {
+  return text
+    .split(/\r\n|\n|\r/u)
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+function composeInboundPrompt(
+  currentText: string,
+  quoted: ParsedQuotedContent,
+  hasCurrentMedia: boolean,
+): string | undefined {
+  if (currentText.length > 0 && quoted.text.length > 0) {
+    return `${currentText}\n\n${markdownQuote(quoted.text)}`;
+  }
+  if (currentText.length > 0) return currentText;
+  if (quoted.text.length > 0) {
+    return `请回应以下引用消息：\n\n${markdownQuote(quoted.text)}`;
+  }
+  if (quoted.media.length > 0 && !hasCurrentMedia) {
+    return "请回应引用的附件。";
+  }
+  if (hasCurrentMedia || quoted.media.length > 0) {
+    return "请查看我上传的文件";
+  }
+  return undefined;
 }
 
 function dedupeMediaReferences(
@@ -288,39 +335,45 @@ function parseWeComInboundMessage(
 
   const { body, messageId, senderId, conversation } = identity;
   let textParts: string[] = [];
-  let media: WeComMediaReference[] = [];
+  let currentMedia: WeComMediaReference[] = [];
   if (body.msgtype === "text") {
     const text = nonBlankText(body.text?.content);
     if (text !== undefined) textParts = [text];
   } else if (body.msgtype === "mixed") {
     const parsed = parseMixedContent(body.mixed);
     textParts = parsed.textParts;
-    media = parsed.media;
-    if (textParts.length === 0 && media.length === 0) return undefined;
+    currentMedia = parsed.media;
+  } else if (conversation.type === "direct" && body.msgtype === "voice") {
+    const text = nonBlankText(body.voice?.content);
+    if (text !== undefined) textParts = [text];
   } else if (
     conversation.type === "direct" &&
     (body.msgtype === "image" || body.msgtype === "file")
   ) {
     const reference = mediaReference(body.msgtype, body[body.msgtype]);
-    if (reference === undefined) return undefined;
-    media = [reference];
+    if (reference !== undefined) currentMedia = [reference];
   } else {
-    // Standalone image/file callbacks are supported for direct chats only;
-    // voice, video, card events and unsupported group payloads are ignored.
+    // Standalone image/file/voice callbacks are supported for direct chats
+    // only; video, card events and unsupported group payloads are ignored.
     return undefined;
   }
 
-  const quoted = parseQuotedMedia(body.quote);
-  media = dedupeMediaReferences([...media, ...quoted.media]);
-
   const content = textParts.join("\n").trim();
-  let text = content;
+  let currentText = content;
   if (conversation.type === "group") {
     const parsedMention = parseWeComBotMention(content, options.botName);
     if (!parsedMention.matched) return undefined;
-    text = parsedMention.text;
+    currentText = parsedMention.text;
   }
-  if (text.length === 0 && media.length === 0) return undefined;
+
+  const quoted = parseQuotedContent(body.quote);
+  const text = composeInboundPrompt(
+    currentText,
+    quoted,
+    currentMedia.length > 0,
+  );
+  if (text === undefined) return undefined;
+  const media = dedupeMediaReferences([...currentMedia, ...quoted.media]);
 
   return {
     message: {
@@ -328,7 +381,7 @@ function parseWeComInboundMessage(
       messageId,
       conversation,
       sender: { providerId: "wecom", address: senderId },
-      text: text.length > 0 ? text : "请查看我上传的文件",
+      text,
     },
     media,
   };
@@ -470,6 +523,10 @@ export class WeComChatProvider implements ChatProvider {
       "message.file",
       this.handleMessage as unknown as EventListener,
     );
+    this.client.on(
+      "message.voice",
+      this.handleMessage as unknown as EventListener,
+    );
     this.client.on("error", this.handleClientError as EventListener);
   }
 
@@ -579,6 +636,10 @@ export class WeComChatProvider implements ChatProvider {
     );
     this.client.off(
       "message.file",
+      this.handleMessage as unknown as EventListener,
+    );
+    this.client.off(
+      "message.voice",
       this.handleMessage as unknown as EventListener,
     );
     this.client.off("error", this.handleClientError as EventListener);

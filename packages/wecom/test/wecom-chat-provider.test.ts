@@ -307,6 +307,160 @@ describe("WeCom Chat Provider", () => {
     provider.dispose();
   });
 
+  it("accepts a standalone direct voice transcript", async () => {
+    const { client, provider } = createHarness();
+    const messages: InboundChatMessage[] = [];
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+
+    client.emit(
+      "message.voice",
+      frame("ignored", {
+        msgid: "direct-voice",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        msgtype: "voice",
+        voice: { content: "  帮我检查今天的安排  " },
+      }),
+    );
+    client.emit(
+      "message.voice",
+      frame("ignored", {
+        msgid: "empty-direct-voice",
+        chattype: "single",
+        from: { userid: "direct-user" },
+        msgtype: "voice",
+        voice: { content: "   " },
+      }),
+    );
+    client.emit(
+      "message.voice",
+      frame("ignored", {
+        msgid: "group-voice",
+        msgtype: "voice",
+        voice: { content: "群聊语音" },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(messages).toEqual([
+      {
+        dedupeKey: "direct-voice",
+        messageId: "direct-voice",
+        conversation: {
+          providerId: "wecom",
+          type: "direct",
+          address: "direct-user",
+        },
+        sender: { providerId: "wecom", address: "direct-user" },
+        text: "帮我检查今天的安排",
+      },
+    ]);
+    provider.dispose();
+  });
+
+  it("uses only the outer group mention to trigger quoted text and voice", async () => {
+    const { client, provider } = createHarness();
+    const messages: InboundChatMessage[] = [];
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+
+    client.emit(
+      "message.text",
+      frame("@Steve", {
+        msgid: "quoted-text",
+        quote: {
+          msgtype: "text",
+          text: { content: "第一行\n\n第二行" },
+        },
+      }),
+    );
+    client.emit(
+      "message.text",
+      frame("@Steve", {
+        msgid: "quoted-voice",
+        quote: {
+          msgtype: "voice",
+          voice: { content: "引用语音的转写" },
+        },
+      }),
+    );
+    client.emit(
+      "message.text",
+      frame("请处理这条消息", {
+        msgid: "mention-only-in-quote",
+        quote: {
+          msgtype: "text",
+          text: { content: "@Steve 被引用的内容" },
+        },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(messages.map(({ messageId, text }) => ({ messageId, text }))).toEqual([
+      {
+        messageId: "quoted-text",
+        text: "请回应以下引用消息：\n\n> 第一行\n> \n> 第二行",
+      },
+      {
+        messageId: "quoted-voice",
+        text: "请回应以下引用消息：\n\n> 引用语音的转写",
+      },
+    ]);
+    provider.dispose();
+  });
+
+  it("ignores unusable quotes without dropping valid outer text", async () => {
+    const { client, provider } = createHarness();
+    const messages: InboundChatMessage[] = [];
+    const videoQuote = {
+      msgtype: "video",
+      video: { url: "https://example.invalid/video" },
+    } as unknown as NonNullable<WeComMessageBody["quote"]>;
+    provider.subscribe(async (message): Promise<ChatMessageHandlingResult> => {
+      messages.push(message);
+      return { status: "ignored" };
+    });
+    provider.start();
+
+    client.emit(
+      "message.text",
+      frame("@Steve 继续处理正文", {
+        msgid: "text-with-video-quote",
+        quote: videoQuote,
+      }),
+    );
+    client.emit(
+      "message.text",
+      frame("@Steve", {
+        msgid: "video-quote-only",
+        quote: videoQuote,
+      }),
+    );
+    client.emit(
+      "message.text",
+      frame("@Steve", {
+        msgid: "blank-quote-only",
+        quote: { msgtype: "text", text: { content: "   " } },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(messages.map(({ messageId, text }) => ({ messageId, text }))).toEqual([
+      {
+        messageId: "text-with-video-quote",
+        text: "继续处理正文",
+      },
+    ]);
+    provider.dispose();
+  });
+
   it("ignores non-triggering WeCom frames", async () => {
     const { client, provider } = createHarness({ botName: "Steve" });
     const messages: InboundChatMessage[] = [];
@@ -359,8 +513,23 @@ describe("WeCom Chat Provider", () => {
           ],
         },
         quote: {
-          msgtype: "text",
-          text: { content: "引用的上下文" },
+          msgtype: "mixed",
+          mixed: {
+            msg_item: [
+              {
+                msgtype: "text",
+                text: { content: "引用的第一行" },
+              },
+              {
+                msgtype: "image",
+                image: { url: "https://example.invalid/image-quote" },
+              },
+              {
+                msgtype: "text",
+                text: { content: "引用的第二行" },
+              },
+            ],
+          },
         },
       }),
     );
@@ -368,12 +537,13 @@ describe("WeCom Chat Provider", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.text).toMatch(
-      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-photo\.png\]\n请 读这张图$/u,
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-photo\.png, uploads\/wecom-[a-f0-9]{12}-2-photo\.png\]\n请 读这张图\n\n> 引用的第一行\n> 引用的第二行$/u,
     );
     expect(client.downloadFileCalls).toEqual([
       { url: "https://example.invalid/image", aesKey: "aes-1" },
+      { url: "https://example.invalid/image-quote", aesKey: undefined },
     ]);
-    const storedPath = messages[0]?.text.match(/(uploads\/[^\]]+)/u)?.[1];
+    const storedPath = messages[0]?.text.match(/(uploads\/[^,\]]+)/u)?.[1];
     expect(storedPath).toBeDefined();
     await expect(
       readFile(path.join(workspace, storedPath as string)),
@@ -514,7 +684,7 @@ describe("WeCom Chat Provider", () => {
       /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf, uploads\/wecom-[a-f0-9]{12}-2-photo\.png\]\n请查看我上传的文件$/u,
     );
     expect(directQuote?.text).toMatch(
-      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf\]\n请查看我上传的文件$/u,
+      /^\[Uploaded files: uploads\/wecom-[a-f0-9]{12}-1-report\.pdf\]\n请回应引用的附件。$/u,
     );
     provider.dispose();
     await rm(workspace, { recursive: true, force: true });
