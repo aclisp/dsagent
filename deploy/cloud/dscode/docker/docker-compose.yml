@@ -30,6 +30,7 @@ services:
       DSCODE_SUBAGENT_DEPTH: "1"
       DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
       CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
       IM_WECOM_BOT_ID: "${IM_WECOM_BOT_ID:-}"
       IM_WECOM_SECRET: "${IM_WECOM_SECRET:-}"
       IM_WECOM_BOT_NAME: "${IM_WECOM_BOT_NAME:-}"
@@ -60,6 +61,12 @@ services:
       - type: bind
         source: "../prompt-profiles/${DSCODE_PROMPT_PROFILE:-steve}/SYSTEM.md"
         target: /root/.dscode/SYSTEM.md
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../static
+        target: /app/packages/web-ui/static
         read_only: true
         bind:
           create_host_path: false
