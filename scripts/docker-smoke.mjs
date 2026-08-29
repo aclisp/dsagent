@@ -53,7 +53,7 @@ for (const [index, image] of images.entries()) {
       "-p",
       "127.0.0.1::8899",
       "-e",
-      "WORKSPACES=smoke-workspace=/tmp/workspace",
+      "WORKSPACES=smoke-workspace-1=/tmp/workspace",
       "-e",
       "TZ=UTC",
       "-e",
