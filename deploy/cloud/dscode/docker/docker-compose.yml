@@ -16,7 +16,7 @@ name: "${DSCODE_INSTANCE_NAME:?set DSCODE_INSTANCE_NAME in .env}"
 # HOST/PORT inside the container come from image defaults (0.0.0.0:8899).
 services:
   dscode:
-    image: ${DSCODE_IMAGE:-ghcr.io/aclisp/dsagent:0.9.2}
+    image: ${DSCODE_IMAGE:-docker.io/aclisp/dsagent:0.9.4}
     container_name: "${DSCODE_INSTANCE_NAME}"
     restart: unless-stopped
     init: true

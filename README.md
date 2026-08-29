@@ -53,13 +53,13 @@ ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licen
 
 ### End users: Docker
 
-The supported end-user distribution is the public Docker Image. Pull the current stable image:
+The supported end-user distribution is the public Docker Hub image. Pull the current stable image:
 
 ```bash
-docker pull ghcr.io/aclisp/dsagent:latest
+docker pull docker.io/aclisp/dsagent:latest
 ```
 
-For a reproducible deployment, pin `DSCODE_IMAGE` to `ghcr.io/aclisp/dsagent:0.9.2` or an image digest.
+For a reproducible deployment, pin `DSCODE_IMAGE` to `docker.io/aclisp/dsagent:0.9.4` or an image digest.
 The Compose templates and deployment instructions are in
 [deploy/cloud/dscode](deploy/cloud/dscode/README.md).
 
@@ -322,7 +322,7 @@ pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
 Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
-GitHub Release and publishes the full and lean Docker images after CI passes. See
+GitHub Release and publishes the full and lean Docker Hub images after CI passes. See
 [Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries

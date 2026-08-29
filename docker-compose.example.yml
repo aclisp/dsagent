@@ -1,6 +1,6 @@
 # DSCode chat server — generic Compose template.
 #
-# By default this pulls the public full image from GHCR. Maintainers building
+# By default this pulls the public full image from Docker Hub. Maintainers building
 # locally must build the lean base before the derived tools image:
 #   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
 #     --build-arg DSCODE_APT_MIRROR=mirrors.tuna.tsinghua.edu.cn \
@@ -21,7 +21,7 @@ name: "${DSCODE_INSTANCE_NAME:?set DSCODE_INSTANCE_NAME in .env}"
 # HOST/PORT inside the container come from image defaults (0.0.0.0:8899).
 services:
   dscode:
-    image: ${DSCODE_IMAGE:-ghcr.io/aclisp/dsagent:latest}
+    image: ${DSCODE_IMAGE:-docker.io/aclisp/dsagent:latest}
     container_name: "${DSCODE_INSTANCE_NAME}"
     restart: unless-stopped
     init: true

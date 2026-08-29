@@ -145,8 +145,8 @@ it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
 
 ## Docker
 
-The default public product image is
-`ghcr.io/aclisp/dsagent:latest`; pin a version tag or digest for production.
+The default public Docker Hub product image is
+`docker.io/aclisp/dsagent:latest`; pin a version tag or digest for production.
 The commands below are for maintainers who need local lean/full image builds.
 
 The image stays lean (Node + app). Office/PDF tools for the agent (LibreOffice, poppler,

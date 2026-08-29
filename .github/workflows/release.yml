@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
   attestations: write
   id-token: write
 
@@ -137,3 +136,6 @@ jobs:
     with:
       tag: ${{ needs.release.outputs.tag }}
       sha: ${{ needs.release.outputs.sha }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

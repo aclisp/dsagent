@@ -49,13 +49,13 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ### 最终用户：Docker
 
-最终用户支持的分发方式是公开的 Docker Image。拉取当前稳定镜像：
+最终用户支持的分发方式是公开的 Docker Hub 镜像。拉取当前稳定镜像：
 
 ```bash
-docker pull ghcr.io/aclisp/dsagent:latest
+docker pull docker.io/aclisp/dsagent:latest
 ```
 
-如需可复现部署，请将 `DSCODE_IMAGE` 固定为 `ghcr.io/aclisp/dsagent:0.9.2` 或镜像 digest。
+如需可复现部署，请将 `DSCODE_IMAGE` 固定为 `docker.io/aclisp/dsagent:0.9.4` 或镜像 digest。
 Compose 模板和部署说明见 [deploy/cloud/dscode](deploy/cloud/dscode/README.md)。
 
 ### 开发者：源码设置
@@ -308,7 +308,7 @@ pnpm acceptance:live   # 完整真实 API 功能验收
 ```
 
 日常开发提交到 `dev`；带新版本号的提交合并到 `main` 并通过 CI 后，会自动创建对应的 GitHub
-Release 并发布 full 和 lean Docker 镜像。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
+Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
 
 ## 当前边界
 

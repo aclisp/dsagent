@@ -54,12 +54,12 @@ The deployment template defaults to the public full image for the current
 release:
 
 ```text
-ghcr.io/aclisp/dsagent:0.9.2
+docker.io/aclisp/dsagent:0.9.4
 ```
 
 For a reproducible rollback, set `DSCODE_IMAGE` to an immutable release tag or
 image digest in `docker/.env`. The lean image is available as
-`ghcr.io/aclisp/dsagent:0.9.2-lean`, but the full image is the product default.
+`docker.io/aclisp/dsagent:0.9.4-lean`, but the full image is the product default.
 
 Maintainers who need to build locally can run these commands from the
 repository root. The tool image is derived from the lean image, so the order
@@ -150,7 +150,7 @@ Use the following structure and replace every placeholder:
 
 ```dotenv
 DSCODE_INSTANCE_NAME=dscode
-DSCODE_IMAGE=ghcr.io/aclisp/dsagent:0.9.2
+DSCODE_IMAGE=docker.io/aclisp/dsagent:0.9.4
 DSCODE_HOST_PORT=<host-port>
 
 WORKSPACE_ID=<random-high-entropy-id>
