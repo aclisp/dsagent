@@ -19,7 +19,7 @@ import {
   getDSCodeSessionsDir,
   initializeDSCodeHome,
   parseRuntimeArgs,
-} from "@thinkany/dscode-core";
+} from "@aclisp/dsagent-core";
 import { pruneSessionFile } from "./session-pruner.js";
 import {
   createHttpUiBroker,

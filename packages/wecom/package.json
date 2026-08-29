@@ -1,5 +1,5 @@
 {
-  "name": "@thinkany/dscode-wecom",
+  "name": "@aclisp/dsagent-wecom",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@thinkany/dscode-chat-client": "workspace:*",
+    "@aclisp/dsagent-chat-client": "workspace:*",
     "@wecom/aibot-node-sdk": "catalog:"
   },
   "devDependencies": {

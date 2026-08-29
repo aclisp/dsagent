@@ -1,5 +1,5 @@
 {
-  "name": "@thinkany/dscode-http-adapter",
+  "name": "@aclisp/dsagent-http-adapter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -25,7 +25,7 @@
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
     "@fastify/cors": "catalog:",
-    "@thinkany/dscode-core": "workspace:*",
+    "@aclisp/dsagent-core": "workspace:*",
     "fastify": "catalog:"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@ import type {
   ChatConversation,
   ChatReplyTarget,
   InboundChatMessage,
-} from "@thinkany/dscode-chat-client";
+} from "@aclisp/dsagent-chat-client";
 import {
   createWeComChatProvider,
   createWeComChatProviderFromEnv,

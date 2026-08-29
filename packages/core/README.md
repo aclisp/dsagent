@@ -1,14 +1,14 @@
-# @thinkany/dscode-core
+# @aclisp/dsagent-core
 
 Reusable DSCode agent runtime for graphical clients, IDE integrations, and other headless hosts.
 
 The package owns the same provider routing, tools, permissions, sessions, Skills, MCP, hooks,
-checkpoints, and RPC behavior used by the `@thinkany/dscode` terminal client. DeepSeek remains the
+checkpoints, and RPC behavior used by the `@aclisp/dsagent` terminal client. DeepSeek remains the
 default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go are supported by the same
 runtime.
 
 ```ts
-import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
 const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
 await client.start();

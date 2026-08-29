@@ -1,6 +1,6 @@
 # DSCode chat server — lean image (Node + app only).
-# Build the derived image with the office/PDF tools on the live env server:
-#   docker build -f deploy/tools.Dockerfile -t dscode-server .
+# Build the derived full image with the office/PDF tools on the live env server:
+#   docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 FROM node:22 AS build
 RUN corepack enable
 WORKDIR /app

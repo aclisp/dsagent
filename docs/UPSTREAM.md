@@ -1,5 +1,36 @@
 # Upstream integration notes
 
+## Current policy (2026-08-29)
+
+DSCode is an independent product that preserves the original `dscode` Git
+history. The repository is maintained on the product remote and receives
+selected upstream changes only after review.
+
+The canonical remote layout is:
+
+- `origin`: `https://github.com/aclisp/dsagent.git`, the product repository
+- `upstream`: `https://github.com/thinkany-ai/dscode.git`, fetch-only source
+- `dev` and `main`: product branches that track `origin`
+- primary upstream source: `upstream/dev`; `upstream/main` and upstream tags
+  are used as release-state references
+
+Upstream synchronization is manual and ad hoc. For each integration, create a
+temporary `upstream-sync/*` branch from the product development branch, select
+specific commits, open a reviewable pull request, and update this ledger. Do
+not merge the whole upstream branch or replace `packages/core` with an
+upstream snapshot.
+
+Use `git cherry-pick -x` when an upstream commit applies unchanged. For an
+adapted or partial port, preserve the source SHA in an `Upstream-Commit:
+<sha>` trailer and document what was omitted or changed here. Keep skipped
+commits and their rationale in the ledger. The product's Vision CLI, prompt
+hardening, workspace catalog, and Web UI-specific Core behavior remain
+protected integration boundaries.
+
+The dated entries below are an append-only historical record. Remote names in
+those entries describe the layout that existed when each review was written;
+the current remote policy is the one above.
+
 ## 2026-08-18: status refresh
 
 Current baseline:

@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/filesystem"
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/firewall"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/filesystem"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/firewall"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )

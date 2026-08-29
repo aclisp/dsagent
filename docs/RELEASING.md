@@ -1,14 +1,21 @@
 # Releasing DSCode
 
-DSCode uses two long-lived branches:
+DSCode is released as a Docker image from the public GitHub repository. The
+repository's npm packages remain private and are not published.
 
-- `dev`: default branch for daily development
-- `main`: release-ready history only
+## Branches and versioning
+
+- `dev`: daily development branch
+- `main`: protected release branch and GitHub default branch
+
+The root package and `packages/core/package.json` must keep the same version.
+The current baseline is `0.9.2`; the existing `v0.9.2` tag is immutable. The
+next normal release is `0.9.3` unless the changes require another semver level.
 
 ## Normal release flow
 
 1. Develop and validate on `dev`.
-2. Update the matching versions in `package.json` and `packages/core/package.json` on `dev`:
+2. Update the matching versions on `dev`:
 
    ```bash
    npm version patch --no-git-tag-version
@@ -17,45 +24,76 @@ DSCode uses two long-lived branches:
    pnpm check
    ```
 
-3. Open a pull request from `dev` to `main`. CI rejects the release if its version was not changed or
-   if that package version already exists on npm.
-4. Merge after CI passes. The successful `main` CI run triggers `.github/workflows/release.yml`, which
-   creates the matching `vX.Y.Z` tag and GitHub Release automatically. CI rejects mismatched CLI/Core
-   versions.
+3. Open a pull request from `dev` to `main`. CI requires a version change for
+   source changes and verifies that the root and Core packages remain private
+   and in lockstep.
+4. Merge after CI passes. A versioned `main` commit triggers
+   `.github/workflows/release.yml`, which creates the matching immutable
+   `vX.Y.Z` Git tag and GitHub Release.
+5. The release workflow calls `.github/workflows/publish-image.yml`. It builds
+   and smoke-tests both AMD64 variants before publishing them to GHCR:
 
-After creating the GitHub Release, `.github/workflows/release.yml` directly calls
-`.github/workflows/publish.yml`. The publishing workflow verifies that the tagged commit belongs to
-`main`, checks that `vX.Y.Z` matches both package manifests, runs the complete test and packed-install
-suite, creates the `@thinkany/dscode` and `@thinkany/dscode-core` tarballs, uploads them as workflow
-artifacts, and publishes those exact tarballs to npm. The CLI tarball embeds the matching Core build,
-so CLI users do not depend on a separate Core registry download. Existing npm versions are detected
-independently and skipped so retries can recover if only one package was published.
+   ```text
+   ghcr.io/aclisp/dsagent:X.Y.Z
+   ghcr.io/aclisp/dsagent:latest
+   ghcr.io/aclisp/dsagent:X.Y.Z-lean
+   ghcr.io/aclisp/dsagent:lean
+   ```
 
-## npm authentication
+The unqualified `latest` and `lean` tags are convenience aliases. Production
+deployments should pin a version tag or image digest. Each published image
+also receives SBOM and provenance attestations.
 
-Both npm packages use Trusted Publishing; no `NPM_TOKEN` repository secret is required. The one-time
-publisher configuration for each package is:
+## Retry and historical backfill
 
-1. In both package settings pages on npmjs.com, add a GitHub Actions trusted publisher:
-   - Organization: `thinkany-ai`
-   - Repository: `dscode`
-   - Workflow filename: `release.yml`
-   - Allowed action: `npm publish`
-2. Keep `id-token: write` on both `release.yml` and the reusable `publish.yml` workflow. Because npm
-   validates the calling workflow for reusable workflows, the trusted publisher must name
-   `release.yml`.
-3. Use npm 11.5.1 or newer in the runner. The workflow pins npm 11.19.0.
+`publish-image.yml` supports `workflow_dispatch`. Use it to retry a failed
+publication or backfill an existing release such as `v0.9.2`; provide the
+immutable Git tag and, when useful, its commit SHA. The workflow verifies that
+the tag points to a commit reachable from `main` and that its package version
+matches the tag. It never moves or recreates an existing Git tag.
 
-Trusted Publishing exchanges GitHub's short-lived OIDC identity directly with npm and automatically
-adds provenance. Future releases do not require an npm token or a one-time password.
+The initial image backfill is:
+
+```text
+v0.9.2 -> ghcr.io/aclisp/dsagent:0.9.2 and :0.9.2-lean
+aliases -> :latest and :lean
+```
+
+## Docker images
+
+The default product image is the full tools image built from
+`deploy/tools.Dockerfile`. The lean image is published separately with the
+`-lean` suffix. Both currently target `linux/amd64`; add another architecture
+only after it has passed an explicit deployment validation.
+
+The Docker smoke gate starts each image, checks its entrypoint and required
+runtime files, then checks the `/health` endpoint and published port. It does
+not call an LLM, provider, or WeCom service. Run the same check locally after
+building images when needed:
+
+```bash
+node scripts/docker-smoke.mjs dscode-server dscode-server:lean
+```
+
+## Image registry permissions
+
+GHCR images are public and can be pulled anonymously. The publish workflow
+uses the repository `GITHUB_TOKEN` with `packages: write`; no registry token is
+stored in the repository. After the first publication, verify that the
+`ghcr.io/aclisp/dsagent` package visibility is set to **Public** in GitHub
+Packages; keep it public so end users can pull the Docker image without
+credentials.
 
 ## Recommended GitHub settings
 
 Protect `main` with these repository rules:
 
+- set `main` as the default branch
 - require a pull request before merging
 - require the `CI / check` status check
 - block force pushes and branch deletion
-- allow releases only from tags created on `main`
+- allow release automation to create tags and GitHub Releases
 
-Keep `dev` as the repository default branch.
+Keep `dev` as the normal development branch. Changes from the original
+`thinkany-ai/dscode` repository are reviewed and integrated selectively under
+the policy in [UPSTREAM.md](UPSTREAM.md).

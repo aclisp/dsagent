@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { ProactiveDeliveryListener } from "@thinkany/dscode-chat-client";
+import type { ProactiveDeliveryListener } from "@aclisp/dsagent-chat-client";
 import type {
   SessionPort,
   SessionPortTurnContext,
   SessionPortTurnEvent,
   SessionPortTurnStartedEvent,
-} from "@thinkany/dscode-http-adapter/session-port";
+} from "@aclisp/dsagent-http-adapter/session-port";
 import { Cron } from "croner";
 import {
   disableScheduleTask,

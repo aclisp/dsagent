@@ -4,11 +4,11 @@ import multipart from "@fastify/multipart";
 import {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
-} from "@thinkany/dscode-http-adapter";
+} from "@aclisp/dsagent-http-adapter";
 import {
   createConversationAliasRegistry,
   type ChatProvider,
-} from "@thinkany/dscode-chat-client";
+} from "@aclisp/dsagent-chat-client";
 import type { FastifyInstance } from "fastify";
 import { renderChatPage } from "./chat-page.js";
 import {

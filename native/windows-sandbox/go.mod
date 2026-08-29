@@ -1,4 +1,4 @@
-module github.com/thinkany-ai/dscode/native/windows-sandbox
+module github.com/aclisp/dsagent/native/windows-sandbox
 
 go 1.25.0
 

@@ -1,4 +1,4 @@
-# @thinkany/dscode-chat-client
+# @aclisp/dsagent-chat-client
 
 Provider-neutral Headless Chat Client for routing normalized IM conversations into a shared DSCode
 Session through the in-process `SessionPort`.
@@ -7,7 +7,7 @@ Session through the in-process `SessionPort`.
 import {
   createConversationAliasRegistry,
   createHeadlessChatClient,
-} from "@thinkany/dscode-chat-client";
+} from "@aclisp/dsagent-chat-client";
 
 const registry = await createConversationAliasRegistry({
   filePath: "/workspace/.dscode/conversations.json",

@@ -14,7 +14,7 @@
 set -e
 
 # --- config ----------------------------------------------------------------
-REPO_URL="${DSCode_REPO_URL:-https://github.com/thinkany-ai/dscode.git}"
+REPO_URL="${DSCode_REPO_URL:-https://github.com/aclisp/dsagent.git}"
 REPO_BRANCH="${DSCode_REPO_BRANCH:-main}"
 INSTALL_DIR="${DSCode_INSTALL_DIR:-$HOME/.local/share/dscode}"
 BIN_DIR="${DSCode_BIN_DIR:-$HOME/.local/bin}"

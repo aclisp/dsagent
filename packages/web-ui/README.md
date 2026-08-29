@@ -1,4 +1,4 @@
-# @thinkany/dscode-web-ui
+# @aclisp/dsagent-web-ui
 
 The Web UI for the DSCode digital employee. It serves a friendly, mobile-first chat at `/chat`, a
 raw diagnostic view at `/debug`, scheduled-task execution, and the optional Chat Provider binding.
@@ -43,7 +43,7 @@ through one shared alias registry and `SessionPort`; all inbound messages theref
 and global busy boundary while each reply remains tied to its original conversation and Provider.
 
 The production entry point creates the first real Provider, `WeComChatProvider` from the dedicated
-`@thinkany/dscode-wecom` package, when `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, and `IM_WECOM_BOT_NAME` are
+`@aclisp/dsagent-wecom` package, when `IM_WECOM_BOT_ID`, `IM_WECOM_SECRET`, and `IM_WECOM_BOT_NAME` are
 configured. It uses the official
 [`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk) WebSocket long connection;
 the SDK owns authentication, heartbeat, reconnect, frame acknowledgements, media decryption, and
@@ -145,6 +145,10 @@ it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
 
 ## Docker
 
+The default public product image is
+`ghcr.io/aclisp/dsagent:latest`; pin a version tag or digest for production.
+The commands below are for maintainers who need local lean/full image builds.
+
 The image stays lean (Node + app). Office/PDF tools for the agent (LibreOffice, poppler,
 ghostscript, qpdf, pandoc) are added by a derived image built once on the live env server.
 
@@ -154,7 +158,7 @@ ghostscript, qpdf, pandoc) are added by a derived image built once on the live e
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 
 # On the live env server — build the derived image once (adds the tool layer, cached locally).
-docker build -f deploy/tools.Dockerfile -t dscode-server .   # FROM dscode-server:lean
+docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 
 # Run (yolo + volumes + security).
 # To enable the WeCom adapter, add these three required options below. Inbound messages from every group

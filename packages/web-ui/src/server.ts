@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import process from "node:process";
-import { createWeComChatProviderFromEnv } from "@thinkany/dscode-wecom";
+import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
 import { createWebUiServer } from "./web-ui-server.js";
 import { parseWorkspaces } from "./workspaces.js";

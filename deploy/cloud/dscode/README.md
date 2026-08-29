@@ -48,14 +48,26 @@ All relative bind paths in `docker/docker-compose.yml` are resolved from the
 `docker/` directory. Each source must exist because every bind mount sets
 `create_host_path: false`.
 
-## 1. Build the images
+## 1. Select the image
 
-Run these commands from the repository root. The tool image is derived from the
-lean image, so the order matters:
+The deployment template defaults to the public full image for the current
+release:
+
+```text
+ghcr.io/aclisp/dsagent:0.9.2
+```
+
+For a reproducible rollback, set `DSCODE_IMAGE` to an immutable release tag or
+image digest in `docker/.env`. The lean image is available as
+`ghcr.io/aclisp/dsagent:0.9.2-lean`, but the full image is the product default.
+
+Maintainers who need to build locally can run these commands from the
+repository root. The tool image is derived from the lean image, so the order
+matters:
 
 ```sh
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
-docker build -f deploy/tools.Dockerfile -t dscode-server .
+docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 ```
 
 `DOCKER_DEFAULT_PLATFORM` is only needed when building the AMD64 image on a host
@@ -120,7 +132,7 @@ Use the following structure and replace every placeholder:
 
 ```dotenv
 DSCODE_INSTANCE_NAME=dscode
-DSCODE_IMAGE=dscode-server
+DSCODE_IMAGE=ghcr.io/aclisp/dsagent:0.9.2
 DSCODE_HOST_PORT=<host-port>
 
 WORKSPACE_ID=<random-high-entropy-id>
@@ -169,9 +181,9 @@ docker compose up -d
 docker compose ps
 ```
 
-After rebuilding `dscode-server`, run `docker compose up -d` again to recreate
-the container from the new image. To stop and remove only the container and
-network:
+After changing `DSCODE_IMAGE` or rebuilding `dscode-server`, run `docker compose up -d`
+again to recreate the container from the selected image. To stop and remove only
+the container and network:
 
 ```sh
 docker compose down
@@ -205,9 +217,6 @@ https://<public-host>/chat/<WORKSPACE_ID>
 Back up `home/`, `home-config/`, and `workspace/` as persistent runtime state.
 Store `docker/.env` and `models.json` in a separate secret backup. The copied
 prompt assets can be restored from their canonical versions under `deploy/`.
-
-For reproducible rollbacks, set `DSCODE_IMAGE` to an immutable version tag or
-image digest instead of relying only on the mutable local `dscode-server` tag.
 
 The agent runs with `--permission full`, network access, and
 `danger-full-access` inside the container. `cap_drop: ALL`,

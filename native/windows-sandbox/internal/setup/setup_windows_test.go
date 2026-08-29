@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/firewall"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/firewall"
 	"golang.org/x/sys/windows"
 )
 

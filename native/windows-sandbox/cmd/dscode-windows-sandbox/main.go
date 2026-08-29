@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/runner"
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/setup"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/runner"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/setup"
 )
 
 func main() {

@@ -1,5 +1,5 @@
 {
-  "name": "@thinkany/dscode-web-ui",
+  "name": "@aclisp/dsagent-web-ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,9 @@
   "dependencies": {
     "@fastify/cors": "catalog:",
     "@fastify/multipart": "catalog:",
-    "@thinkany/dscode-chat-client": "workspace:*",
-    "@thinkany/dscode-http-adapter": "workspace:*",
-    "@thinkany/dscode-wecom": "workspace:*",
+    "@aclisp/dsagent-chat-client": "workspace:*",
+    "@aclisp/dsagent-http-adapter": "workspace:*",
+    "@aclisp/dsagent-wecom": "workspace:*",
     "@wecom/aibot-node-sdk": "catalog:",
     "croner": "catalog:",
     "fastify": "catalog:",

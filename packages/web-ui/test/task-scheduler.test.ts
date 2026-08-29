@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ProactiveDeliveryListener } from "@thinkany/dscode-chat-client";
+import type { ProactiveDeliveryListener } from "@aclisp/dsagent-chat-client";
 import type {
   SessionPort,
   SessionPortActivation,
@@ -11,7 +11,7 @@ import type {
   SessionPortTurnStartedEvent,
   SessionPortTurnStartedListener,
   SessionPortTurnSubmission,
-} from "@thinkany/dscode-http-adapter/session-port";
+} from "@aclisp/dsagent-http-adapter/session-port";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertValidScheduleTimezone,

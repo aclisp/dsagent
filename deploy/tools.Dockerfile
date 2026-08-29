@@ -3,7 +3,8 @@
 # Derived image: the lean dscode-server image + the office/PDF tool layer.
 # Build this once on the live env server (cached locally):
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .
-FROM dscode-server:lean
+ARG LEAN_IMAGE=dscode-server:lean
+FROM ${LEAN_IMAGE}
 
 # Common server utilities and the system-level Office/PDF, OCR, image, and font
 # toolchain used for document and visual artifact work. Keep APT downloads in

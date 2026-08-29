@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/filesystem"
-	"github.com/thinkany-ai/dscode/native/windows-sandbox/internal/setup"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/filesystem"
+	"github.com/aclisp/dsagent/native/windows-sandbox/internal/setup"
 	"golang.org/x/sys/windows"
 )
 

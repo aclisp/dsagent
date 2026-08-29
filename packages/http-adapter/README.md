@@ -1,4 +1,4 @@
-# @thinkany/dscode-http-adapter
+# @aclisp/dsagent-http-adapter
 
 HTTP adapter that runs the DSCode agent in-process and exposes it over REST + SSE, so you can build
 an agent-backed chat-bot app.
@@ -9,7 +9,7 @@ to one agent session, streams assistant, tool, status, and interactive UI events
 forwards approvals and questions back to the client.
 
 ```ts
-import { createHttpAdapter } from "@thinkany/dscode-http-adapter";
+import { createHttpAdapter } from "@aclisp/dsagent-http-adapter";
 
 const { server } = createHttpAdapter({
   workspaces: {
@@ -26,7 +26,7 @@ Use `createHttpAdapter` when another component in the same process needs to join
 without calling loopback HTTP or consuming SSE:
 
 ```ts
-import { createHttpAdapter } from "@thinkany/dscode-http-adapter";
+import { createHttpAdapter } from "@aclisp/dsagent-http-adapter";
 
 const { server, sessionPort } = createHttpAdapter({
   workspaces: { main: "/path/to/workspace" },

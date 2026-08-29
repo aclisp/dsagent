@@ -5,7 +5,7 @@ import type {
   SessionPortTurnEvent,
   SessionPortTurnListener,
   SessionPortTurnSubmission,
-} from "@thinkany/dscode-http-adapter/session-port";
+} from "@aclisp/dsagent-http-adapter/session-port";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DIRECT_BUSY_REPLY,

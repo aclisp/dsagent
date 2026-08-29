@@ -126,7 +126,7 @@ importers:
 
   packages/chat-client:
     dependencies:
-      '@thinkany/dscode-http-adapter':
+      '@aclisp/dsagent-http-adapter':
         specifier: workspace:*
         version: link:../http-adapter
     devDependencies:
@@ -182,6 +182,9 @@ importers:
 
   packages/http-adapter:
     dependencies:
+      '@aclisp/dsagent-core':
+        specifier: workspace:*
+        version: link:../core
       '@earendil-works/pi-agent-core':
         specifier: 'catalog:'
         version: 0.83.0(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
@@ -194,9 +197,6 @@ importers:
       '@fastify/cors':
         specifier: 'catalog:'
         version: 11.3.0
-      '@thinkany/dscode-core':
-        specifier: workspace:*
-        version: link:../core
       fastify:
         specifier: 'catalog:'
         version: 5.11.0
@@ -213,21 +213,21 @@ importers:
 
   packages/web-ui:
     dependencies:
+      '@aclisp/dsagent-chat-client':
+        specifier: workspace:*
+        version: link:../chat-client
+      '@aclisp/dsagent-http-adapter':
+        specifier: workspace:*
+        version: link:../http-adapter
+      '@aclisp/dsagent-wecom':
+        specifier: workspace:*
+        version: link:../wecom
       '@fastify/cors':
         specifier: 'catalog:'
         version: 11.3.0
       '@fastify/multipart':
         specifier: 'catalog:'
         version: 10.1.0
-      '@thinkany/dscode-chat-client':
-        specifier: workspace:*
-        version: link:../chat-client
-      '@thinkany/dscode-http-adapter':
-        specifier: workspace:*
-        version: link:../http-adapter
-      '@thinkany/dscode-wecom':
-        specifier: workspace:*
-        version: link:../wecom
       '@wecom/aibot-node-sdk':
         specifier: 'catalog:'
         version: 1.0.7
@@ -256,7 +256,7 @@ importers:
 
   packages/wecom:
     dependencies:
-      '@thinkany/dscode-chat-client':
+      '@aclisp/dsagent-chat-client':
         specifier: workspace:*
         version: link:../chat-client
       '@wecom/aibot-node-sdk':

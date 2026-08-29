@@ -39,12 +39,12 @@ try {
     { mode: 0o600 },
   );
 
-  // pnpm resolves catalog: specifiers to publishable semver ranges in the tarball.
+  // pnpm resolves catalog: specifiers to semver ranges in the packed artifact.
   runPnpm(["pack", "--pack-destination", artifacts], projectRoot);
   runPnpm(["pack", "--pack-destination", artifacts], path.join(projectRoot, "packages", "core"));
 
-  const cliTarball = path.join(artifacts, `thinkany-dscode-${cliPackage.version}.tgz`);
-  const coreTarball = path.join(artifacts, `thinkany-dscode-core-${corePackage.version}.tgz`);
+  const cliTarball = path.join(artifacts, `aclisp-dsagent-${cliPackage.version}.tgz`);
+  const coreTarball = path.join(artifacts, `aclisp-dsagent-core-${corePackage.version}.tgz`);
   requireFile(cliTarball);
   requireFile(coreTarball);
 
@@ -60,16 +60,16 @@ try {
   const installedCli = path.join(
     cliInstall,
     "node_modules",
-    "@thinkany",
-    "dscode",
+    "@aclisp",
+    "dsagent",
     "dist",
     "cli.js",
   );
   const installedVisionCli = path.join(
     cliInstall,
     "node_modules",
-    "@thinkany",
-    "dscode",
+    "@aclisp",
+    "dsagent",
     "dist",
     "vision-cli.js",
   );
@@ -79,8 +79,8 @@ try {
     path.join(
       cliInstall,
       "node_modules",
-      "@thinkany",
-      "dscode",
+      "@aclisp",
+      "dsagent",
       "packages",
       "core",
       "dist",
@@ -92,8 +92,8 @@ try {
     path.join(
       coreInstall,
       "node_modules",
-      "@thinkany",
-      "dscode-core",
+      "@aclisp",
+      "dsagent-core",
       "dist",
       "native",
       "windows-sandbox",
@@ -113,8 +113,8 @@ try {
     path.join(
       cliInstall,
       "node_modules",
-      "@thinkany",
-      "dscode",
+      "@aclisp",
+      "dsagent",
       "packages",
       "core",
       "dist",
@@ -123,8 +123,8 @@ try {
   );
 
   const rpcProbe = [
-    'import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";',
-    'import { DSCODE_VERSION } from "@thinkany/dscode-core";',
+    'import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";',
+    'import { DSCODE_VERSION } from "@aclisp/dsagent-core";',
     "const providers = [['deepseek', 'deepseek-v4-flash'], ['openai', 'gpt-5.6-sol'], ['openai-codex', 'gpt-5.6-sol']];",
     "for (const [provider, model] of providers) {",
     '  const client = createDSCodeRpcClient({ provider, model, cwd: process.cwd(), args: ["--no-session", "--no-approve"] });',

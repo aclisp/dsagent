@@ -12,20 +12,20 @@ import {
   type ChatProviderListener,
   type ChatReplyTarget,
   type InboundChatMessage,
-} from "@thinkany/dscode-chat-client";
+} from "@aclisp/dsagent-chat-client";
 import {
   createHttpUiBroker,
   type HttpAdapterHostFactoryOptions,
   type HttpAdapterServerHost,
   type HttpUiBroker,
   type HttpUiBrokerListener,
-} from "@thinkany/dscode-http-adapter";
+} from "@aclisp/dsagent-http-adapter";
 import {
   createWeComChatProvider,
   type WeComClient,
   type WeComMarkdownMessage,
   type WeComMessageFrame,
-} from "@thinkany/dscode-wecom";
+} from "@aclisp/dsagent-wecom";
 import { createWebUiServer } from "../src/web-ui-server.js";
 
 interface Deferred<T> {

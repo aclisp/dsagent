@@ -2,7 +2,7 @@ import type {
   SessionPort,
   SessionPortTurnContext,
   SessionPortTurnEvent,
-} from "@thinkany/dscode-http-adapter/session-port";
+} from "@aclisp/dsagent-http-adapter/session-port";
 import type {
   ConversationAddress,
   ConversationAliasRegistry,

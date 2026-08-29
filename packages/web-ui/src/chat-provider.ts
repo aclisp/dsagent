@@ -4,9 +4,9 @@ import {
   type ChatConversation,
   type ChatProvider,
   type ProactiveDeliveryListener,
-} from "@thinkany/dscode-chat-client";
-import type { ConversationAliasRegistry } from "@thinkany/dscode-chat-client";
-import type { SessionPort } from "@thinkany/dscode-http-adapter/session-port";
+} from "@aclisp/dsagent-chat-client";
+import type { ConversationAliasRegistry } from "@aclisp/dsagent-chat-client";
+import type { SessionPort } from "@aclisp/dsagent-http-adapter/session-port";
 
 export interface BindWebUiChatProviderOptions {
   workspaceId: string;

@@ -36,7 +36,7 @@ await build({
         // Keep third-party and native packages as runtime dependencies. Only
         // DSCode's workspace packages are folded into the server bundle.
         buildContext.onResolve({ filter: /^[^./][^:]*$/ }, (args) => {
-          if (args.path.startsWith("@thinkany/dscode-")) return undefined;
+          if (args.path.startsWith("@aclisp/dsagent-")) return undefined;
           return { path: args.path, external: true };
         });
 

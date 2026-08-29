@@ -19,6 +19,10 @@ built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, 
 provider-aware model routing with local sessions, safe patching, parallel agents, OS sandboxing, and
 transparent usage reporting.
 
+> DSCode is an independent continuation of [dscode](https://github.com/thinkany-ai/dscode). It began as a fork,
+> preserves the upstream Git history, and is now developed and released as a separate product. Selected upstream
+> changes are reviewed and integrated selectively; see [docs/UPSTREAM.md](docs/UPSTREAM.md).
+
 It is not trying to out-feature every general-purpose agent. It keeps the runtime local and inspectable
 while letting each repository task use the model capabilities it actually needs.
 
@@ -47,22 +51,35 @@ ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licen
 
 ## Quick start
 
-Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`; the installer prepares pnpm and installs
-ripgrep through Homebrew when available.
+### End users: Docker
 
-Install from npm:
-
-```bash
-npm install -g @thinkany/dscode
-```
-
-Alternatively, install the latest source build:
+The supported end-user distribution is the public Docker Image. Pull the current stable image:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
+docker pull ghcr.io/aclisp/dsagent:latest
 ```
 
-Make sure `~/.local/bin` is on your `PATH`, then start DSCode:
+For a reproducible deployment, pin `DSCODE_IMAGE` to `ghcr.io/aclisp/dsagent:0.9.2` or an image digest.
+The Compose templates and deployment instructions are in
+[deploy/cloud/dscode](deploy/cloud/dscode/README.md).
+
+### Developers: source setup
+
+```bash
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
+corepack enable
+pnpm install
+pnpm check
+```
+
+The repository's npm packages are private workspace packages and are not currently published to npm.
+
+## Terminal app
+
+Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
+
+Start DSCode from a local source checkout:
 
 ```bash
 dscode -C /path/to/project
@@ -265,16 +282,16 @@ server environments.
 - Trusted-project hooks and MCP servers
 - Reconnectable background commands
 - JSONL output for CI and a full stdin/stdout RPC mode
-- Reusable `@thinkany/dscode-core` package with a bundled headless RPC worker
+- Reusable `@aclisp/dsagent-core` package with a bundled headless RPC worker
 - VS Code extension in [editors/vscode](editors/vscode/README.md)
 - Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
 
-Graphical clients and IDE integrations can install `@thinkany/dscode-core` without requiring a global
-CLI. It exposes credential and settings APIs plus a typed RPC client backed by the exact same Agent,
-tools, permissions, and local session format as the terminal client:
+Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
+after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
+client backed by the exact same Agent, tools, permissions, and local session format as the terminal client:
 
 ```ts
-import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
 const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
 await client.start();
@@ -282,14 +299,14 @@ client.onEvent((event) => render(event));
 await client.prompt("Review this repository");
 ```
 
-The normal `@thinkany/dscode` tarball embeds its matching Core build, so existing CLI installations do
-not add a registry-time dependency or change their command, configuration, and session behavior.
+The normal `@aclisp/dsagent` build embeds its matching Core build. npm publication is currently disabled;
+developers should use the workspace setup above.
 
 ## Build from source
 
 ```bash
-git clone https://github.com/thinkany-ai/dscode.git
-cd dscode
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
 corepack enable
 pnpm install
 pnpm check
@@ -305,7 +322,8 @@ pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
 Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
-GitHub Release and publishes the npm package after CI passes. See [Releasing DSCode](docs/RELEASING.md).
+GitHub Release and publishes the full and lean Docker images after CI passes. See
+[Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries
 

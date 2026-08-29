@@ -22,7 +22,7 @@ import type {
   ChatReplyTarget,
   InboundChatMessage,
   ChatConversation,
-} from "@thinkany/dscode-chat-client";
+} from "@aclisp/dsagent-chat-client";
 import { parseWeComBotMention } from "./wecom-mention.js";
 import { redactWeComPrivateUrls } from "./wecom-url-redaction.js";
 import {

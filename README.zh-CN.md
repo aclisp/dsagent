@@ -18,6 +18,10 @@ DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek 
 内置支持 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax、xAI 和 OpenCode Zen Go。它把
 provider-aware 路由、本地会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
 
+> DSCode 是 [dscode](https://github.com/thinkany-ai/dscode) 的独立延续项目。它最初是一个 fork，
+> 保留了上游 Git 历史，如今作为独立产品开发和发布。上游改动会经过审查后选择性集成，详见
+> [docs/UPSTREAM.md](docs/UPSTREAM.md)。
+
 DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保持 runtime 本地、透明，并允许
 每个仓库任务选择真正需要的模型能力。
 
@@ -43,22 +47,34 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ## 快速开始
 
-要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`；安装器会准备 pnpm，并在 macOS 可用时通过
-Homebrew 安装 ripgrep。
+### 最终用户：Docker
 
-从 npm 安装：
-
-```bash
-npm install -g @thinkany/dscode
-```
-
-也可以安装最新源码版本：
+最终用户支持的分发方式是公开的 Docker Image。拉取当前稳定镜像：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
+docker pull ghcr.io/aclisp/dsagent:latest
 ```
 
-确认 `~/.local/bin` 已加入 `PATH`，然后启动 DSCode：
+如需可复现部署，请将 `DSCODE_IMAGE` 固定为 `ghcr.io/aclisp/dsagent:0.9.2` 或镜像 digest。
+Compose 模板和部署说明见 [deploy/cloud/dscode](deploy/cloud/dscode/README.md)。
+
+### 开发者：源码设置
+
+```bash
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
+corepack enable
+pnpm install
+pnpm check
+```
+
+仓库中的 npm 包是私有 workspace 包，目前不会发布到 npm。
+
+## 终端应用
+
+要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
+
+从本地源码 checkout 启动 DSCode：
 
 ```bash
 dscode -C /path/to/project
@@ -252,15 +268,16 @@ Provider API key 不会传给命令、hooks 或 stdio MCP server。
 - 可信项目 hooks 与 MCP server
 - 可重连后台命令
 - 面向 CI 的 JSONL，以及完整 stdin/stdout RPC 模式
-- 可复用的 `@thinkany/dscode-core` 包及其内置 headless RPC worker
+- 可复用的 `@aclisp/dsagent-core` 包及其内置 headless RPC worker
 - [editors/vscode](editors/vscode/README.md) 中的 VS Code 扩展
 - `safe` harness 自动发现 TypeScript、Pyright、Rust、Go 和 Swift diagnostics
 
-图形客户端和 IDE 集成可以直接安装 `@thinkany/dscode-core`，不要求用户全局安装 CLI。Core
-提供凭证、设置 API 和类型化 RPC client，使用与终端版完全相同的 Agent、工具、权限和本地会话格式：
+图形客户端和 IDE 集成完成上面的开发者设置后，可以使用私有 workspace 包
+`@aclisp/dsagent-core`，不要求全局安装 CLI。Core 提供凭证、设置 API 和类型化 RPC client，
+使用与终端版完全相同的 Agent、工具、权限和本地会话格式：
 
 ```ts
-import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
 const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
 await client.start();
@@ -268,14 +285,14 @@ client.onEvent((event) => render(event));
 await client.prompt("检查这个仓库");
 ```
 
-普通 `@thinkany/dscode` tarball 会内嵌相同版本的 Core 构建，因此现有 CLI 安装不会新增运行时
-registry 依赖，也不会改变命令、配置或会话行为。
+普通 `@aclisp/dsagent` 构建会内嵌相同版本的 Core。npm 发布目前已暂停；开发者应使用上面的
+workspace 设置。
 
 ## 从源码构建
 
 ```bash
-git clone https://github.com/thinkany-ai/dscode.git
-cd dscode
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
 corepack enable
 pnpm install
 pnpm check
@@ -291,7 +308,7 @@ pnpm acceptance:live   # 完整真实 API 功能验收
 ```
 
 日常开发提交到 `dev`；带新版本号的提交合并到 `main` 并通过 CI 后，会自动创建对应的 GitHub
-Release 并发布 npm 包。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
+Release 并发布 full 和 lean Docker 镜像。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
 
 ## 当前边界
 

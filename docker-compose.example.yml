@@ -1,8 +1,9 @@
 # DSCode chat server — generic Compose template.
 #
-# Build the image first from the project root:
-#   docker build -f deploy/tools.Dockerfile -t dscode-server .
+# By default this pulls the public full image from GHCR. Maintainers building
+# locally must build the lean base before the derived tools image:
 #   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
+#   docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 #
 # Then create an instance by copying this file and .env.example into its own
 # local directory. Edit only that instance's .env before starting it:
@@ -17,7 +18,7 @@ name: "${DSCODE_INSTANCE_NAME:?set DSCODE_INSTANCE_NAME in .env}"
 # HOST/PORT inside the container come from image defaults (0.0.0.0:8899).
 services:
   dscode:
-    image: ${DSCODE_IMAGE:-dscode-server}
+    image: ${DSCODE_IMAGE:-ghcr.io/aclisp/dsagent:latest}
     container_name: "${DSCODE_INSTANCE_NAME}"
     restart: unless-stopped
     init: true

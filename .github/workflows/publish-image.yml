@@ -1,0 +1,151 @@
+name: Publish Docker images
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag to publish, for example v0.9.2
+        required: true
+        type: string
+      sha:
+        description: Optional commit SHA; when omitted, the tag target is used
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: image-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/aclisp/dsagent
+  PLATFORM: linux/amd64
+
+jobs:
+  build-smoke:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      release_sha: ${{ steps.metadata.outputs.release_sha }}
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.sha || inputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify release source and version
+        id: metadata
+        shell: bash
+        env:
+          RELEASE_SHA_INPUT: ${{ inputs.sha }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *) echo "::error::Release tag must start with v: $RELEASE_TAG"; exit 1 ;;
+          esac
+          release_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [ -n "$RELEASE_SHA_INPUT" ] && [ "$release_sha" != "$RELEASE_SHA_INPUT" ]; then
+            echo "::error::$RELEASE_TAG points to $release_sha, not $RELEASE_SHA_INPUT."
+            exit 1
+          fi
+          git merge-base --is-ancestor "$release_sha" origin/main
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          package_private="$(node -p "require('./package.json').private")"
+          core_package_name="$(node -p "require('./packages/core/package.json').name")"
+          core_package_version="$(node -p "require('./packages/core/package.json').version")"
+          core_package_private="$(node -p "require('./packages/core/package.json').private")"
+          test "$RELEASE_TAG" = "v$package_version"
+          test "$core_package_version" = "$package_version"
+          test "$package_private" = "true"
+          test "$core_package_private" = "true"
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "Verified $RELEASE_TAG at $release_sha for $package_name and $core_package_name."
+
+      - name: Build lean image for smoke test
+        run: docker build --platform "$PLATFORM" --tag local/dsagent:lean --file Dockerfile .
+
+      - name: Build full image for smoke test
+        run: >-
+          docker build --platform "$PLATFORM" --build-arg LEAN_IMAGE=local/dsagent:lean
+          --tag local/dsagent:full --file deploy/tools.Dockerfile .
+
+      - name: Smoke test both images
+        run: node scripts/docker-smoke.mjs local/dsagent:full local/dsagent:lean
+
+  publish:
+    needs: build-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build-smoke.outputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish lean image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ needs.build-smoke.outputs.version }}-lean
+            ${{ env.IMAGE_NAME }}:lean
+          labels: |
+            org.opencontainers.image.title=DSCode
+            org.opencontainers.image.description=DSCode Docker image with the lean runtime
+            org.opencontainers.image.source=https://github.com/aclisp/dsagent
+            org.opencontainers.image.revision=${{ needs.build-smoke.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.build-smoke.outputs.version }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and publish full image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deploy/tools.Dockerfile
+          build-args: LEAN_IMAGE=${{ env.IMAGE_NAME }}:${{ needs.build-smoke.outputs.version }}-lean
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ needs.build-smoke.outputs.version }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.title=DSCode
+            org.opencontainers.image.description=DSCode Docker image with the full document and media toolset
+            org.opencontainers.image.source=https://github.com/aclisp/dsagent
+            org.opencontainers.image.revision=${{ needs.build-smoke.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.build-smoke.outputs.version }}
+          provenance: mode=max
+          sbom: true
