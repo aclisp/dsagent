@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ededed">
+  <meta name="chat-agent-name" content="{{CHAT_AGENT_NAME}}">
+  <title>与 {{CHAT_AGENT_NAME}} 私聊</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/chat.css">
+</head>
+<body>
+  <main id="chat-app" class="chat-app" aria-label="与 {{CHAT_AGENT_NAME}} 私聊">
+    <div id="scroll-earliest" class="scroll-earliest" aria-hidden="true"></div>
+    <header class="chat-header">
+      <div class="header-identity">
+        <h1>{{CHAT_AGENT_NAME}}</h1>
+        <p id="agent-status" class="agent-status">
+          <span class="online-dot" aria-hidden="true"></span>
+          <span id="agent-status-text">正在连接</span>
+        </p>
+      </div>
+    </header>
+
+    <div id="connection-banner" class="connection-banner" role="status" hidden>
+      连接已断开，正在重新连接
+    </div>
+
+    <section id="message-scroller" class="message-scroller" aria-label="聊天消息">
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </section>
+
+    <button id="jump-latest" class="jump-latest" type="button" hidden>回到最新消息</button>
+
+    <footer class="composer">
+      <div id="pending-attachments" class="pending-attachments" aria-live="polite"></div>
+      <form id="composer-form" class="composer-form">
+        <button id="upload-button" class="icon-button" type="button" aria-label="添加附件" title="添加附件">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+        <input id="file-input" type="file" multiple hidden>
+        <textarea
+          id="message-input"
+          rows="1"
+          placeholder="给 {{CHAT_AGENT_NAME}} 发消息"
+          aria-label="消息"
+        ></textarea>
+        <button id="action-button" class="action-button" type="submit" aria-label="发送" title="发送">
+          <svg class="action-icon action-icon-enter" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 5v5a4 4 0 0 1-4 4H6m4-4-4 4 4 4"/>
+          </svg>
+          <svg class="action-icon action-icon-stop" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+          </svg>
+        </button>
+      </form>
+    </footer>
+  </main>
+
+  <section id="fatal-screen" class="fatal-screen" hidden>
+    <img src="/favicon.png" alt="" aria-hidden="true">
+    <p>暂时无法连接 {{CHAT_AGENT_NAME}}，请稍后刷新页面。</p>
+  </section>
+
+  <div id="modal-backdrop" class="modal-backdrop" hidden>
+    <section class="request-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title"></h2>
+      <p id="modal-message" class="modal-message" hidden></p>
+      <div id="modal-control" class="modal-control"></div>
+      <p id="modal-observer" class="modal-observer" hidden>正在等待另一页面完成确认</p>
+      <div id="modal-actions" class="modal-actions"></div>
+    </section>
+  </div>
+
+  <script type="module" src="/chat.js"></script>
+</body>
+</html>

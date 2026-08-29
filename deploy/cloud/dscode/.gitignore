@@ -1,0 +1,16 @@
+# Deployment secrets and host-specific configuration
+docker/.env
+models.json
+
+# Persistent agent state and user data
+home/
+home-config/
+workspace/
+
+# Server-provisioned copies of canonical repository assets
+prompt-profiles/
+default-files/
+locked-workspace-pi/
+
+# External, platform-specific tools
+bin/

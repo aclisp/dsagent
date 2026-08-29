@@ -5,6 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { DSCODE_VERSION } from "./version.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { z } from "zod";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 import { getDSCodeHome } from "./home.js";
@@ -31,8 +32,15 @@ interface ConnectedServer {
   name: string;
   client: Client;
   close(): Promise<void>;
-  tools: string[];
+  tools: ConnectedTool[];
 }
+
+interface ConnectedTool {
+  name: string;
+  summary: string;
+}
+
+const MCP_TOOL_SUMMARY_MAX_LENGTH = 120;
 
 export class MCPManager {
   private readonly servers: ConnectedServer[] = [];
@@ -63,8 +71,18 @@ export class MCPManager {
     return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
   }
 
+  detailedStatus(): string {
+    const lines: string[] = [];
+    for (const server of this.servers) {
+      lines.push(`${server.name}: connected (${server.tools.length} tools)`);
+      lines.push(...server.tools.map((tool) => `- ${tool.name}: ${tool.summary}`));
+    }
+    lines.push(...this.errors.map((error) => `error: ${error}`));
+    return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
+  }
+
   toolNames(): string[] {
-    return this.servers.flatMap((server) => server.tools);
+    return this.servers.flatMap((server) => server.tools.map((tool) => tool.name));
   }
 
   async close(): Promise<void> {
@@ -104,10 +122,13 @@ export class MCPManager {
       }
 
       const listed = await client.listTools();
-      const registered: string[] = [];
+      const registered: ConnectedTool[] = [];
       for (const tool of listed.tools) {
         const localName = `mcp__${sanitizeName(serverName)}__${sanitizeName(tool.name)}`;
-        registered.push(localName);
+        registered.push({
+          name: localName,
+          summary: summarizeTool(tool.description, tool.title, tool.name),
+        });
         pi.registerTool({
           name: localName,
           label: `${serverName}: ${tool.title ?? tool.name}`,
@@ -122,10 +143,10 @@ export class MCPManager {
               undefined,
               signal ? { signal } : {},
             );
-            const text = formatMcpResult(result);
-            if (result.isError) throw new Error(text);
+            const formatted = formatMcpResult(result);
+            if (result.isError) throw new Error(formatted.text);
             return {
-              content: [{ type: "text", text }],
+              content: formatted.content,
               details: { server: serverName, tool: tool.name },
             };
           },
@@ -140,7 +161,9 @@ export class MCPManager {
         });
       }
       // registerTool refreshes Pi's registry after bind; activate the discovered names.
-      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...registered])]);
+      pi.setActiveTools([
+        ...new Set([...pi.getActiveTools(), ...registered.map((tool) => tool.name)]),
+      ]);
       this.servers.push({ name: serverName, client, close, tools: registered });
     } catch (error) {
       if (close) await close().catch(() => {});
@@ -189,23 +212,69 @@ function sanitizeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
-function formatMcpResult(result: Awaited<ReturnType<Client["callTool"]>>): string {
-  const parts: string[] = [];
-  const content = Array.isArray(result.content) ? result.content : [];
-  for (const item of content as Array<Record<string, any>>) {
+function summarizeTool(
+  description: string | undefined,
+  title: string | undefined,
+  name: string,
+): string {
+  const summary = (description?.trim() || title?.trim() || name).replace(/\s+/g, " ");
+  if (summary.length <= MCP_TOOL_SUMMARY_MAX_LENGTH) return summary;
+  return `${summary.slice(0, MCP_TOOL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+interface FormattedMcpResult {
+  content: Array<TextContent | ImageContent>;
+  text: string;
+}
+
+function formatMcpResult(result: Awaited<ReturnType<Client["callTool"]>>): FormattedMcpResult {
+  const content: Array<TextContent | ImageContent> = [];
+  const textParts: string[] = [];
+  const addText = (text: string): void => {
+    content.push({ type: "text", text });
+    textParts.push(text);
+  };
+  const resultContent = Array.isArray(result.content) ? result.content : [];
+  for (const item of resultContent as Array<Record<string, unknown>>) {
     if (item.type === "text") {
-      parts.push(item.text);
+      addText(typeof item.text === "string" ? item.text : "(MCP text content was invalid)");
+    } else if (
+      item.type === "image" &&
+      typeof item.data === "string" &&
+      typeof item.mimeType === "string"
+    ) {
+      content.push({ type: "image", data: item.data, mimeType: item.mimeType });
     } else if (item.type === "resource") {
       const resource = item.resource;
-      parts.push("text" in resource ? resource.text : `[binary resource: ${resource.uri}]`);
+      if (isRecord(resource)) {
+        addText(
+          typeof resource.text === "string"
+            ? resource.text
+            : `[binary resource: ${typeof resource.uri === "string" ? resource.uri : "unknown"}]`,
+        );
+      } else {
+        addText("(MCP resource content was invalid)");
+      }
     } else if (item.type === "resource_link") {
-      parts.push(`[resource: ${item.name}](${item.uri})`);
+      addText(
+        `[resource: ${typeof item.name === "string" ? item.name : "unnamed"}](${typeof item.uri === "string" ? item.uri : "unknown"})`,
+      );
     } else {
-      parts.push(`[${item.type} content omitted from this text MCP tool result]`);
+      addText(
+        `[${typeof item.type === "string" ? item.type : "unknown"} content omitted from this MCP tool result]`,
+      );
     }
   }
   if (result.structuredContent !== undefined) {
-    parts.push(JSON.stringify(result.structuredContent, null, 2));
+    addText(JSON.stringify(result.structuredContent, null, 2));
   }
-  return parts.join("\n\n") || "(MCP tool returned no text)";
+  if (content.length === 0) addText("(MCP tool returned no content)");
+  return {
+    content,
+    text: textParts.join("\n\n") || "(MCP tool returned image content without error details)",
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

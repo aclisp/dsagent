@@ -1,0 +1,110 @@
+html, body { height: 100%; }
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #101418;
+  color: #d8dee5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid #2a3138;
+}
+header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+/* Upload and Stop swap in the same slot: both are right-anchored in a fixed-height
+   relative container, so the visible button never shifts when the toggle flips and
+   the header height doesn't bounce. */
+#actions {
+  position: relative;
+  display: inline-block;
+  height: 23px;
+}
+#actions .header-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+/* Shared header-button base; #stop keeps a red accent for its destructive role. */
+.header-button {
+  font: inherit;
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: #d8dee5;
+  border: 1px solid #2a3138;
+}
+.header-button[hidden] { visibility: hidden; }
+#stop {
+  background: #5c2b2b;
+  color: #f2d1d1;
+  border-color: #7c3f3f;
+}
+#terminal {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+}
+#terminal > pre {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.termino-console {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+.termino-console pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.termino-input {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 34px;
+  max-height: 74px;
+  margin-top: 6px;
+  background: #0b0e11;
+  color: #e8eef4;
+  border: 1px solid #2a3138;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 20px;
+  padding: 6px 8px;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+/* The working status occupies the disabled input while a turn runs. */
+.termino-input::placeholder {
+  color: #8a97a5;
+  text-align: center;
+  font-size: 14px;
+}
+.indicator { color: #8a97a5; }
+.muted { color: #8a97a5; }
+/* File/share links: a light blue that holds contrast on the dark background;
+   underline only on hover so the transcript stays clean. */
+a { color: #58a6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:visited { color: #8a63d2; }
