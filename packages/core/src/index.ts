@@ -30,17 +30,41 @@ export {
 } from "./auth.js";
 export type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
 export {
+  createDSCodeCredentialStore,
+  FileCredentialStore,
+  installDSCodeCredentialStore,
+  KeyringCredentialStore,
+  type CreateCredentialStoreOptions,
+  type DSCodeKeyringFactory,
+} from "./credential-store.js";
+export {
+  getDSCodeArchivedSessionsDir,
   getDSCodeHome,
   getDSCodeSessionsDir,
   initializeDSCodeHome,
   migrateLegacyDSCodeHome,
+  partitionExistingSessions,
+  partitionSessionFile,
+  type PartitionedSessionPath,
 } from "./home.js";
 export {
+  DSCodeStateStore,
+  getDSCodeStatePath,
+  indexDSCodeSession,
+  listDSCodeThreads,
+  type DSCodeThread,
+  type ListThreadOptions,
+} from "./state.js";
+export {
   DEFAULT_DEEPSEEK_BASE_URL,
+  getDSCodeStorageSettings,
   getDSCodeSettingsPath,
   getStoredDeepSeekBaseUrl,
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
+  type CredentialStoreMode,
+  type DSCodeStorageSettings,
+  type HistoryPersistence,
 } from "./settings.js";
 export {
   MODEL_CREDENTIAL_ENV_KEYS,
@@ -64,4 +88,14 @@ export {
   type ParsedRuntimeArgs,
   type SandboxMode,
 } from "./runtime-options.js";
+export {
+  loadVisionRuntimeConfig,
+  parseVisionCliArgs,
+  runVisionCli,
+  runVisionCliProcess,
+  visionCliHelp,
+  type ParsedVisionCliArgs,
+  type VisionCliInvocation,
+  type VisionRuntimeConfig,
+} from "./vision-cli.js";
 export { DSCODE_VERSION } from "./version.js";

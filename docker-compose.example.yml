@@ -1,0 +1,89 @@
+# DSCode chat server — generic Compose template.
+#
+# By default this pulls the public full image from GHCR. Maintainers building
+# locally must build the lean base before the derived tools image:
+#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
+#   docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
+#
+# Then create an instance by copying this file and .env.example into its own
+# local directory. Edit only that instance's .env before starting it:
+#   mkdir -p .local/my-agent
+#   cp docker-compose.example.yml .local/my-agent/docker-compose.yml
+#   cp docker-compose.debug.example.yml .local/my-agent/docker-compose.debug.yml
+#   cp .env.example .local/my-agent/.env
+#   cd .local/my-agent && docker compose up -d
+#
+name: "${DSCODE_INSTANCE_NAME:?set DSCODE_INSTANCE_NAME in .env}"
+
+# HOST/PORT inside the container come from image defaults (0.0.0.0:8899).
+services:
+  dscode:
+    image: ${DSCODE_IMAGE:-ghcr.io/aclisp/dsagent:latest}
+    container_name: "${DSCODE_INSTANCE_NAME}"
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${DSCODE_HOST_PORT:?set DSCODE_HOST_PORT in .env}:8899"
+    environment:
+      # The workspace id is the deployment's bearer credential — high-entropy, shared only out-of-band.
+      WORKSPACES: "${WORKSPACE_ID:?set WORKSPACE_ID in .env}=/workspace"
+      TZ: "${TZ:?set TZ to an IANA timezone in .env}"
+      RUNTIME_ARGS: >-
+        --permission full --network --sandbox danger-full-access
+        --provider openrouter --model ${MODEL:?set MODEL in .env}
+        --effort max --tools exec_command,write_stdin,apply_patch,read
+      DSCODE_SUBAGENT_DEPTH: "1"
+      DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
+      CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      IM_WECOM_BOT_ID: "${IM_WECOM_BOT_ID:-}"
+      IM_WECOM_SECRET: "${IM_WECOM_SECRET:-}"
+      IM_WECOM_BOT_NAME: "${IM_WECOM_BOT_NAME:-}"
+      IM_WECOM_WS_URL: "${IM_WECOM_WS_URL:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
+    volumes:
+      - home:/root/.dscode
+      - workspace:/workspace
+      - "${HOME:-/root}/.dscode/models.json:/root/.dscode/models.json:ro"
+      # Product profiles replace Pi's built-in base prompt. These direct read-only
+      # mounts cannot be removed or rewritten by the full-access agent.
+      - type: bind
+        source: "../../deploy/prompt-profiles/${DSCODE_PROMPT_PROFILE:-steve}/SYSTEM.md"
+        target: /root/.dscode/SYSTEM.md
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "../../deploy/prompt-profiles/${DSCODE_PROMPT_PROFILE:-steve}/favicon.png"
+        target: /app/packages/web-ui/static/favicon.png
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/default-files/APPEND_SYSTEM.md
+        target: /root/.dscode/APPEND_SYSTEM.md
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/default-files/AGENTS.md
+        target: /root/.dscode/AGENTS.md
+        read_only: true
+        bind:
+          create_host_path: false
+      # Pi gives trusted workspace prompt files precedence over global files.
+      # Mask the writable workspace's .pi directory to prevent prompt replacement.
+      - type: bind
+        source: ../../deploy/locked-workspace-pi
+        target: /workspace/.pi
+        read_only: true
+        bind:
+          create_host_path: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  home:
+  workspace:

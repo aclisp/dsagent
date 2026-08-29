@@ -1,0 +1,17 @@
+# Optional Debug override. Copy this next to the instance's docker-compose.yml,
+# then include both files when creating or recreating the container:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
+#
+# The two zero-byte workspace prompt files shadow the global product profile:
+# SYSTEM.md restores Pi's built-in base, while APPEND_SYSTEM.md removes the
+# shared implementation boundary. The directory stays read-only to make the
+# effective Debug prompt deterministic.
+services:
+  dscode:
+    volumes:
+      - type: bind
+        source: ../../deploy/debug-workspace-pi
+        target: /workspace/.pi
+        read_only: true
+        bind:
+          create_host_path: false

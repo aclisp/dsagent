@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  packages: write
+  attestations: write
   id-token: write
 
 concurrency:
@@ -48,9 +50,26 @@ jobs:
           fi
           echo "stale=false" >> "$GITHUB_OUTPUT"
 
+      - name: Confirm this is a versioned main commit
+        id: version
+        if: steps.source.outputs.stale != 'true'
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          current_version="$(node -p "require('./package.json').version")"
+          previous_version="$(git show "${RELEASE_SHA}^1:package.json" | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version")"
+          if [ "$current_version" = "$previous_version" ]; then
+            echo "versioned=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping non-versioned main commit $RELEASE_SHA ($current_version)."
+            exit 0
+          fi
+          echo "versioned=true" >> "$GITHUB_OUTPUT"
+
       - name: Read package release metadata
         id: metadata
-        if: steps.source.outputs.stale != 'true'
+        if: steps.source.outputs.stale != 'true' && steps.version.outputs.versioned == 'true'
         shell: bash
         run: |
           package_version="$(node -p "require('./package.json').version")"
@@ -58,7 +77,7 @@ jobs:
 
       - name: Inspect the release tag
         id: state
-        if: steps.source.outputs.stale != 'true'
+        if: steps.source.outputs.stale != 'true' && steps.version.outputs.versioned == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,9 +88,9 @@ jobs:
             git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
             tag_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
             git merge-base --is-ancestor "$tag_sha" origin/main
-            echo "mode=skip" >> "$GITHUB_OUTPUT"
+            echo "mode=existing_release" >> "$GITHUB_OUTPUT"
             echo "release_sha=$tag_sha" >> "$GITHUB_OUTPUT"
-            echo "$RELEASE_TAG already has a GitHub Release; retrying npm from $tag_sha."
+            echo "$RELEASE_TAG already has a GitHub Release; use workflow_dispatch for an image retry."
             exit 0
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
@@ -103,15 +122,18 @@ jobs:
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
         run: gh release create "$RELEASE_TAG" --target "$RELEASE_SHA" --title "$RELEASE_TAG" --generate-notes
 
-      - name: Mark the release ready for npm
+      - name: Mark the release ready for image publication
         id: result
-        if: steps.source.outputs.stale != 'true'
+        if: >-
+          steps.source.outputs.stale != 'true' &&
+          steps.version.outputs.versioned == 'true' &&
+          steps.state.outputs.mode != 'existing_release'
         run: echo "ready=true" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: release
     if: needs.release.outputs.ready == 'true'
-    uses: ./.github/workflows/publish.yml
+    uses: ./.github/workflows/publish-image.yml
     with:
       tag: ${{ needs.release.outputs.tag }}
       sha: ${{ needs.release.outputs.sha }}

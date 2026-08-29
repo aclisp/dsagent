@@ -6,7 +6,7 @@ import {
   getDSCodeRpcEntryPath,
 } from "../packages/core/src/rpc-client.js";
 
-describe("@thinkany/dscode-core package boundary", () => {
+describe("@aclisp/dsagent-core package boundary", () => {
   it("keeps the CLI and core package versions in lockstep", () => {
     const cli = JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8"));
     const core = JSON.parse(

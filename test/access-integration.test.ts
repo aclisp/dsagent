@@ -1,16 +1,129 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
+import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
 
 describe("command access escalation", () => {
   let root: string | undefined;
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
+  });
+
+  it("passes the current main-agent thinking level to every managed command", async () => {
+    const tools = new Map<string, any>();
+    let thinkingLevel: "low" | "max" = "low";
+    const pi = new Proxy(
+      {
+        registerTool(tool: { name: string }) {
+          tools.set(tool.name, tool);
+        },
+        on: () => undefined,
+        getActiveTools: () => [],
+        setActiveTools: () => undefined,
+        getThinkingLevel: () => thinkingLevel,
+      },
+      {
+        get(target, property) {
+          if (property in target) return target[property as keyof typeof target];
+          return () => undefined;
+        },
+      },
+    ) as unknown as ExtensionAPI;
+    const start = vi.spyOn(ManagedProcessRegistry.prototype, "start").mockResolvedValue({
+      processId: "vision-process",
+      running: false,
+      output: "done",
+      exitCode: 0,
+      sandbox: "trusted dscode-vision (fixed executable)",
+    });
+    createDSCodeExtension({
+      ...options(process.cwd()),
+      permission: "full",
+      sandbox: "danger-full-access",
+      network: true,
+    }).factory(pi);
+    const context = { cwd: process.cwd(), hasUI: false } as ExtensionContext;
+
+    await tools.get("exec_command").execute(
+      "vision-low",
+      { cmd: "dscode-vision --image screenshot.png" },
+      undefined,
+      undefined,
+      context,
+    );
+    thinkingLevel = "max";
+    await tools.get("exec_command").execute(
+      "vision-max",
+      { cmd: "dscode-vision --image screenshot.png" },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(start.mock.calls[0]?.[1]).toMatchObject({ thinkingLevel: "low" });
+    expect(start.mock.calls[1]?.[1]).toMatchObject({ thinkingLevel: "max" });
+  });
+
+  it("gets scoped network approval before enabling the trusted vision path", async () => {
+    const tools = new Map<string, any>();
+    const pi = new Proxy(
+      {
+        registerTool(tool: { name: string }) {
+          tools.set(tool.name, tool);
+        },
+        on: () => undefined,
+        getActiveTools: () => [],
+        setActiveTools: () => undefined,
+        getThinkingLevel: () => "high",
+      },
+      {
+        get(target, property) {
+          if (property in target) return target[property as keyof typeof target];
+          return () => undefined;
+        },
+      },
+    ) as unknown as ExtensionAPI;
+    const start = vi.spyOn(ManagedProcessRegistry.prototype, "start").mockResolvedValue({
+      processId: "vision-process",
+      running: false,
+      output: "done",
+      exitCode: 0,
+      sandbox: "trusted dscode-vision (fixed executable)",
+    });
+    createDSCodeExtension(options(process.cwd())).factory(pi);
+    const prompts: string[] = [];
+    const context = {
+      cwd: process.cwd(),
+      hasUI: true,
+      ui: {
+        setWorkingVisible: () => undefined,
+        select: async (prompt: string) => {
+          prompts.push(prompt);
+          return "Allow once";
+        },
+      },
+    } as unknown as ExtensionContext;
+
+    await tools.get("exec_command").execute(
+      "vision-network",
+      { cmd: "dscode-vision --image screenshot.png" },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Allow network access?");
+    expect(start.mock.calls[0]?.[1]).toMatchObject({
+      sandbox: { mode: "workspace-write", network: true },
+      thinkingLevel: "high",
+    });
   });
 
   it.runIf(process.platform === "darwin")(

@@ -27,6 +27,7 @@ import { registerDiagnosticsTool } from "./diagnostics.js";
 import { registerNaturalExit } from "./exit.js";
 import { registerHooks } from "./hooks.js";
 import { registerLocalImageInput } from "./image-input.js";
+import { partitionSessionFile } from "./home.js";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.js";
 import { MCPManager } from "./mcp.js";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.js";
@@ -135,10 +136,23 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       let toolsBeforePlan: string[] | undefined;
       let projectCommands: string[] = [];
       let lastAgentFailed = false;
+      let sessionPartition = Promise.resolve();
       let planState: PlanState | undefined;
       let lastOfferedPlanRevision = 0;
       const access = new SessionAccessController(options.sandbox, options.network);
       const effectiveAccess = (): EffectiveAccess => access.effective(permission);
+
+      const queueSessionPartition = (ctx: ExtensionContext): Promise<void> => {
+        const sessionFile = ctx.sessionManager.getSessionFile();
+        if (!sessionFile) return sessionPartition;
+        sessionPartition = sessionPartition
+          .catch(() => undefined)
+          .then(async () => {
+            await partitionSessionFile(sessionFile);
+          })
+          .catch(() => undefined);
+        return sessionPartition;
+      };
 
       const updateStatus = (ctx: ExtensionContext): void => {
         const currentAccess = effectiveAccess();
@@ -242,9 +256,19 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
         pi.setActiveTools(intendedTools);
         toolsBeforePlan = undefined;
         applyPermissionTools();
+        await queueSessionPartition(ctx);
       });
 
-      pi.on("session_shutdown", async () => {
+      pi.on("session_info_changed", async (_event, ctx) => {
+        await queueSessionPartition(ctx);
+      });
+
+      pi.on("agent_settled", async (_event, ctx) => {
+        await queueSessionPartition(ctx);
+      });
+
+      pi.on("session_shutdown", async (_event, ctx) => {
+        await queueSessionPartition(ctx);
         processes.dispose();
         await mcp.close();
       });
@@ -252,7 +276,7 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       pi.on("before_agent_start", async (event) => {
         lastAgentFailed = false;
         const currentAccess = effectiveAccess();
-        const systemPrompt = `${event.systemPrompt}\n\n${engineeringInstructions(projectCommands, currentAccess)}`;
+        const systemPrompt = effectiveSystemPrompt(event.systemPrompt, projectCommands, currentAccess);
         if (permission !== "plan") return { systemPrompt };
         return {
           systemPrompt,
@@ -654,8 +678,36 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       });
 
       pi.registerCommand("mcp", {
-        description: "Show MCP server and tool status",
-        handler: async (_args, ctx) => ctx.ui.notify(mcp.status(), "info"),
+        description: "Show MCP servers, tool names, and summaries",
+        handler: async (_args, ctx) => ctx.ui.notify(mcp.detailedStatus(), "info"),
+      });
+
+      pi.registerCommand("x-7f3c9a", {
+        description: "Show an internal runtime diagnostic snapshot",
+        handler: async (_args, ctx) => {
+          const base = ctx.getSystemPrompt();
+          // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
+          const effective = base.includes("# DSCode engineering contract")
+            ? base
+            : effectiveSystemPrompt(base, projectCommands, effectiveAccess());
+          const tools = ctx.getSystemPromptOptions().selectedTools ?? [];
+          const skills = ctx.getSystemPromptOptions().skills ?? [];
+          ctx.ui.notify(
+            [
+              `tools: ${tools.join(", ") || "none"}`,
+              `skills (${skills.length}):`,
+              ...(skills.length
+                ? skills.map(
+                    (skill) =>
+                      `- ${skill.name}${skill.disableModelInvocation ? " [command-only]" : ""}`,
+                  )
+                : ["- none"]),
+              `--- rendered system prompt (${effective.length.toLocaleString()} chars) ---`,
+              effective,
+            ].join("\n"),
+            "info",
+          );
+        },
       });
 
       pi.registerCommand("status", {
@@ -734,55 +786,71 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
 
 function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOptions): void {
   const api = options.transport === "responses" ? "openai-responses" : "openai-completions";
-  const modelId =
-    options.providerId === "deepseek" ? options.modelId : defaultModelForProvider("deepseek");
+  const models = [
+    {
+      id: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash",
+      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
+    },
+    {
+      id: "deepseek-v4-pro",
+      name: "DeepSeek V4 Pro",
+      cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 },
+    },
+  ];
+  if (
+    options.providerId === "deepseek" &&
+    !models.some((model) => model.id === options.modelId)
+  ) {
+    const defaultCost = models.find(
+      (model) => model.id === defaultModelForProvider("deepseek"),
+    )?.cost;
+    models.push({
+      id: options.modelId,
+      name: options.modelId,
+      cost: defaultCost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+  }
   pi.registerProvider("deepseek", {
     name: "DeepSeek",
     baseUrl: options.baseUrl,
     apiKey: "$DEEPSEEK_API_KEY",
     api,
     authHeader: true,
-    models: [
-      {
-        id: modelId,
-        name: modelId === "deepseek-v4-flash" ? "DeepSeek V4 Flash" : modelId,
-        api,
-        reasoning: true,
-        input: ["text"],
-        cost: {
-          input: 0.14,
-          output: 0.28,
-          cacheRead: 0.0028,
-          cacheWrite: 0,
-        },
-        contextWindow: 1_048_576,
-        maxTokens: 384_000,
-        thinkingLevelMap: {
-          off: null,
-          minimal: null,
-          low: "low",
-          medium: "high",
-          high: "high",
-          xhigh: "high",
-          max: "max",
-        },
-        compat:
-          options.transport === "responses"
-            ? {
-                supportsDeveloperRole: true,
-                supportsLongCacheRetention: false,
-                supportsStrictMode: false,
-                supportsOpenAIGrammarTools: true,
-                sessionAffinityFormat: "openai-nosession",
-              }
-            : {
-                supportsStore: false,
-                supportsDeveloperRole: false,
-                requiresReasoningContentOnAssistantMessages: true,
-                thinkingFormat: "deepseek",
-              },
+    models: models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      api,
+      reasoning: true,
+      input: ["text"] as ["text"],
+      cost: model.cost,
+      contextWindow: 1_048_576,
+      maxTokens: 384_000,
+      thinkingLevelMap: {
+        off: null,
+        minimal: null,
+        low: "low",
+        medium: "high",
+        high: "high",
+        xhigh: "high",
+        max: "max",
       },
-    ],
+      compat:
+        options.transport === "responses"
+          ? {
+              supportsDeveloperRole: true,
+              supportsLongCacheRetention: false,
+              supportsStrictMode: false,
+              supportsOpenAIGrammarTools: true,
+              sessionAffinityFormat: "openai-nosession",
+            }
+          : {
+              supportsStore: false,
+              supportsDeveloperRole: false,
+              requiresReasoningContentOnAssistantMessages: true,
+              thinkingFormat: "deepseek",
+            },
+    })),
   });
 }
 
@@ -825,6 +893,7 @@ function registerCommandTools(
         sandbox: { mode: current.sandbox, network: current.network },
         yieldTimeMs: params.yield_time_ms ?? 10_000,
         timeoutMs: params.timeout_ms ?? 120_000,
+        thinkingLevel: pi.getThinkingLevel(),
         ...(signal ? { signal } : {}),
       });
       let result = await run(commandAccess);
@@ -1217,6 +1286,14 @@ function formatManagedResult(result: ManagedProcessResult): string {
     ...(result.timedOut ? ["timed_out: true"] : []),
     `sandbox: ${result.sandbox}`,
   ].join("\n");
+}
+
+function effectiveSystemPrompt(
+  base: string,
+  commands: string[],
+  access: EffectiveAccess,
+): string {
+  return `${base}\n\n${engineeringInstructions(commands, access)}`;
 }
 
 function engineeringInstructions(

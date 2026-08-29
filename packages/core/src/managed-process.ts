@@ -1,8 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { BoundedOutput } from "./process.js";
 import { stripModelCredentialEnvironment } from "./providers.js";
 import { sandboxCommand, type SandboxOptions } from "./sandbox.js";
+import {
+  classifyVisionCommand,
+  createVisionProcessEnvironment,
+  DEFAULT_VISION_CLI_EXECUTABLE,
+} from "./vision-command.js";
 
 export interface ManagedProcessResult {
   processId: string;
@@ -27,8 +34,20 @@ interface ProcessRecord {
   timeout: NodeJS.Timeout;
 }
 
+export interface ManagedProcessRegistryOptions {
+  visionExecutable?: string;
+}
+
 export class ManagedProcessRegistry {
   private readonly records = new Map<string, ProcessRecord>();
+  private readonly visionExecutable: string;
+
+  constructor(options: ManagedProcessRegistryOptions = {}) {
+    this.visionExecutable = options.visionExecutable ?? DEFAULT_VISION_CLI_EXECUTABLE;
+    if (!path.isAbsolute(this.visionExecutable)) {
+      throw new Error("The trusted dscode-vision executable path must be absolute");
+    }
+  }
 
   async start(
     command: string,
@@ -37,11 +56,28 @@ export class ManagedProcessRegistry {
       sandbox: SandboxOptions;
       yieldTimeMs: number;
       timeoutMs: number;
+      thinkingLevel: ThinkingLevel;
       signal?: AbortSignal;
     },
   ): Promise<ManagedProcessResult> {
-    const invocation = sandboxCommand(command, options.cwd, options.sandbox);
-    const env = stripModelCredentialEnvironment({ ...process.env });
+    const vision = classifyVisionCommand(command);
+    if (vision.kind === "invalid") {
+      throw new Error(`Invalid dscode-vision command: ${vision.reason}`);
+    }
+    if (vision.kind === "trusted" && !options.sandbox.network) {
+      throw new Error("dscode-vision requires network access");
+    }
+    const visionCommand = vision.kind === "trusted" ? vision.command : undefined;
+    const invocation = visionCommand
+      ? {
+          command: process.execPath,
+          args: [this.visionExecutable, ...visionCommand.args],
+          description: "trusted dscode-vision (fixed executable)",
+        }
+      : sandboxCommand(command, options.cwd, options.sandbox);
+    const env = visionCommand
+      ? createVisionProcessEnvironment(process.env, options.thinkingLevel)
+      : stripModelCredentialEnvironment({ ...process.env });
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd,
@@ -176,6 +212,19 @@ function signalProcessTree(
   child: ChildProcessWithoutNullStreams,
   signal: NodeJS.Signals,
 ): void {
+  if (process.platform === "win32" && child.pid !== undefined) {
+    const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    killer.once("error", () => child.kill(signal));
+    killer.once("close", (exitCode) => {
+      if (exitCode !== 0 && child.exitCode === null && child.signalCode === null) {
+        child.kill(signal);
+      }
+    });
+    return;
+  }
   if (process.platform !== "win32" && child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);

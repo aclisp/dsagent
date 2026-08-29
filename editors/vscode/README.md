@@ -5,7 +5,7 @@ This thin local extension opens the real DSCode TUI inside an integrated termina
 - the current selection (or a small cursor neighborhood);
 - VS Code language diagnostics for the current file.
 
-Install DSCode globally first, then package this directory:
+From a completed repository developer setup, link the local DSCode CLI and package this directory:
 
 ```bash
 pnpm link --global

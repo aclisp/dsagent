@@ -15,9 +15,13 @@
 </p>
 
 DSCode is an opinionated coding-agent runtime with DeepSeek V4 Flash as its economical default and
-built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, and xAI. It combines
+built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go. It combines
 provider-aware model routing with local sessions, safe patching, parallel agents, OS sandboxing, and
 transparent usage reporting.
+
+> DSCode is an independent continuation of [dscode](https://github.com/thinkany-ai/dscode). It began as a fork,
+> preserves the upstream Git history, and is now developed and released as a separate product. Selected upstream
+> changes are reviewed and integrated selectively; see [docs/UPSTREAM.md](docs/UPSTREAM.md).
 
 It is not trying to out-feature every general-purpose agent. It keeps the runtime local and inspectable
 while letting each repository task use the model capabilities it actually needs.
@@ -26,7 +30,7 @@ while letting each repository task use the model capabilities it actually needs.
 
 - **DeepSeek-first, not DeepSeek-only.** DeepSeek V4 Flash remains the default, with its dedicated
   Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. Switch to
-  Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, or Grok without changing tools or sessions.
+  Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go without changing tools or sessions.
 - **Vision when the model supports it.** Paste an image in the TUI or pass an image as `@file`; models
   such as GPT-5.6 receive the actual image attachment while text-only DeepSeek models fail clearly.
 - **Cost-aware by design.** DeepSeek's 1M context and disk prefix cache are reflected in the runtime;
@@ -47,22 +51,35 @@ ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licen
 
 ## Quick start
 
-Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`; the installer prepares pnpm and installs
-ripgrep through Homebrew when available.
+### End users: Docker
 
-Install from npm:
-
-```bash
-npm install -g @thinkany/dscode
-```
-
-Alternatively, install the latest source build:
+The supported end-user distribution is the public Docker Image. Pull the current stable image:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
+docker pull ghcr.io/aclisp/dsagent:latest
 ```
 
-Make sure `~/.local/bin` is on your `PATH`, then start DSCode:
+For a reproducible deployment, pin `DSCODE_IMAGE` to `ghcr.io/aclisp/dsagent:0.9.2` or an image digest.
+The Compose templates and deployment instructions are in
+[deploy/cloud/dscode](deploy/cloud/dscode/README.md).
+
+### Developers: source setup
+
+```bash
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
+corepack enable
+pnpm install
+pnpm check
+```
+
+The repository's npm packages are private workspace packages and are not currently published to npm.
+
+## Terminal app
+
+Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
+
+Start DSCode from a local source checkout:
 
 ```bash
 dscode -C /path/to/project
@@ -83,12 +100,14 @@ non-interactive commands and explicit provider-free configuration.
 | Kimi For Coding | `kimi-coding` | Kimi Code account or API key |
 | MiniMax | `minimax` | API key |
 | xAI / Grok | `xai` | Grok/X account or API key |
+| OpenCode Zen Go | `opencode-go` | API key |
 
 The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
 
 When configuring DeepSeek, DSCode masks the API key, then offers an optional API base URL. Press Enter to use
-`https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. The key is stored in
-`~/.dscode/auth.json`; the endpoint is stored in `~/.dscode/config.json`, both with `0600`
+`https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. By default, credentials
+use the operating system keyring; `~/.dscode/auth.json` is the owner-only fallback for headless hosts
+or unavailable keyring services. The endpoint is stored in `~/.dscode/config.json` with `0600`
 permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
 DeepSeek URL. To avoid storing a key:
 
@@ -106,6 +125,7 @@ dscode login openai-codex  # browser OAuth; uses ChatGPT plan limits
 dscode login openai        # securely prompts for an OpenAI API key
 dscode login anthropic     # Claude account or Anthropic API key
 dscode login openrouter    # OpenRouter account or API key
+dscode login opencode-go   # OpenCode Zen Go API key
 ```
 
 The selected provider and model are saved for later runs. Override them at any time:
@@ -119,14 +139,34 @@ DSCode keeps all of its global state under `~/.dscode`:
 
 ```text
 ~/.dscode/settings.json    TUI and runtime preferences
-~/.dscode/config.json      DeepSeek endpoint
-~/.dscode/auth.json        Provider credentials
+~/.dscode/config.json      DSCode storage policy and DeepSeek endpoint
+~/.dscode/auth.json        Owner-only credential fallback
+~/.dscode/credential-metadata.json  Non-secret keyring index
+~/.dscode/state.sqlite     Thread metadata and desktop runtime state
 ~/.dscode/skills/          Global skills
 ~/.dscode/extensions/      Global extensions
 ~/.dscode/mcp.json         Global MCP servers
 ~/.dscode/hooks.json       Global hooks
-~/.dscode/sessions/        Session history
+~/.dscode/sessions/YYYY/MM/DD/  JSONL session transcripts
+~/.dscode/archived_sessions/   Archived transcripts
 ```
+
+The flat `sessions/*.jsonl` names are hard-link compatibility entries for the current terminal
+runtime; each points to the same inode as its date-partitioned transcript and does not duplicate
+content. JSONL is the transcript source of truth. SQLite contains only searchable thread metadata,
+pin/archive state, and file fingerprints.
+
+Credential and history behavior can be configured in `~/.dscode/config.json`:
+
+```json
+{
+  "cli_auth_credentials_store": "auto",
+  "history": { "persistence": "save-all" }
+}
+```
+
+Credential modes are `auto`, `keyring`, and `file`. Set history persistence to `none` to run new
+sessions without writing transcripts. `DSCODE_SQLITE_HOME` relocates only SQLite state.
 
 Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
 history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
@@ -242,16 +282,16 @@ server environments.
 - Trusted-project hooks and MCP servers
 - Reconnectable background commands
 - JSONL output for CI and a full stdin/stdout RPC mode
-- Reusable `@thinkany/dscode-core` package with a bundled headless RPC worker
+- Reusable `@aclisp/dsagent-core` package with a bundled headless RPC worker
 - VS Code extension in [editors/vscode](editors/vscode/README.md)
 - Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
 
-Graphical clients and IDE integrations can install `@thinkany/dscode-core` without requiring a global
-CLI. It exposes credential and settings APIs plus a typed RPC client backed by the exact same Agent,
-tools, permissions, and local session format as the terminal client:
+Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
+after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
+client backed by the exact same Agent, tools, permissions, and local session format as the terminal client:
 
 ```ts
-import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
 const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
 await client.start();
@@ -259,14 +299,14 @@ client.onEvent((event) => render(event));
 await client.prompt("Review this repository");
 ```
 
-The normal `@thinkany/dscode` tarball embeds its matching Core build, so existing CLI installations do
-not add a registry-time dependency or change their command, configuration, and session behavior.
+The normal `@aclisp/dsagent` build embeds its matching Core build. npm publication is currently disabled;
+developers should use the workspace setup above.
 
 ## Build from source
 
 ```bash
-git clone https://github.com/thinkany-ai/dscode.git
-cd dscode
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
 corepack enable
 pnpm install
 pnpm check
@@ -282,7 +322,8 @@ pnpm acceptance:live   # complete real-API feature acceptance
 ```
 
 Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
-GitHub Release and publishes the npm package after CI passes. See [Releasing DSCode](docs/RELEASING.md).
+GitHub Release and publishes the full and lean Docker images after CI passes. See
+[Releasing DSCode](docs/RELEASING.md).
 
 ## Current boundaries
 

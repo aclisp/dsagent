@@ -15,8 +15,12 @@
 </p>
 
 DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek V4 Flash 为默认模型，并
-内置支持 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax 和 xAI。它把
+内置支持 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax、xAI 和 OpenCode Zen Go。它把
 provider-aware 路由、本地会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
+
+> DSCode 是 [dscode](https://github.com/thinkany-ai/dscode) 的独立延续项目。它最初是一个 fork，
+> 保留了上游 Git 历史，如今作为独立产品开发和发布。上游改动会经过审查后选择性集成，详见
+> [docs/UPSTREAM.md](docs/UPSTREAM.md)。
 
 DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保持 runtime 本地、透明，并允许
 每个仓库任务选择真正需要的模型能力。
@@ -25,7 +29,7 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 - **DeepSeek 优先，但不限于 DeepSeek。** DeepSeek V4 Flash 仍是默认模型，继续使用专用 Responses
   adapter、原生 freeform `apply_patch` 和服务端 Web Search；也可以在不改变工具与会话的情况下
-  切换到 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax 或 Grok。
+  切换到 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax、Grok 或 OpenCode Zen Go。
 - **模型支持时可识图。** 可在 TUI 粘贴图片或通过 `@file` 传入；GPT-5.6 等模型能检查截图，
   会收到真正的图片 attachment，text-only DeepSeek 模型则会给出明确限制。
 - **围绕成本设计。** Runtime 直接利用 DeepSeek 的 1M context 和硬盘前缀缓存；`/status` 会显示
@@ -43,22 +47,34 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ## 快速开始
 
-要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`；安装器会准备 pnpm，并在 macOS 可用时通过
-Homebrew 安装 ripgrep。
+### 最终用户：Docker
 
-从 npm 安装：
-
-```bash
-npm install -g @thinkany/dscode
-```
-
-也可以安装最新源码版本：
+最终用户支持的分发方式是公开的 Docker Image。拉取当前稳定镜像：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thinkany-ai/dscode/refs/heads/main/scripts/install.sh | sh
+docker pull ghcr.io/aclisp/dsagent:latest
 ```
 
-确认 `~/.local/bin` 已加入 `PATH`，然后启动 DSCode：
+如需可复现部署，请将 `DSCODE_IMAGE` 固定为 `ghcr.io/aclisp/dsagent:0.9.2` 或镜像 digest。
+Compose 模板和部署说明见 [deploy/cloud/dscode](deploy/cloud/dscode/README.md)。
+
+### 开发者：源码设置
+
+```bash
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
+corepack enable
+pnpm install
+pnpm check
+```
+
+仓库中的 npm 包是私有 workspace 包，目前不会发布到 npm。
+
+## 终端应用
+
+要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
+
+从本地源码 checkout 启动 DSCode：
 
 ```bash
 dscode -C /path/to/project
@@ -78,12 +94,14 @@ dscode -C /path/to/project
 | Kimi For Coding | `kimi-coding` | Kimi Code 账号或 API key |
 | MiniMax | `minimax` | API key |
 | xAI / Grok | `xai` | Grok/X 账号或 API key |
+| OpenCode Zen Go | `opencode-go` | API key |
 
 `/login` 和 `--provider` 也接受 `kimi`、`grok` 这两个易记别名。
 
 配置 DeepSeek 时，DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
-`https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。密钥保存到
-`~/.dscode/auth.json`，endpoint 保存到 `~/.dscode/config.json`，权限均为 `0600`。
+`https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。默认优先把凭证保存到
+操作系统钥匙串；无 UI 进程或钥匙串不可用时回退到权限为 `0600` 的 `~/.dscode/auth.json`。
+endpoint 保存到权限为 `0600` 的 `~/.dscode/config.json`。
 优先级为 `--base-url`、`DEEPSEEK_BASE_URL`、本地保存值、DeepSeek 官方地址。如果不希望保存密钥：
 
 ```bash
@@ -100,6 +118,7 @@ dscode login openai-codex  # 浏览器 OAuth，使用 ChatGPT 套餐限额
 dscode login openai        # 安全输入 OpenAI API key
 dscode login anthropic     # Claude 账号或 Anthropic API key
 dscode login openrouter    # OpenRouter 账号或 API key
+dscode login opencode-go   # OpenCode Zen Go API key
 ```
 
 选择的 provider 和模型会保存供后续启动使用，也可以随时覆盖：
@@ -113,14 +132,33 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 
 ```text
 ~/.dscode/settings.json    TUI 与运行时偏好
-~/.dscode/config.json      DeepSeek endpoint
-~/.dscode/auth.json        Provider 凭证
+~/.dscode/config.json      存储策略与 DeepSeek endpoint
+~/.dscode/auth.json        仅当前用户可读的凭证回退
+~/.dscode/credential-metadata.json  不含密钥的钥匙串索引
+~/.dscode/state.sqlite     会话元数据与桌面运行状态
 ~/.dscode/skills/          全局 skills
 ~/.dscode/extensions/      全局 extensions
 ~/.dscode/mcp.json         全局 MCP servers
 ~/.dscode/hooks.json       全局 hooks
-~/.dscode/sessions/        会话历史
+~/.dscode/sessions/YYYY/MM/DD/  JSONL 会话正文
+~/.dscode/archived_sessions/   已归档会话
 ```
+
+顶层的 `sessions/*.jsonl` 是为当前终端运行时保留的硬链接兼容入口，与日期目录中的正文指向
+同一个 inode，不会重复占用空间。JSONL 是会话正文的唯一事实来源；SQLite 只保存可搜索的
+会话元数据、置顶/归档状态和文件指纹。
+
+可以在 `~/.dscode/config.json` 中配置凭证与历史记录策略：
+
+```json
+{
+  "cli_auth_credentials_store": "auto",
+  "history": { "persistence": "save-all" }
+}
+```
+
+凭证模式支持 `auto`、`keyring`、`file`。把历史策略设为 `none` 后，新会话不会写入正文。
+`DSCODE_SQLITE_HOME` 可单独迁移 SQLite 状态目录。
 
 可用 `DSCODE_HOME` 修改整个目录，用 `DSCODE_SESSIONS_DIR` 单独修改会话目录。DSCode 不再继承
 `PI_CODING_AGENT_DIR`。首次启动会把旧的 `~/.dscode/agent` 内容无损复制到新目录，不删除、
@@ -230,15 +268,16 @@ Provider API key 不会传给命令、hooks 或 stdio MCP server。
 - 可信项目 hooks 与 MCP server
 - 可重连后台命令
 - 面向 CI 的 JSONL，以及完整 stdin/stdout RPC 模式
-- 可复用的 `@thinkany/dscode-core` 包及其内置 headless RPC worker
+- 可复用的 `@aclisp/dsagent-core` 包及其内置 headless RPC worker
 - [editors/vscode](editors/vscode/README.md) 中的 VS Code 扩展
 - `safe` harness 自动发现 TypeScript、Pyright、Rust、Go 和 Swift diagnostics
 
-图形客户端和 IDE 集成可以直接安装 `@thinkany/dscode-core`，不要求用户全局安装 CLI。Core
-提供凭证、设置 API 和类型化 RPC client，使用与终端版完全相同的 Agent、工具、权限和本地会话格式：
+图形客户端和 IDE 集成完成上面的开发者设置后，可以使用私有 workspace 包
+`@aclisp/dsagent-core`，不要求全局安装 CLI。Core 提供凭证、设置 API 和类型化 RPC client，
+使用与终端版完全相同的 Agent、工具、权限和本地会话格式：
 
 ```ts
-import { createDSCodeRpcClient } from "@thinkany/dscode-core/rpc";
+import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
 const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
 await client.start();
@@ -246,14 +285,14 @@ client.onEvent((event) => render(event));
 await client.prompt("检查这个仓库");
 ```
 
-普通 `@thinkany/dscode` tarball 会内嵌相同版本的 Core 构建，因此现有 CLI 安装不会新增运行时
-registry 依赖，也不会改变命令、配置或会话行为。
+普通 `@aclisp/dsagent` 构建会内嵌相同版本的 Core。npm 发布目前已暂停；开发者应使用上面的
+workspace 设置。
 
 ## 从源码构建
 
 ```bash
-git clone https://github.com/thinkany-ai/dscode.git
-cd dscode
+git clone https://github.com/aclisp/dsagent.git
+cd dsagent
 corepack enable
 pnpm install
 pnpm check
@@ -269,7 +308,7 @@ pnpm acceptance:live   # 完整真实 API 功能验收
 ```
 
 日常开发提交到 `dev`；带新版本号的提交合并到 `main` 并通过 CI 后，会自动创建对应的 GitHub
-Release 并发布 npm 包。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
+Release 并发布 full 和 lean Docker 镜像。详细流程见 [Releasing DSCode](docs/RELEASING.md)。
 
 ## 当前边界
 

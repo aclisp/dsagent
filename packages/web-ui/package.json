@@ -1,0 +1,33 @@
+{
+  "name": "@aclisp/dsagent-web-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "catalog:",
+    "@fastify/multipart": "catalog:",
+    "@aclisp/dsagent-chat-client": "workspace:*",
+    "@aclisp/dsagent-http-adapter": "workspace:*",
+    "@aclisp/dsagent-wecom": "workspace:*",
+    "@wecom/aibot-node-sdk": "catalog:",
+    "croner": "catalog:",
+    "fastify": "catalog:",
+    "marked": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

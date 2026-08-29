@@ -1,6 +1,7 @@
 import type { PermissionMode } from "./config.js";
 import type { ManagedProcessResult } from "./managed-process.js";
 import type { SandboxMode } from "./runtime-options.js";
+import { parseTrustedVisionCommand } from "./vision-command.js";
 
 export type AccessBoundary = "network" | "host";
 
@@ -69,6 +70,7 @@ function grantCount(count: number): string {
 export function commandNeedsNetwork(command: string): boolean {
   const normalized = command.replace(/\\\n/g, " ").trim();
   if (!normalized) return false;
+  if (parseTrustedVisionCommand(normalized)) return true;
   return (
     /(^|[;&|]\s*)(curl|wget|ssh|scp|sftp|ftp|telnet|nc|ncat|gh)\b/i.test(normalized) ||
     /\bgit\s+(push|pull|fetch|clone|ls-remote|submodule\s+(update|sync))\b/i.test(normalized) ||
