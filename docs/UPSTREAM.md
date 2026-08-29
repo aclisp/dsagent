@@ -14,6 +14,45 @@ The canonical remote layout is:
 - primary upstream source: `upstream/dev`; `upstream/main` and upstream tags
   are used as release-state references
 
+## One-time migration from the fork branch layout
+
+The original fork used local `dev` as a branch that tracked the upstream
+repository. After the fork became an independent product, `dev` was reassigned
+to the product development line, and the old upstream-tracking branch was
+renamed to `upstream-dev`.
+
+Run this migration once, after the product repository has established its
+remote `dev` branch from the former product branch (`feature/server`). Start
+with a clean worktree and check out the former product branch:
+
+```bash
+git fetch origin
+git switch feature/server
+git branch -m dev upstream-dev
+git branch -m feature/server dev
+git branch --set-upstream-to=upstream/dev upstream-dev
+git branch --set-upstream-to=origin/dev dev
+git pull --ff-only origin dev
+```
+
+The migration only renames local branches and changes their tracking
+configuration; it does not rewrite or discard any commits. Verify the result
+with:
+
+```bash
+git branch -vv
+```
+
+The expected layout is:
+
+- local `dev` tracks `origin/dev` and contains product development
+- local `upstream-dev` tracks `upstream/dev` and is used only as an upstream
+  reference
+
+Keep the old remote `feature/server` branch until the new `dev` line and its
+first release have been validated. It can be deleted separately later as a
+repository housekeeping step.
+
 Upstream synchronization is manual and ad hoc. For each integration, create a
 temporary `upstream-sync/*` branch from the product development branch, select
 specific commits, open a reviewable pull request, and update this ledger. Do

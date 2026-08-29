@@ -28,19 +28,27 @@ RUN pnpm install --prod --frozen-lockfile
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV HOST=0.0.0.0 PORT=8899
+ARG DSCODE_APT_MIRROR=deb.debian.org
+ARG DSCODE_APT_PIPELINE_DEPTH=
 
 # Lean image: only what the agent needs to run. Office/PDF tools are added by the
 # derived image deploy/tools.Dockerfile on the live env server, so the distributed
 # artifact stays small.
 # apt's sandbox drops to the _apt user (setgroups/setegid/seteuid), which fails under
 # --cap-drop ALL; pinning the sandbox user to root lets apt run in the locked-down
-# running container without opening any capabilities. Tsinghua mirror = faster in CN.
-# Retry transient mirror failures, and disable HTTP pipelining because some Nginx
-# mirrors intermittently reset pipelined connections.
+# running container without opening any capabilities. Build-time APT defaults to the
+# Debian CDN for CI; pass DSCODE_APT_MIRROR and DSCODE_APT_PIPELINE_DEPTH=0 for a
+# China-based local build. The entrypoint applies the runtime mirror configuration.
 RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
-    && echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99nopipelining \
-    && sed -i 's|deb.debian.org/debian|mirrors.tuna.tsinghua.edu.cn/debian|' /etc/apt/sources.list.d/debian.sources \
+    && if [ -n "$DSCODE_APT_MIRROR" ] && [ "$DSCODE_APT_MIRROR" != "deb.debian.org" ]; then \
+         sed -i "s|deb.debian.org/debian|${DSCODE_APT_MIRROR}/debian|g" /etc/apt/sources.list.d/debian.sources; \
+       fi \
+    && case "$DSCODE_APT_PIPELINE_DEPTH" in \
+         '') ;; \
+         *[!0-9]*) echo 'DSCODE_APT_PIPELINE_DEPTH must be a non-negative integer.' >&2; exit 1 ;; \
+         *) printf 'Acquire::http::Pipeline-Depth "%s";\n' "$DSCODE_APT_PIPELINE_DEPTH" > /etc/apt/apt.conf.d/99dscode-pipeline-depth ;; \
+       esac \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 

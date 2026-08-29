@@ -2,7 +2,10 @@
 #
 # Requires a .env next to this file with DSCODE_INSTANCE_NAME, DSCODE_HOST_PORT,
 # WORKSPACE_ID, TZ, OPENROUTER_API_KEY, MODEL, and VISION_MODEL. Build the image first:
-#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .   # lean base
+#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
+#     --build-arg DSCODE_APT_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+#     --build-arg DSCODE_APT_PIPELINE_DEPTH=0 \
+#     -t dscode-server:lean .                                          # lean base
 #   docker build -f deploy/tools.Dockerfile -t dscode-server .                # derived tool image
 # Then:
 #   docker compose up -d        # create/update; recreates the container after an image rebuild

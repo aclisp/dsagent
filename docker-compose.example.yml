@@ -2,7 +2,10 @@
 #
 # By default this pulls the public full image from GHCR. Maintainers building
 # locally must build the lean base before the derived tools image:
-#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
+#   DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
+#     --build-arg DSCODE_APT_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+#     --build-arg DSCODE_APT_PIPELINE_DEPTH=0 \
+#     -t dscode-server:lean .
 #   docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 #
 # Then create an instance by copying this file and .env.example into its own

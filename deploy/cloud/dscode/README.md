@@ -70,6 +70,24 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t dscode-server:lean .
 docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
 ```
 
+The build defaults use Debian's public CDN, which is also used by GitHub Actions.
+For a local build from mainland China, configure the lean image with the faster
+Tsinghua mirror and the connection workaround before building the derived image:
+
+```sh
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build \
+  --build-arg DSCODE_APT_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+  --build-arg DSCODE_APT_PIPELINE_DEPTH=0 \
+  -t dscode-server:lean .
+docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
+```
+
+When the container starts, `deploy/docker-entrypoint.sh` switches runtime APT
+to the Tsinghua mirror and keeps `Pipeline-Depth=0` by default. Override
+`DSCODE_RUNTIME_APT_MIRROR` or `DSCODE_RUNTIME_APT_PIPELINE_DEPTH` when a
+different runtime network is preferred. The entrypoint does not run
+`apt-get update` during startup.
+
 `DOCKER_DEFAULT_PLATFORM` is only needed when building the AMD64 image on a host
 with a different architecture. On an AMD64 server, a normal `docker build` is
 sufficient.
