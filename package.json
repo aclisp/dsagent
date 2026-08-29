@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "private": true,
   "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
