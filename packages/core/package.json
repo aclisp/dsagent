@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent-core",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "private": true,
   "description": "Reusable multi-provider DSCode agent runtime with local sessions, tools, and RPC.",
   "type": "module",
