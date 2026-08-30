@@ -25,9 +25,9 @@
             "max": "max"
           },
           "input": ["text"],
-          "contextWindow": 100000,
+          "contextWindow": 200000,
           "maxTokens": 64000,
-          "cost": { "input": 1, "output": 2, "cacheRead": 0.2, "cacheWrite": 0 }
+          "cost": { "input": 3, "output": 9, "cacheRead": 0.3, "cacheWrite": 0 }
         },
         {
           "id": "qwen3.7-flash",
@@ -43,9 +43,27 @@
             "max": "xhigh"
           },
           "input": ["text", "image"],
-          "contextWindow": 100000,
+          "contextWindow": 200000,
           "maxTokens": 64000,
           "cost": { "input": 0.2, "output": 0.8, "cacheRead": 0.04, "cacheWrite": 0.25 }
+        },
+        {
+          "id": "qwen3.8-flash",
+          "name": "qwen3.8-flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "xhigh",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "cost": { "input": 0.8, "output": 2.7, "cacheRead": 0.1, "cacheWrite": 1.25 }
         }
       ]
     }
