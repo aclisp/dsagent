@@ -76,6 +76,14 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+.termino-console pre.user-message {
+  box-sizing: border-box;
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: #18232c;
+  border-left: 2px solid #4b87a8;
+  border-radius: 3px;
+}
 .termino-input {
   flex: none;
   width: 100%;

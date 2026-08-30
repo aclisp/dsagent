@@ -40,6 +40,8 @@ let sessionId = null;
 let workspaceId = null;
 let stream = null;
 let currentTurnId = null;
+let workingPhase = null;
+let workingSeconds = null;
 let resolveTurn = null;
 let streamBlock = null;
 let streamText = "";
@@ -58,8 +60,9 @@ let lastDialogKey = null;
 // Uploaded file paths awaiting the next submitted message, so the agent learns
 // about them in context instead of only from the transcript line.
 let pendingUploads = [];
-// A pending term.input()'s <pre> question plus its preceding blank line; re-anchored
-// to the bottom on each append so the shared transcript cannot push the idle client's
+const USER_PROMPT = "❯ ";
+// A pending term.input()'s user prompt plus its preceding blank line; re-anchored to
+// the bottom on each append so the shared transcript cannot push the idle client's
 // prompt (and its spacing) up.
 let pendingPrompt = null;
 // The adapter pings every 30s; 3 missed pings mean the stream is stale.
@@ -71,6 +74,14 @@ let reconnectDue = false;
 let reconnecting = false;
 let lastReconnectAt = 0;
 let watchdog = null;
+const WORKING_PHASE_LABELS = {
+  processing: "Working",
+  reading: "Reading",
+  thinking: "Thinking",
+  output: "Writing",
+  executing: "Running",
+  compaction: "Compacting",
+};
 
 // --- helpers -----------------------------------------------------------
 
@@ -192,11 +203,20 @@ function outMuted(text) {
   outHtml(`<pre class="muted">${escapeHtml(text)}</pre>`);
 }
 
-async function ask(question) {
+function outUser(text) {
+  outHtml(`<pre class="user-message">${escapeHtml(`${USER_PROMPT}${text}`)}</pre>`);
+}
+
+async function ask(question, className = null) {
   term.enable_input();
   document.querySelector(".termino-input").focus();
   const prompt = term.input(escapeHtml(question));
   const promptElement = document.querySelector(".termino-console").lastElementChild;
+  if (className) {
+    promptElement.classList.add(className);
+    // The class changes the prompt height after Termino's initial scroll.
+    term.scroll_to_bottom();
+  }
   // Keep chatLoop's blank line (the element right above the prompt) with it so the
   // pair stays together when re-anchored; dialogs and the picker have no blank.
   const prev = promptElement.previousElementSibling;
@@ -266,6 +286,15 @@ function hideWorking() {
   inputElement.placeholder = "";
 }
 
+function renderWorkingStatus() {
+  if (workingPhase === null) {
+    hideWorking();
+    return;
+  }
+  const label = WORKING_PHASE_LABELS[workingPhase] ?? WORKING_PHASE_LABELS.processing;
+  showWorking(workingSeconds === null ? label : `${label} · ${workingSeconds}s`);
+}
+
 // Another page's dialog: observe read-only until the turn ends — cancel any pending
 // main prompt and lock the input. Stop stays visible so an orphaned dialog can be
 // aborted from any page.
@@ -313,7 +342,12 @@ function endStream() {
 function onTurn(event) {
   if (event.status === "running" || event.status === "aborting") {
     currentTurnId = event.turnId;
-    if (event.status === "running") currentTurnClientId = event.clientId ?? null;
+    if (event.status === "running") {
+      currentTurnClientId = event.clientId ?? null;
+      workingPhase = "reading";
+      workingSeconds = null;
+      renderWorkingStatus();
+    }
     showRunningControls();
     // Another client submitted the turn: show its input (ours is already in the
     // prompt line).
@@ -323,11 +357,13 @@ function onTurn(event) {
       && event.clientId !== clientId
     ) {
       blankLine();
-      out(`> ${event.message}`);
+      outUser(event.message);
       blankLine();
     }
     return;
   }
+  workingPhase = null;
+  workingSeconds = null;
   hideIndicator();
   hideWorking();
   if (event.status === "completed" && lastTextBlock) {
@@ -425,6 +461,12 @@ function openStream() {
   });
   source.addEventListener("ping", () => { lastEventAt = Date.now(); });
   source.addEventListener("turn", (e) => onTurn(JSON.parse(e.data)));
+  source.addEventListener("activity", (e) => {
+    const event = JSON.parse(e.data);
+    if (event.turnId !== currentTurnId) return;
+    workingPhase = event.phase;
+    renderWorkingStatus();
+  });
   source.addEventListener("assistant_text_delta", (e) => appendDelta(JSON.parse(e.data).delta));
   source.addEventListener("thinking_start", () => showIndicator("…thinking"));
   source.addEventListener("thinking_end", hideIndicator);
@@ -451,11 +493,12 @@ function openStream() {
       out(`[note] ${event.message}`);
     } else if (event.method === "working_message") {
       if (event.message !== undefined) {
-        // The TUI's "esc to interrupt" becomes the web's Stop button.
-        showWorking(event.message.replace(/\s*·\s*esc to interrupt/, " · Stop to interrupt"));
+        const match = /Working \((\d+)s\b/.exec(event.message);
+        workingSeconds = match ? Number(match[1]) : null;
       } else {
-        hideWorking();
+        workingSeconds = null;
       }
+      renderWorkingStatus();
     }
   });
 }
@@ -508,7 +551,7 @@ async function renderHistory() {
     if (message.role === "user") {
       for (const block of message.content) {
         blankLine();
-        out(`> ${block.text}`);
+        outUser(block.text);
         blankLine();
       }
     } else if (message.role === "assistant") {
@@ -569,7 +612,7 @@ async function chatLoop() {
     // a second pending ask resolves on the same Enter and disables the input.
     await waitTurn();
     blankLine();
-    let message = await ask("> ");
+    let message = await ask(USER_PROMPT, "user-message");
     if (message === undefined || message.trim().length === 0) continue;
     if (pendingUploads.length > 0) {
       message = `[Uploaded files: ${pendingUploads.join(", ")}]\n${message}`;
