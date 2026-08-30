@@ -411,6 +411,44 @@ describe("SessionController", () => {
     events.close();
   });
 
+  it("uses processing for subsequent model turns", async () => {
+    const promptBlocked = deferred();
+    const broker = createHttpUiBroker();
+    const harness = createHarness({
+      broker,
+      prompt: async () => promptBlocked.promise,
+    });
+    const events = await openEventStream(harness.controller);
+    const turn = startTurn(harness.controller, "Continue this", "browser");
+
+    expect(await events.next()).toMatchObject({
+      type: "turn",
+      turnId: turn.id,
+      status: "running",
+    });
+
+    broker.publishSessionEvent({ type: "turn_start" } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "reading");
+
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "First round" },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "output");
+    expect(await events.next()).toMatchObject({
+      type: "assistant_text_delta",
+      delta: "First round",
+    });
+
+    broker.publishSessionEvent({ type: "turn_end" } as AgentSessionEvent);
+    broker.publishSessionEvent({ type: "turn_start" } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "processing");
+
+    events.close();
+    promptBlocked.resolve();
+    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+  });
+
   it("derives and replays the current activity phase", async () => {
     const promptBlocked = deferred();
     const broker = createHttpUiBroker();
@@ -427,10 +465,7 @@ describe("SessionController", () => {
       status: "running",
     });
 
-    broker.publishSessionEvent({
-      type: "message_start",
-      message: { role: "assistant" },
-    } as AgentSessionEvent);
+    broker.publishSessionEvent({ type: "turn_start" } as AgentSessionEvent);
     await expectActivity(events, turn.id, "reading");
 
     broker.publishSessionEvent({
@@ -485,6 +520,14 @@ describe("SessionController", () => {
     broker.publishSessionEvent({ type: "turn_end" } as AgentSessionEvent);
     await expectActivity(events, turn.id, "processing");
 
+    broker.publishSessionEvent({ type: "turn_start" } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_start", contentIndex: 2 },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "thinking");
+    expect(await events.next()).toMatchObject({ type: "thinking_start" });
+
     broker.publishSessionEvent({
       type: "compaction_start",
       reason: "threshold",
@@ -502,16 +545,10 @@ describe("SessionController", () => {
     expect(await events.next()).toMatchObject({ type: "compaction_end" });
 
     broker.publishSessionEvent({
-      type: "message_start",
-      message: { role: "assistant" },
-    } as AgentSessionEvent);
-    await expectActivity(events, turn.id, "reading");
-    broker.publishSessionEvent({
       type: "agent_end",
       messages: [],
       willRetry: true,
     } as AgentSessionEvent);
-    await expectActivity(events, turn.id, "processing");
 
     const replay = await openEventStream(harness.controller);
     expect(await replay.next()).toMatchObject({
