@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SessionController,
+  type HttpActivityPhase,
   type HttpAdapterEvent,
   type HttpAdapterServerHost,
 } from "../src/session-controller.js";
@@ -220,6 +221,14 @@ async function waitForCall(host: FakeHost, call: string): Promise<void> {
   await vi.waitFor(() => expect(host.calls).toContain(call));
 }
 
+async function expectActivity(
+  events: EventStream,
+  turnId: string,
+  phase: HttpActivityPhase,
+): Promise<void> {
+  expect(await events.next()).toEqual({ type: "activity", turnId, phase });
+}
+
 describe("SessionController", () => {
   it("immediately rejects interactive UI requests for headless Turns", async () => {
     const broker = createHttpUiBroker();
@@ -400,6 +409,122 @@ describe("SessionController", () => {
       output: "Recovered",
     });
     events.close();
+  });
+
+  it("derives and replays the current activity phase", async () => {
+    const promptBlocked = deferred();
+    const broker = createHttpUiBroker();
+    const harness = createHarness({
+      broker,
+      prompt: async () => promptBlocked.promise,
+    });
+    const events = await openEventStream(harness.controller);
+    const turn = startTurn(harness.controller, "Explain this", "browser");
+
+    expect(await events.next()).toMatchObject({
+      type: "turn",
+      turnId: turn.id,
+      status: "running",
+    });
+
+    broker.publishSessionEvent({
+      type: "message_start",
+      message: { role: "assistant" },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "reading");
+
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "thinking");
+    expect(await events.next()).toMatchObject({ type: "thinking_start" });
+
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hello" },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "output");
+    expect(await events.next()).toMatchObject({
+      type: "assistant_text_delta",
+      delta: "Hello",
+    });
+
+    broker.publishSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_start", contentIndex: 1 },
+    } as AgentSessionEvent);
+    expect(await events.next()).toMatchObject({ type: "thinking_start" });
+
+    broker.publishSessionEvent({
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "read",
+      args: { path: "README.md" },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "executing");
+    expect(await events.next()).toMatchObject({
+      type: "tool",
+      phase: "started",
+      toolCallId: "tool-1",
+    });
+
+    broker.publishSessionEvent({
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "read",
+      result: { content: [] },
+      isError: false,
+    } as AgentSessionEvent);
+    expect(await events.next()).toMatchObject({
+      type: "tool",
+      phase: "completed",
+      toolCallId: "tool-1",
+    });
+
+    broker.publishSessionEvent({ type: "turn_end" } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "processing");
+
+    broker.publishSessionEvent({
+      type: "compaction_start",
+      reason: "threshold",
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "compaction");
+    expect(await events.next()).toMatchObject({ type: "compaction_start" });
+
+    broker.publishSessionEvent({
+      type: "compaction_end",
+      reason: "threshold",
+      aborted: false,
+      willRetry: false,
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "processing");
+    expect(await events.next()).toMatchObject({ type: "compaction_end" });
+
+    broker.publishSessionEvent({
+      type: "message_start",
+      message: { role: "assistant" },
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "reading");
+    broker.publishSessionEvent({
+      type: "agent_end",
+      messages: [],
+      willRetry: true,
+    } as AgentSessionEvent);
+    await expectActivity(events, turn.id, "processing");
+
+    const replay = await openEventStream(harness.controller);
+    expect(await replay.next()).toMatchObject({
+      type: "turn",
+      turnId: turn.id,
+      status: "running",
+    });
+    await expectActivity(replay, turn.id, "processing");
+
+    events.close();
+    replay.close();
+    promptBlocked.resolve();
+    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
   });
 
   it("shares repeated abort attempts and publishes aborted", async () => {

@@ -18,6 +18,7 @@ export {
   type PersistedSessionLister,
 } from "./http-server.js";
 export type {
+  HttpActivityPhase,
   HttpAdapterEvent,
   HttpAdapterServerHost,
   HttpSessionDescriptor,
