@@ -42,12 +42,15 @@ describe("command access escalation", () => {
       exitCode: 0,
       sandbox: "trusted dscode-vision (fixed executable)",
     });
-    createDSCodeExtension({
-      ...options(process.cwd()),
-      permission: "full",
-      sandbox: "danger-full-access",
-      network: true,
-    }).factory(pi);
+    runExtensionFactory(
+      {
+        ...options(process.cwd()),
+        permission: "full",
+        sandbox: "danger-full-access",
+        network: true,
+      },
+      pi,
+    );
     const context = { cwd: process.cwd(), hasUI: false } as ExtensionContext;
 
     await tools.get("exec_command").execute(
@@ -96,7 +99,7 @@ describe("command access escalation", () => {
       exitCode: 0,
       sandbox: "trusted dscode-vision (fixed executable)",
     });
-    createDSCodeExtension(options(process.cwd())).factory(pi);
+    runExtensionFactory(options(process.cwd()), pi);
     const prompts: string[] = [];
     const context = {
       cwd: process.cwd(),
@@ -155,7 +158,7 @@ describe("command access escalation", () => {
           },
         },
       ) as unknown as ExtensionAPI;
-      createDSCodeExtension(options(nestedWorkspace)).factory(pi);
+      runExtensionFactory(options(nestedWorkspace), pi);
 
       const prompts: string[] = [];
       const ctx = {
@@ -203,4 +206,12 @@ function options(cwd: string): DSCodeRuntimeOptions {
     activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
   };
+}
+
+function runExtensionFactory(
+  extensionOptions: DSCodeRuntimeOptions,
+  pi: ExtensionAPI,
+): void | Promise<void> {
+  const extension = createDSCodeExtension(extensionOptions);
+  return typeof extension === "function" ? extension(pi) : extension.factory(pi);
 }

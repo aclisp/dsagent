@@ -85,7 +85,7 @@ describe("WeCom media store", () => {
         "message-3",
         0,
       ),
-    ).rejects.toMatchObject<Partial<WeComMediaError>>({ reason: "too_large" });
+    ).rejects.toMatchObject({ reason: "too_large" } satisfies Partial<WeComMediaError>);
   });
 });
 

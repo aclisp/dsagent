@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   detectImageMimeType,
@@ -157,7 +157,8 @@ type InputHandler = (
   event: { source: "interactive"; text: string },
   context: {
     cwd: string;
-    model: { provider: string; id: string; input: string[] };
+    model?: { provider: string; id: string; input: string[] };
+    ui?: { notify(message: string, level: string): void };
   },
 ) => Promise<unknown>;
 
@@ -185,6 +186,6 @@ function captureInputHandler(): {
             notifications.push({ message, level });
           },
         },
-      } as unknown as ExtensionContext),
+      }),
   };
 }

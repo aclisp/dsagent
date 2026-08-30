@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+import {
+  getBuiltinModels,
+  getBuiltinProviders,
+  type BuiltinProvider,
+} from "@earendil-works/pi-ai/providers/all";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
@@ -12,6 +16,7 @@ import {
   getStoredModelSelection,
   parseSupportedProviderId,
   stripModelCredentialEnvironment,
+  type SupportedProviderId,
 } from "../packages/core/src/providers.js";
 
 describe("DSCode model providers", () => {
@@ -54,7 +59,12 @@ describe("DSCode model providers", () => {
       "xai",
       "opencode-go",
     ] as const) {
-      expect(getBuiltinModel(providerId, defaultModelForProvider(providerId))).toBeDefined();
+      const builtinProvider = builtinProviderFor(providerId);
+      expect(
+        getBuiltinModels(builtinProvider).some(
+          (model) => model.id === defaultModelForProvider(providerId),
+        ),
+      ).toBe(true);
     }
   });
 
@@ -71,7 +81,9 @@ describe("DSCode model providers", () => {
 
   it("ships the default OpenAI models with image input support", () => {
     for (const providerId of ["openai-codex", "openai"] as const) {
-      const model = getBuiltinModel(providerId, defaultModelForProvider(providerId));
+      const model = getBuiltinModels(builtinProviderFor(providerId)).find(
+        (candidate) => candidate.id === defaultModelForProvider(providerId),
+      );
       expect(model?.input).toContain("image");
       expect(model?.api).toContain("responses");
     }
@@ -114,3 +126,9 @@ describe("DSCode model providers", () => {
     expect(environment).toEqual({ PATH: "/bin" });
   });
 });
+
+function builtinProviderFor(providerId: SupportedProviderId): BuiltinProvider {
+  const builtinProvider = getBuiltinProviders().find((candidate) => candidate === providerId);
+  if (!builtinProvider) throw new Error(`Provider ${providerId} has no built-in model catalog`);
+  return builtinProvider;
+}

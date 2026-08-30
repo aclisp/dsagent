@@ -97,7 +97,10 @@ class FakeSourceDelivery implements ScheduledSourceDeliveryPort {
     this.attempts.set(turnId, conversationAlias);
     if (this.registration !== "registered") return this.registration;
     if (this.registrations.has(turnId)) return "failed";
-    this.registrations.set(turnId, { alias: conversationAlias, listener });
+    this.registrations.set(turnId, {
+      alias: conversationAlias,
+      ...(listener !== undefined ? { listener } : {}),
+    });
     return "registered";
   }
 
