@@ -313,10 +313,20 @@ pnpm check
 pnpm dev -C /path/to/project
 ```
 
-Useful validation commands:
+The root package exposes a small set of primary commands:
+
+- `pnpm build` builds the workspace packages and all production artifacts, including the CLI, web
+  server, and vision CLI.
+- `pnpm test` runs the full Vitest suite from the repository root, including tests under `packages/`.
+- `pnpm typecheck` type-checks package, test, and root TypeScript. It may build workspace packages
+  first because cross-package type entrypoints are generated under `dist/`.
+- `pnpm check` is the CI/release gate: it builds production artifacts, checks test types, runs the
+  full test suite, and performs package smoke checks.
+- `pnpm dev` runs the CLI from source; `pnpm start` runs the built CLI from `dist/`.
+
+Additional validation commands:
 
 ```bash
-pnpm check             # typecheck, tests, and production build
 pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
 pnpm acceptance:live   # complete real-API feature acceptance
 ```

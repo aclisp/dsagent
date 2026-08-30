@@ -136,7 +136,7 @@ describe("dscode-vision", () => {
     let unrelatedKeyVisible: string | undefined;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         authorization = new Headers(init?.headers).get("authorization");
         unrelatedKeyVisible = process.env.OPENAI_API_KEY;

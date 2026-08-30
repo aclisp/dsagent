@@ -23,7 +23,7 @@ describe("DeepSeek provider registration", () => {
       },
     ) as unknown as ExtensionAPI;
 
-    createDSCodeExtension(options()).factory(pi);
+    runExtensionFactory(options(), pi);
 
     expect(registeredModels?.map((model) => model.id)).toEqual([
       "deepseek-v4-flash",
@@ -51,4 +51,12 @@ function options(): DSCodeRuntimeOptions {
     activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
   };
+}
+
+function runExtensionFactory(
+  extensionOptions: DSCodeRuntimeOptions,
+  pi: ExtensionAPI,
+): void | Promise<void> {
+  const extension = createDSCodeExtension(extensionOptions);
+  return typeof extension === "function" ? extension(pi) : extension.factory(pi);
 }

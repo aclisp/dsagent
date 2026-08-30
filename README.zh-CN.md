@@ -299,10 +299,19 @@ pnpm check
 pnpm dev -C /path/to/project
 ```
 
-常用验证命令：
+根 package 保留了一组主要入口：
+
+- `pnpm build` 构建所有 workspace 子包和完整生产产物，包括 CLI、Web server 和视觉 CLI。
+- `pnpm test` 从仓库根目录运行完整 Vitest 测试集，包括 `packages/` 下的测试。
+- `pnpm typecheck` 检查子包、测试代码和根目录 TypeScript；由于跨包类型入口生成在 `dist/` 下，
+  执行前可能会先构建 workspace 子包。
+- `pnpm check` 是 CI/发布门禁：构建生产产物、检查测试代码类型、运行完整测试并执行 package smoke
+  检查。
+- `pnpm dev` 从源码启动 CLI；`pnpm start` 启动 `dist/` 中已经构建好的 CLI。
+
+其他验证命令：
 
 ```bash
-pnpm check             # 类型检查、测试和生产构建
 pnpm smoke:live        # 使用真实 DeepSeek API 的修改与测试 smoke flow
 pnpm acceptance:live   # 完整真实 API 功能验收
 ```

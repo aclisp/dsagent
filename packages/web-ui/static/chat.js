@@ -39,6 +39,14 @@ const RETAINED_TURN_TARGET = 100;
 const TURN_TRIM_BUFFER = 20;
 const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
+const WORKING_PHASE_LABELS = {
+  processing: "正在处理",
+  reading: "读上下文",
+  thinking: "正在思考",
+  output: "正在输出",
+  executing: "正在执行",
+  compaction: "整理记忆",
+};
 const UPLOAD_PREFIX = /^\[Uploaded files: (.*)\]\n?([\s\S]*)$/;
 const SCHEDULED_TASK_PREFIX = /^\[Scheduled task: [a-z0-9]+(?:-[a-z0-9]+)*(?:; source=[a-z0-9][a-z0-9-]*)?\]\n\n([\s\S]*)$/;
 const IM_MESSAGE_PREFIX = /^\[IM message: (group|direct)=[a-z0-9][a-z0-9-]*; sender=[a-z0-9][a-z0-9-]*\]\r?\n\r?\n([\s\S]*)$/;
@@ -63,7 +71,7 @@ const state = {
   connected: false,
   booting: true,
   uploading: false,
-  workingPhase: "working",
+  workingPhase: "processing",
   workingSeconds: null,
   liveTurn: null,
   pendingUploads: [],
@@ -865,7 +873,7 @@ function renderStatus() {
     return;
   }
   if (!state.connected) {
-    statusText.textContent = "正在重新连接";
+    statusText.textContent = "正在连接";
     return;
   }
   if (!state.running) {
@@ -876,11 +884,7 @@ function renderStatus() {
     statusText.textContent = "正在停止";
     return;
   }
-  const label = state.workingPhase === "thinking"
-    ? "正在思考"
-    : state.workingPhase === "compaction"
-      ? "整理记忆"
-      : "正在处理";
+  const label = WORKING_PHASE_LABELS[state.workingPhase] ?? "正在处理";
   statusText.textContent = state.workingSeconds === null
     ? label
     : `${label} · ${state.workingSeconds} 秒`;
@@ -929,7 +933,7 @@ function setRunning(running) {
     state.currentTurnId = null;
     state.currentTurnClientId = null;
     state.aborting = false;
-    state.workingPhase = "working";
+    state.workingPhase = "processing";
     state.workingSeconds = null;
   }
   renderStatus();
@@ -983,7 +987,7 @@ function onTurn(event) {
         state.observedSubmissionTurnId = event.turnId;
       }
       state.aborting = false;
-      state.workingPhase = "working";
+      state.workingPhase = "processing";
     } else {
       state.aborting = true;
     }
@@ -1302,28 +1306,14 @@ function openStream() {
   });
   addCurrentStreamListener(source, "ping", () => {});
   addCurrentStreamListener(source, "turn", (event) => onTurn(JSON.parse(event.data)));
+  addCurrentStreamListener(source, "activity", (event) => {
+    const data = JSON.parse(event.data);
+    if (data.turnId !== state.currentTurnId) return;
+    state.workingPhase = data.phase;
+    renderStatus();
+  });
   addCurrentStreamListener(source, "assistant_text_delta", (event) => {
     streamAssistantDelta(JSON.parse(event.data));
-  });
-  addCurrentStreamListener(source, "thinking_start", (event) => {
-    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
-    state.workingPhase = "thinking";
-    renderStatus();
-  });
-  addCurrentStreamListener(source, "thinking_end", (event) => {
-    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
-    state.workingPhase = "working";
-    renderStatus();
-  });
-  addCurrentStreamListener(source, "compaction_start", (event) => {
-    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
-    state.workingPhase = "compaction";
-    renderStatus();
-  });
-  addCurrentStreamListener(source, "compaction_end", (event) => {
-    if (JSON.parse(event.data).turnId !== state.currentTurnId) return;
-    state.workingPhase = "working";
-    renderStatus();
   });
   addCurrentStreamListener(source, "tool", (event) => handleToolEvent(JSON.parse(event.data)));
   addCurrentStreamListener(source, "ui_request", (event) => {

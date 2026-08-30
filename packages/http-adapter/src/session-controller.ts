@@ -44,6 +44,14 @@ export type HttpTurnStatus =
   | "failed"
   | "aborted";
 
+export type HttpActivityPhase =
+  | "processing"
+  | "reading"
+  | "thinking"
+  | "output"
+  | "executing"
+  | "compaction";
+
 export type HttpAdapterEvent =
   | {
       type: "turn";
@@ -54,6 +62,7 @@ export type HttpAdapterEvent =
       message?: string;
       clientId?: string;
     }
+  | { type: "activity"; turnId: string; phase: HttpActivityPhase }
   | { type: "assistant_text_delta"; turnId: string | null; delta: string }
   | { type: "thinking_start"; turnId: string | null }
   | { type: "thinking_end"; turnId: string | null }
@@ -121,8 +130,12 @@ export class SessionController {
   private latestTurnEvent:
     | Extract<HttpAdapterEvent, { type: "turn" }>
     | undefined;
+  private latestActivityEvent:
+    | Extract<HttpAdapterEvent, { type: "activity" }>
+    | undefined;
+  private assistantTextSeen = false;
   private disposePromise: Promise<void> | undefined;
-  private readonly unsubscribeHeadlessUiFallback: () => void;
+  private readonly unsubscribeBrokerEvents: () => void;
 
   constructor(
     readonly id: string,
@@ -131,7 +144,8 @@ export class SessionController {
     private readonly log: SessionControllerLogger,
     private readonly publishTerminalTurn: (event: SessionPortTurnEvent) => void,
   ) {
-    this.unsubscribeHeadlessUiFallback = host.subscribe((event) => {
+    this.unsubscribeBrokerEvents = host.subscribe((event) => {
+      this.handleActivityEvent(event);
       if (
         event.type !== "ui_request" ||
         this.activeTurn === undefined ||
@@ -201,6 +215,82 @@ export class SessionController {
     }
   }
 
+  private setActivity(phase: HttpActivityPhase, publish = true): void {
+    const turnId = this.activeTurn?.id;
+    if (turnId === undefined) return;
+    if (
+      this.latestActivityEvent?.turnId === turnId &&
+      this.latestActivityEvent.phase === phase
+    ) {
+      return;
+    }
+
+    const event: Extract<HttpAdapterEvent, { type: "activity" }> = {
+      type: "activity",
+      turnId,
+      phase,
+    };
+    this.latestActivityEvent = event;
+    if (publish) this.publish(event);
+  }
+
+  private handleActivityEvent(brokerEvent: HttpUiBrokerEvent): void {
+    if (
+      brokerEvent.type !== "session" ||
+      this.activeTurn === undefined ||
+      (this.latestTurnEvent?.status !== "running" &&
+        this.latestTurnEvent?.status !== "aborting")
+    ) {
+      return;
+    }
+
+    const event = brokerEvent.event;
+    if (event.type === "turn_start") {
+      this.assistantTextSeen = false;
+      this.setActivity("processing");
+      return;
+    }
+    if (event.type === "message_start" && event.message.role === "assistant") {
+      this.setActivity("reading");
+      return;
+    }
+    if (event.type === "message_update") {
+      const messageEvent = event.assistantMessageEvent;
+      if (messageEvent.type === "text_delta" && messageEvent.delta.length > 0) {
+        this.assistantTextSeen = true;
+        this.setActivity("output");
+      } else if (
+        messageEvent.type === "thinking_start" &&
+        !this.assistantTextSeen
+      ) {
+        this.setActivity("thinking");
+      }
+      return;
+    }
+    if (event.type === "tool_execution_start") {
+      this.setActivity("executing");
+      return;
+    }
+    if (
+      event.type === "turn_end" &&
+      this.latestActivityEvent?.phase === "executing"
+    ) {
+      this.setActivity("processing");
+      return;
+    }
+    if (event.type === "compaction_start") {
+      this.setActivity("compaction");
+      return;
+    }
+    if (event.type === "compaction_end") {
+      this.setActivity("processing");
+      return;
+    }
+    if (event.type === "agent_end" && event.willRetry) {
+      this.setActivity("processing");
+    }
+  }
+
   private publishTurn(
     turnId: string,
     status: HttpTurnStatus,
@@ -239,6 +329,10 @@ export class SessionController {
           ? { context: this.activeTurn.context }
           : {}),
       });
+    }
+    if (status === "completed" || status === "failed" || status === "aborted") {
+      this.latestActivityEvent = undefined;
+      this.assistantTextSeen = false;
     }
   }
 
@@ -337,6 +431,9 @@ export class SessionController {
     response.flushHeaders();
 
     if (this.latestTurnEvent) this.writeEvent(response, this.latestTurnEvent);
+    if (this.latestActivityEvent) {
+      this.writeEvent(response, this.latestActivityEvent);
+    }
     const unsubscribe = this.host.subscribe((brokerEvent) => {
       const event = this.translateBrokerEvent(brokerEvent);
       if (event) this.writeEvent(response, event);
@@ -368,6 +465,8 @@ export class SessionController {
       ...(context !== undefined ? { context } : {}),
     };
     this.activeTurn = turn;
+    this.assistantTextSeen = false;
+    this.setActivity("processing", false);
     // The running event carries the submission so every attached client can render
     // the user line; the submitter recognizes itself via clientId.
     this.publishTurn(turn.id, "running", {
@@ -475,7 +574,7 @@ export class SessionController {
 
     const attempt = (async () => {
       this.closeEventStreams();
-      this.unsubscribeHeadlessUiFallback();
+      this.unsubscribeBrokerEvents();
       try {
         await this.host.abort();
       } finally {
