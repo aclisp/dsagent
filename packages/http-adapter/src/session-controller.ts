@@ -134,6 +134,7 @@ export class SessionController {
     | Extract<HttpAdapterEvent, { type: "activity" }>
     | undefined;
   private assistantTextSeen = false;
+  private hasStartedModelTurn = false;
   private disposePromise: Promise<void> | undefined;
   private readonly unsubscribeBrokerEvents: () => void;
 
@@ -247,11 +248,9 @@ export class SessionController {
     const event = brokerEvent.event;
     if (event.type === "turn_start") {
       this.assistantTextSeen = false;
-      this.setActivity("processing");
-      return;
-    }
-    if (event.type === "message_start" && event.message.role === "assistant") {
-      this.setActivity("reading");
+      const phase = this.hasStartedModelTurn ? "processing" : "reading";
+      this.hasStartedModelTurn = true;
+      this.setActivity(phase);
       return;
     }
     if (event.type === "message_update") {
@@ -333,6 +332,7 @@ export class SessionController {
     if (status === "completed" || status === "failed" || status === "aborted") {
       this.latestActivityEvent = undefined;
       this.assistantTextSeen = false;
+      this.hasStartedModelTurn = false;
     }
   }
 
@@ -466,6 +466,7 @@ export class SessionController {
     };
     this.activeTurn = turn;
     this.assistantTextSeen = false;
+    this.hasStartedModelTurn = false;
     this.setActivity("processing", false);
     // The running event carries the submission so every attached client can render
     // the user line; the submitter recognizes itself via clientId.

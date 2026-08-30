@@ -41,7 +41,7 @@ const RETAINED_TIMELINE_ITEM_TARGET = 500;
 const TIMELINE_ITEM_TRIM_BUFFER = 100;
 const WORKING_PHASE_LABELS = {
   processing: "正在处理",
-  reading: "读上下文",
+  reading: "理解问题",
   thinking: "正在思考",
   output: "正在输出",
   executing: "正在执行",
@@ -987,7 +987,7 @@ function onTurn(event) {
         state.observedSubmissionTurnId = event.turnId;
       }
       state.aborting = false;
-      state.workingPhase = "processing";
+      state.workingPhase = "reading";
     } else {
       state.aborting = true;
     }
