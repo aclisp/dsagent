@@ -97,12 +97,6 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      - type: bind
-        source: ../bin/youxin-cli.linux-x64
-        target: /usr/local/bin/youxin-cli
-        read_only: true
-        bind:
-          create_host_path: false
     cap_drop:
       - ALL
     security_opt:

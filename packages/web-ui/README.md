@@ -267,7 +267,7 @@ root process inside the same container.
 
 ### Default skills
 
-The image ships five skills — `dscode-vision`, `grill-me`, `scheduled-tasks`, `skill-creator`, and `youxin-cli` —
+The image ships four skills — `dscode-vision`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
 bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.

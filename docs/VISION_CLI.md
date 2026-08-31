@@ -361,7 +361,7 @@ entrypoint 现有的默认 Skill seed 逻辑直接分发新 Skill；如果用户
 已完成的自动验证：
 
 - `skill-creator` 的 `quick_validate.py` 验证 frontmatter、名称和目录结构通过。
-- 默认 Skill 目录检查能发现 `dscode-vision`、`grill-me`、`skill-creator` 和 `youxin-cli`。
+- 默认 Skill 目录检查能发现 `dscode-vision`、`grill-me`、`scheduled-tasks` 和 `skill-creator`。
 - 根 `pnpm build` 通过。
 - 根 `pnpm check` 的测试阶段有 45 个测试文件、216 个测试通过；其余失败仍是当前受限环境中的
   localhost listen、主目录写入和 Seatbelt hook 三组已知限制，与本 Slice 无关。
