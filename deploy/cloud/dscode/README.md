@@ -25,8 +25,7 @@ starting the container:
 
 ```text
 deploy/cloud/dscode/
-├── bin/
-│   └── youxin-cli.linux-x64
+├── bin/                    # externally provisioned binaries for optional skills
 ├── default-files/
 │   ├── AGENTS.md
 │   └── APPEND_SYSTEM.md
@@ -112,16 +111,9 @@ image input.
 Repeat the three asset-copy commands after changing the canonical prompt files
 or adding a product profile under `deploy/`.
 
-Copy the Linux AMD64 Youxin CLI into place and make it executable:
-
-```sh
-cp /path/to/youxin-cli.linux-x64 bin/youxin-cli.linux-x64
-chmod 0555 bin/youxin-cli.linux-x64
-```
-
-If the Youxin CLI is used, place its writable profile data under
-`home-config/youxin-cli/`. Do not commit that directory; it may contain
-credentials.
+The `bin/` directory is reserved for externally provisioned binaries used by
+optional skills. Keep those files outside Git and provision them separately on
+the deployment host.
 
 The container runs as UID 0 with all Linux capabilities dropped. UID 0 must
 therefore have ordinary filesystem permission to write the three persistent
