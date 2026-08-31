@@ -22,7 +22,7 @@ const DEFAULT_MODELS: Record<SupportedProviderId, string> = {
   openai: "gpt-5.6-sol",
   anthropic: "claude-opus-4-8",
   openrouter: "moonshotai/kimi-k2.6",
-  zai: "glm-5.1",
+  zai: "glm-5.3",
   "kimi-coding": "kimi-for-coding",
   minimax: "MiniMax-M2.7",
   xai: "grok-4.5",

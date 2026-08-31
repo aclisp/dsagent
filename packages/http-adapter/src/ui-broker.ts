@@ -4,7 +4,6 @@ import type {
   ExtensionError,
   ExtensionUIContext,
   ExtensionUIDialogOptions,
-  ExtensionWidgetOptions,
   WorkingIndicatorOptions,
 } from "@earendil-works/pi-coding-agent";
 
@@ -94,11 +93,6 @@ interface PendingRequest {
   resolve(response: HttpUiResponse): void;
   cancel(): void;
 }
-
-type WidgetFactory = Exclude<
-  Parameters<ExtensionUIContext["setWidget"]>[1],
-  undefined
->;
 
 function retainedEventKey(event: HttpUiEvent): string | undefined {
   if (event.method === "notify") return undefined;
@@ -268,7 +262,7 @@ export function createHttpUiBroker(): HttpUiBroker {
     );
   };
 
-  const overrides: Partial<ExtensionUIContext> = {
+  const overrides = {
     confirm,
     select,
     input,
@@ -335,41 +329,77 @@ export function createHttpUiBroker(): HttpUiBroker {
     getEditorText() {
       return editorText;
     },
+  } satisfies Partial<ExtensionUIContext>;
+
+  const setWidget: ExtensionUIContext["setWidget"] = (
+    key,
+    content,
+    options,
+  ): void => {
+    if (content === undefined || Array.isArray(content)) {
+      emit({
+        type: "ui_event",
+        event: {
+          method: "widget",
+          key,
+          ...(content !== undefined ? { lines: [...content] } : {}),
+          ...(options?.placement !== undefined
+            ? { placement: options.placement }
+            : {}),
+        },
+      });
+      return;
+    }
+    requireBaseContext().setWidget(key, content, options);
   };
 
-  const uiContext = new Proxy({} as ExtensionUIContext, {
-    get(_target, property) {
-      if (property === "setWidget") {
-        return (
-          key: string,
-          content: string[] | WidgetFactory | undefined,
-          options?: ExtensionWidgetOptions,
-        ): void => {
-          if (content === undefined || Array.isArray(content)) {
-            emit({
-              type: "ui_event",
-              event: {
-                method: "widget",
-                key,
-                ...(content !== undefined ? { lines: [...content] } : {}),
-                ...(options?.placement !== undefined
-                  ? { placement: options.placement }
-                  : {}),
-              },
-            });
-            return;
-          }
-          requireBaseContext().setWidget(key, content, options);
-        };
-      }
-      if (property in overrides) {
-        return Reflect.get(overrides, property, overrides);
-      }
-      const base = requireBaseContext();
-      const resolved = Reflect.get(base, property, base) as unknown;
-      return typeof resolved === "function" ? resolved.bind(base) : resolved;
+  // pi-coding-agent 0.84.4 copies the UI context with object spread while
+  // adding prompt lifecycle wrappers. Keep every UI member as an own property
+  // so that the broker methods survive that copy; the old empty-target Proxy
+  // exposed them only through its get trap.
+  const uiContext: ExtensionUIContext = {
+    ...overrides,
+    setWidget,
+    onTerminalInput(handler) {
+      return requireBaseContext().onTerminalInput(handler);
     },
-  });
+    setFooter(factory) {
+      return requireBaseContext().setFooter(factory);
+    },
+    setHeader(factory) {
+      return requireBaseContext().setHeader(factory);
+    },
+    custom(factory, options) {
+      return requireBaseContext().custom(factory, options);
+    },
+    addAutocompleteProvider(factory) {
+      return requireBaseContext().addAutocompleteProvider(factory);
+    },
+    setEditorComponent(factory) {
+      return requireBaseContext().setEditorComponent(factory);
+    },
+    getEditorComponent() {
+      return requireBaseContext().getEditorComponent();
+    },
+    get theme() {
+      return requireBaseContext().theme;
+    },
+    getAllThemes() {
+      return requireBaseContext().getAllThemes();
+    },
+    getTheme(name) {
+      return requireBaseContext().getTheme(name);
+    },
+    setTheme(theme) {
+      return requireBaseContext().setTheme(theme);
+    },
+    getToolsExpanded() {
+      return requireBaseContext().getToolsExpanded();
+    },
+    setToolsExpanded(expanded) {
+      return requireBaseContext().setToolsExpanded(expanded);
+    },
+  };
 
   return {
     uiContext,
