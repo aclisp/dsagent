@@ -6,6 +6,7 @@
       "apiKey": "$OPENROUTER_API_KEY",
       "compat": {
         "supportsDeveloperRole": false,
+        "thinkingFormat": "qwen",
         "supportsReasoningEffort": true,
         "supportsUsageInStreaming": true,
         "maxTokensField": "max_completion_tokens"
@@ -64,6 +65,24 @@
           "contextWindow": 200000,
           "maxTokens": 64000,
           "cost": { "input": 0.8, "output": 2.7, "cacheRead": 0.1, "cacheWrite": 1.25 }
+        },
+        {
+          "id": "ZHIPU/GLM-5.3-Flash",
+          "name": "ZHIPU/GLM-5.3-Flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+            "max": "max"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "cost": { "input": 0.8, "output": 2.8, "cacheRead": 0.23, "cacheWrite": 0 }
         }
       ]
     }
