@@ -42,7 +42,7 @@ const chatProvider = createWeComChatProviderFromEnv(process.env, {
 
 const server = await createWebUiServer({
   workspaces,
-  logger: false,
+  logger: { level: "warn" },
   maxSessionFileBytes: 1024 * 1024,
   requireWorkspaceIdForSessionList: true,
   maxUploadBytes,
