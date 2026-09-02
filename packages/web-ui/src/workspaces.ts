@@ -1,4 +1,32 @@
+import path from "node:path";
+
 const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
+export const DEFAULT_WORKSPACE_ID = "dscode-workspace";
+
+export function defaultWorkspacesConfig(dscodeHome: string): string {
+  return `${DEFAULT_WORKSPACE_ID}=${path.join(dscodeHome, "workspace")}`;
+}
+
+export function resolveWorkspacesConfig(
+  configuredWorkspaces: string | undefined,
+  host: string,
+  dscodeHome: string,
+): string {
+  if (configuredWorkspaces === undefined) {
+    if (!LOOPBACK_HOSTS.has(host.trim().toLowerCase())) {
+      throw new Error(
+        "WORKSPACES is required when HOST is not a loopback address (use a high-entropy id=path pair)",
+      );
+    }
+    return defaultWorkspacesConfig(dscodeHome);
+  }
+  if (!configuredWorkspaces.trim()) {
+    throw new Error("WORKSPACES is required (comma-separated id=path pairs; ids are secrets)");
+  }
+  return configuredWorkspaces;
+}
 
 export function parseWorkspaces(value: string): Record<string, string> {
   const workspaces: Record<string, string> = {};

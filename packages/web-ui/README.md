@@ -20,7 +20,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing; IDs are **secrets** — use a random high-entropy value per deployment |
+| `WORKSPACES` | `dscode-workspace=<DSCODE_HOME>/workspace` on loopback hosts | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing. The implicit local default is predictable and is rejected when `HOST` is not a loopback address; use a random high-entropy ID for exposed deployments |
 | `TZ` | *(required)* | Valid IANA timezone used by every recurring task; the Server fails startup when it is missing or invalid |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
@@ -136,12 +136,14 @@ remaining in the Web UI and no fallback or queued delivery. The full product rul
 
 ## Workspaces as a secret
 
-There is no default or discoverable workspace. The chat page is served only at
-`/chat/:workspaceId`; `/` and unknown ids return 404. The id is the bearer credential for
+When `WORKSPACES` is omitted on a loopback host, the server creates one local workspace at
+`<DSCODE_HOME>/workspace` with the ID `dscode-workspace`; its chat page is
+`/chat/dscode-workspace`. Otherwise, the chat page is served only at `/chat/:workspaceId`;
+`/` and unknown ids return 404. The id is the bearer credential for
 the whole deployment — whoever holds the URL can open the page and, because the same id
 gates the API (`GET /v1/sessions` requires `?workspaceId=`), reach the full-access agent.
-Share the URL out-of-band (e.g. `https://host/chat/<workspace-id>`). The id is high-entropy, so
-it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
+Share exposed URLs out-of-band (e.g. `https://host/chat/<workspace-id>`). The explicit ID should
+be high-entropy so it can't be guessed; exposed deployments must set `WORKSPACES` explicitly.
 
 ## Docker
 

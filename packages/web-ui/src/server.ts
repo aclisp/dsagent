@@ -1,14 +1,17 @@
 import { mkdir } from "node:fs/promises";
 import process from "node:process";
+import { getDSCodeHome } from "@aclisp/dsagent-core";
 import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
 import { createWebUiServer } from "./web-ui-server.js";
-import { parseWorkspaces } from "./workspaces.js";
+import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.js";
 
-const workspacesConfig = process.env.WORKSPACES;
-if (!workspacesConfig?.trim()) {
-  throw new Error("WORKSPACES is required (comma-separated id=path pairs; ids are secrets)");
-}
+const host = process.env.HOST ?? "127.0.0.1";
+const workspacesConfig = resolveWorkspacesConfig(
+  process.env.WORKSPACES,
+  host,
+  getDSCodeHome(),
+);
 const workspaces = parseWorkspaces(workspacesConfig);
 const timezone = process.env.TZ;
 if (!timezone?.trim()) {
@@ -53,7 +56,6 @@ const server = await createWebUiServer({
     console.log(`dscode chat provider ${providerId} started`),
 });
 
-const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 8899);
 await server.listen({ host, port });
 console.log(`dscode web-ui listening on http://${host}:${port}`);
