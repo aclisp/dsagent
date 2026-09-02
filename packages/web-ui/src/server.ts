@@ -5,7 +5,10 @@ import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
 import { resolveConfiguredTimezone } from "./task-scheduler.js";
 import { createWebUiServer } from "./web-ui-server.js";
+import { enforceWebUiSubagentDepth, resolveWebUiRuntimeArgs } from "./web-ui-runtime.js";
 import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.js";
+
+enforceWebUiSubagentDepth();
 
 const host = process.env.HOST ?? "127.0.0.1";
 const workspacesConfig = resolveWorkspacesConfig(
@@ -25,9 +28,7 @@ if (firstWorkspacePath === undefined) {
   throw new Error("WORKSPACES resolved to no workspaces");
 }
 
-const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
-  ? process.env.RUNTIME_ARGS.trim().split(/\s+/)
-  : undefined;
+const runtimeArgs = resolveWebUiRuntimeArgs(process.env.RUNTIME_ARGS);
 
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
 const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
@@ -47,7 +48,7 @@ const server = await createWebUiServer({
   maxUploadBytes,
   chatAgentName,
   timezone,
-  ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
+  runtimeArgs,
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
   ...(chatProvider !== undefined ? { chatProviders: [chatProvider] } : {}),
   onChatProviderStarted: (providerId) =>
