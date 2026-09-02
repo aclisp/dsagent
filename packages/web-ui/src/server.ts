@@ -3,6 +3,7 @@ import process from "node:process";
 import { getDSCodeHome } from "@aclisp/dsagent-core";
 import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
+import { resolveConfiguredTimezone } from "./task-scheduler.js";
 import { createWebUiServer } from "./web-ui-server.js";
 import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.js";
 
@@ -13,10 +14,7 @@ const workspacesConfig = resolveWorkspacesConfig(
   getDSCodeHome(),
 );
 const workspaces = parseWorkspaces(workspacesConfig);
-const timezone = process.env.TZ;
-if (!timezone?.trim()) {
-  throw new Error("TZ is required and must be a valid IANA timezone");
-}
+const timezone = resolveConfiguredTimezone(process.env.TZ);
 for (const cwd of Object.values(workspaces)) {
   await mkdir(cwd, { recursive: true });
 }

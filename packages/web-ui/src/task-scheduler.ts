@@ -31,6 +31,8 @@ const STATUS_RECOVERY_DELAY_MS = 10_000;
 const SUBMISSION_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000];
 const MAX_INACTIVE_NORMALIZATION_ATTEMPTS = 200;
 
+export const DEFAULT_TIMEZONE = "Asia/Shanghai";
+
 type ScheduleStatus = "active" | "paused" | "exhausted";
 type SourceBindingStatus = "bound" | "pending" | "unavailable";
 interface PendingSourceBinding {
@@ -1219,4 +1221,12 @@ export async function createTaskScheduler(
 
 export function assertValidScheduleTimezone(timezone: string): void {
   validateTimezone(timezone);
+}
+
+export function resolveConfiguredTimezone(configuredTimezone: string | undefined): string {
+  const timezone = configuredTimezone ?? DEFAULT_TIMEZONE;
+  if (!timezone.trim()) {
+    throw new Error("TZ is required and must be a valid IANA timezone");
+  }
+  return timezone;
 }

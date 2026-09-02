@@ -21,7 +21,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WORKSPACES` | `dscode-workspace=<DSCODE_HOME>/workspace` on loopback hosts | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing. The implicit local default is predictable and is rejected when `HOST` is not a loopback address; use a random high-entropy ID for exposed deployments |
-| `TZ` | *(required)* | Valid IANA timezone used by every recurring task; the Server fails startup when it is missing or invalid |
+| `TZ` | `Asia/Shanghai` | Valid IANA timezone used by every recurring task; explicit blank or invalid values still fail startup |
 | `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
 | `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
