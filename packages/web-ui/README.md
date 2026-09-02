@@ -56,7 +56,7 @@ video, card, other-bot, and unsupported messages are ignored. The Provider strip
 before handing the message to the provider-neutral Chat Client. Incoming mixed/standalone images and supported
 quoted images/files are downloaded immediately into the workspace's `uploads/` directory and represented with
 the same `[Uploaded files: ...]` prompt marker used by the Chat UI. Replies use the original callback frame as a
-final stream response; source scheduled output is sent as a new Markdown message to the conversation that
+one-shot Markdown response; source scheduled output is sent as a new Markdown message to the conversation that
 created the task. WeCom text delivery is capped
 at 20,480 UTF-8 bytes; an oversized output is treated as a permanent delivery failure and remains visible
 in the Web UI Session. Before either text delivery path, DSCode bearer URLs (`/chat/<workspaceId>`,

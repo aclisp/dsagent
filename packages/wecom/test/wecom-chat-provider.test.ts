@@ -14,6 +14,7 @@ import {
   createWeComChatProviderFromEnv,
   type WeComChatProvider,
   type WeComClient,
+  type WeComMarkdownMessage,
   type WeComMessageBody,
   type WeComMessageFrame,
 } from "../src/wecom-chat-provider.js";
@@ -21,11 +22,9 @@ import {
 type Listener = (...args: unknown[]) => void;
 
 class FakeWeComClient {
-  readonly replyStreamCalls: Array<{
+  readonly replyCalls: Array<{
     frame: Pick<WeComMessageFrame, "headers">;
-    streamId: string;
-    content: string;
-    finish: boolean | undefined;
+    body: WeComMarkdownMessage;
   }> = [];
   readonly sendMessageCalls: Array<{
     chatId: string;
@@ -78,13 +77,11 @@ class FakeWeComClient {
     return this.disconnects;
   }
 
-  replyStream(
+  reply(
     frame: Pick<WeComMessageFrame, "headers">,
-    streamId: string,
-    content: string,
-    finish?: boolean,
+    body: WeComMarkdownMessage,
   ): Promise<unknown> {
-    this.replyStreamCalls.push({ frame, streamId, content, finish });
+    this.replyCalls.push({ frame, body });
     return this.replyError === undefined
       ? Promise.resolve({})
       : Promise.reject(this.replyError);
@@ -711,7 +708,7 @@ describe("WeCom Chat Provider", () => {
     ).resolves.toEqual({
       status: "delivered",
     });
-    expect(client.replyStreamCalls[0]?.content).toBe(
+    expect(client.replyCalls[0]?.body.markdown.content).toBe(
       "结果见 `uploads/result.pdf`",
     );
     expect(client.uploadMediaCalls).toHaveLength(1);
@@ -758,13 +755,14 @@ describe("WeCom Chat Provider", () => {
     await expect(provider.reply(replyTarget("message-1"), "已完成")).resolves.toEqual({
       status: "delivered",
     });
-    expect(client.replyStreamCalls).toHaveLength(1);
-    expect(client.replyStreamCalls[0]).toMatchObject({
+    expect(client.replyCalls).toHaveLength(1);
+    expect(client.replyCalls[0]).toMatchObject({
       frame: { headers: { req_id: "request-1" } },
-      content: "已完成",
-      finish: true,
+      body: {
+        msgtype: "markdown",
+        markdown: { content: "已完成" },
+      },
     });
-    expect(client.replyStreamCalls[0]?.streamId).toMatch(/^dscode_/u);
 
     await expect(provider.send(groupConversation(), "定时结果")).resolves.toEqual({
       status: "delivered",
@@ -790,7 +788,7 @@ describe("WeCom Chat Provider", () => {
     await expect(provider.reply(replyTarget("message-1"), text)).resolves.toEqual({
       status: "delivered",
     });
-    expect(client.replyStreamCalls[0]?.content).toBe(
+    expect(client.replyCalls[0]?.body.markdown.content).toBe(
       "结果见 [私密链接已隐藏]；文档说明见 https://example.com/docs。",
     );
 

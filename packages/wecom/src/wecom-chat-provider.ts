@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import {
   WSClient,
-  generateReqId,
   type Logger,
   type BaseMessage,
   type FileContent,
@@ -67,11 +66,9 @@ export interface WeComClient {
   off(event: string, listener: EventListener): this;
   connect(): unknown;
   disconnect(): void;
-  replyStream(
+  reply(
     frame: Pick<WeComMessageFrame, "headers">,
-    streamId: string,
-    content: string,
-    finish?: boolean,
+    body: WeComMarkdownMessage,
   ): Promise<unknown>;
   sendMessage(
     chatId: string,
@@ -122,7 +119,6 @@ export type WeComEnvironment = Readonly<
 
 interface PendingReply {
   frame: Pick<WeComMessageFrame, "headers">;
-  streamId: string;
   conversation: ChatConversation;
 }
 
@@ -572,12 +568,10 @@ export class WeComChatProvider implements ChatProvider {
       return { status: "permanent_failure" };
     }
     try {
-      await this.client.replyStream(
-        pending.frame,
-        pending.streamId,
-        safeText,
-        true,
-      );
+      await this.client.reply(pending.frame, {
+        msgtype: "markdown",
+        markdown: { content: safeText },
+      });
       this.pendingReplies.delete(target.messageId);
       await this.deliverOutboundArtifacts(safeText, target.conversation.address);
       return { status: "delivered" };
@@ -669,7 +663,6 @@ export class WeComChatProvider implements ChatProvider {
       }
       this.pendingReplies.set(parsed.message.messageId, {
         frame,
-        streamId: generateReqId("dscode"),
         conversation: parsed.message.conversation,
       });
 
