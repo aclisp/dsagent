@@ -160,11 +160,9 @@ class ControlledWeComClient implements WeComClient {
 
   disconnect(): void {}
 
-  replyStream(
+  reply(
     _frame: Pick<WeComMessageFrame, "headers">,
-    _streamId: string,
-    _content: string,
-    _finish?: boolean,
+    _body: WeComMarkdownMessage,
   ): Promise<unknown> {
     return Promise.resolve({});
   }
