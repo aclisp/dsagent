@@ -1,19 +1,23 @@
 import { mkdir } from "node:fs/promises";
 import process from "node:process";
+import { getDSCodeHome } from "@aclisp/dsagent-core";
 import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.js";
+import { resolveConfiguredTimezone } from "./task-scheduler.js";
 import { createWebUiServer } from "./web-ui-server.js";
-import { parseWorkspaces } from "./workspaces.js";
+import { enforceWebUiSubagentDepth, resolveWebUiRuntimeArgs } from "./web-ui-runtime.js";
+import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.js";
 
-const workspacesConfig = process.env.WORKSPACES;
-if (!workspacesConfig?.trim()) {
-  throw new Error("WORKSPACES is required (comma-separated id=path pairs; ids are secrets)");
-}
+enforceWebUiSubagentDepth();
+
+const host = process.env.HOST ?? "127.0.0.1";
+const workspacesConfig = resolveWorkspacesConfig(
+  process.env.WORKSPACES,
+  host,
+  getDSCodeHome(),
+);
 const workspaces = parseWorkspaces(workspacesConfig);
-const timezone = process.env.TZ;
-if (!timezone?.trim()) {
-  throw new Error("TZ is required and must be a valid IANA timezone");
-}
+const timezone = resolveConfiguredTimezone(process.env.TZ);
 for (const cwd of Object.values(workspaces)) {
   await mkdir(cwd, { recursive: true });
 }
@@ -24,9 +28,7 @@ if (firstWorkspacePath === undefined) {
   throw new Error("WORKSPACES resolved to no workspaces");
 }
 
-const runtimeArgs = process.env.RUNTIME_ARGS?.trim()
-  ? process.env.RUNTIME_ARGS.trim().split(/\s+/)
-  : undefined;
+const runtimeArgs = resolveWebUiRuntimeArgs(process.env.RUNTIME_ARGS);
 
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
 const chatAgentName = resolveChatAgentName(process.env.CHAT_AGENT_NAME);
@@ -40,20 +42,19 @@ const chatProvider = createWeComChatProviderFromEnv(process.env, {
 
 const server = await createWebUiServer({
   workspaces,
-  logger: false,
+  logger: { level: "warn" },
   maxSessionFileBytes: 1024 * 1024,
   requireWorkspaceIdForSessionList: true,
   maxUploadBytes,
   chatAgentName,
   timezone,
-  ...(runtimeArgs !== undefined ? { runtimeArgs } : {}),
+  runtimeArgs,
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
   ...(chatProvider !== undefined ? { chatProviders: [chatProvider] } : {}),
   onChatProviderStarted: (providerId) =>
     console.log(`dscode chat provider ${providerId} started`),
 });
 
-const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 8899);
 await server.listen({ host, port });
 console.log(`dscode web-ui listening on http://${host}:${port}`);

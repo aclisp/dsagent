@@ -16,6 +16,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertValidScheduleTimezone,
   createTaskScheduler,
+  DEFAULT_TIMEZONE,
+  resolveConfiguredTimezone,
   type ScheduledSourceDeliveryPort,
   type SourceDeliveryRegistration,
   type TaskScheduler,
@@ -153,7 +155,11 @@ function logger() {
 }
 
 describe("task scheduler", () => {
-  it("requires an explicit IANA timezone and writes an empty healthy status", async () => {
+  it("defaults the server timezone and validates explicit values", async () => {
+    expect(DEFAULT_TIMEZONE).toBe("Asia/Shanghai");
+    expect(resolveConfiguredTimezone(undefined)).toBe("Asia/Shanghai");
+    expect(resolveConfiguredTimezone("UTC")).toBe("UTC");
+    expect(() => resolveConfiguredTimezone(" ")).toThrow("TZ is required");
     expect(() => assertValidScheduleTimezone("")).toThrow("TZ is required");
     expect(() => assertValidScheduleTimezone("Not/AZone")).toThrow(
       "valid IANA timezone",

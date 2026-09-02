@@ -35,7 +35,6 @@ services:
         --permission full --network --sandbox danger-full-access
         --provider openrouter --model ${MODEL:?set MODEL in .env}
         --effort max --tools exec_command,write_stdin,apply_patch,read
-      DSCODE_SUBAGENT_DEPTH: "1"
       DSCODE_VISION_MODEL: "${VISION_MODEL:?set VISION_MODEL in .env}"
       CHAT_AGENT_NAME: "${CHAT_AGENT_NAME:-Steve Code}"
       CORS_ORIGINS: "${CORS_ORIGINS:-}"

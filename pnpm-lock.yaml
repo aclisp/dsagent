@@ -216,6 +216,9 @@ importers:
       '@aclisp/dsagent-chat-client':
         specifier: workspace:*
         version: link:../chat-client
+      '@aclisp/dsagent-core':
+        specifier: workspace:*
+        version: link:../core
       '@aclisp/dsagent-http-adapter':
         specifier: workspace:*
         version: link:../http-adapter

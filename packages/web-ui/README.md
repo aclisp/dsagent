@@ -20,10 +20,9 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WORKSPACES` | *(required)* | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing; IDs are **secrets** — use a random high-entropy value per deployment |
-| `TZ` | *(required)* | Valid IANA timezone used by every recurring task; the Server fails startup when it is missing or invalid |
-| `RUNTIME_ARGS` | — | Whitespace-split DSCode flags forwarded to every session. Must include `--permission full --sandbox danger-full-access` (the only modes with a backend in the container) and `--tools exec_command,write_stdin,apply_patch,read` to keep the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
-| `DSCODE_SUBAGENT_DEPTH` | — | `1` disables the `delegate` tool (subagents are TUI/CLI-first and don't work in the container) |
+| `WORKSPACES` | `dscode-workspace=<DSCODE_HOME>/workspace` on loopback hosts | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing. The implicit local default is predictable and is rejected when `HOST` is not a loopback address; use a random high-entropy ID for exposed deployments |
+| `TZ` | `Asia/Shanghai` | Valid IANA timezone used by every recurring task; explicit blank or invalid values still fail startup |
+| `RUNTIME_ARGS` | `--provider openrouter --model deepseek-v4-flash-0731 --permission auto --network --effort max --tools read,exec_command,write_stdin,apply_patch` | Whitespace-split DSCode flags forwarded to every session. This default targets direct local startup; container deployments must override it with a sandbox backend such as `--sandbox danger-full-access`. The four-tool set keeps the agent toolset to what the web-ui can display (`read` is required for skills to be advertised — see "Agent toolset") |
 | `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
 | `CHAT_AGENT_NAME` | `Steve Code` | Display name used throughout the friendly `/chat/:workspaceId` page; does not rename the raw debug UI |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
@@ -136,12 +135,14 @@ remaining in the Web UI and no fallback or queued delivery. The full product rul
 
 ## Workspaces as a secret
 
-There is no default or discoverable workspace. The chat page is served only at
-`/chat/:workspaceId`; `/` and unknown ids return 404. The id is the bearer credential for
+When `WORKSPACES` is omitted on a loopback host, the server creates one local workspace at
+`<DSCODE_HOME>/workspace` with the ID `dscode-workspace`; its chat page is
+`/chat/dscode-workspace`. Otherwise, the chat page is served only at `/chat/:workspaceId`;
+`/` and unknown ids return 404. The id is the bearer credential for
 the whole deployment — whoever holds the URL can open the page and, because the same id
 gates the API (`GET /v1/sessions` requires `?workspaceId=`), reach the full-access agent.
-Share the URL out-of-band (e.g. `https://host/chat/<workspace-id>`). The id is high-entropy, so
-it can't be guessed; the server starts only when `WORKSPACES` is set explicitly.
+Share exposed URLs out-of-band (e.g. `https://host/chat/<workspace-id>`). The explicit ID should
+be high-entropy so it can't be guessed; exposed deployments must set `WORKSPACES` explicitly.
 
 ## Docker
 
@@ -180,7 +181,6 @@ docker run -d --name dscode \
   -e "WORKSPACES='<workspace-id>=/workspace'" \
   -e TZ='Asia/Shanghai' \
   -e 'RUNTIME_ARGS=--permission full --network --sandbox danger-full-access --provider openrouter --model <model> --effort max --tools exec_command,write_stdin,apply_patch,read' \
-  -e DSCODE_SUBAGENT_DEPTH=1 \
   -e DSCODE_VISION_MODEL='<vision model>' \
   -e CHAT_AGENT_NAME='Steve Code' \
   -e OPENROUTER_API_KEY='<your key>' \
@@ -201,9 +201,10 @@ no machine-specific paths; its prompt mounts resolve through the repository-rela
 - **Volumes.** The `docker run` example uses `dscode-home` and `dscode-workspace`; Compose creates
   `<instance>_home` and `<instance>_workspace`. They hold the adapter's config, persisted sessions,
   and working directory. `models.json` is mounted `:ro` so the container can't rewrite it.
-- **`RUNTIME_ARGS` is required in a container** — the default sandbox has no backend inside a Linux
-  container, so every `exec_command` fails without `--sandbox danger-full-access` (which also skips
-  mid-chat approval dialogs).
+- **`RUNTIME_ARGS` is required in a container** — when unset, the Web UI uses its local-development
+  default, whose `workspace-write` sandbox has no backend inside a Linux container. Pass the explicit
+  container value shown in the `docker run`/Compose examples, including `--sandbox danger-full-access`
+  (which also skips mid-chat approval dialogs).
 - **`HOST=0.0.0.0`** is set in the image; the app default (`127.0.0.1`) is unreachable from outside
   a container.
 - **Process reaping.** `--init` starts Docker's minimal init process as PID 1 so orphaned
@@ -222,8 +223,8 @@ no machine-specific paths; its prompt mounts resolve through the repository-rela
 
 ## Agent toolset
 
-The web-ui restricts the agent to four tools (`--tools exec_command,write_stdin,apply_patch,read`
-plus `DSCODE_SUBAGENT_DEPTH=1`). `read` is pi's built-in file reader — it's included because pi
+The web-ui restricts the agent to four tools (`--tools exec_command,write_stdin,apply_patch,read`).
+The web-ui also permanently disables `delegate`. `read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
 `read`.
@@ -235,7 +236,7 @@ The other DSCode tools are TUI-first and don't fit this deployment:
 - `delegate` is excluded: subagents re-invoke the process entrypoint (`./dist/server.js`, not
   the DSCode CLI), require a Git repository for implementer worktrees, and need a sandbox
   backend for their `read-only`/`workspace-write` modes — none of which exist inside the
-  container. `DSCODE_SUBAGENT_DEPTH=1` also skips its registration.
+  container. The Web UI fixes the internal subagent depth at `1`, so Core skips its registration.
 
 ### Vision analysis CLI
 
