@@ -64,7 +64,7 @@ branches are dropped, the live conversation is unchanged.
 
 `createHttpAdapter({ runtimeArgs })` forwards a fixed allowlist of DSCode CLI flags to every
 session — values: `--provider --base-url --transport --harness --permission --sandbox --effort
---model --tools`; booleans: `--network --web --no-tools --no-resume`. Anything else is rejected
+--model --tools`; booleans: `--network --web --no-tools --no-mcp --no-resume`. Anything else is rejected
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
@@ -75,7 +75,16 @@ Explicit permission arguments override the environment as in the CLI; there is n
 automatic downgrade. `/plan`, `/permissions plan`, `/base-url`, and `/agents` fail
 without invoking the model. CLI TUI, JSON, and RPC plan support is unchanged.
 History containing plans can still be resumed under the current runtime permission.
-`--sandbox read-only` and explicit `update_plan` tool selection remain unchanged.
+`--sandbox read-only` remains supported. An effective tool selection containing
+`update_plan` is rejected at startup; this tool is not registered in HTTP hosts.
+`--no-tools` overrides explicit tool selection, including `update_plan`.
+
+The default tool selection is `read,exec_command,write_stdin,apply_patch`, independently
+of the harness. Enabled MCP tools are added even with an explicit `--tools` list.
+`--no-mcp` skips MCP connections and registration; `--no-tools` skips MCP and disables
+all tools regardless of argument order. MCP discovery failures are nonfatal and
+reported through `/mcp`. Existing approval rules apply; discovery occurs on session
+initialization, without hot reload or automatic reconnection.
 
 Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.
 

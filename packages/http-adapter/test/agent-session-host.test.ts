@@ -68,8 +68,9 @@ describe.sequential("createAgentSessionHost", () => {
       expect(host.session.sessionManager.isPersisted()).toBe(false);
       expect(host.session.extensionRunner.hasUI()).toBe(true);
       expect(host.session.getActiveToolNames()).toEqual(
-        expect.arrayContaining(["exec_command", "apply_patch"]),
+        ["read", "exec_command", "write_stdin", "apply_patch"],
       );
+      expect(host.session.getAllTools().some((tool) => tool.name === "update_plan")).toBe(false);
       expect(
         events.some(
           (event) => event.type === "ui_event" && event.event.method === "status",
@@ -262,4 +263,46 @@ describe.sequential("createAgentSessionHost", () => {
     expect(parseHttpRuntimeArgs(["--permission=plan", "--permission=auto"], root).options.permission)
       .toBe("auto");
   });
+
+  it("rejects update_plan tool selection but keeps --no-tools dominant", () => {
+    expect(() => parseHttpRuntimeArgs(["--tools", "read,update_plan"]))
+      .toThrow("update_plan tool is not supported");
+    expect(parseHttpRuntimeArgs(["--no-tools", "--tools", "update_plan"]).options.activeTools).toEqual([]);
+    expect(parseHttpRuntimeArgs(["--no-mcp"]).options.noMcp).toBe(true);
+  });
+
+  it.each([
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
+    { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
+    { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
+    { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
+  ])(
+    "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected }) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-mcp-"));
+      temporaryRoots.push(root);
+      const home = path.join(root, "home");
+      process.env.DSCODE_HOME = home;
+      process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
+      await fs.mkdir(home);
+      await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: {
+        fixture: { command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
+      } }));
+      const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full", ...runtimeArgs] });
+      try {
+        const events: HttpUiBrokerEvent[] = [];
+        host.subscribe((event) => events.push(event));
+        await host.prompt("/mcp");
+        expect(host.session.getActiveToolNames(), JSON.stringify(events)).toEqual(expected);
+        if (expected.includes("mcp__fixture__echo")) {
+          const tool = host.session.agent.state.tools.find((tool) => tool.name === "mcp__fixture__echo")!;
+          const result = await tool.execute("test-mcp", { text: "http" });
+          expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("http|") });
+        } else {
+          expect(host.session.getAllTools().some((tool) => tool.name.startsWith("mcp__"))).toBe(false);
+        }
+      } finally {
+        await host.dispose();
+      }
+    },
+  );
 });

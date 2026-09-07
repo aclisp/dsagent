@@ -6,7 +6,8 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { MCPManager } from "../packages/core/src/mcp.js";
 import { MODEL_CREDENTIAL_ENV_KEYS } from "../packages/core/src/providers.js";
 
@@ -18,6 +19,7 @@ describe("MCPManager", () => {
   const originalDSCodeHome = process.env.DSCODE_HOME;
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
     for (const name of MODEL_CREDENTIAL_ENV_KEYS) restore(name, originalCredentials[name]);
@@ -69,7 +71,9 @@ describe("MCPManager", () => {
           "- mcp__fixture__echo: Echo text and report whether the model key leaked",
         ].join("\n"),
       );
-      expect(active).toContain("mcp__fixture__echo");
+      // Discovery registers tools; the extension applies the final activation policy.
+      expect(active).toEqual([]);
+      expect(manager.toolNames()).toContain("mcp__fixture__echo");
       const tool = tools.get("mcp__fixture__echo");
       expect(tool).toBeDefined();
       const result = await tool!.execute("call-1", { text: "hello" }, undefined, undefined, ctx);
@@ -138,6 +142,28 @@ describe("MCPManager", () => {
           data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZBv8AAAAASUVORK5CYII=",
         },
       ]);
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("discovers all tools when a server paginates tools/list", async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-mcp-pages-"));
+    process.env.DSCODE_HOME = root;
+    await fs.writeFile(path.join(root, "mcp.json"), JSON.stringify({ mcpServers: {
+      fixture: { command: process.execPath, args: [path.resolve("test/fixtures/mcp-server.mjs")] },
+    } }));
+    const list = vi.spyOn(Client.prototype, "listTools")
+      .mockResolvedValueOnce({ tools: [{ name: "first", inputSchema: { type: "object" } }], nextCursor: "page2" })
+      .mockResolvedValueOnce({ tools: [{ name: "second", inputSchema: { type: "object" } }] });
+    const manager = new MCPManager();
+    try {
+      await manager.connectConfigured(
+        { registerTool: vi.fn() } as unknown as ExtensionAPI,
+        { cwd: root, isProjectTrusted: () => true } as ExtensionContext,
+      );
+      expect(list).toHaveBeenLastCalledWith({ cursor: "page2" });
+      expect(manager.toolNames()).toEqual(["mcp__fixture__first", "mcp__fixture__second"]);
     } finally {
       await manager.close();
     }

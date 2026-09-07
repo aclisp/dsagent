@@ -95,7 +95,7 @@ export async function createAgentSessionHost(
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
       resourceLoaderOptions: {
-        extensionFactories: [createDSCodeExtension(runtimeOptions, { planMode: false })],
+        extensionFactories: [createDSCodeExtension(runtimeOptions, { planMode: false, planTool: false })],
       },
     });
     const model = services.modelRuntime.getModel(
@@ -114,7 +114,10 @@ export async function createAgentSessionHost(
       ...(sessionStartEvent !== undefined ? { sessionStartEvent } : {}),
       model,
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-      tools: runtimeOptions.activeTools,
+      // SDK `tools` is a permanent registry allowlist, not just the active set.
+      // Core selects active tools after MCP discovery in session_start.
+      ...(runtimeOptions.noTools ? { noTools: "all" as const } : {}),
+      excludeTools: ["update_plan"],
     });
 
     return {
@@ -283,6 +286,9 @@ export function parseHttpRuntimeArgs(args: readonly string[], cwd = process.cwd(
     throw new Error("Help and version flags are not supported by the direct session host");
   }
   if (parsed.options.permission === "plan") throw new Error(PLAN_PERMISSION_UNSUPPORTED);
+  if (parsed.options.activeTools.includes("update_plan")) {
+    throw new Error("The update_plan tool is not supported by the Web/HTTP host. Remove it from --tools.");
+  }
   return parsed;
 }
 
@@ -364,6 +370,7 @@ const BOOLEAN_RUNTIME_FLAGS = new Set([
   "--network",
   "--web",
   "--no-tools",
+  "--no-mcp",
   "--no-resume",
 ]);
 const THINKING_LEVELS: readonly ThinkingLevel[] = [

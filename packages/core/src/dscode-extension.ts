@@ -123,7 +123,7 @@ const applyPatchParameters = Type.Object({
 
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
-  capabilities: { planMode?: boolean } = {},
+  capabilities: { planMode?: boolean; planTool?: boolean } = {},
 ): InlineExtension {
   const permissionModes = capabilities.planMode === false ? "ask|auto|full" : "plan|ask|auto|full";
   return {
@@ -196,23 +196,28 @@ export function createDSCodeExtension(
       }
       registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
-      registerPlanTool(
-        pi,
-        () => planState,
-        (nextPlan, ctx) => {
-          planState = nextPlan;
-          ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
-        },
-      );
+      if (capabilities.planTool !== false) {
+        registerPlanTool(
+          pi,
+          () => planState,
+          (nextPlan, ctx) => {
+            planState = nextPlan;
+            ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
+          },
+        );
+      }
       registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
 
       const applyPermissionTools = (): void => {
+        if (options.noTools) {
+          toolsBeforePlan = undefined;
+          pi.setActiveTools([]);
+          return;
+        }
         if (permission === "plan") {
           const active = pi.getActiveTools();
           if (toolsBeforePlan === undefined) {
             toolsBeforePlan = active;
-          } else {
-            toolsBeforePlan = [...new Set([...toolsBeforePlan, ...active])];
           }
           pi.setActiveTools(
             [...new Set([...toolsBeforePlan.filter((tool) => planAllowedTools.has(tool)), "update_plan"])],
@@ -250,13 +255,21 @@ export function createDSCodeExtension(
         }
         await mcp.close();
         try {
-          await mcp.connectConfigured(pi, ctx);
+          await mcp.connectConfigured(
+            pi,
+            ctx,
+            options.noTools ? "--no-tools" : options.noMcp ? "--no-mcp" : undefined,
+          );
+          if (mcp.initializationErrors().length > 0) {
+            ctx.ui.notify(`MCP initialization: ${mcp.initializationErrors().join("\n")}`, "warning");
+          }
         } catch (error) {
           ctx.ui.notify(`MCP initialization failed: ${(error as Error).message}`, "warning");
         }
-        const intendedTools = options.toolsExplicit
-          ? options.activeTools
-          : [...new Set([...options.activeTools, ...mcp.toolNames()])];
+        const intendedTools = options.noTools ? [] : [...new Set([
+          ...options.activeTools.filter((tool) => !tool.startsWith("mcp__")),
+          ...mcp.toolNames(),
+        ])];
         pi.setActiveTools(intendedTools);
         toolsBeforePlan = undefined;
         applyPermissionTools();
@@ -291,7 +304,7 @@ export function createDSCodeExtension(
               "[PLAN MODE ACTIVE]",
               "Explore and reason only. File mutation tools are unavailable.",
               `Commands run in a read-only OS sandbox with network ${currentAccess.network ? "enabled" : "subject to scoped approval"}.`,
-              "Use update_plan to publish a concrete implementation plan after exploration.",
+              ...(options.noTools ? [] : ["Use update_plan to publish a concrete implementation plan after exploration."]),
               "Include validation and important risks in the plan steps or explanation.",
               "Do not claim to have changed or tested anything you could not actually run.",
             ].join("\n"),
@@ -300,6 +313,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("tool_call", async (event, ctx) => {
+        if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
         if (
           event.toolName === "bash" ||
           event.toolName === "run_command" ||
@@ -684,7 +698,10 @@ export function createDSCodeExtension(
 
       pi.registerCommand("mcp", {
         description: "Show MCP servers, tool names, and summaries",
-        handler: async (_args, ctx) => ctx.ui.notify(mcp.detailedStatus(), "info"),
+        handler: async (_args, ctx) => ctx.ui.notify(
+          mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive"),
+          "info",
+        ),
       });
 
       pi.registerCommand("x-7f3c9a", {

@@ -1,20 +1,34 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("DSCode Pi integration", () => {
   let server: http.Server | undefined;
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-cli-mcp-"));
+    await fs.writeFile(path.join(root, "mcp.json"), JSON.stringify({ mcpServers: {
+      fixture: { command: process.execPath, args: [path.resolve("test/fixtures/mcp-server.mjs")] },
+    } }));
+  });
 
   afterEach(async () => {
-    if (!server) return;
-    await new Promise<void>((resolve, reject) =>
+    if (server?.listening) await new Promise<void>((resolve, reject) =>
       server!.close((error) => (error ? reject(error) : resolve())),
     );
     server = undefined;
+    await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("runs a JSONL turn through the DeepSeek Responses adapter", async () => {
+  it.each([
+    { toolArgs: [], noTools: false },
+    { toolArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], noTools: false },
+    { toolArgs: ["--no-tools", "--tools", "read", "--permission", "plan"], noTools: true },
+  ])("sends selected and discovered tools through CLI JSONL ($toolArgs)", async ({ toolArgs, noTools }) => {
     let payload: Record<string, any> | undefined;
     server = http.createServer(async (request, response) => {
       const body: Buffer[] = [];
@@ -84,6 +98,9 @@ describe("DSCode Pi integration", () => {
       [
         path.resolve("node_modules/tsx/dist/cli.mjs"),
         "src/cli.ts",
+        "-C",
+        root,
+        ...toolArgs,
         "--base-url",
         `http://127.0.0.1:${address.port}`,
         "--mode",
@@ -95,6 +112,8 @@ describe("DSCode Pi integration", () => {
       ],
       {
         ...process.env,
+        DSCODE_HOME: root,
+        DSCODE_SESSIONS_DIR: path.join(root, "sessions"),
         DSCODE_PROVIDER: "deepseek",
         DSCODE_MODEL: "deepseek-v4-flash",
         DEEPSEEK_API_KEY: "test-only-key",
@@ -109,11 +128,8 @@ describe("DSCode Pi integration", () => {
     expect(payload).not.toHaveProperty("prompt_cache_key");
     expect(payload).not.toHaveProperty("include");
     expect(payload?.reasoning).toEqual({ effort: "max" });
-    expect(payload?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "function", name: "update_plan" }),
-        expect.objectContaining({ type: "custom", name: "apply_patch" }),
-      ]),
+    expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
+      noTools ? [] : ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"].sort(),
     );
   }, 15_000);
 
@@ -142,6 +158,8 @@ describe("DSCode Pi integration", () => {
         DSCODE_PROVIDER: "deepseek",
         DSCODE_MODEL: "deepseek-v4-flash",
         DEEPSEEK_API_KEY: "invalid-test-key",
+        DSCODE_HOME: root,
+        DSCODE_SESSIONS_DIR: path.join(root, "sessions"),
         PI_SKIP_VERSION_CHECK: "1",
         PI_TELEMETRY: "0",
       },

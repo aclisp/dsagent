@@ -267,6 +267,11 @@ describe("createHttpAdapter", () => {
       .toThrow("Plan permission is not supported");
     expect(createHost).not.toHaveBeenCalled();
   });
+
+  it("rejects update_plan before opening the HTTP server", () => {
+    expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs: ["--tools", "read,update_plan"] }))
+      .toThrow("update_plan tool is not supported");
+  });
   it.each([
     [["*"], "wildcard"],
     [["https://app.example.com/"], "exact HTTP(S) origin"],

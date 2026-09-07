@@ -1,7 +1,7 @@
 # Web UI 命令与 MCP 后续任务
 
 讨论日期：2026-09-07。按任务 1 → 任务 2 → 任务 3 推进；本文记录任务边界和待办，
-不表示后续能力已经实现。任务 2、3 另行跟进，本次只实施任务 1。
+不表示后续能力已经发布。任务 1 与 jobs 专项已提交，当前实施任务 2；任务 3 后续跟进。
 
 ## 任务 1：不支持的命令与 Web plan 权限
 
@@ -21,34 +21,41 @@
 - jobs 的本轮代码和测试改动已撤回，另列后续专项；不在本任务修复。
 - 不在此任务实现 MCP 工具策略或 Web checkpoint/diff 展示。
 
-## 任务 2：MCP enhancement（待实施）
+## 任务 2：MCP enhancement（已确认，实施中）
 
 ### 用户提出的目标
 
 - CLI 和 Web UI server 不传 `--tools` 时，默认常规工具统一为
-  `read,exec_command,write_stdin,apply_patch`。这是本轮提出的初步方向，实施前核对
-  `safe`/`minimal` harness、`delegate`、`update_plan` 的兼容行为并明确最终规则。
+  `read,exec_command,write_stdin,apply_patch`，`safe`/`minimal` harness 一致。
+  CLI 的其他常规工具需要显式选择；保留 CLI 的 `delegate`，Web 继续禁用。
 - MCP 工具从已配置且启用的 server 发现，自动加入可用工具，不要求用户在 `--tools`
   中逐个列出 `mcp__...`。显式传入上述四工具时也应自动加入 MCP 工具。
 - 配置仍读取 `DSCODE_HOME/mcp.json` 和可信项目的 `.dscode/mcp.json`；保留现有信任检查。
-- 已确认纳入本任务：统一评估 `update_plan` 的可用性、默认/显式工具选择及 Web 展示。
-  该工具只记录计划步骤和进度，不切换权限；Web 禁用 plan 权限不等于禁用此工具。
+- CLI 保留 `update_plan`，进入 plan 权限自动加入；不属于普通模式的四个默认工具。
+- Web 及所有 HTTP host 不注册、不允许激活 `update_plan`。最终有效工具选择包含它时，
+  启动直接报错退出；`--no-tools` 优先清空工具，因此覆盖显式 `update_plan`。
+  这取代任务 1 暂不调整该工具的边界；Web 不在本任务新增计划展示。
 
-### 当前问题与建议方案
+### 已确认规则与实现边界
 
 - `MCPManager.connectServer()` 发现、注册并激活工具后，core 的 `session_start` 又根据
   `toolsExplicit` 重设 active tools，显式 `--tools` 会排除新发现的 MCP 工具。
-- 建议由 core 统一计算“常规工具与已发现 MCP 工具的并集”，再应用权限限制；Manager
+- HTTP host 向 Pi SDK 传递的 `tools` 还是永久注册白名单，也会挡住动态发现的 MCP。
+  移除此白名单，保留 Web 的 `update_plan` 排除规则；零工具使用 SDK 的全部禁用开关。
+- 由 core 统一计算“常规工具与已发现 MCP 工具的并集”，再应用权限限制；Manager
   负责连接、发现和注册，避免先激活再覆盖。
 - 将“显式常规工具选择”与“禁用全部工具”分别表示；`--no-tools` 应禁用包括 MCP 在内
-  的全部工具，不能因自动合并或 plan 模式补 `update_plan` 而失效。
-- 建议增加 `--no-mcp` 作为独立关闭入口，并在 HTTP runtime 参数校验中接入；
-  这是待确认的方案，不是已确定或已支持的参数。
-- 保留 MCP server 的 `disabled` 配置。建议禁用全部工具或 MCP 时跳过 MCP 连接。
+  的全部工具，无论参数顺序、权限切换，都不能因自动合并或 plan 补 `update_plan` 而失效。
+- 增加 `--no-mcp`，CLI/HTTP 均支持：保留常规工具，但不连接或注册 MCP 工具，
+  即使 `--tools` 显式列出 MCP 名称也不能绕过。
+- 保留 MCP server 的 `disabled` 配置。禁用全部工具或 MCP 时跳过 MCP 连接。
 - 自动发现/加入工具不等于自动批准调用。保留 `auto`/`ask` 下 MCP 调用审批，以及
-  CLI plan 模式的工具过滤；退出 plan 后恢复正确工具集合。HTTP host 不支持 plan 权限。
+  CLI plan 模式继续排除全部 MCP；退出 plan 后恢复进入前的工具集合，重复进入不污染快照。
+  非交互场景中需要审批的调用继续拒绝；`full` 保留免审批语义。
 - `/mcp` 应区分已连接、已发现、当前 active，以及不可用原因，避免“已连接但不能用”
-  的误导。失败、重连和 session 切换不能留下可调用的失效工具。
+  的误导。部分 server 连接或发现失败时继续启动，报告错误，并允许 `/mcp` 查看失败原因。
+  配置读取失败同样报告；不自动重连，不新增热加载或 `/mcp reload`。
+  仅在 session 初始化时发现工具，配置变化需重新加载 session；重新初始化移除旧 MCP 激活项。
 - 同步 CLI 帮助、Web 默认参数、部署示例与文档，明确旧版 `--tools` 严格列表语义的变化。
 
 ### 验收重点
@@ -56,9 +63,9 @@
 - 无 `--tools` 时四个默认常规工具在 CLI/Web 一致，其他常规工具不会意外激活。
 - 显式四工具与默认工具两种启动方式均能发现并调用 fixture MCP 工具。
 - 覆盖 `--no-tools`、MCP 禁用、未信任项目、连接失败和权限审批。
-- 覆盖 CLI plan 进入/退出、session 重建/重连和工具去重。
-- 测试完整 extension `session_start` 和 Web host 链路；现有单测只验证 MCPManager，
-  无法捕获后续 active tools 覆盖问题。
+- 覆盖 CLI plan 进入/退出、session 重新初始化、分页发现和工具去重。
+- 测试完整 extension `session_start`、真实 HTTP host 工具调用及 CLI 发往模拟服务的工具列表，
+  捕获 active tools 覆盖及 SDK 注册白名单问题。
 
 ## 任务 3：Web UI undo/checkpoints/diff（待实施，排在任务 2 之后）
 

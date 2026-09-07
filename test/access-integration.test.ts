@@ -227,6 +227,8 @@ function options(cwd: string): DSCodeRuntimeOptions {
     webSearch: false,
     activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
+    noTools: false,
+    noMcp: false,
   };
 }
 

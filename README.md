@@ -187,9 +187,24 @@ sandbox     workspace-write
 network     blocked
 ```
 
-The default `minimal` harness exposes a small set of high-leverage tools: sandboxed commands,
-background-process interaction, free-form patches, and parallel delegation. Use `--harness safe` to add
-explicit file reading, file search, and automatic language diagnostics.
+CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
+The `minimal` and `safe` harnesses do not change that default selection. The safe
+harness also registers file/search and language-diagnostic tools for explicit selection.
+CLI delegation can be enabled with `--tools ...,delegate`.
+
+Configured, enabled MCP servers are discovered when a session initializes. Their tools
+are added automatically, including when `--tools` is explicit; `--tools` is no longer
+a strict allowlist of all tools. Use `--tools read --no-mcp` for only the `read` tool.
+`--no-mcp` skips MCP connections and registration. `--no-tools` disables every tool
+and skips MCP, regardless of argument order or permission changes.
+
+CLI plan mode temporarily adds `update_plan` and hides MCP tools, then restores the
+previous selection on exit. `--no-tools` also prevents this temporary addition.
+MCP calls still require approval in `auto`/`ask`; plan forbids them and `full` permits
+them without confirmation. Without an interactive approval UI, calls requiring approval
+are rejected. One server's connection or discovery failure does not stop the session;
+`/mcp` shows errors, discovered tools, and whether each is active. Configuration changes
+take effect on session initialization, without hot reload or automatic reconnection.
 
 ## Everyday commands
 
