@@ -85,7 +85,7 @@ describe("ManagedProcessRegistry", () => {
         sandbox: running.sandbox,
       });
       await expect(
-        registry.interact(running.processId, { yieldTimeMs: 0, terminate: true }),
+        registry.interact(running.processId, { yieldTimeMs: 2_000, terminate: true }),
       ).resolves.toMatchObject({ running: false });
     } finally {
       registry.dispose();
