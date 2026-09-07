@@ -42,7 +42,7 @@ describe("parseRuntimeArgs", () => {
       harness: "minimal",
       permission: "auto",
       sandbox: "workspace-write",
-      activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch", "delegate"],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
       toolsExplicit: false,
     });
     expect(parsed.piArgs).toContain("deepseek");
@@ -119,17 +119,7 @@ describe("parseRuntimeArgs", () => {
       harness: "safe",
       permission: "ask",
       sandbox: "read-only",
-      activeTools: [
-        "update_plan",
-        "read_file",
-        "list_files",
-        "search_files",
-        "language_diagnostics",
-        "exec_command",
-        "write_stdin",
-        "apply_patch",
-        "delegate",
-      ],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining(["--thinking", "high", "--mode", "json", "--continue"]),
@@ -153,6 +143,22 @@ describe("parseRuntimeArgs", () => {
     expect(explicitlyUntrusted.options.permission).toBe("full");
     expect(explicitlyUntrusted.piArgs).toContain("--no-approve");
     expect(explicitlyUntrusted.piArgs).not.toContain("--approve");
+  });
+
+  it("makes --no-tools dominant regardless of argument order", () => {
+    for (const args of [
+      ["--no-tools", "--tools", "read,update_plan,mcp__fixture__echo"],
+      ["--tools", "read", "--no-tools"],
+    ]) {
+      expect(parseRuntimeArgs(args).options).toMatchObject({ noTools: true, activeTools: [] });
+    }
+  });
+
+  it("disables MCP independently and deduplicates selected tools", () => {
+    const parsed = parseRuntimeArgs(["--tools", "read,read,mcp__fixture__echo", "--no-mcp"]);
+    expect(parsed.options).toMatchObject({ noTools: false, noMcp: true, activeTools: ["read"] });
+    expect(parsed.piArgs).not.toContain("--no-mcp");
+    expect(parseRuntimeArgs([]).options).toMatchObject({ noTools: false, noMcp: false });
   });
 
   it("accepts version as a command without starting authentication", () => {

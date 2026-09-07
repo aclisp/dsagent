@@ -45,16 +45,30 @@ const MCP_TOOL_SUMMARY_MAX_LENGTH = 120;
 export class MCPManager {
   private readonly servers: ConnectedServer[] = [];
   private errors: string[] = [];
+  private disabledReason: string | undefined;
+  private disabledServers: string[] = [];
 
-  async connectConfigured(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  async connectConfigured(pi: ExtensionAPI, ctx: ExtensionContext, disabledReason?: string): Promise<void> {
     this.errors = [];
+    this.disabledServers = [];
+    this.disabledReason = disabledReason;
+    if (disabledReason) return;
     const trusted = ctx.isProjectTrusted();
     if (!trusted) {
       this.errors.push("Project is not trusted; project MCP servers were not started.");
     }
-    const configs = await loadMcpConfigs(ctx.cwd, trusted);
+    let configs: Record<string, MCPServerConfig>;
+    try {
+      configs = await loadMcpConfigs(ctx.cwd, trusted);
+    } catch (error) {
+      this.errors.push((error as Error).message);
+      return;
+    }
     for (const [serverName, config] of Object.entries(configs)) {
-      if (config.disabled) continue;
+      if (config.disabled) {
+        this.disabledServers.push(serverName);
+        continue;
+      }
       try {
         await this.connectServer(pi, ctx, serverName, config);
       } catch (error) {
@@ -64,25 +78,36 @@ export class MCPManager {
   }
 
   status(): string {
+    if (this.disabledReason) return `MCP disabled by ${this.disabledReason}.`;
     const lines = this.servers.map(
       (server) => `${server.name}: connected (${server.tools.length} tools)`,
     );
     lines.push(...this.errors.map((error) => `error: ${error}`));
+    lines.push(...this.disabledServers.map((name) => `${name}: disabled by configuration`));
     return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
   }
 
-  detailedStatus(): string {
+  detailedStatus(activeTools?: readonly string[], inactiveReason = "inactive"): string {
+    if (this.disabledReason) return `MCP disabled by ${this.disabledReason}.`;
+    const active = activeTools === undefined ? undefined : new Set(activeTools);
     const lines: string[] = [];
     for (const server of this.servers) {
       lines.push(`${server.name}: connected (${server.tools.length} tools)`);
-      lines.push(...server.tools.map((tool) => `- ${tool.name}: ${tool.summary}`));
+      lines.push(...server.tools.map((tool) =>
+        `- ${tool.name}${active ? ` [${active.has(tool.name) ? "active" : inactiveReason}]` : ""}: ${tool.summary}`,
+      ));
     }
     lines.push(...this.errors.map((error) => `error: ${error}`));
+    lines.push(...this.disabledServers.map((name) => `${name}: disabled by configuration`));
     return lines.length > 0 ? lines.join("\n") : "No MCP servers configured.";
   }
 
   toolNames(): string[] {
     return this.servers.flatMap((server) => server.tools.map((tool) => tool.name));
+  }
+
+  initializationErrors(): readonly string[] {
+    return this.errors;
   }
 
   async close(): Promise<void> {
@@ -111,19 +136,27 @@ export class MCPManager {
           cwd: config.cwd ? path.resolve(ctx.cwd, config.cwd) : ctx.cwd,
           stderr: "inherit",
         });
-        await client.connect(transport as any);
         close = async () => transport.close();
+        await client.connect(transport as any);
       } else {
         const transport = new StreamableHTTPClientTransport(new URL(config.url), {
           requestInit: { headers: expandEnvironment(config.headers ?? {}) },
         });
-        await client.connect(transport as any);
         close = async () => transport.close();
+        await client.connect(transport as any);
       }
 
-      const listed = await client.listTools();
+      let listed = await client.listTools();
+      const tools = [...listed.tools];
+      const cursors = new Set<string>();
+      while (listed.nextCursor) {
+        if (cursors.has(listed.nextCursor)) throw new Error("Repeated MCP tools/list cursor");
+        cursors.add(listed.nextCursor);
+        listed = await client.listTools({ cursor: listed.nextCursor });
+        tools.push(...listed.tools);
+      }
       const registered: ConnectedTool[] = [];
-      for (const tool of listed.tools) {
+      for (const tool of tools) {
         const localName = `mcp__${sanitizeName(serverName)}__${sanitizeName(tool.name)}`;
         registered.push({
           name: localName,
@@ -160,10 +193,6 @@ export class MCPManager {
           },
         });
       }
-      // registerTool refreshes Pi's registry after bind; activate the discovered names.
-      pi.setActiveTools([
-        ...new Set([...pi.getActiveTools(), ...registered.map((tool) => tool.name)]),
-      ]);
       this.servers.push({ name: serverName, client, close, tools: registered });
     } catch (error) {
       if (close) await close().catch(() => {});

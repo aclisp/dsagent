@@ -5,8 +5,31 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
+import { createTestTheme } from "./fixtures/theme.js";
 
 describe("command access escalation", () => {
+  it.each(["tui", "json", "rpc"])("keeps CLI plan commands available in %s mode", async (mode) => {
+    const commands = new Map<string, any>();
+    let activeTools = ["read", "exec_command", "write_stdin", "apply_patch"];
+    const pi = new Proxy({
+      registerCommand(name: string, command: unknown) { commands.set(name, command); },
+      getActiveTools: () => activeTools,
+      setActiveTools: (tools: string[]) => { activeTools = tools; },
+    }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    }) as unknown as ExtensionAPI;
+    await runExtensionFactory(options(process.cwd()), pi);
+    const ui = new Proxy({ theme: createTestTheme() }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    });
+    const ctx = { mode, ui, hasUI: mode === "tui", model: undefined };
+    expect(commands.get("permissions").description).toContain("plan|ask|auto|full");
+    await commands.get("permissions").handler("plan", ctx);
+    expect(activeTools).toEqual(["read", "exec_command", "write_stdin", "update_plan"]);
+    await commands.get("plan").handler("", ctx);
+    expect(activeTools).toEqual(["read", "exec_command", "write_stdin", "apply_patch"]);
+  });
+
   let root: string | undefined;
 
   afterEach(async () => {
@@ -205,6 +228,8 @@ function options(cwd: string): DSCodeRuntimeOptions {
     webSearch: false,
     activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
+    noTools: false,
+    noMcp: false,
   };
 }
 

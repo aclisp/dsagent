@@ -347,6 +347,27 @@ async function waitForSessionIdle(server: FastifyInstance): Promise<void> {
 }
 
 describe("Web UI Server Chat Provider composition", () => {
+  it.each([
+    { runtimeArgs: ["--permission", "plan"], error: "Plan permission is not supported" },
+    { runtimeArgs: ["--tools", "read,update_plan"], error: "update_plan tool is not supported" },
+  ])("rejects $runtimeArgs during startup before starting providers or sessions", async ({ runtimeArgs, error }) => {
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "dscode-web-plan-"));
+    temporaryDirectories.push(workspaceRoot);
+    const createHost = vi.fn();
+    const onChatProviderStarted = vi.fn();
+    await expect(createWebUiServer({
+      workspaces: { main: workspaceRoot },
+      chatAgentName: "Test",
+      maxUploadBytes: 1024,
+      timezone: "Asia/Shanghai",
+      runtimeArgs,
+      createHost,
+      onChatProviderStarted,
+    })).rejects.toThrow(error);
+    expect(createHost).not.toHaveBeenCalled();
+    expect(onChatProviderStarted).not.toHaveBeenCalled();
+  });
+
   it("routes a source scheduled Turn through the real WeCom direct conversation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));

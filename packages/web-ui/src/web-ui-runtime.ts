@@ -11,8 +11,6 @@ export const DEFAULT_WEB_UI_RUNTIME_ARGS = [
   "--network",
   "--effort",
   "max",
-  "--tools",
-  "read,exec_command,write_stdin,apply_patch",
 ] as const;
 
 export function resolveWebUiRuntimeArgs(value: string | undefined): string[] {

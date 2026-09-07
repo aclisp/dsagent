@@ -651,6 +651,17 @@ describe("SessionController", () => {
       toolName: "read",
       args: { path: "README.md" },
     } as AgentSessionEvent);
+    broker.publishSessionEvent({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        customType: "dscode-diff",
+        data: { checkpointId: "checkpoint-1", patch: "*** Begin Patch\n+line\n*** End Patch" },
+        id: "entry-1",
+        parentId: null,
+        timestamp: "2026-09-07T00:00:00.000Z",
+      },
+    } as AgentSessionEvent);
     broker.publishExtensionError({
       extensionPath: "extension.ts",
       event: "tool_call",
@@ -670,6 +681,12 @@ describe("SessionController", () => {
       type: "tool",
       phase: "started",
       toolCallId: "tool-1",
+    });
+    expect(await events.next()).toEqual({
+      type: "checkpoint_diff",
+      turnId: null,
+      checkpointId: "checkpoint-1",
+      patch: "*** Begin Patch\n+line\n*** End Patch",
     });
     expect(await events.next()).toEqual({
       type: "extension_error",

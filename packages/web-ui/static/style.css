@@ -81,6 +81,25 @@ header h1 { font-size: 14px; font-weight: 600; margin: 0; }
   margin: 4px 0;
   background: #18232c;
 }
+.termino-console details.checkpoint-diff {
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #18232c;
+  border: 1px solid #2a3138;
+  border-radius: 4px;
+}
+.termino-console details.checkpoint-diff summary {
+  cursor: pointer;
+  color: #9ab8d0;
+}
+.termino-console details.checkpoint-diff pre {
+  max-height: 50vh;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
 .termino-input {
   flex: none;
   width: 100%;

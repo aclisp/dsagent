@@ -38,8 +38,12 @@ export interface ManagedProcessRegistryOptions {
   visionExecutable?: string;
 }
 
+const MAX_COMPLETED_PROCESSES = 100;
+
 export class ManagedProcessRegistry {
   private readonly records = new Map<string, ProcessRecord>();
+  // Insertion order tracks completion order, independently of process start order.
+  private readonly completedIds = new Set<string>();
   private readonly visionExecutable: string;
 
   constructor(options: ManagedProcessRegistryOptions = {}) {
@@ -124,6 +128,14 @@ export class ManagedProcessRegistry {
       record.exitCode = exitCode;
       clearTimeout(record.timeout);
       options.signal?.removeEventListener("abort", abort);
+      if (this.records.has(id)) {
+        this.completedIds.add(id);
+        if (this.completedIds.size > MAX_COMPLETED_PROCESSES) {
+          const oldest = this.completedIds.values().next().value!;
+          this.completedIds.delete(oldest);
+          this.records.delete(oldest);
+        }
+      }
       record.resolveCompletion();
     });
 
@@ -163,7 +175,10 @@ export class ManagedProcessRegistry {
       ]);
     }
     const result = this.result(record);
-    if (!record.running) this.records.delete(processId);
+    if (!record.running) {
+      this.records.delete(processId);
+      this.completedIds.delete(processId);
+    }
     return result;
   }
 
@@ -181,6 +196,7 @@ export class ManagedProcessRegistry {
       stopChild(record.child);
     }
     this.records.clear();
+    this.completedIds.clear();
   }
 
   private result(record: ProcessRecord): ManagedProcessResult {

@@ -40,6 +40,8 @@ export interface DSCodeRuntimeOptions {
   webSearch: boolean;
   activeTools: string[];
   toolsExplicit: boolean;
+  noTools: boolean;
+  noMcp: boolean;
 }
 
 export interface ParsedRuntimeArgs {
@@ -74,6 +76,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let webSearch = false;
   let activeTools: string[] | undefined;
   let toolsExplicit = false;
+  let noTools = false;
+  let noMcp = false;
   let help = false;
   let version = false;
   let yolo = false;
@@ -125,8 +129,11 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
         .filter(Boolean);
       toolsExplicit = true;
     } else if (flag === "--no-tools") {
-      activeTools = [];
+      noTools = true;
       toolsExplicit = true;
+    } else if (flag === "--no-mcp") {
+      if (inlineValue !== undefined) throw new Error("--no-mcp does not accept a value");
+      noMcp = true;
     } else if (flag === "--no-resume") {
       // Pi starts a new persisted session unless --continue/--resume is passed.
     } else if (flag === "--help" || flag === "-h") {
@@ -161,7 +168,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (!hasFlag(forwarded, "--thinking")) forwarded.unshift("--thinking", effort);
-  activeTools ??= defaultActiveTools(harness);
+  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch"])];
+  if (noMcp) activeTools = activeTools.filter((tool) => !tool.startsWith("mcp__"));
 
   return {
     options: {
@@ -177,28 +185,13 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       webSearch,
       activeTools,
       toolsExplicit,
+      noTools,
+      noMcp,
     },
     piArgs: forwarded,
     help,
     version,
   };
-}
-
-function defaultActiveTools(harness: HarnessMode): string[] {
-  const delegation = Number(process.env.DSCODE_SUBAGENT_DEPTH ?? "0") < 1 ? ["delegate"] : [];
-  return harness === "minimal"
-    ? ["update_plan", "exec_command", "write_stdin", "apply_patch", ...delegation]
-    : [
-        "update_plan",
-        "read_file",
-        "list_files",
-        "search_files",
-        "language_diagnostics",
-        "exec_command",
-        "write_stdin",
-        "apply_patch",
-        ...delegation,
-      ];
 }
 
 export function printDSCodeHelp(): void {
@@ -214,12 +207,16 @@ Usage:
 
 DSCode options:
   -C, --cwd <dir>                  Workspace directory
-  --provider <id>                 ${SUPPORTED_PROVIDER_IDS.join("|")}
+  --provider <id>                  ${SUPPORTED_PROVIDER_IDS.join("|")}
   --base-url <url>                 DeepSeek API base URL
   --model <id>                     Model ID (provider default when omitted)
   --effort <level>                 Alias for --thinking; defaults by provider
   --transport <responses|chat>     API transport (default: responses)
   --harness <minimal|safe>         Tool harness (default: minimal)
+  --tools <names>                  Select tools; configured MCP tools are added automatically
+                                   Default: read,exec_command,write_stdin,apply_patch
+  --no-mcp                         Skip MCP connections and tools
+  --no-tools                       Disable all tools and MCP, regardless of argument order
   --permission <mode>              plan|ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
   --network                        Pre-authorize command network access for this run
@@ -236,17 +233,17 @@ DSCode commands:
   /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
 
 Authentication:
-  dscode login [provider]           Sign in to a supported model provider
-  dscode logout [provider]          Remove the selected provider credential
-  dscode auth status                Show credential sources without revealing secrets
-  /login                            Choose a provider interactively
-  /login <provider>                 Authenticate a specific provider
+  dscode login [provider]          Sign in to a supported model provider
+  dscode logout [provider]         Remove the selected provider credential
+  dscode auth status               Show credential sources without revealing secrets
+  /login                           Choose a provider interactively
+  /login <provider>                Authenticate a specific provider
 
 Experimental Windows sandbox:
-  dscode sandbox setup              Install identities and WFP filters (elevated terminal)
-  dscode sandbox status             Inspect native sandbox readiness
-  dscode sandbox uninstall          Remove native sandbox state (elevated terminal)
-  DSCODE_WINDOWS_SANDBOX=1          Explicitly opt in after setup succeeds
+  dscode sandbox setup             Install identities and WFP filters (elevated terminal)
+  dscode sandbox status            Inspect native sandbox readiness
+  dscode sandbox uninstall         Remove native sandbox state (elevated terminal)
+  DSCODE_WINDOWS_SANDBOX=1         Explicitly opt in after setup succeeds
 `);
 }
 

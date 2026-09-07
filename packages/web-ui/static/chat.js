@@ -571,6 +571,20 @@ function appendSystemNotice(text, kind = "info", timestamp = Date.now(), options
   return notice;
 }
 
+function appendCheckpointDiff(event) {
+  const container = document.createElement("details");
+  container.className = "checkpoint-diff";
+  container.open = true;
+  const summary = document.createElement("summary");
+  summary.textContent = `diff ${event.checkpointId}`;
+  const patch = document.createElement("pre");
+  patch.textContent = typeof event.patch === "string" ? event.patch : "";
+  container.append(summary, patch);
+  ensureTimeSeparator(Date.now());
+  messagesElement.appendChild(container);
+  afterContentChange();
+}
+
 function appendTyping(turn) {
   if (turn.typingRow || turn.firstDeltaSeen) return;
   const elements = createMessageRow("assistant", Date.now());
@@ -1096,9 +1110,12 @@ function friendlyRequest(request) {
     }
     if (/^Undo\s+.+\?$/i.test(title)) {
       const files = request.message.split("\n\n", 1)[0];
+      const force = /--force will overwrite/i.test(request.message);
       return {
         title: "确认撤销修改",
-        message: `将恢复以下文件：\n${files}\n\n检查点之后的修改不会被覆盖，除非使用强制选项。`,
+        message: force
+          ? `将恢复以下文件：\n${files}\n\n--force 会覆盖检查点之后的修改。`
+          : `将恢复以下文件：\n${files}\n\n检查点之后的修改不会被覆盖；如需覆盖，请使用 --force。`,
       };
     }
     const toolMatch = /^Allow\s+(.+?)\??$/i.exec(title);
@@ -1316,6 +1333,9 @@ function openStream() {
     streamAssistantDelta(JSON.parse(event.data));
   });
   addCurrentStreamListener(source, "tool", (event) => handleToolEvent(JSON.parse(event.data)));
+  addCurrentStreamListener(source, "checkpoint_diff", (event) => {
+    appendCheckpointDiff(JSON.parse(event.data));
+  });
   addCurrentStreamListener(source, "ui_request", (event) => {
     const data = JSON.parse(event.data);
     showUiRequest(data.request, data.turnId);

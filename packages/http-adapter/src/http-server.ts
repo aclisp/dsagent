@@ -10,6 +10,7 @@ import {
   PersistedSessionNotFoundError,
   createAgentSessionHost,
   listPersistedSessions,
+  parseHttpRuntimeArgs,
   type PersistedSessionSummary,
 } from "./agent-session-host.js";
 import {
@@ -176,6 +177,7 @@ function isCorsApiRequest(url: string): boolean {
 export function createHttpAdapter(
   options: CreateHttpAdapterServerOptions,
 ): HttpAdapter {
+  parseHttpRuntimeArgs(options.runtimeArgs ?? []);
   const corsOrigins = normalizeCorsOrigins(options.corsOrigins);
   const server = Fastify({
     logger: options.logger ?? false,
