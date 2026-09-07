@@ -234,6 +234,12 @@ Inside the TUI:
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
 
+Each CLI or Web session retains at most 100 completed managed processes. When that
+limit is exceeded, the earliest-completed record is removed, including any unread
+output; later `write_stdin` calls for that ID return `Unknown process`. Running
+processes are never evicted by this limit. `/jobs` keeps showing both running and
+retained completed records.
+
 ## Safety model
 
 Permissions decide when DSCode asks. The sandbox decides what a command can actually access.

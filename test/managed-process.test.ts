@@ -28,6 +28,70 @@ describe("ManagedProcessRegistry", () => {
     }
   });
 
+  it("bounds retained completed jobs without changing extra-read behavior", async () => {
+    const registry = new ManagedProcessRegistry();
+    const results = [];
+    try {
+      for (let index = 0; index < 105; index += 1) {
+        results.push(
+          await registry.start("printf done", {
+            cwd: os.tmpdir(),
+            sandbox: { mode: "danger-full-access", network: false },
+            yieldTimeMs: 1_000,
+            timeoutMs: 5_000,
+            thinkingLevel: "low",
+          }),
+        );
+      }
+      expect(registry.list()).toHaveLength(100);
+      await expect(
+        registry.interact(results[0]!.processId, { yieldTimeMs: 0 }),
+      ).rejects.toThrow("Unknown process");
+      await expect(
+        registry.interact(results[104]!.processId, { yieldTimeMs: 0 }),
+      ).resolves.toMatchObject({
+        running: false,
+        output: "(process completed)",
+        exitCode: 0,
+      });
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("does not evict a running job while completed jobs reach the limit", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const running = await registry.start(longBackgroundCommand(), {
+        cwd: os.tmpdir(),
+        sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0,
+        timeoutMs: 5_000,
+        thinkingLevel: "low",
+      });
+      expect(running.running).toBe(true);
+      for (let index = 0; index < 101; index += 1) {
+        await registry.start("printf done", {
+          cwd: os.tmpdir(),
+          sandbox: { mode: "danger-full-access", network: false },
+          yieldTimeMs: 1_000,
+          timeoutMs: 5_000,
+          thinkingLevel: "low",
+        });
+      }
+      expect(registry.list()).toContainEqual({
+        processId: running.processId,
+        running: true,
+        sandbox: running.sandbox,
+      });
+      await expect(
+        registry.interact(running.processId, { yieldTimeMs: 0, terminate: true }),
+      ).resolves.toMatchObject({ running: false });
+    } finally {
+      registry.dispose();
+    }
+  });
+
   it.runIf(process.platform === "win32")("terminates the Windows process tree", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-process-tree-"));
     const childScript = path.join(root, "child.cjs");
@@ -216,6 +280,14 @@ describe("ManagedProcessRegistry", () => {
 
 function backgroundCommand(): string {
   const script = "setTimeout(() => process.stdout.write(`done`), 100)";
+  if (process.platform === "win32") {
+    return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
+  }
+  return `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script}'`;
+}
+
+function longBackgroundCommand(): string {
+  const script = "setTimeout(() => process.stdout.write(`done`), 3000)";
   if (process.platform === "win32") {
     return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
   }
