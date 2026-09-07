@@ -121,7 +121,11 @@ const applyPatchParameters = Type.Object({
   }),
 });
 
-export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExtension {
+export function createDSCodeExtension(
+  options: DSCodeRuntimeOptions,
+  capabilities: { planMode?: boolean } = {},
+): InlineExtension {
+  const permissionModes = capabilities.planMode === false ? "ask|auto|full" : "plan|ask|auto|full";
   return {
     name: "dscode",
     factory(pi) {
@@ -507,13 +511,14 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
       });
 
       pi.registerCommand("permissions", {
-        description: "Show or set plan|ask|auto|full",
+        description: `Show or set ${permissionModes}`,
         handler: async (args, ctx) => {
           if (!args.trim()) {
             const currentAccess = effectiveAccess();
             ctx.ui.notify(
               [
                 `permission: ${permission}`,
+                ...(capabilities.planMode === false ? [`available modes: ${permissionModes}`] : []),
                 `sandbox: ${currentAccess.sandbox}`,
                 `network: ${currentAccess.network ? "enabled" : "blocked"}`,
                 `session grants: ${access.describeGrants().join(", ") || "none"}`,
@@ -524,8 +529,8 @@ export function createDSCodeExtension(options: DSCodeRuntimeOptions): InlineExte
             return;
           }
           const parsed = permissionSchema.safeParse(args.trim());
-          if (!parsed.success) {
-            ctx.ui.notify("Expected /permissions plan|ask|auto|full", "warning");
+          if (!parsed.success || (capabilities.planMode === false && parsed.data === "plan")) {
+            ctx.ui.notify(`Expected /permissions ${permissionModes}`, "warning");
             return;
           }
           if (parsed.data === "full" && permission !== "full" && ctx.hasUI) {

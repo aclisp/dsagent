@@ -223,6 +223,14 @@ no machine-specific paths; its prompt mounts resolve through the repository-rela
 
 ## Agent toolset
 
+Web UI and all HTTP hosts support `ask`, `auto`, and `full` permissions. A final
+`plan` permission from runtime arguments or `DSCODE_PERMISSION` causes startup to
+fail; it is never silently changed to `auto`. `/plan`, `/permissions plan`,
+`/base-url`, and `/agents` are rejected without invoking the model. CLI TUI, JSON,
+and RPC retain plan support. Historical plans may be loaded without executing them;
+the current runtime permission applies. `--sandbox read-only` remains supported
+but is not equivalent to plan permission. `update_plan` tool selection is unchanged.
+
 The web-ui restricts the agent to four tools (`--tools exec_command,write_stdin,apply_patch,read`).
 The web-ui also permanently disables `delegate`. `read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
@@ -230,9 +238,10 @@ auto-discovered and listed in the system prompt, and the model loads a skill's `
 `read`.
 The other DSCode tools are TUI-first and don't fit this deployment:
 
-- `update_plan` is excluded: plan state is rendered through a TUI widget the web-ui doesn't
-  display, and plan mode is unreachable here (the deployment runs `--permission full` in `rpc`
-  mode, and every plan-mode path is gated on `permission === "plan"`).
+- `update_plan` is excluded from the default toolset: plan state is rendered through a TUI
+  widget the web-ui doesn't display. Explicit tool selection remains possible independently
+  of plan permission; its availability and Web presentation are deferred to the MCP/default
+  toolset task.
 - `delegate` is excluded: subagents re-invoke the process entrypoint (`./dist/server.js`, not
   the DSCode CLI), require a Git repository for implementer worktrees, and need a sandbox
   backend for their `read-only`/`workspace-write` modes — none of which exist inside the

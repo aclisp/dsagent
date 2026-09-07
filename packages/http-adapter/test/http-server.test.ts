@@ -54,6 +54,7 @@ const WORKSPACES = {
 const servers: FastifyInstance[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 
@@ -255,6 +256,17 @@ function turnUrl(sessionId: string): string {
 }
 
 describe("createHttpAdapter", () => {
+  it("rejects plan before opening a server or activating a session", () => {
+    const createHost = vi.fn();
+    for (const runtimeArgs of [["--permission", "plan"], ["--permission=plan"]]) {
+      expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs, createHost }))
+        .toThrow("Plan permission is not supported");
+    }
+    vi.stubEnv("DSCODE_PERMISSION", "plan");
+    expect(() => createHttpAdapter({ workspaces: WORKSPACES, createHost }))
+      .toThrow("Plan permission is not supported");
+    expect(createHost).not.toHaveBeenCalled();
+  });
   it.each([
     [["*"], "wildcard"],
     [["https://app.example.com/"], "exact HTTP(S) origin"],

@@ -68,6 +68,15 @@ session — values: `--provider --base-url --transport --harness --permission --
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
+HTTP hosts support `ask`, `auto`, and `full` permissions. Final `plan` configuration,
+including an effective `DSCODE_PERMISSION=plan`, is rejected by `createHttpAdapter`
+before the server starts and by `createAgentSessionHost` before creating a session.
+Explicit permission arguments override the environment as in the CLI; there is no
+automatic downgrade. `/plan`, `/permissions plan`, `/base-url`, and `/agents` fail
+without invoking the model. CLI TUI, JSON, and RPC plan support is unchanged.
+History containing plans can still be resumed under the current runtime permission.
+`--sandbox read-only` and explicit `update_plan` tool selection remain unchanged.
+
 Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.
 
 ## Security notes

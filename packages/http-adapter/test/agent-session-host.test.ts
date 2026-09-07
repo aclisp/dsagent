@@ -6,6 +6,7 @@ import {
   PersistedSessionAlreadyExistsError,
   PersistedSessionNotFoundError,
   createAgentSessionHost,
+  parseHttpRuntimeArgs,
 } from "../src/agent-session-host.js";
 import { createHttpUiBroker, type HttpUiBrokerEvent } from "../src/ui-broker.js";
 
@@ -14,6 +15,7 @@ const ENV_KEYS = [
   "DSCODE_SESSIONS_DIR",
   "PI_CODING_AGENT_DIR",
   "PI_CODING_AGENT_SESSION_DIR",
+  "DSCODE_PERMISSION",
 ] as const;
 const originalEnvironment = new Map(
   ENV_KEYS.map((key) => [key, process.env[key]]),
@@ -78,9 +80,41 @@ describe.sequential("createAgentSessionHost", () => {
           (event) => event.type === "ui_event" && event.event.method === "title",
         ),
       ).toBe(true);
-      await expect(host.prompt("/clear")).rejects.toThrow(
-        "Session command /clear is not supported",
-      );
+      for (const [prompt, command] of [
+        ["/clear", "clear"],
+        ["/plan", "plan"],
+        ["/plan show", "plan"],
+        ["/plan clear", "plan"],
+        ["/base-url", "base-url"],
+        ["/base-url https://example.com", "base-url"],
+        ["/agents", "agents"],
+        ["  /AGENTS", "agents"],
+      ] as const) {
+        await expect(host.prompt(prompt)).rejects.toThrow(
+          `Session command /${command} is not supported`,
+        );
+      }
+      const activeTools = host.session.getActiveToolNames();
+      const entriesBefore = host.session.sessionManager.getEntries().length;
+      for (const prompt of ["/permissions plan", " /PERMISSIONS  PLAN ", "/permissions\tplan"]) {
+        await expect(host.prompt(prompt)).rejects.toThrow("Plan permission is not supported");
+      }
+      expect(host.session.getActiveToolNames()).toEqual(activeTools);
+      expect(host.session.sessionManager.getEntries()).toHaveLength(entriesBefore);
+      await host.prompt("/permissions");
+      await host.prompt("/permissions invalid");
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: "ui_event",
+          event: expect.objectContaining({ message: expect.stringContaining("available modes: ask|auto|full") }),
+        }),
+        expect.objectContaining({
+          type: "ui_event",
+          event: expect.objectContaining({ message: "Expected /permissions ask|auto|full" }),
+        }),
+      ]));
+      await host.prompt("/permissions ask");
+      await host.prompt("/permissions auto");
       await expect(host.prompt("/status")).resolves.toBeUndefined();
       await expect(host.prompt("/doctor")).resolves.toBeUndefined();
 
@@ -116,6 +150,12 @@ describe.sequential("createAgentSessionHost", () => {
       expect(manager.isPersisted()).toBe(true);
       expect(manager.getSessionId()).toBe(sessionId);
       expect(manager.getSessionDir()).toBe(sessionsDir);
+      manager.appendCustomEntry("dscode-permission", { permission: "plan" });
+      manager.appendCustomEntry("dscode-plan-state", {
+        steps: [{ step: "Historical plan", status: "pending" }],
+        revision: 1,
+        updatedAt: "2026-09-07T00:00:00.000Z",
+      });
       manager.appendMessage({ role: "user", content: "Remember this", timestamp: 1 });
       manager.appendMessage({
         role: "assistant",
@@ -148,10 +188,16 @@ describe.sequential("createAgentSessionHost", () => {
 
     const resumed = await createAgentSessionHost({
       cwd: workspace,
+      runtimeArgs: ["--permission", "auto"],
       session: { type: "resume", id: sessionId },
     });
     try {
       expect(resumed.session.sessionManager.getSessionId()).toBe(sessionId);
+      expect(resumed.session.getActiveToolNames()).toContain("apply_patch");
+      expect(resumed.session.sessionManager.getEntries()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ customType: "dscode-permission", data: { permission: "plan" } }),
+        expect.objectContaining({ customType: "dscode-plan-state" }),
+      ]));
       expect(
         resumed.session.sessionManager
           .getEntries()
@@ -194,5 +240,26 @@ describe.sequential("createAgentSessionHost", () => {
     await expect(
       createAgentSessionHost({ cwd: root, runtimeArgs: ["--thinking", "high"] }),
     ).rejects.toThrow("Unsupported direct session argument");
+  });
+
+  it("rejects final plan configuration before creating a host, without downgrading", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-plan-"));
+    temporaryRoots.push(root);
+    process.env.DSCODE_HOME = path.join(root, "home");
+    process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
+    for (const runtimeArgs of [["--permission", "plan"], ["--permission=plan"]]) {
+      await expect(createAgentSessionHost({ cwd: root, runtimeArgs }))
+        .rejects.toThrow("Plan permission is not supported");
+    }
+    process.env.DSCODE_PERMISSION = "plan";
+    await expect(createAgentSessionHost({ cwd: root }))
+      .rejects.toThrow("Plan permission is not supported");
+    await expect(fs.access(process.env.DSCODE_HOME)).rejects.toMatchObject({ code: "ENOENT" });
+    for (const permission of ["ask", "auto", "full"]) {
+      expect(parseHttpRuntimeArgs(["--permission", permission, "--sandbox", "read-only"], root).options)
+        .toMatchObject({ permission, sandbox: "read-only" });
+    }
+    expect(parseHttpRuntimeArgs(["--permission=plan", "--permission=auto"], root).options.permission)
+      .toBe("auto");
   });
 });
