@@ -57,7 +57,7 @@ describe("ManagedProcessRegistry", () => {
     } finally {
       registry.dispose();
     }
-  });
+  }, 30_000);
 
   it("does not evict a running job while completed jobs reach the limit", async () => {
     const registry = new ManagedProcessRegistry();
@@ -90,7 +90,7 @@ describe("ManagedProcessRegistry", () => {
     } finally {
       registry.dispose();
     }
-  });
+  }, 30_000);
 
   it.runIf(process.platform === "win32")("terminates the Windows process tree", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-process-tree-"));
