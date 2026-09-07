@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
+import { createTestTheme } from "./fixtures/theme.js";
 
 describe("command access escalation", () => {
   it.each(["tui", "json", "rpc"])("keeps CLI plan commands available in %s mode", async (mode) => {
@@ -18,7 +19,7 @@ describe("command access escalation", () => {
       get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
     }) as unknown as ExtensionAPI;
     await runExtensionFactory(options(process.cwd()), pi);
-    const ui = new Proxy({ theme: { fg: (_color: string, text: string) => text } }, {
+    const ui = new Proxy({ theme: createTestTheme() }, {
       get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
     });
     const ctx = { mode, ui, hasUI: mode === "tui", model: undefined };

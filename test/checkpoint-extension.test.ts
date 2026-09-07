@@ -5,6 +5,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
+import { createTestTheme } from "./fixtures/theme.js";
 
 describe("checkpoint extension commands", () => {
   let root: string;
@@ -45,7 +46,7 @@ describe("checkpoint extension commands", () => {
       ui: new Proxy({
         notify,
         confirm,
-        theme: { fg: (_color: string, text: string) => text },
+        theme: createTestTheme(),
       }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }),
       isProjectTrusted: () => true,
       sessionManager: { getBranch: () => [], getSessionFile: () => undefined },
@@ -103,7 +104,7 @@ describe("checkpoint extension commands", () => {
       cwd: root,
       mode: "rpc",
       hasUI: true,
-      ui: new Proxy({ confirm, theme: { fg: (_color: string, text: string) => text } }, {
+      ui: new Proxy({ confirm, theme: createTestTheme() }, {
         get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined,
       }),
       isProjectTrusted: () => true,

@@ -5,6 +5,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
+import { createTestTheme } from "./fixtures/theme.js";
 
 const baseTools = ["read", "exec_command", "write_stdin", "apply_patch"];
 const mcpTool = "mcp__fixture__echo";
@@ -48,7 +49,7 @@ describe("MCP extension lifecycle", () => {
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
     const notify = vi.fn();
     const confirm = vi.fn(async () => true);
-    const ui = new Proxy({ theme: { fg: (_color: string, text: string) => text }, notify, confirm }, {
+    const ui = new Proxy({ theme: createTestTheme(), notify, confirm }, {
       get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined,
     });
     const ctx = {
