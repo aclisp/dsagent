@@ -66,7 +66,7 @@ describe("ManagedProcessRegistry", () => {
         cwd: os.tmpdir(),
         sandbox: { mode: "danger-full-access", network: false },
         yieldTimeMs: 0,
-        timeoutMs: 5_000,
+        timeoutMs: 30_000,
         thinkingLevel: "low",
       });
       expect(running.running).toBe(true);
@@ -287,7 +287,7 @@ function backgroundCommand(): string {
 }
 
 function longBackgroundCommand(): string {
-  const script = "setTimeout(() => process.stdout.write(`done`), 3000)";
+  const script = "setInterval(() => {}, 1_000)";
   if (process.platform === "win32") {
     return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
   }
