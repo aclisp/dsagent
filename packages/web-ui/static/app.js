@@ -207,6 +207,15 @@ function outUser(text) {
   outHtml(`<pre class="user-message">${escapeHtml(`${USER_PROMPT}${text}`)}</pre>`);
 }
 
+function outCheckpointDiff(event) {
+  outHtml(
+    `<details class="checkpoint-diff" open>`
+      + `<summary>diff ${escapeHtml(event.checkpointId)}</summary>`
+      + `<pre>${escapeHtml(typeof event.patch === "string" ? event.patch : "")}</pre>`
+      + `</details>`,
+  );
+}
+
 async function ask(question, className = null) {
   term.enable_input();
   document.querySelector(".termino-input").focus();
@@ -479,6 +488,9 @@ function openStream() {
     } else if (event.phase === "completed") {
       outHtml(`<pre class="muted">${event.isError ? "✗" : "✓"} ${escapeHtml(event.name)}</pre>`);
     }
+  });
+  source.addEventListener("checkpoint_diff", (e) => {
+    outCheckpointDiff(JSON.parse(e.data));
   });
   source.addEventListener("ui_request", (e) => {
     const { request, turnId } = JSON.parse(e.data);

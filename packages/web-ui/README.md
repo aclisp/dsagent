@@ -242,6 +242,16 @@ The web-ui also permanently disables `delegate`. `read` is pi's built-in file re
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
 `read`.
+
+The Web UI keeps the CLI checkpoint commands available. `/checkpoints` lists the current branch's
+durable `apply_patch` checkpoints, `/diff` displays the latest active patch in a complete,
+scrollable monospace block, and `/undo` restores the latest active checkpoint after browser
+confirmation. Cancelled, successful, and rejected restores are shown immediately. `--force`
+confirms that later edits will be overwritten; it does not bypass workspace path protection.
+The command output is not replayed automatically after a refresh, so run the command again to
+query the persisted checkpoint state. Edits made through `exec_command` or other tools do not
+create checkpoints.
+
 The other DSCode tools are TUI-first and don't fit this deployment:
 
 - `update_plan` is unsupported, including explicit selection; use the CLI for structured plans.

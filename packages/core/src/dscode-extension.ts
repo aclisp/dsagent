@@ -618,11 +618,17 @@ export function createDSCodeExtension(
           }
           const force = args.trim() === "--force";
           if (ctx.hasUI) {
+            const files = checkpoint.before.map((file) => file.path).join("\n");
             const confirmed = await ctx.ui.confirm(
               `Undo ${checkpoint.id}?`,
-              `${checkpoint.before.map((file) => file.path).join("\n")}\n\nChanges made after this checkpoint are protected unless --force is used.`,
+              `${files}\n\n${force
+                ? "--force will overwrite changes made after this checkpoint."
+                : "Changes made after this checkpoint are protected. Use --force to override conflicts."}`,
             );
-            if (!confirmed) return;
+            if (!confirmed) {
+              ctx.ui.notify("Undo cancelled.", "info");
+              return;
+            }
           }
           const workspace = new Workspace(ctx.cwd);
           await workspace.initialize();

@@ -97,6 +97,12 @@ export type HttpAdapterEvent =
   | { type: "ui_request"; turnId: string | null; request: HttpUiRequest }
   | { type: "ui_event"; turnId: string | null; event: HttpUiEvent }
   | {
+      type: "checkpoint_diff";
+      turnId: string | null;
+      checkpointId: string;
+      patch: string;
+    }
+  | {
       type: "extension_error";
       turnId: string | null;
       error: { extensionPath: string; event: string; message: string };
@@ -414,6 +420,19 @@ export class SessionController {
         isError: event.isError,
       };
     }
+    if (
+      event.type === "entry_appended" &&
+      event.entry.type === "custom" &&
+      event.entry.customType === "dscode-diff" &&
+      isCheckpointDiff(event.entry.data)
+    ) {
+      return {
+        type: "checkpoint_diff",
+        turnId,
+        checkpointId: event.entry.data.checkpointId,
+        patch: event.entry.data.patch,
+      };
+    }
     return undefined;
   }
 
@@ -588,4 +607,10 @@ export class SessionController {
     });
     return attempt;
   }
+}
+
+function isCheckpointDiff(value: unknown): value is { checkpointId: string; patch: string } {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.checkpointId === "string" && typeof record.patch === "string";
 }
