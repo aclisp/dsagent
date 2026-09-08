@@ -252,6 +252,8 @@ describe.sequential("createAgentSessionHost", () => {
       await expect(createAgentSessionHost({ cwd: root, runtimeArgs }))
         .rejects.toThrow("Plan permission is not supported");
     }
+    expect(parseHttpRuntimeArgs(["--prompt-contract", "none"], root).options.promptContract)
+      .toBe("none");
     process.env.DSCODE_PERMISSION = "plan";
     await expect(createAgentSessionHost({ cwd: root }))
       .rejects.toThrow("Plan permission is not supported");

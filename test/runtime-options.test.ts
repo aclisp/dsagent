@@ -8,12 +8,14 @@ describe("parseRuntimeArgs", () => {
     effort: process.env.DSCODE_EFFORT,
     transport: process.env.DSCODE_TRANSPORT,
     harness: process.env.DSCODE_HARNESS,
+    promptContract: process.env.DSCODE_PROMPT_CONTRACT,
     permission: process.env.DSCODE_PERMISSION,
     sandbox: process.env.DSCODE_SANDBOX,
   };
 
   beforeEach(() => {
     process.env.DSCODE_PROVIDER = "deepseek";
+    delete process.env.DSCODE_PROMPT_CONTRACT;
   });
 
   afterEach(() => {
@@ -22,6 +24,7 @@ describe("parseRuntimeArgs", () => {
     restore("DSCODE_EFFORT", original.effort);
     restore("DSCODE_TRANSPORT", original.transport);
     restore("DSCODE_HARNESS", original.harness);
+    restore("DSCODE_PROMPT_CONTRACT", original.promptContract);
     restore("DSCODE_PERMISSION", original.permission);
     restore("DSCODE_SANDBOX", original.sandbox);
   });
@@ -40,6 +43,7 @@ describe("parseRuntimeArgs", () => {
       modelId: "deepseek-v4-flash",
       transport: "responses",
       harness: "minimal",
+      promptContract: "engineering",
       permission: "auto",
       sandbox: "workspace-write",
       activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
@@ -70,6 +74,14 @@ describe("parseRuntimeArgs", () => {
         "medium",
       ]),
     );
+  });
+
+  it("uses the prompt contract environment default and lets the CLI override it", () => {
+    process.env.DSCODE_PROMPT_CONTRACT = "none";
+
+    expect(parseRuntimeArgs([]).options.promptContract).toBe("none");
+    expect(parseRuntimeArgs(["--prompt-contract", "engineering"]).options.promptContract)
+      .toBe("engineering");
   });
 
   it("selects OpenCode Zen Go with the default kimi-k2.6 model", () => {

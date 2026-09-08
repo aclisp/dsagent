@@ -83,9 +83,11 @@ export {
 export {
   parseRuntimeArgs,
   printDSCodeHelp,
+  promptContractSchema,
   sandboxModeSchema,
   type DSCodeRuntimeOptions,
   type ParsedRuntimeArgs,
+  type PromptContractMode,
   type SandboxMode,
 } from "./runtime-options.js";
 export {

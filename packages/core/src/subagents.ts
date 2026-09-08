@@ -153,6 +153,8 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     runtime.modelId,
     "--harness",
     runtime.harness,
+    "--prompt-contract",
+    runtime.promptContract,
     "--mode",
     "json",
     "--print",

@@ -222,6 +222,7 @@ function options(cwd: string): DSCodeRuntimeOptions {
     modelId: "deepseek-v4-flash",
     transport: "responses",
     harness: "minimal",
+    promptContract: "engineering",
     permission: "auto",
     sandbox: "workspace-write",
     network: false,
