@@ -59,6 +59,7 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
 const state = {
   workspaceId: null,
   sessionId: null,
+  sessionChange: null,
   stream: null,
   clientId: null,
   currentTurnId: null,
@@ -1384,7 +1385,9 @@ async function activateSession(entry) {
     reconcileSessionStatus(entry.session);
     return true;
   }
-  const resumeSessionId = state.sessionId ?? entry.session?.id;
+  const resumeSessionId = state.sessionChange?.command === "/clear"
+    ? null
+    : state.sessionId ?? entry.session?.id;
   const body = {
     workspaceId: entry.workspaceId,
     ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -1406,11 +1409,22 @@ async function activateSession(entry) {
 }
 
 async function attachSession() {
+  // DELETE closes SSE before disposal finishes; reconnect must await its result.
+  if (state.sessionChange) {
+    const response = await state.sessionChange.deletion;
+    if (!response.ok) {
+      state.sessionChange = null;
+      appendSystemNotice(`删除会话失败：${response.body?.error ?? response.status}`, "error");
+      return false;
+    }
+  }
   const listing = await api(`/v1/sessions?workspaceId=${state.workspaceId}`);
   if (!listing.ok) return false;
   const entry = listing.body.sessions[0];
   if (!entry) return false;
-  return activateSession(entry);
+  if (!(await activateSession(entry))) return false;
+  state.sessionChange = null;
+  return true;
 }
 
 function renderHistoryMessage(message, currentTurn) {
@@ -1649,6 +1663,19 @@ async function recoverMissingSession() {
 async function submitMessage() {
   if (state.running || state.submitting || state.uploading || !state.connected) return;
   const text = messageInput.value;
+  const command = text.trim();
+  if (command === "/reload" || command === "/clear") {
+    messageInput.value = "";
+    resizeInput();
+    state.sessionChange = {
+      command,
+      deletion: api(`/v1/sessions/${state.sessionId}`, { method: "DELETE" }),
+    };
+    setConnection(false, { showBanner: false });
+    state.lastReconnectAt = 0;
+    void reconnect({ refreshHistory: command === "/clear" });
+    return;
+  }
   const attachments = [...state.pendingUploads];
   if (text.trim().length === 0 && attachments.length === 0) return;
 
