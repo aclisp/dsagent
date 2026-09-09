@@ -60,10 +60,12 @@ describe("MCP extension lifecycle", () => {
     const extension = createDSCodeExtension(parseRuntimeArgs(["-C", root, "--permission", "auto", ...args]).options);
     await (typeof extension === "function" ? extension(pi) : extension.factory(pi));
     const emit = async (name: string, event = {}) => {
+      let lastResult: any;
       for (const handler of handlers.get(name) ?? []) {
-        const result = await handler(event, ctx);
-        if (result?.block) return result;
+        lastResult = await handler(event, ctx);
+        if (lastResult?.block) return lastResult;
       }
+      return lastResult;
     };
     cleanups.push(() => emit("session_shutdown"));
     await emit("session_start");
@@ -79,6 +81,19 @@ describe("MCP extension lifecycle", () => {
       expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("hello|") });
     },
   );
+
+  it.each([
+    { mode: "engineering" as const, includesContract: true },
+    { mode: "none" as const, includesContract: false },
+  ])("controls the engineering contract with --prompt-contract $mode", async ({ mode, includesContract }) => {
+    const run = await runtime(["--prompt-contract", mode]);
+    const result = await run.emit("before_agent_start", { systemPrompt: "base prompt" });
+    if (includesContract) {
+      expect(result.systemPrompt).toContain("# DSCode engineering contract");
+    } else {
+      expect(result.systemPrompt).toBe("base prompt");
+    }
+  });
 
   it.each(["--no-mcp", "--no-tools"])("skips discovery for %s, even with invalid configuration", async (flag) => {
     await fs.writeFile(path.join(home, "mcp.json"), "invalid json");

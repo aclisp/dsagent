@@ -293,7 +293,12 @@ export function createDSCodeExtension(
       pi.on("before_agent_start", async (event) => {
         lastAgentFailed = false;
         const currentAccess = effectiveAccess();
-        const systemPrompt = effectiveSystemPrompt(event.systemPrompt, projectCommands, currentAccess);
+        const systemPrompt = effectiveSystemPrompt(
+          event.systemPrompt,
+          projectCommands,
+          currentAccess,
+          options.promptContract,
+        );
         if (permission !== "plan") return { systemPrompt };
         return {
           systemPrompt,
@@ -717,7 +722,12 @@ export function createDSCodeExtension(
           // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
           const effective = base.includes("# DSCode engineering contract")
             ? base
-            : effectiveSystemPrompt(base, projectCommands, effectiveAccess());
+            : effectiveSystemPrompt(
+                base,
+                projectCommands,
+                effectiveAccess(),
+                options.promptContract,
+              );
           const tools = ctx.getSystemPromptOptions().selectedTools ?? [];
           const skills = ctx.getSystemPromptOptions().skills ?? [];
           ctx.ui.notify(
@@ -1320,7 +1330,9 @@ function effectiveSystemPrompt(
   base: string,
   commands: string[],
   access: EffectiveAccess,
+  promptContract: DSCodeRuntimeOptions["promptContract"],
 ): string {
+  if (promptContract === "none") return base;
   return `${base}\n\n${engineeringInstructions(commands, access)}`;
 }
 

@@ -1,17 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
-import {
-  installDSCodeRuntimeBranding,
-  sanitizeDSCodeRuntimeText,
-} from "../packages/core/src/runtime-branding.js";
+import { installDSCodeRuntimeBranding } from "../packages/core/src/runtime-branding.js";
 
 describe("DSCode runtime branding", () => {
-  it("removes implementation branding from user-facing messages", () => {
-    expect(
-      sanitizeDSCodeRuntimeText(
-        "Project .pi resources are ignored. Restart pi. π - workspace",
-      ),
-    ).toBe("Project .dscode resources are ignored. Restart DSCode. DSCode - workspace");
+  it("does not rewrite dynamic UI messages", () => {
+    const prototype = InteractiveMode.prototype as unknown as {
+      showStatus: unknown;
+      showWarning: unknown;
+      showError: unknown;
+    };
+    const originalMethods = {
+      showStatus: prototype.showStatus,
+      showWarning: prototype.showWarning,
+      showError: prototype.showError,
+    };
+
+    installDSCodeRuntimeBranding();
+
+    expect(prototype.showStatus).toBe(originalMethods.showStatus);
+    expect(prototype.showWarning).toBe(originalMethods.showWarning);
+    expect(prototype.showError).toBe(originalMethods.showError);
   });
 
   it("owns the terminal title", () => {

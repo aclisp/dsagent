@@ -26,6 +26,8 @@ import {
 
 export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;
+export const promptContractSchema = z.enum(["engineering", "none"]);
+export type PromptContractMode = z.infer<typeof promptContractSchema>;
 
 export interface DSCodeRuntimeOptions {
   cwd: string;
@@ -34,6 +36,7 @@ export interface DSCodeRuntimeOptions {
   modelId: string;
   transport: ModelTransport;
   harness: HarnessMode;
+  promptContract: PromptContractMode;
   permission: PermissionMode;
   sandbox: SandboxMode;
   network: boolean;
@@ -70,6 +73,9 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let effort = process.env.DSCODE_EFFORT;
   let transport = transportSchema.parse(process.env.DSCODE_TRANSPORT ?? "responses");
   let harness = harnessSchema.parse(process.env.DSCODE_HARNESS ?? "minimal");
+  let promptContract = promptContractSchema.parse(
+    process.env.DSCODE_PROMPT_CONTRACT ?? "engineering",
+  );
   let permission = permissionSchema.parse(process.env.DSCODE_PERMISSION ?? "auto");
   let sandbox = sandboxModeSchema.parse(process.env.DSCODE_SANDBOX ?? "workspace-write");
   let network = false;
@@ -105,6 +111,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       transport = transportSchema.parse(takeValue());
     } else if (flag === "--harness") {
       harness = harnessSchema.parse(takeValue());
+    } else if (flag === "--prompt-contract") {
+      promptContract = promptContractSchema.parse(takeValue());
     } else if (flag === "--permission") {
       permission = permissionSchema.parse(takeValue());
     } else if (flag === "--sandbox") {
@@ -179,6 +187,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       modelId,
       transport,
       harness,
+      promptContract,
       permission,
       sandbox,
       network,
@@ -213,6 +222,7 @@ DSCode options:
   --effort <level>                 Alias for --thinking; defaults by provider
   --transport <responses|chat>     API transport (default: responses)
   --harness <minimal|safe>         Tool harness (default: minimal)
+  --prompt-contract <mode>         engineering|none (default: engineering)
   --tools <names>                  Select tools; configured MCP tools are added automatically
                                    Default: read,exec_command,write_stdin,apply_patch
   --no-mcp                         Skip MCP connections and tools

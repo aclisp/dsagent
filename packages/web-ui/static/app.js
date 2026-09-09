@@ -37,6 +37,7 @@ if (!clientId) {
 }
 
 let sessionId = null;
+let sessionChange = null;
 let workspaceId = null;
 let stream = null;
 let currentTurnId = null;
@@ -456,6 +457,9 @@ function openStream() {
     reconnectDue = false;
     document.getElementById("reconnect-notice")?.remove();
     reconnectNoted = false;
+    // Wake the input loop so it can check the restored session's idle state.
+    resolveTurn?.();
+    resolveTurn = null;
   });
   source.addEventListener("error", () => {
     // A stale error from a replaced stream must not clobber the current one.
@@ -535,7 +539,10 @@ async function reconnect() {
   try {
     stream?.close();
     stream = null;
-    if (!(await reattach())) showReconnectNotice();
+    if (!(await reattach())) {
+      reconnectDue = true;
+      showReconnectNotice();
+    }
   } finally {
     reconnecting = false;
   }
@@ -585,10 +592,14 @@ async function renderHistory() {
 async function waitTurn() {
   // Arm the resolver before the GET so a turn that ends during the fetch is not
   // missed; the GET only decides whether we need to park at all.
-  const parked = new Promise((resolve) => { resolveTurn = resolve; });
-  const state = await api(`/v1/sessions/${sessionId}`);
-  if (state.ok && state.body.status === "idle") return;
-  await parked;
+  for (;;) {
+    const parked = new Promise((resolve) => { resolveTurn = resolve; });
+    if (!sessionChange && stream) {
+      const state = await api(`/v1/sessions/${sessionId}`);
+      if (state.ok && state.body.status === "idle") return;
+    }
+    await parked;
+  }
 }
 
 function blankLine() {
@@ -599,6 +610,15 @@ function blankLine() {
 // session can be resumed under the same id. The old EventSource got a 404 while
 // the session was gone, which closes it for good, so always open a fresh stream.
 async function reattach() {
+  // DELETE closes SSE before disposal finishes; reconnect must await its result.
+  if (sessionChange) {
+    const response = await sessionChange.deletion;
+    if (!response.ok) {
+      sessionChange = null;
+      out(`[session delete failed: ${response.body?.error ?? response.status}]`);
+      return false;
+    }
+  }
   const listing = await api(`/v1/sessions?workspaceId=${workspaceId}`);
   if (!listing.ok) return false;
   const entry = listing.body.sessions[0];
@@ -608,11 +628,16 @@ async function reattach() {
   } else {
     const response = await jsonPost("/v1/sessions", {
       workspaceId,
-      resumeSessionId: sessionId,
+      ...(sessionChange?.command === "/clear" ? {} : { resumeSessionId: sessionId }),
     });
     if (!response.ok) return false;
     sessionId = response.body.id;
   }
+  if (sessionChange?.command === "/clear") {
+    term.clear();
+    endStream();
+  }
+  sessionChange = null;
   stream?.close();
   openStream();
   return true;
@@ -626,6 +651,20 @@ async function chatLoop() {
     blankLine();
     let message = await ask(USER_PROMPT, "user-message");
     if (message === undefined || message.trim().length === 0) continue;
+    const command = message.trim();
+    if (command === "/reload" || command === "/clear") {
+      if (currentTurnId !== null || reconnecting || !stream) {
+        out("[session unavailable]");
+        continue;
+      }
+      sessionChange = {
+        command,
+        deletion: api(`/v1/sessions/${sessionId}`, { method: "DELETE" }),
+      };
+      lastReconnectAt = 0;
+      void reconnect();
+      continue;
+    }
     if (pendingUploads.length > 0) {
       message = `[Uploaded files: ${pendingUploads.join(", ")}]\n${message}`;
       pendingUploads = [];

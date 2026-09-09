@@ -44,6 +44,7 @@ function options(): DSCodeRuntimeOptions {
     modelId: "claude-opus-4-8",
     transport: "responses",
     harness: "minimal",
+    promptContract: "engineering",
     permission: "auto",
     sandbox: "workspace-write",
     network: false,

@@ -30,17 +30,6 @@ interface RuntimeInteractivePrototype {
   [PATCH_MARKER]?: boolean;
   updateTerminalTitle(this: RuntimeInteractiveMode): void;
   renderProjectTrustWarningIfNeeded(this: RuntimeInteractiveMode): void;
-  showStatus(message: string): void;
-  showWarning(message: string): void;
-  showError(message: string): void;
-}
-
-/** Keep implementation-library names out of the end-user DSCode interface. */
-export function sanitizeDSCodeRuntimeText(text: string): string {
-  return text
-    .replace(/\.pi\b/giu, ".dscode")
-    .replace(/\bpi\b/giu, "DSCode")
-    .replace(/π/gu, "DSCode");
 }
 
 export function installDSCodeRuntimeBranding(): void {
@@ -70,11 +59,4 @@ export function installDSCodeRuntimeBranding(): void {
       ),
     );
   };
-
-  for (const method of ["showStatus", "showWarning", "showError"] as const) {
-    const original = prototype[method];
-    prototype[method] = function (message: string): void {
-      original.call(this, sanitizeDSCodeRuntimeText(message));
-    };
-  }
 }
