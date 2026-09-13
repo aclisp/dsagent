@@ -53,9 +53,8 @@ ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licen
 
 ### End users: CLI
 
-Run the one-click installer. It installs the source into `~/.local/share/dscode`, builds it, and puts
-a `dscode` launcher into `~/.local/bin`. Prerequisites are handled automatically: Node.js 22.19+
-(required), pnpm via corepack, and ripgrep (best-effort); Git must be present.
+Run the one-click installer. It installs DSCode into `~/.local/share/dscode`, builds it, and
+creates a `dscode` launcher in `~/.local/bin`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh

@@ -49,9 +49,8 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ### 最终用户：CLI
 
-运行一键安装脚本。脚本会把 DSCode 源码安装到 `~/.local/share/dscode`，完成构建，并把 `dscode`
-启动器放入 `~/.local/bin`。前置依赖会自动处理：Node.js 22.19+（必需）、pnpm（经 corepack）以及
-ripgrep（尽力安装）；需要已有 Git。
+运行一键安装脚本。它会把 DSCode 安装到 `~/.local/share/dscode`，完成构建，并在 `~/.local/bin`
+创建 `dscode` 启动器。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
