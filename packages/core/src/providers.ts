@@ -17,7 +17,7 @@ export const SUPPORTED_PROVIDER_IDS = [
 export type SupportedProviderId = (typeof SUPPORTED_PROVIDER_IDS)[number];
 
 const DEFAULT_MODELS: Record<SupportedProviderId, string> = {
-  deepseek: "deepseek-v4-flash",
+  deepseek: "deepseek-flash",
   "openai-codex": "gpt-5.6-sol",
   openai: "gpt-5.6-sol",
   anthropic: "claude-opus-4-8",

@@ -31,7 +31,7 @@ describe("DSCode model providers", () => {
   });
 
   it("uses provider-appropriate model and effort defaults", () => {
-    expect(defaultModelForProvider("deepseek")).toBe("deepseek-v4-flash");
+    expect(defaultModelForProvider("deepseek")).toBe("deepseek-flash");
     expect(defaultEffortForProvider("deepseek")).toBe("max");
     expect(defaultModelForProvider("openai-codex")).toBe("gpt-5.6-sol");
     expect(defaultEffortForProvider("openai-codex")).toBe("medium");
@@ -46,9 +46,8 @@ describe("DSCode model providers", () => {
     expect(defaultEffortForProvider("opencode-go")).toBe("medium");
   });
 
-  it("ships every configured provider default in the built-in model catalog", () => {
+  it("ships every Pi-managed provider default in the built-in model catalog", () => {
     for (const providerId of [
-      "deepseek",
       "openai-codex",
       "openai",
       "anthropic",

@@ -29,7 +29,7 @@ describe("DSCode welcome header", () => {
       80,
       {
         cwd: path.join(os.homedir(), "code", "dscode"),
-        modelId: "deepseek-v4-flash",
+        modelId: "deepseek-flash",
         effort: "max",
         version: "0.3.0",
       },
@@ -39,7 +39,7 @@ describe("DSCode welcome header", () => {
     expect(output).toContain("DSCode v0.3.0");
     expect(output).toContain("███████ █");
     expect(output).not.toContain("< DS >");
-    expect(output).toContain("DeepSeek V4 Flash · max effort");
+    expect(output).toContain("DeepSeek Flash · max effort");
     expect(output).toContain("~/code/dscode");
     expect(output).not.toMatch(/[╭╮╰╯│─]/u);
     expect(output).not.toContain("Welcome back");
@@ -53,7 +53,7 @@ describe("DSCode welcome header", () => {
       30,
       {
         cwd: "/tmp/project",
-        modelId: "deepseek-v4-flash",
+        modelId: "deepseek-flash",
         effort: "max",
         version: "0.3.0",
       },
@@ -83,7 +83,7 @@ describe("DSCode welcome header", () => {
       132,
       {
         cwd: "/tmp/project",
-        modelId: "deepseek-v4-flash",
+        modelId: "deepseek-flash",
         effort: "max",
         version: "9.8.7",
       },

@@ -64,7 +64,7 @@ export function loadConfig(options: CliOptions): AppConfig {
         getStoredDeepSeekBaseUrl() ??
         DEFAULT_DEEPSEEK_BASE_URL,
     ),
-    modelId: options.model ?? process.env.DSCODE_MODEL ?? "deepseek-v4-flash",
+    modelId: options.model ?? process.env.DSCODE_MODEL ?? "deepseek-flash",
     effort,
     transport,
     harness,

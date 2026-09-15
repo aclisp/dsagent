@@ -49,16 +49,16 @@ All relative bind paths in `docker/docker-compose.yml` are resolved from the
 
 ## 1. Select the image
 
-The deployment template defaults to the public full image for the current
-release:
+The deployment template defaults to the public full image's `latest` tag, which
+the release workflow keeps current:
 
 ```text
-docker.io/aclisp/dsagent:0.9.4
+docker.io/aclisp/dsagent:latest
 ```
 
 For a reproducible rollback, set `DSCODE_IMAGE` to an immutable release tag or
 image digest in `docker/.env`. The lean image is available as
-`docker.io/aclisp/dsagent:0.9.4-lean`, but the full image is the product default.
+`docker.io/aclisp/dsagent:lean`, but the full image is the product default.
 
 Maintainers who need to build locally can run these commands from the
 repository root. The tool image is derived from the lean image, so the order
@@ -142,7 +142,7 @@ Use the following structure and replace every placeholder:
 
 ```dotenv
 DSCODE_INSTANCE_NAME=dscode
-DSCODE_IMAGE=docker.io/aclisp/dsagent:0.9.4
+DSCODE_IMAGE=docker.io/aclisp/dsagent:latest
 DSCODE_HOST_PORT=<host-port>
 
 WORKSPACE_ID=<random-high-entropy-id>

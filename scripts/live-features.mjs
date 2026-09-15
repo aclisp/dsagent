@@ -10,7 +10,7 @@ if (!process.env.DEEPSEEK_API_KEY?.trim()) {
 }
 
 const projectRoot = process.cwd();
-const cli = path.resolve(projectRoot, "dist/cli.js");
+const cli = path.resolve(projectRoot, "dist/bundle/cli.js");
 const mcpFixture = path.resolve(projectRoot, "test/fixtures/mcp-server.mjs");
 const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-live-features-"));
 const sessionDir = path.join(fixture, "sessions");

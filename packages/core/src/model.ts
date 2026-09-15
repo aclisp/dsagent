@@ -34,7 +34,7 @@ function createChatModels(config: AppConfig) {
   const model: Model<"openai-completions"> = {
     ...baseModel(config),
     id: config.modelId,
-    name: "DeepSeek V4 Flash",
+    name: "DeepSeek Flash",
     api: "openai-completions",
     provider: "deepseek",
     baseUrl: config.baseUrl,
@@ -51,18 +51,18 @@ function createChatModels(config: AppConfig) {
 function baseModel(config: AppConfig) {
   return {
     id: config.modelId,
-    name: "DeepSeek V4 Flash",
+    name: "DeepSeek Flash",
     provider: "deepseek" as const,
     baseUrl: config.baseUrl,
     reasoning: true,
-    input: ["text"] as ["text"],
+    input: ["text", "image"] as ["text", "image"],
     cost: {
-      input: 0.14,
-      output: 0.28,
-      cacheRead: 0.0028,
+      input: 2,
+      output: 8,
+      cacheRead: 0.04,
       cacheWrite: 0,
     },
-    contextWindow: 1_048_576,
+    contextWindow: 1_000_000,
     maxTokens: 384_000,
     thinkingLevelMap: {
       off: null,

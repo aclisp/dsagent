@@ -63,6 +63,7 @@ try {
     "@aclisp",
     "dsagent",
     "dist",
+    "bundle",
     "cli.js",
   );
   const installedVisionCli = path.join(
@@ -74,6 +75,16 @@ try {
     "vision-cli.js",
   );
   requireFile(installedCli);
+  const installedPackageRoot = path.resolve(installedCli, "../../..");
+  const unbundledCli = path.join(installedPackageRoot, "dist/cli.js");
+  requireFile(unbundledCli);
+  const installedMetadata = JSON.parse(fs.readFileSync(path.join(installedPackageRoot, "package.json"), "utf8"));
+  if (installedMetadata.bin?.dscode !== "./dist/bundle/cli.js") {
+    throw new Error("Installed dscode command does not select the bundled CLI");
+  }
+  if (fs.readdirSync(path.join(installedPackageRoot, "dist")).some((name) => name.startsWith("cli-bundle-"))) {
+    throw new Error("Package includes checkout-local bundle experiments");
+  }
   requireFile(installedVisionCli);
   verifyWindowsSandboxHelpers(
     path.join(
@@ -104,6 +115,10 @@ try {
   if (version !== cliPackage.version) {
     throw new Error(`Installed CLI returned ${version}; expected ${cliPackage.version}`);
   }
+  if (run(process.execPath, [unbundledCli, "--version"], cliInstall).trim() !== cliPackage.version) {
+    throw new Error("Retained unbundled CLI returned the wrong version");
+  }
+  run(process.execPath, [path.join(projectRoot, "scripts/cli-bundle-smoke.mjs"), installedPackageRoot], cliInstall);
   const visionHelp = run(process.execPath, [installedVisionCli, "--help"], cliInstall);
   if (!visionHelp.includes("dscode-vision --image <path>")) {
     throw new Error("Installed vision CLI help is unavailable");
@@ -125,7 +140,7 @@ try {
   const rpcProbe = [
     'import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";',
     'import { DSCODE_VERSION } from "@aclisp/dsagent-core";',
-    "const providers = [['deepseek', 'deepseek-v4-flash'], ['openai', 'gpt-5.6-sol'], ['openai-codex', 'gpt-5.6-sol']];",
+    "const providers = [['deepseek', 'deepseek-flash'], ['openai', 'gpt-5.6-sol'], ['openai-codex', 'gpt-5.6-sol']];",
     "for (const [provider, model] of providers) {",
     '  const client = createDSCodeRpcClient({ provider, model, cwd: process.cwd(), args: ["--no-session", "--no-approve"] });',
     "  await client.start();",

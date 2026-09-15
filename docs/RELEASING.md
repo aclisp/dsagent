@@ -9,9 +9,8 @@ repository. The repository's npm packages remain private and are not published.
 - `main`: protected release branch and GitHub default branch
 
 The root package and `packages/core/package.json` must keep the same version.
-The current baseline is `0.9.4`; existing release tags, including `v0.9.2` and
-`v0.9.4`, are immutable. The next normal release is `0.9.5` unless the changes
-require another semver level.
+The current version is `1.1.2`; all existing release tags are immutable. Pick
+the next version following semver based on the shipped changes.
 
 ## Normal release flow
 

@@ -26,11 +26,11 @@ describe("DeepSeek provider registration", () => {
     runExtensionFactory(options(), pi);
 
     expect(registeredModels?.map((model) => model.id)).toEqual([
-      "deepseek-v4-flash",
+      "deepseek-flash",
       "deepseek-v4-pro",
     ]);
     expect(registeredModels?.map((model) => model.name)).toEqual([
-      "DeepSeek V4 Flash",
+      "DeepSeek Flash",
       "DeepSeek V4 Pro",
     ]);
   });

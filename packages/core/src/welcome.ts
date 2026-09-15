@@ -74,7 +74,7 @@ export function formatCwd(cwd: string): string {
 }
 
 function humanizeModel(modelId: string): string {
-  if (modelId === "deepseek-v4-flash") return "DeepSeek V4 Flash";
+  if (modelId === "deepseek-flash") return "DeepSeek Flash";
   return modelId;
 }
 

@@ -14,7 +14,7 @@
   <a href="docs/COMPARISON.md">产品对比</a>
 </p>
 
-DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek V4 Flash 为默认模型，并
+DSCode 是一套有明确取舍的 coding-agent runtime：以经济的 DeepSeek Flash 为默认模型，并
 内置支持 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax、xAI 和 OpenCode Zen Go。它把
 provider-aware 路由、本地会话、安全 patch、并行 agent、OS sandbox，以及用量统计组合在一起。
 
@@ -27,7 +27,7 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ## 为什么选择 DSCode
 
-- **DeepSeek 优先，但不限于 DeepSeek。** DeepSeek V4 Flash 仍是默认模型，继续使用专用 Responses
+- **DeepSeek 优先，但不限于 DeepSeek。** DeepSeek Flash 仍是默认模型，继续使用专用 Responses
   adapter、原生 freeform `apply_patch` 和服务端 Web Search；也可以在不改变工具与会话的情况下
   切换到 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、Kimi、MiniMax、Grok 或 OpenCode Zen Go。
 - **模型支持时可识图。** 可在 TUI 粘贴图片或通过 `@file` 传入；GPT-5.6 等模型能检查截图，
@@ -47,16 +47,16 @@ DSCode 不追求在功能数量上超过所有通用 coding agent；目标是保
 
 ## 快速开始
 
-### 最终用户：Docker
+### 最终用户：CLI
 
-最终用户支持的分发方式是公开的 Docker Hub 镜像。拉取当前稳定镜像：
+运行一键安装脚本。它会把 DSCode 安装到 `~/.local/share/dscode`，完成构建，并在 `~/.local/bin`
+创建 `dscode` 启动器。
 
 ```bash
-docker pull docker.io/aclisp/dsagent:latest
+curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
 ```
 
-如需可复现部署，请将 `DSCODE_IMAGE` 固定为 `docker.io/aclisp/dsagent:0.9.4` 或镜像 digest。
-Compose 模板和部署说明见 [deploy/cloud/dscode](deploy/cloud/dscode/README.md)。
+安装完成后参见[终端应用](#终端应用)完成登录和首次运行。
 
 ### 开发者：源码设置
 
@@ -69,6 +69,13 @@ pnpm check
 ```
 
 仓库中的 npm 包是私有 workspace 包，目前不会发布到 npm。
+
+## Web UI（聊天服务器）
+
+DSCode 还内置自托管的 Web 聊天服务器（`packages/web-ui`）。公开的 Docker Hub 镜像
+（`docker.io/aclisp/dsagent`）即为该服务器的云部署打包。运行与配置见
+[web UI README](packages/web-ui/README.md)；Compose 模板与部署说明见
+[deploy/cloud/dscode](deploy/cloud/dscode/README.md)。
 
 ## 终端应用
 
@@ -125,7 +132,7 @@ dscode login opencode-go   # OpenCode Zen Go API key
 
 ```bash
 dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
-dscode --provider deepseek --model deepseek-v4-flash -C /path/to/project
+dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 
 DSCode 的全局数据统一保存在 `~/.dscode`：
@@ -169,7 +176,7 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 全新安装使用：
 
 ```text
-model       deepseek-v4-flash
+model       deepseek-flash
 transport   responses
 thinking    max
 harness     minimal
@@ -307,7 +314,13 @@ pnpm dev -C /path/to/project
   执行前可能会先构建 workspace 子包。
 - `pnpm check` 是 CI/发布门禁：构建生产产物、检查测试代码类型、运行完整测试并执行 package smoke
   检查。
-- `pnpm dev` 从源码启动 CLI；`pnpm start` 启动 `dist/` 中已经构建好的 CLI。
+- `pnpm dev` 从源码启动 CLI；`pnpm start` 启动 `dist/bundle/cli.js` 中的打包版本，
+  安装后的 `dscode` 命令也使用该入口。
+
+原有未打包 CLI 保留在 `dist/cli.js`，可通过 `pnpm start:unbundled` 或
+`node dist/cli.js` 启动，用于调试或对比。两个版本使用相同的设置、凭证、会话和运行逻辑。
+CLI 将 pi 的 JavaScript 依赖一起打包以加快交互启动，原生模块和资源文件仍由安装的依赖提供。
+详见 [CLI 打包说明](docs/CLI_BUNDLING.md)。
 
 其他验证命令：
 
@@ -321,7 +334,7 @@ Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing D
 
 ## 当前边界
 
-- DeepSeek V4 Flash 仍只接受文本输入；截图等图片任务需要切换到支持视觉的模型。
+- DeepSeek Flash 支持图片输入；DeepSeek V4 Pro 仍只接受文本输入。
 - ChatGPT 套餐登录受账号可用模型、用量限制和 workspace 权限约束；OpenAI API key 的用量由 API
   平台单独计费。
 - VS Code 扩展是本地集成，尚未发布到 Marketplace。

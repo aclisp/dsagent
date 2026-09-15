@@ -1,0 +1,1564 @@
+{
+  "platform": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "node": "v22.23.2",
+  "runs": 20,
+  "warmup": 3,
+  "method": "parent spawn to InteractiveMode.init completion (TUI) or get_state response (RPC); fresh isolated home per run; offline; alternating order; filesystem caches not flushed",
+  "summaries": [
+    {
+      "mode": "tui",
+      "extension": false,
+      "baseline": {
+        "n": 20,
+        "medianMs": 783.8205003645271,
+        "p95Ms": 796.4241253212094,
+        "minMs": 777.8019583784044,
+        "maxMs": 831.2017084099352
+      },
+      "deep": {
+        "n": 20,
+        "medianMs": 440.87020866572857,
+        "p95Ms": 450.53262496367097,
+        "minMs": 434.56949992105365,
+        "maxMs": 451.0956252925098
+      },
+      "medianReductionPercent": 43.7536772181009,
+      "speedup": 1.777894003626873
+    },
+    {
+      "mode": "tui",
+      "extension": true,
+      "baseline": {
+        "n": 20,
+        "medianMs": 812.1051869820803,
+        "p95Ms": 820.0662503950298,
+        "minMs": 802.8637077659369,
+        "maxMs": 820.8210002630949
+      },
+      "deep": {
+        "n": 20,
+        "medianMs": 529.98112491332,
+        "p95Ms": 552.2403330542147,
+        "minMs": 520.5229590646923,
+        "maxMs": 575.9443747811019
+      },
+      "medianReductionPercent": 34.73984239864062,
+      "speedup": 1.5323285090858711
+    },
+    {
+      "mode": "rpc",
+      "extension": false,
+      "baseline": {
+        "n": 20,
+        "medianMs": 635.89833304286,
+        "p95Ms": 656.7802499048412,
+        "minMs": 628.4209173172712,
+        "maxMs": 688.1423331797123
+      },
+      "deep": {
+        "n": 20,
+        "medianMs": 301.1176453437656,
+        "p95Ms": 310.86770771071315,
+        "minMs": 296.4740418829024,
+        "maxMs": 319.557333830744
+      },
+      "medianReductionPercent": 52.646888708942406,
+      "speedup": 2.11179365565541
+    },
+    {
+      "mode": "rpc",
+      "extension": true,
+      "baseline": {
+        "n": 20,
+        "medianMs": 670.2157710678875,
+        "p95Ms": 693.5782502405345,
+        "minMs": 660.8282499946654,
+        "maxMs": 695.7574589177966
+      },
+      "deep": {
+        "n": 20,
+        "medianMs": 391.61264547146857,
+        "p95Ms": 412.1221252717078,
+        "minMs": 386.7457499727607,
+        "maxMs": 450.0854997895658
+      },
+      "medianReductionPercent": 41.569168859232754,
+      "speedup": 1.7114252535461523
+    }
+  ],
+  "records": [
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 784.1610419563949,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 453.7951252423227,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 438.89579083770514,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 785.5775416828692,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 782.8422919847071,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 439.8912079632282,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 444.521457888186,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 783.1766670569777,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 786.1825418658555,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 438.1909999065101,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 446.08120806515217,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 787.4835827387869,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 831.2017084099352,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 435.77916687354445,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 448.95316706970334,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 779.7926249913871,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 784.7511665895581,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 440.786209423095,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 447.719749994576,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 783.3035420626402,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 777.8019583784044,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 439.8573338985443,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 451.0956252925098,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 784.882708452642,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 777.8861247934401,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 436.0600826330483,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 446.02858275175095,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 792.4803751520813,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 780.2962907589972,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 438.4692502208054,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 442.9455827921629,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 782.2819165885448,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 786.5126668475568,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 438.48020769655704,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 434.56949992105365,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 780.825125053525,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 784.337458666414,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 440.3113750740886,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 450.53262496367097,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 796.4241253212094,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 790.9019999206066,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 438.24445782229304,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 440.95420790836215,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 781.6776246763766,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 783.1842922605574,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": false,
+      "readyMs": 449.8524582013488,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 816.3667498156428,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 533.1988339312375,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 531.9072920829058,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 812.8127502277493,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 804.428375326097,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 531.402834225446,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 540.5367920175195,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 811.5342077799141,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 808.5155840963125,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 526.5430407598615,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 536.1803327687085,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 819.7558750398457,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 810.2745418436825,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 529.7241248190403,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 531.4654591493309,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 812.8049578517675,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 816.2659588269889,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 552.2403330542147,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 529.4993328861892,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 820.8210002630949,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 816.8712081387639,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 520.5229590646923,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 531.5843746066093,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 808.7353338487446,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 802.8637077659369,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 526.1045419611037,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 531.7411674186587,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 813.5170000605285,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 805.3222089074552,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 528.8624162785709,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 575.9443747811019,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 808.5275832563639,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 806.7593751475215,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 530.2381250075996,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 536.3429998978972,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 818.5874996706843,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 805.7729578576982,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 524.5549576357007,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 530.5647919885814,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 818.8293753191829,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 812.6761661842465,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 527.4813328869641,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 528.8269161246717,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 820.0662503950298,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 810.2632081136107,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "tui",
+      "extension": true,
+      "readyMs": 527.5073749944568,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 646.9818749465048,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 298.98754227906466,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 299.7045828960836,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 624.8205420561135,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 634.3091246671975,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 302.33183316886425,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 306.18308298289776,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 631.1479997821152,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 631.8683330900967,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 296.4740418829024,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 298.7940004095435,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 628.4209173172712,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 632.9474579542875,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 301.30595760419965,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 301.8879173323512,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 640.237916726619,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 629.0262080729008,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 298.6003328114748,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 297.8083333000541,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 631.3673336990178,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 637.8489998169243,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 309.0000827796757,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 310.86770771071315,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 688.1423331797123,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 656.7802499048412,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 319.557333830744,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 307.5525420717895,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 644.6407502517104,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 630.1157083362341,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 300.4591250792146,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 301.3364588841796,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 639.3915419466794,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 632.6527502387762,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 300.9293330833316,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 300.23999977856874,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 639.9598340503871,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 637.6869161613286,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 302.1297906525433,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 301.5466248616576,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 639.4934579730034,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 638.9654171653092,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 299.2302500642836,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 300.54004210978746,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 631.6733751446009,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 634.1097499243915,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": false,
+      "readyMs": 298.2075419276953,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 666.1589592695236,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.48925011977553,
+      "pair": 0,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 395.1920419931412,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 661.6272921673954,
+      "pair": 1,
+      "warmup": true
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 666.856958065182,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 399.3501248769462,
+      "pair": 2,
+      "warmup": true
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 390.9570421092212,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 663.1129998713732,
+      "pair": 3,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 674.1320420987904,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 396.1953748948872,
+      "pair": 4,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.3032920099795,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 660.8282499946654,
+      "pair": 5,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 666.9187089428306,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.1084998399019,
+      "pair": 6,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 389.1049581579864,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 673.1549156829715,
+      "pair": 7,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 674.4648749008775,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.58079121261835,
+      "pair": 8,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 450.0854997895658,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 675.3622922115028,
+      "pair": 9,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 695.7574589177966,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 401.6081658191979,
+      "pair": 10,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 408.6455418728292,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 693.5782502405345,
+      "pair": 11,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 685.7520421035588,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 398.50058406591415,
+      "pair": 12,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 412.1221252717078,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 663.9954168349504,
+      "pair": 13,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 689.9348329752684,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 397.47329195961356,
+      "pair": 14,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 388.88133270666003,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 670.9666671231389,
+      "pair": 15,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 662.9098746925592,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 395.19695891067386,
+      "pair": 16,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 388.29150004312396,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 675.0223753042519,
+      "pair": 17,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 667.3547918908298,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 386.7457499727607,
+      "pair": 18,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 388.7217496521771,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 665.1643328368664,
+      "pair": 19,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 667.7629170008004,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.6444997303188,
+      "pair": 20,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 391.3373746909201,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 669.4648750126362,
+      "pair": 21,
+      "warmup": false
+    },
+    {
+      "variant": "baseline",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 668.0600419640541,
+      "pair": 22,
+      "warmup": false
+    },
+    {
+      "variant": "deep",
+      "mode": "rpc",
+      "extension": true,
+      "readyMs": 392.88104185834527,
+      "pair": 22,
+      "warmup": false
+    }
+  ]
+}

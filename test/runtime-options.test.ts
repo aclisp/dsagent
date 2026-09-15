@@ -40,7 +40,7 @@ describe("parseRuntimeArgs", () => {
 
     expect(parsed.options).toMatchObject({
       providerId: "deepseek",
-      modelId: "deepseek-v4-flash",
+      modelId: "deepseek-flash",
       transport: "responses",
       harness: "minimal",
       promptContract: "engineering",

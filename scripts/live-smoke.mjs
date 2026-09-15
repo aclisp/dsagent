@@ -45,7 +45,7 @@ try {
   const agent = await run(
     process.execPath,
     [
-      path.resolve("dist/cli.js"),
+      path.resolve("dist/bundle/cli.js"),
       "-C",
       fixture,
       "--mode",

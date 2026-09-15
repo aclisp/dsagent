@@ -4,7 +4,7 @@ interface PayloadOptions {
 
 /**
  * Keep Pi's Responses API implementation while shaping the payload to the
- * subset DeepSeek V4 Flash actually supports.
+ * subset DeepSeek Flash actually supports.
  */
 export function optimizeDeepSeekResponsesPayload(
   payload: unknown,
@@ -55,4 +55,3 @@ export function optimizeDeepSeekResponsesPayload(
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

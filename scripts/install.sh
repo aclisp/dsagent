@@ -123,7 +123,7 @@ $PNPM build
 LAUNCHER="$INSTALL_DIR/dscode"
 cat > "$LAUNCHER" <<EOF
 #!/bin/sh
-exec node "$INSTALL_DIR/dist/cli.js" "\$@"
+exec node "$INSTALL_DIR/dist/bundle/cli.js" "\$@"
 EOF
 chmod +x "$LAUNCHER"
 

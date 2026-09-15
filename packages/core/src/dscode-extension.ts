@@ -826,14 +826,16 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
   const api = options.transport === "responses" ? "openai-responses" : "openai-completions";
   const models = [
     {
-      id: "deepseek-v4-flash",
-      name: "DeepSeek V4 Flash",
-      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
+      id: "deepseek-flash",
+      name: "DeepSeek Flash",
+      input: ["text", "image"] as ["text", "image"],
+      cost: { input: 2, output: 8, cacheRead: 0.04, cacheWrite: 0 },
     },
     {
       id: "deepseek-v4-pro",
       name: "DeepSeek V4 Pro",
-      cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 },
+      input: ["text"] as ["text"],
+      cost: { input: 9, output: 27, cacheRead: 0.3, cacheWrite: 0 },
     },
   ];
   if (
@@ -846,6 +848,7 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
     models.push({
       id: options.modelId,
       name: options.modelId,
+      input: ["text"] as ["text"],
       cost: defaultCost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     });
   }
@@ -860,9 +863,9 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
       name: model.name,
       api,
       reasoning: true,
-      input: ["text"] as ["text"],
+      input: model.input,
       cost: model.cost,
-      contextWindow: 1_048_576,
+      contextWindow: 1_000_000,
       maxTokens: 384_000,
       thinkingLevelMap: {
         off: null,

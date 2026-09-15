@@ -14,7 +14,7 @@
   <a href="docs/COMPARISON.en.md">Comparison</a>
 </p>
 
-DSCode is an opinionated coding-agent runtime with DeepSeek V4 Flash as its economical default and
+DSCode is an opinionated coding-agent runtime with DeepSeek Flash as its economical default and
 built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go. It combines
 provider-aware model routing with local sessions, safe patching, parallel agents, OS sandboxing, and
 transparent usage reporting.
@@ -28,7 +28,7 @@ while letting each repository task use the model capabilities it actually needs.
 
 ## Why DSCode
 
-- **DeepSeek-first, not DeepSeek-only.** DeepSeek V4 Flash remains the default, with its dedicated
+- **DeepSeek-first, not DeepSeek-only.** DeepSeek Flash remains the default, with its dedicated
   Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. Switch to
   Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go without changing tools or sessions.
 - **Vision when the model supports it.** Paste an image in the TUI or pass an image as `@file`; models
@@ -51,17 +51,16 @@ ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licen
 
 ## Quick start
 
-### End users: Docker
+### End users: CLI
 
-The supported end-user distribution is the public Docker Hub image. Pull the current stable image:
+Run the one-click installer. It installs DSCode into `~/.local/share/dscode`, builds it, and
+creates a `dscode` launcher in `~/.local/bin`.
 
 ```bash
-docker pull docker.io/aclisp/dsagent:latest
+curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
 ```
 
-For a reproducible deployment, pin `DSCODE_IMAGE` to `docker.io/aclisp/dsagent:0.9.4` or an image digest.
-The Compose templates and deployment instructions are in
-[deploy/cloud/dscode](deploy/cloud/dscode/README.md).
+Then follow [Terminal app](#terminal-app) for login and first run.
 
 ### Developers: source setup
 
@@ -74,6 +73,13 @@ pnpm check
 ```
 
 The repository's npm packages are private workspace packages and are not currently published to npm.
+
+## Web UI (chat server)
+
+DSCode also ships a self-hosted web chat server in `packages/web-ui`. The public Docker Hub image
+(`docker.io/aclisp/dsagent`) packages this server for cloud deployment. Run and configure it via the
+[web UI README](packages/web-ui/README.md); Compose templates and deployment instructions are in
+[deploy/cloud/dscode](deploy/cloud/dscode/README.md).
 
 ## Terminal app
 
@@ -132,7 +138,7 @@ The selected provider and model are saved for later runs. Override them at any t
 
 ```bash
 dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
-dscode --provider deepseek --model deepseek-v4-flash -C /path/to/project
+dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 
 DSCode keeps all of its global state under `~/.dscode`:
@@ -178,7 +184,7 @@ should use the portable `.agents/skills/` convention.
 Fresh installations use:
 
 ```text
-model       deepseek-v4-flash
+model       deepseek-flash
 transport   responses
 thinking    max
 harness     minimal
@@ -343,7 +349,14 @@ The root package exposes a small set of primary commands:
   first because cross-package type entrypoints are generated under `dist/`.
 - `pnpm check` is the CI/release gate: it builds production artifacts, checks test types, runs the
   full test suite, and performs package smoke checks.
-- `pnpm dev` runs the CLI from source; `pnpm start` runs the built CLI from `dist/`.
+- `pnpm dev` runs the CLI from source; `pnpm start` runs the bundled CLI at
+  `dist/bundle/cli.js`, also used by the installed `dscode` command.
+
+The original unbundled CLI is retained at `dist/cli.js`. Run it with
+`pnpm start:unbundled` or `node dist/cli.js` for debugging or comparison.
+Both variants use the same settings, credentials, sessions, and runtime behavior.
+The CLI bundle includes pi's JavaScript dependencies for faster interactive startup;
+native modules and assets remain installed dependencies. See [CLI bundling](docs/CLI_BUNDLING.md).
 
 Additional validation commands:
 
@@ -358,8 +371,7 @@ GitHub Release and publishes the full and lean Docker Hub images after CI passes
 
 ## Current boundaries
 
-- DeepSeek V4 Flash remains text-only. Select a vision-capable model for screenshots and other image
-  inputs.
+- DeepSeek Flash accepts image input; DeepSeek V4 Pro remains text-only.
 - ChatGPT-plan access follows the models, limits, and workspace permissions available to the signed-in
   account; OpenAI API-key usage is billed separately by the API platform.
 - The VS Code extension is a local integration and is not published to the Marketplace yet.
