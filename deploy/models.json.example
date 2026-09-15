@@ -13,8 +13,8 @@
       },
       "models": [
         {
-          "id": "deepseek-v4-flash-0731",
-          "name": "deepseek-v4-flash-0731",
+          "id": "deepseek-v4.1-flash",
+          "name": "deepseek-v4.1-flash",
           "reasoning": true,
           "thinkingLevelMap": {
             "off": null,
@@ -25,10 +25,10 @@
             "xhigh": "max",
             "max": "max"
           },
-          "input": ["text"],
+          "input": ["text", "image"],
           "contextWindow": 200000,
           "maxTokens": 64000,
-          "cost": { "input": 3, "output": 9, "cacheRead": 0.3, "cacheWrite": 0 }
+          "cost": { "input": 2, "output": 8, "cacheRead": 0.2, "cacheWrite": 0 }
         },
         {
           "id": "qwen3.7-flash",
