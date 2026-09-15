@@ -100,43 +100,67 @@ function oneLine(text) {
   return String(text).replace(/\s+/g, " ").trim();
 }
 
+function compactToolValue(value) {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
 // One-line summary of a tool call's args, mirroring the agent's own TUI summary.
 // Falls back to the bare tool name when nothing is extractable.
 function toolSummary(name, args = {}) {
+  const input = args && typeof args === "object" && !Array.isArray(args) ? args : {};
   const str = (value) => (typeof value === "string" ? value : "");
-  const qualified = (detail) => (detail ? `${name}: ${detail}` : name);
-  if (name === "exec_command") return qualified(truncate(oneLine(str(args.cmd)), 80));
-  if (name === "read_file") {
-    const range = args.line_start || args.line_end
-      ? `:${str(args.line_start) || "1"}-${str(args.line_end)}`
+  const qualified = (detail) => {
+    const summary = truncate(oneLine(detail), 80);
+    return summary ? `${name}: ${summary}` : name;
+  };
+  if (name === "exec_command") return qualified(str(input.cmd));
+  if (name === "read" || name === "read_file") {
+    const start = name === "read" ? input.offset : input.line_start;
+    const end = name === "read"
+      ? (typeof input.limit === "number" ? (start ?? 1) + input.limit - 1 : undefined)
+      : input.line_end;
+    const range = start || end
+      ? `:${String(start ?? 1)}-${String(end ?? "")}`
       : "";
-    return qualified(`${oneLine(str(args.path))}${range}`);
+    return qualified(`${str(input.path)}${range}`);
   }
-  if (name === "list_files") return qualified(oneLine(str(args.pattern)));
+  if (name === "list_files") return qualified(str(input.pattern));
   if (name === "search_files") {
-    const path = str(args.path);
-    return qualified(`${truncate(oneLine(str(args.query)), 80)}${path ? ` in ${path}` : ""}`);
+    const path = str(input.path);
+    return qualified(`${str(input.query)}${path ? ` in ${path}` : ""}`);
   }
   if (name === "write_stdin") {
-    if (str(args.chars) !== "") return qualified(truncate(oneLine(str(args.chars)), 80));
-    if (args.terminate) return "write_stdin: terminate";
-    return name;
+    const action = input.terminate ? "Stop" : input.chars === undefined ? "Poll" : "Write to";
+    return qualified(`${action} process ${input.process_id ?? "?"}`);
   }
   if (name === "apply_patch") {
     const files = new Set();
-    for (const line of String(args.input ?? "").split("\n")) {
-      const match = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/.exec(line.trim());
-      if (match) files.add(match[1]);
+    for (const line of String(input.input ?? "").split("\n")) {
+      const match = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/.exec(line.trim());
+      if (match) files.add(`${match[1].replace(" File", "")} ${match[2]}`);
     }
     if (files.size > 0) {
-      return `apply_patch: ${files.size} file${files.size > 1 ? "s" : ""}`;
+      return qualified([...files].join(", "));
     }
     return name;
   }
-  if (name === "update_plan" && Array.isArray(args.steps)) {
-    return `update_plan: ${args.steps.length} steps`;
+  if (name === "update_plan" && Array.isArray(input.steps)) {
+    return `update_plan: ${input.steps.length} steps`;
   }
-  return name;
+  const details = Object.entries(input)
+    .map(([key, value]) => `${key}=${compactToolValue(value)}`)
+    .join(" ");
+  return qualified(details);
+}
+
+function outToolCall(name, args) {
+  outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(name, args))}</pre>`);
+}
+
+function outToolResult(name, isError, processId) {
+  const process = name === "exec_command" && typeof processId === "string" && processId
+    ? ` · process ${processId}` : "";
+  outHtml(`<pre class="muted">${isError ? "✗" : "✓"} ${escapeHtml(name + process)}</pre>`);
 }
 
 // A backticked span counts as a file only when it looks like a path: no
@@ -488,9 +512,9 @@ function openStream() {
   source.addEventListener("tool", (e) => {
     const event = JSON.parse(e.data);
     if (event.phase === "started") {
-      outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(event.name, event.args))}</pre>`);
+      outToolCall(event.name, event.args);
     } else if (event.phase === "completed") {
-      outHtml(`<pre class="muted">${event.isError ? "✗" : "✓"} ${escapeHtml(event.name)}</pre>`);
+      outToolResult(event.name, event.isError, event.result?.details?.processId);
     }
   });
   source.addEventListener("checkpoint_diff", (e) => {
@@ -578,11 +602,11 @@ async function renderHistory() {
         if (block.type === "text") {
           outHtml(`<pre>${linkifyFilePaths(block.text, workspaceId)}</pre>`);
         } else {
-          outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(block.name, block.arguments))}</pre>`);
+          outToolCall(block.name, block.arguments);
         }
       }
     } else if (message.role === "toolResult") {
-      outHtml(`<pre class="muted">${message.isError ? "✗" : "✓"} ${escapeHtml(message.toolName)}</pre>`);
+      outToolResult(message.toolName, message.isError);
     } else if (message.role === "compactionSummary") {
       outHtml('<pre class="muted">— earlier context summarized —</pre>');
     }
