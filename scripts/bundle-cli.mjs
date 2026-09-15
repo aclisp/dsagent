@@ -3,6 +3,7 @@ import { isBuiltin } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { containsCheckoutPath } from "./checkout-path.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const piDist = path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -122,7 +123,7 @@ export async function buildCliBundle({
       const absolute = path.resolve(root, file);
       outputs.add(path.basename(absolute));
       bytes += value.bytes;
-      if (readFileSync(absolute, "utf8").includes(root)) throw new Error(`Bundle contains a checkout path: ${file}`);
+      if (containsCheckoutPath(readFileSync(absolute, "utf8"), root)) throw new Error(`Bundle contains a checkout path: ${file}`);
     }
   }
   // Remove only stale generated JS chunks, never the retained unbundled CLI.
