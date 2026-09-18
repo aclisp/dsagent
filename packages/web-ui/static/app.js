@@ -157,8 +157,8 @@ function outToolCall(name, args) {
   outHtml(`<pre class="muted">⚙ ${escapeHtml(toolSummary(name, args))}</pre>`);
 }
 
-function outToolResult(name, isError, processId) {
-  const process = name === "exec_command" && typeof processId === "string" && processId
+function outToolResult(name, isError, processId, running) {
+  const process = name === "exec_command" && running === true && typeof processId === "string" && processId
     ? ` · process ${processId}` : "";
   outHtml(`<pre class="muted">${isError ? "✗" : "✓"} ${escapeHtml(name + process)}</pre>`);
 }
@@ -514,7 +514,7 @@ function openStream() {
     if (event.phase === "started") {
       outToolCall(event.name, event.args);
     } else if (event.phase === "completed") {
-      outToolResult(event.name, event.isError, event.result?.details?.processId);
+      outToolResult(event.name, event.isError, event.result?.details?.processId, event.result?.details?.running);
     }
   });
   source.addEventListener("checkpoint_diff", (e) => {
