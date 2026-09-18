@@ -36,17 +36,23 @@ interface ProcessRecord {
 
 export interface ManagedProcessRegistryOptions {
   visionExecutable?: string;
+  maxCompletedProcesses?: number;
 }
 
-const MAX_COMPLETED_PROCESSES = 100;
+const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
 
 export class ManagedProcessRegistry {
   private readonly records = new Map<string, ProcessRecord>();
   // Insertion order tracks completion order, independently of process start order.
   private readonly completedIds = new Set<string>();
   private readonly visionExecutable: string;
+  private readonly maxCompletedProcesses: number;
 
   constructor(options: ManagedProcessRegistryOptions = {}) {
+    this.maxCompletedProcesses = options.maxCompletedProcesses ?? DEFAULT_MAX_COMPLETED_PROCESSES;
+    if (!Number.isSafeInteger(this.maxCompletedProcesses) || this.maxCompletedProcesses < 0) {
+      throw new Error("maxCompletedProcesses must be a non-negative safe integer");
+    }
     this.visionExecutable = options.visionExecutable ?? DEFAULT_VISION_CLI_EXECUTABLE;
     if (!path.isAbsolute(this.visionExecutable)) {
       throw new Error("The trusted dscode-vision executable path must be absolute");
@@ -130,7 +136,7 @@ export class ManagedProcessRegistry {
       options.signal?.removeEventListener("abort", abort);
       if (this.records.has(id)) {
         this.completedIds.add(id);
-        if (this.completedIds.size > MAX_COMPLETED_PROCESSES) {
+        if (this.completedIds.size > this.maxCompletedProcesses) {
           const oldest = this.completedIds.values().next().value!;
           this.completedIds.delete(oldest);
           this.records.delete(oldest);

@@ -77,7 +77,7 @@ describe("ManagedProcessRegistry", () => {
   });
 
   it("bounds unread completed jobs without evicting running jobs", async () => {
-    const registry = new ManagedProcessRegistry();
+    const registry = new ManagedProcessRegistry({ maxCompletedProcesses: 2 });
     const results = [];
     try {
       const running = await registry.start(longBackgroundCommand(), {
@@ -88,10 +88,10 @@ describe("ManagedProcessRegistry", () => {
         thinkingLevel: "low",
       });
       expect(running.running).toBe(true);
-      for (let index = 0; index < 105; index += 1) {
+      for (let index = 0; index < 3; index += 1) {
         results.push(await completeUnreadBackgroundJob(registry));
       }
-      expect(registry.list()).toHaveLength(101);
+      expect(registry.list()).toHaveLength(3);
       expect(registry.list()).toContainEqual({
         processId: running.processId,
         running: true,
@@ -100,14 +100,16 @@ describe("ManagedProcessRegistry", () => {
       await expect(
         registry.interact(results[0]!.processId, { yieldTimeMs: 0 }),
       ).rejects.toThrow("Unknown process");
-      await expect(
-        registry.interact(results[104]!.processId, { yieldTimeMs: 0 }),
-      ).resolves.toMatchObject({ running: false, output: "done", exitCode: 0 });
-      expect(registry.list()).toHaveLength(100);
+      for (const completed of results.slice(1)) {
+        await expect(
+          registry.interact(completed.processId, { yieldTimeMs: 0 }),
+        ).resolves.toMatchObject({ running: false, output: "done", exitCode: 0 });
+      }
+      expect(registry.list()).toHaveLength(1);
       await expect(
         registry.interact(running.processId, { yieldTimeMs: 2_000, terminate: true }),
       ).resolves.toMatchObject({ running: false });
-      expect(registry.list()).toHaveLength(99);
+      expect(registry.list()).toEqual([]);
     } finally {
       registry.dispose();
     }
