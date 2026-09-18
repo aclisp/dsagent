@@ -130,7 +130,7 @@ function toolSummary(name, args = {}) {
     return qualified(`${str(input.query)}${path ? ` in ${path}` : ""}`);
   }
   if (name === "write_stdin") {
-    const action = input.terminate ? "Stop" : input.chars === undefined ? "Poll" : "Write to";
+    const action = input.terminate ? "stop" : input.chars === undefined ? "poll" : "write to";
     return qualified(`${action} process ${input.process_id ?? "?"}`);
   }
   if (name === "apply_patch") {
