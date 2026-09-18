@@ -5,7 +5,7 @@ export const DEFAULT_WEB_UI_RUNTIME_ARGS = [
   "--provider",
   "openrouter",
   "--model",
-  "deepseek-v4-flash-0731",
+  "deepseek-v4.1-flash",
   "--permission",
   "auto",
   "--network",

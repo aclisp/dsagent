@@ -459,8 +459,8 @@ export class WeComChatProvider implements ChatProvider {
     void this.receive(frame);
   };
   private readonly handleClientError = (error: unknown): void => {
-    void error;
-    this.logger.error("WeCom Chat Provider connection error");
+    const message = error instanceof Error ? error.message : String(error);
+    this.logger.error(`WeCom Chat Provider connection error: ${message}`);
   };
   private started = false;
   private disposed = false;
@@ -487,11 +487,11 @@ export class WeComChatProvider implements ChatProvider {
     const sdkLogger: Logger = {
       debug() {},
       info() {},
-      warn() {
-        providerLogger.error("WeCom Chat Provider SDK warning");
+      warn(message) {
+        providerLogger.error(`WeCom Chat Provider SDK warning: ${message}`);
       },
-      error() {
-        providerLogger.error("WeCom Chat Provider SDK error");
+      error(message) {
+        providerLogger.error(`WeCom Chat Provider SDK error: ${message}`);
       },
     };
     const clientOptions: WSClientOptions = {
