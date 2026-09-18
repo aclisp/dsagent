@@ -255,7 +255,10 @@ Inside the TUI:
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
 
-Each CLI or Web session retains at most 100 completed managed processes. When that
+Completed managed processes are removed as soon as `exec_command` or `write_stdin`
+returns their final result. Background processes that finish between reads retain
+their output and exit status until the next `write_stdin` call. Each CLI or Web
+session retains at most 100 such unread completed records. When that
 limit is exceeded, the earliest-completed record is removed, including any unread
 output; later `write_stdin` calls for that ID return `Unknown process`. Running
 processes are never evicted by this limit. `/jobs` keeps showing both running and

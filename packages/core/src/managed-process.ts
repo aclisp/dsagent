@@ -174,12 +174,7 @@ export class ManagedProcessRegistry {
         }),
       ]);
     }
-    const result = this.result(record);
-    if (!record.running) {
-      this.records.delete(processId);
-      this.completedIds.delete(processId);
-    }
-    return result;
+    return this.result(record);
   }
 
   list(): Array<{ processId: string; running: boolean; sandbox: string }> {
@@ -202,6 +197,12 @@ export class ManagedProcessRegistry {
   private result(record: ProcessRecord): ManagedProcessResult {
     const pending = record.pending;
     record.pending = "";
+    // Once the final result is delivered, neither start nor interact needs a
+    // reconnectable record. Unread background completions remain until read.
+    if (!record.running) {
+      this.records.delete(record.id);
+      this.completedIds.delete(record.id);
+    }
     return {
       processId: record.id,
       running: record.running,

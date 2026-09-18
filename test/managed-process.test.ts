@@ -23,70 +23,91 @@ describe("ManagedProcessRegistry", () => {
       expect(completed.running).toBe(false);
       expect(completed.exitCode).toBe(0);
       expect(completed.output).toContain("done");
+      expect(registry.list()).toEqual([]);
     } finally {
       registry.dispose();
     }
   });
 
-  it("bounds retained completed jobs without changing extra-read behavior", async () => {
+  it("removes commands whose final result is returned by start", async () => {
     const registry = new ManagedProcessRegistry();
-    const results = [];
     try {
-      for (let index = 0; index < 105; index += 1) {
-        results.push(
-          await registry.start("printf done", {
-            cwd: os.tmpdir(),
-            sandbox: { mode: "danger-full-access", network: false },
-            yieldTimeMs: 1_000,
-            timeoutMs: 5_000,
-            thinkingLevel: "low",
-          }),
-        );
+      for (const command of ["printf done", "exit 7"]) {
+        const completed = await registry.start(command, {
+          cwd: os.tmpdir(),
+          sandbox: { mode: "danger-full-access", network: false },
+          yieldTimeMs: 2_000,
+          timeoutMs: 5_000,
+          thinkingLevel: "low",
+        });
+        expect(completed).toMatchObject({
+          running: false,
+          exitCode: command === "exit 7" ? 7 : 0,
+        });
+        if (command === "printf done") expect(completed.output).toBe("done");
+        expect(registry.list()).toEqual([]);
+        await expect(
+          registry.interact(completed.processId, { yieldTimeMs: 0 }),
+        ).rejects.toThrow("Unknown process");
       }
-      expect(registry.list()).toHaveLength(100);
-      await expect(
-        registry.interact(results[0]!.processId, { yieldTimeMs: 0 }),
-      ).rejects.toThrow("Unknown process");
-      await expect(
-        registry.interact(results[104]!.processId, { yieldTimeMs: 0 }),
-      ).resolves.toMatchObject({
-        running: false,
-        output: "(process completed)",
-        exitCode: 0,
-      });
     } finally {
       registry.dispose();
     }
-  }, 30_000);
+  });
 
-  it("does not evict a running job while completed jobs reach the limit", async () => {
+  it("retains unread background results until read, including the exit status", async () => {
     const registry = new ManagedProcessRegistry();
+    try {
+      const started = await completeUnreadBackgroundJob(registry);
+      expect(registry.list()).toContainEqual({
+        processId: started.processId,
+        running: false,
+        sandbox: started.sandbox,
+      });
+      await expect(
+        registry.interact(started.processId, { yieldTimeMs: 0 }),
+      ).resolves.toMatchObject({ running: false, output: "done", exitCode: 0 });
+      expect(registry.list()).toEqual([]);
+      await expect(
+        registry.interact(started.processId, { yieldTimeMs: 0 }),
+      ).rejects.toThrow("Unknown process");
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("bounds unread completed jobs without evicting running jobs", async () => {
+    const registry = new ManagedProcessRegistry();
+    const results = [];
     try {
       const running = await registry.start(longBackgroundCommand(), {
         cwd: os.tmpdir(),
         sandbox: { mode: "danger-full-access", network: false },
         yieldTimeMs: 0,
-        timeoutMs: 30_000,
+        timeoutMs: 60_000,
         thinkingLevel: "low",
       });
       expect(running.running).toBe(true);
-      for (let index = 0; index < 101; index += 1) {
-        await registry.start("printf done", {
-          cwd: os.tmpdir(),
-          sandbox: { mode: "danger-full-access", network: false },
-          yieldTimeMs: 1_000,
-          timeoutMs: 5_000,
-          thinkingLevel: "low",
-        });
+      for (let index = 0; index < 105; index += 1) {
+        results.push(await completeUnreadBackgroundJob(registry));
       }
+      expect(registry.list()).toHaveLength(101);
       expect(registry.list()).toContainEqual({
         processId: running.processId,
         running: true,
         sandbox: running.sandbox,
       });
       await expect(
+        registry.interact(results[0]!.processId, { yieldTimeMs: 0 }),
+      ).rejects.toThrow("Unknown process");
+      await expect(
+        registry.interact(results[104]!.processId, { yieldTimeMs: 0 }),
+      ).resolves.toMatchObject({ running: false, output: "done", exitCode: 0 });
+      expect(registry.list()).toHaveLength(100);
+      await expect(
         registry.interact(running.processId, { yieldTimeMs: 2_000, terminate: true }),
       ).resolves.toMatchObject({ running: false });
+      expect(registry.list()).toHaveLength(99);
     } finally {
       registry.dispose();
     }
@@ -277,6 +298,22 @@ describe("ManagedProcessRegistry", () => {
     },
   );
 });
+
+async function completeUnreadBackgroundJob(registry: ManagedProcessRegistry) {
+  const started = await registry.start(backgroundCommand(), {
+    cwd: os.tmpdir(),
+    sandbox: { mode: "danger-full-access", network: false },
+    yieldTimeMs: 0,
+    timeoutMs: 5_000,
+    thinkingLevel: "low",
+  });
+  expect(started.running).toBe(true);
+  await expect.poll(
+    () => registry.list().find((job) => job.processId === started.processId)?.running,
+    { interval: 5, timeout: 5_000 },
+  ).toBe(false);
+  return started;
+}
 
 function backgroundCommand(): string {
   const script = "setTimeout(() => process.stdout.write(`done`), 100)";
