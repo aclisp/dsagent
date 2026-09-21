@@ -19,7 +19,7 @@ const stdioServerSchema = z.object({
   disabled: z.boolean().optional(),
 });
 const httpServerSchema = z.object({
-  url: z.string().url(),
+  url: z.url(),
   headers: z.record(z.string(), z.string()).optional(),
   disabled: z.boolean().optional(),
 });

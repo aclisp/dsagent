@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PersistedSessionAlreadyExistsError,
   PersistedSessionNotFoundError,
@@ -33,7 +34,7 @@ afterEach(async () => {
   );
 });
 
-describe.sequential("createAgentSessionHost", () => {
+describe("createAgentSessionHost", { concurrent: false }, () => {
   it("creates and disposes an in-process DSCode session without provider calls", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-adapter-"));
     temporaryRoots.push(root);
@@ -125,6 +126,101 @@ describe.sequential("createAgentSessionHost", () => {
       await firstDispose;
       await expect(host.prompt("Do not run")).rejects.toThrow("disposed");
     } finally {
+      await host.dispose();
+    }
+  });
+
+  it("aborts an in-flight manual compaction and preserves session history", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-compaction-"));
+    temporaryRoots.push(root);
+    const home = path.join(root, "home");
+    process.env.DSCODE_HOME = home;
+    process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
+    await fs.mkdir(home);
+    await fs.writeFile(path.join(home, "settings.json"), JSON.stringify({
+      compaction: { keepRecentTokens: 16 },
+    }));
+
+    const host = await createAgentSessionHost({
+      cwd: root,
+      runtimeArgs: ["--provider", "deepseek", "--model", "deepseek-v4-flash", "--no-mcp"],
+    });
+    const stream = createAssistantMessageEventStream();
+    let finishRequest: (() => void) | undefined;
+    let compaction: Promise<unknown> | undefined;
+    let abort: Promise<void> | undefined;
+    try {
+      const session = host.session;
+      const model = session.model!;
+      await session.modelRuntime.setRuntimeApiKey(model.provider, "test-only-key");
+      const assistant: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "Earlier investigation and decisions. ".repeat(20) }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        stopReason: "stop",
+        timestamp: 2,
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      const manager = session.sessionManager;
+      manager.appendMessage({ role: "user", content: "Investigate the cancellation bug", timestamp: 1 });
+      manager.appendMessage(assistant);
+      manager.appendMessage({ role: "user", content: "Keep the latest request", timestamp: 3 });
+      session.agent.state.messages = manager.buildSessionContext().messages;
+      const entriesBefore = structuredClone(manager.getEntries());
+      const messagesBefore = structuredClone(session.messages);
+      const events: HttpUiBrokerEvent[] = [];
+      host.subscribe((event) => events.push(event));
+
+      let requestSignal: AbortSignal | undefined;
+      finishRequest = () => {
+        stream.push({
+          type: "error",
+          reason: "aborted",
+          error: { ...assistant, content: [], stopReason: "aborted" },
+        });
+      };
+      const providerAbort = vi.fn(finishRequest);
+      session.agent.streamFunction = (_model, _context, options) => {
+        requestSignal = options?.signal;
+        requestSignal?.addEventListener("abort", providerAbort, { once: true });
+        // Stay pending until the real session cancellation reaches the provider boundary.
+        return stream;
+      };
+      // Handle rejection immediately, even if an assertion fails before aborting.
+      compaction = session.compact().then(() => undefined, (error: unknown) => error);
+      await vi.waitFor(() => expect(requestSignal).toBeDefined());
+      expect(requestSignal!.aborted).toBe(false);
+      expect(session.isCompacting).toBe(true);
+      expect(session.isIdle).toBe(false);
+
+      abort = host.abort();
+      await vi.waitFor(() => expect(providerAbort).toHaveBeenCalledOnce());
+      expect(requestSignal!.aborted).toBe(true);
+      await abort;
+      expect(await compaction).toEqual(new Error("Compaction cancelled"));
+      expect(session.isCompacting).toBe(false);
+      expect(session.isIdle).toBe(true);
+      await host.waitForIdle();
+      expect(manager.getEntries()).toEqual(entriesBefore);
+      expect(session.messages).toEqual(messagesBefore);
+      expect(events.filter((event) => event.type === "session" &&
+        (event.event.type === "compaction_start" || event.event.type === "compaction_end")))
+        .toEqual([
+          { type: "session", event: { type: "compaction_start", reason: "manual" } },
+          { type: "session", event: expect.objectContaining({
+            type: "compaction_end", reason: "manual", aborted: true, willRetry: false,
+          }) },
+        ]);
+    } finally {
+      // Release the request even if abort() regresses, so failed tests cannot hang teardown.
+      host.session.abortCompaction();
+      finishRequest?.();
+      await Promise.all([compaction, abort]);
       await host.dispose();
     }
   });
