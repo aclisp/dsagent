@@ -387,6 +387,20 @@ function shareHref(rawPath) {
 }
 
 function enhanceFileLinks(root) {
+  for (const link of root.querySelectorAll("a[href]")) {
+    const href = link.getAttribute("href");
+    const suffixIndex = href.search(/[?#]/);
+    const path = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
+    const suffix = suffixIndex < 0 ? "" : href.slice(suffixIndex);
+    if (path.startsWith("/workspace/") || (!path.startsWith("/") && isFilePathToken(path))) {
+      try {
+        link.href = shareHref(decodeURIComponent(path)) + suffix;
+      } catch {
+        // Leave malformed percent-encoded links unchanged.
+      }
+    }
+  }
+
   for (const code of root.querySelectorAll("code")) {
     if (code.closest("pre") || code.closest("a")) continue;
     const value = code.textContent ?? "";
