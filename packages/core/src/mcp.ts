@@ -134,7 +134,10 @@ export class MCPManager {
           ...(config.args ? { args: config.args } : {}),
           env: environment,
           cwd: config.cwd ? path.resolve(ctx.cwd, config.cwd) : ctx.cwd,
-          stderr: "inherit",
+          // MCP servers are external processes. Their stderr must not bypass the
+          // TUI renderer: startup banners would otherwise be written directly
+          // into the terminal and corrupt the current frame.
+          stderr: "ignore",
         });
         close = async () => transport.close();
         await client.connect(transport as any);
