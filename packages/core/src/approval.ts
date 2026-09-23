@@ -1,4 +1,5 @@
 import type { PermissionMode } from "./config.js";
+import { detectDangerousCommand } from "./dangerous-command.js";
 
 export type Confirmation = (message: string) => Promise<boolean>;
 
@@ -92,11 +93,7 @@ export function classifyCommand(command: string): CommandRisk {
     return "needs-approval";
   }
 
-  if (
-    /(^|\s)(rm|rmdir|sudo|doas|mkfs|shutdown|reboot|kill|pkill|killall)\b/i.test(normalized) ||
-    /\bgit\s+(reset|clean)\b/i.test(normalized) ||
-    /\bgit\s+(checkout|restore)\b[^;&|]*(--|\s)\./i.test(normalized)
-  ) {
+  if (detectDangerousCommand(normalized).dangerous) {
     return "dangerous";
   }
 

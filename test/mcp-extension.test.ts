@@ -136,6 +136,36 @@ describe("MCP extension lifecycle", () => {
     expect(run.confirm).not.toHaveBeenCalled();
   });
 
+  it("uses dangerous command rules for auto approvals", async () => {
+    const run = await runtime(["--no-mcp"]);
+    run.confirm.mockClear();
+    for (const cmd of ["git rm tracked.ts", "git rm -fn tracked.ts", "git rm -f --cached tracked.ts"]) {
+      expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd } })).toBeUndefined();
+    }
+    expect(run.confirm).not.toHaveBeenCalled();
+    run.confirm.mockResolvedValueOnce(false);
+    expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd: "git rm -f tracked.ts" } })).toMatchObject({ block: true });
+    expect(run.confirm).toHaveBeenLastCalledWith("Run destructive command?", expect.stringContaining("git rm -f tracked.ts"));
+    run.confirm.mockClear();
+    for (const cmd of ["echo rm", "git clean -nd", "git reset --soft HEAD~1", "npm test", "bash -euo pipefail -c 'echo rm'", "eval 'echo rm'", "git switch main", "nohup echo rm"]) {
+      expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd } })).toBeUndefined();
+    }
+    expect(run.confirm).not.toHaveBeenCalled();
+    for (const cmd of ["find . -exec rm {} +", "xargs -0 rm", "bash -lc 'rm file'", 'rm "$(pwd)/file"', "dd of=output", "git stash clear", "bash -euo pipefail -c 'rm x'", "bash --login -c 'rm x'", "eval 'rm' '-rf x'", "git switch --discard-changes main", "nohup rm x"]) {
+      run.confirm.mockResolvedValueOnce(false);
+      expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd } })).toMatchObject({ block: true });
+      expect(run.confirm).toHaveBeenLastCalledWith("Run destructive command?", expect.stringContaining(cmd));
+    }
+    const call = { toolName: "exec_command", input: { cmd: "git -C repo reset --hard" } };
+    run.confirm.mockResolvedValueOnce(false);
+    expect(await run.emit("tool_call", call)).toMatchObject({ block: true });
+    expect(run.confirm).toHaveBeenLastCalledWith("Run destructive command?", expect.stringContaining(call.input.cmd));
+    run.confirm.mockResolvedValueOnce(true);
+    expect(await run.emit("tool_call", call)).toBeUndefined();
+    run.ctx.hasUI = false;
+    expect(await run.emit("tool_call", call)).toMatchObject({ block: true });
+  });
+
   it("continues after one server fails and clears stale active tools on session initialization", async () => {
     await configure({ missing: { command: path.join(root, "missing-command") }, fixture, disabled: { ...fixture, disabled: true } });
     const run = await runtime(["--tools", `read,${mcpTool}`]);
