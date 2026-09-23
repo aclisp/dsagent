@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { ensureDSCodeRuntimeDefaults } from "./runtime-defaults.js";
 
 const LEGACY_AGENT_ENTRIES = [
   "auth.json",
@@ -47,6 +48,7 @@ export async function initializeDSCodeHome(): Promise<string> {
   if (process.env.DSCODE_HOME === undefined) {
     await migrateLegacyDSCodeHome(home);
   }
+  await ensureDSCodeRuntimeDefaults(home);
   await fs.mkdir(sessions, { recursive: true, mode: 0o700 });
   await fs.chmod(sessions, 0o700).catch(() => undefined);
   await fs.mkdir(getDSCodeArchivedSessionsDir(), { recursive: true, mode: 0o700 });

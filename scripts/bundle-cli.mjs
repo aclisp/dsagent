@@ -16,7 +16,9 @@ export async function buildCliBundle({
   coreDist = path.join(root, "packages/core/dist"),
   entryPoints = { cli: path.join(root, "dist/cli.js") },
 } = {}) {
-  const externalPackages = new Set(["@napi-rs/keyring", "bufferutil", "utf-8-validate", "supports-color"]);
+  // proxy-agent-negotiate loads optional native kerberos only for Negotiate
+  // authentication. Keep its lazy import and upstream missing-package error.
+  const externalPackages = new Set(["@napi-rs/keyring", "bufferutil", "utf-8-validate", "supports-color", "kerberos"]);
   // All chunks live beside the entrypoint. Module-relative assets and lazy
   // implementations therefore have one deterministic base after code splitting.
   const origins = new Map([
@@ -104,7 +106,7 @@ export async function buildCliBundle({
   const lazy = await build({
     ...options,
     entryPoints: {
-      ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
+      ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
       "bedrock-converse-stream": path.join(aiDist, "api/bedrock-converse-stream.js"),
       "image-resize-worker": path.join(piDist, "utils/image-resize-worker.js"),
     },

@@ -60,4 +60,18 @@ describe("/status", () => {
     expect(report).toContain("3.2k uncached input");
     expect(report).toContain("network blocked");
   });
+
+  it("includes cache-warming usage without replacing the latest conversation cache rate", () => {
+    const warmUsage = usage(100, 1, 9_900);
+    const summary = summarizeSessionUsage([...entries, {
+      type: "usage", id: "warm", parentId: null, timestamp: new Date(0).toISOString(),
+      kind: "cache_warm", provider: "test", model: "test", usage: warmUsage,
+    }]);
+    const previous = summarizeSessionUsage(entries);
+    expect(summary.input).toBe(previous.input + 100);
+    expect(summary.output).toBe(previous.output + 1);
+    expect(summary.cacheRead).toBe(previous.cacheRead + 9_900);
+    expect(summary.cost).toBeCloseTo(previous.cost + warmUsage.cost.total);
+    expect(summary.latestCacheHitRate).toBe(95);
+  });
 });

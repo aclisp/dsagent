@@ -174,6 +174,11 @@ Credential and history behavior can be configured in `~/.dscode/config.json`:
 Credential modes are `auto`, `keyring`, and `file`. Set history persistence to `none` to run new
 sessions without writing transcripts. `DSCODE_SQLITE_HOME` relocates only SQLite state.
 
+Cache warming defaults to `off` to avoid additional model requests after an upgrade. To opt in,
+set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
+in `~/.dscode/settings.json`. Existing explicit settings are preserved, and `/status` includes
+cache-warming usage and estimated cost.
+
 Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
 history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
 copied into the new layout on first launch without deleting or overwriting anything. Project skills
