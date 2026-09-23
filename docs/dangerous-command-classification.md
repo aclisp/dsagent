@@ -10,11 +10,18 @@ except for dry runs (`-n`/`--dry-run`) or index-only removal (`--cached`). Plain
 checks the operation's capability, without querying whether local changes exist.
 
 Rules inspect literal command names and selected arguments, including common
-`env`, `command`, `xargs`, `nice`, `timeout`, and `nohup` forms, `find -exec/-execdir`,
-literal `eval` arguments (joined with spaces), and literal
-`sh/bash/dash/zsh/ksh -c` payloads. Recursive inspection is limited to four
-levels. Unknown wrapper options are not guessed. Tests pair destructive commands
-with informational or harmless forms to limit false positives.
+`env`, `command`, `xargs`, `nice`, `timeout`, and `nohup` forms. `sudo` and
+`doas` parse common privilege options and recursively inspect the wrapped
+command. Rules also inspect `find -exec/-execdir`, literal `eval` arguments
+(joined with spaces), and literal `sh/bash/dash/zsh/ksh -c` payloads. Recursive
+inspection is limited to four levels. Unknown wrapper options are not guessed.
+Tests pair destructive commands with informational or harmless forms to limit
+false positives.
+
+The terminal destructive-command confirmation keeps the command in a bounded,
+scrollable view and shows a concise intent summary with the choices. `intent` is
+derived from the matched rule; it does not claim to know dynamic command effects.
+`reason` remains the rule explanation shown by generic confirmation flows.
 
 ## Deliberate limits
 

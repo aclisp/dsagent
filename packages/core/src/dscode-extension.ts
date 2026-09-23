@@ -18,7 +18,6 @@ import {
   type AccessBoundary,
   type EffectiveAccess,
 } from "./access.js";
-import { classifyCommand } from "./approval.js";
 import { brandBlue } from "./brand.js";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
 import { permissionSchema, type PermissionMode } from "./config.js";
@@ -42,6 +41,11 @@ import {
 import { discoverProjectCommands } from "./project-profile.js";
 import { registerDSCodeProjectTrust } from "./project-trust.js";
 import { defaultModelForProvider } from "./providers.js";
+import { confirmDestructiveCommand } from "./destructive-command-confirmation.js";
+import {
+  DEFAULT_DANGEROUS_COMMAND_INTENT,
+  detectDangerousCommand,
+} from "./dangerous-command.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
 import { registerSessionCommands } from "./session-commands.js";
@@ -346,7 +350,8 @@ export function createDSCodeExtension(
           typeof event.input.cmd === "string"
             ? event.input.cmd
             : undefined;
-        const dangerousCommand = command !== undefined && classifyCommand(command) === "dangerous";
+        const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
+        const dangerousCommand = commandAssessment?.dangerous === true;
         if (permission === "plan" && dangerousCommand) {
           return {
             block: true,
@@ -383,10 +388,16 @@ export function createDSCodeExtension(
           };
         }
         if (dangerousCommand) {
-          const approved = await ctx.ui.confirm(
-            "Run destructive command?",
-            `${command}\n\nThis may delete data or alter system/process state.`,
-          );
+          const assessment = commandAssessment!;
+          const details = [
+            command,
+            "",
+            assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+            assessment.reason ?? "This command may affect files or system state",
+          ].join("\n");
+          const approved = ctx.mode === "tui"
+            ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
+            : await ctx.ui.confirm("Run destructive command?", details);
           if (!approved) return { block: true, reason: "Destructive command denied by user" };
         } else if (
           event.toolName === "apply_patch" &&

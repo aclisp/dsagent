@@ -45,6 +45,37 @@ describe("dangerous command rules", () => {
   });
 
   it.each([
+    ["sudo rm -rf /", "Delete the specified files or directories (with elevated privileges)"],
+    ["doas -u root rm -rf /", "Delete the specified files or directories (with elevated privileges)"],
+    ["sudo --user=root git reset --hard", "Reset the index and working tree, discarding changes (with elevated privileges)"],
+    ["sudo sudo rm -rf /", "Delete the specified files or directories (with elevated privileges)"],
+    ["sudo make install", "Run a command with elevated privileges"],
+  ])("summarizes elevated command intent for %s", (command, intent) => {
+    expect(detectDangerousCommand(command)).toMatchObject({ dangerous: true, intent });
+  });
+
+  it("reports the underlying destructive reason through privilege wrappers", () => {
+    expect(detectDangerousCommand("sudo rm -rf /").reason).toBe(
+      "rm can delete data or alter system/process state",
+    );
+    expect(detectDangerousCommand("doas -u root rm -rf /").reason).toBe(
+      "rm can delete data or alter system/process state",
+    );
+  });
+
+  it.each([
+    ["find . -name '*.log' -exec rm {} +", "Run a potentially destructive command for each matching file"],
+    ["git ls-files '*.log' | xargs rm", "Run a potentially destructive command for each input item"],
+    ["git checkout .", "Discard working tree changes with checkout"],
+    ["git checkout -- file", "Discard working tree changes with checkout"],
+    ["dd if=input of=output", "Overwrite the output target given to dd (of=)"],
+    ["git stash clear", "Delete all saved Git stashes"],
+    ["git stash drop stash@{0}", "Delete a saved Git stash"],
+  ])("uses precise dangerous intent for %s", (command, intent) => {
+    expect(detectDangerousCommand(command)).toMatchObject({ dangerous: true, intent });
+  });
+
+  it.each([
     "echo rm", "rg kill src", "echo 'rm -rf build; git reset --hard'",
     'echo "rm -rf build; git reset --hard"', "echo foo\\;rm file",
     "echo x # rm -rf build", "cat > rm", "echo x 2>&1",
