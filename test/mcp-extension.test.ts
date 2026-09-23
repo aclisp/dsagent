@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -28,6 +29,7 @@ describe("MCP extension lifecycle", () => {
   afterEach(async () => {
     await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -49,7 +51,8 @@ describe("MCP extension lifecycle", () => {
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
     const notify = vi.fn();
     const confirm = vi.fn(async () => true);
-    const ui = new Proxy({ theme: createTestTheme(), notify, confirm }, {
+    const custom = vi.fn(async (): Promise<string> => "once");
+    const ui = new Proxy({ theme: createTestTheme(), notify, confirm, custom }, {
       get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined,
     });
     const ctx = {
@@ -69,7 +72,7 @@ describe("MCP extension lifecycle", () => {
     };
     cleanups.push(() => emit("session_shutdown"));
     await emit("session_start");
-    return { tools, ctx, notify, confirm, emit, active: () => active,
+    return { tools, ctx, notify, confirm, custom, emit, active: () => active,
       command: (name: string, args = "") => commands.get(name)!.handler(args, ctx) };
   }
 
@@ -134,6 +137,117 @@ describe("MCP extension lifecycle", () => {
     run.confirm.mockClear();
     expect(await run.emit("tool_call", call)).toBeUndefined();
     expect(run.confirm).not.toHaveBeenCalled();
+  });
+
+  it.each(["auto", "ask"])("allows one tool across arguments in %s without allowing sibling tools", async (mode) => {
+    vi.spyOn(Client.prototype, "listTools").mockResolvedValue({ tools: [
+      { name: "echo", inputSchema: { type: "object" } },
+      { name: "other", inputSchema: { type: "object" } },
+    ] });
+    const run = await runtime(["--permission", mode]);
+    run.ctx.mode = "tui";
+    run.custom.mockResolvedValueOnce("tool");
+    expect(await run.emit("tool_call", { toolName: mcpTool, input: { text: "one" } })).toBeUndefined();
+    expect(await run.emit("tool_call", { toolName: mcpTool, input: { text: "two" } })).toBeUndefined();
+    expect(run.custom).toHaveBeenCalledTimes(1);
+    run.custom.mockResolvedValueOnce("deny");
+    expect(await run.emit("tool_call", { toolName: "mcp__fixture__other", input: {} })).toMatchObject({ block: true });
+    await run.command("mcp");
+    expect(run.notify).toHaveBeenLastCalledWith(expect.stringContaining("[allowed for this session]"), "info");
+    await run.command("permissions", "plan");
+    expect(await run.emit("tool_call", { toolName: mcpTool, input: {} })).toMatchObject({ block: true });
+  });
+
+  it("allows all tools only on the selected server, using registered server identity", async () => {
+    await configure({ "fixture__one": fixture, other: fixture });
+    vi.spyOn(Client.prototype, "listTools").mockResolvedValue({ tools: [
+      { name: "echo", inputSchema: { type: "object" } },
+      { name: "other", inputSchema: { type: "object" } },
+    ] });
+    const run = await runtime();
+    run.ctx.mode = "tui";
+    run.custom.mockResolvedValueOnce("server");
+    expect(await run.emit("tool_call", { toolName: "mcp__fixture__one__echo", input: {} })).toBeUndefined();
+    expect(await run.emit("tool_call", { toolName: "mcp__fixture__one__other", input: {} })).toBeUndefined();
+    expect(run.custom).toHaveBeenCalledTimes(1);
+    await run.command("mcp");
+    expect(run.notify).toHaveBeenLastCalledWith(expect.stringContaining("fixture__one: connected (2 tools) [all tools allowed for this session]"), "info");
+    run.custom.mockResolvedValueOnce("deny");
+    expect(await run.emit("tool_call", { toolName: "mcp__other__echo", input: {} })).toMatchObject({ block: true });
+  });
+
+  it.each(["once", "deny"])("does not retain a %s decision", async (choice) => {
+    const run = await runtime();
+    run.ctx.mode = "tui";
+    run.custom.mockResolvedValue(choice);
+    const call = { toolName: mcpTool, input: {} };
+    const first = await run.emit("tool_call", call);
+    expect(first?.block === true).toBe(choice === "deny");
+    await run.emit("tool_call", call);
+    expect(run.custom).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps non-TUI confirmations single-use", async () => {
+    const run = await runtime();
+    const call = { toolName: mcpTool, input: {} };
+    await run.emit("tool_call", call);
+    await run.emit("tool_call", call);
+    expect(run.confirm).toHaveBeenCalledTimes(2);
+    expect(run.custom).not.toHaveBeenCalled();
+  });
+
+  it.each(["tool", "server"])("revokes %s permission and clears it when the session reconnects", async (scope) => {
+    const run = await runtime();
+    run.ctx.mode = "tui";
+    const call = { toolName: mcpTool, input: {} };
+    run.custom.mockResolvedValue(scope);
+    await run.emit("tool_call", call);
+    await run.command("mcp", "revoke");
+    await run.emit("tool_call", call);
+    expect(run.custom).toHaveBeenCalledTimes(2);
+    await run.emit("session_start");
+    await run.emit("tool_call", call);
+    expect(run.custom).toHaveBeenCalledTimes(3);
+  });
+
+  it("serializes concurrent prompts and rechecks granted permissions", async () => {
+    const run = await runtime();
+    run.ctx.mode = "tui";
+    let finish!: (choice: string) => void;
+    run.custom.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const call = { toolName: mcpTool, input: {} };
+    const first = run.emit("tool_call", call);
+    const second = run.emit("tool_call", call);
+    await vi.waitFor(() => expect(run.custom).toHaveBeenCalledTimes(1));
+    finish("tool");
+    expect(await first).toBeUndefined();
+    expect(await second).toBeUndefined();
+    expect(run.custom).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["revoke", "session_start"])("does not apply a stale decision after %s", async (action) => {
+    const run = await runtime();
+    run.ctx.mode = "tui";
+    let finish!: (choice: string) => void;
+    run.custom.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const call = { toolName: mcpTool, input: {} };
+    const pending = run.emit("tool_call", call);
+    await vi.waitFor(() => expect(run.custom).toHaveBeenCalledTimes(1));
+    if (action === "revoke") await run.command("mcp", "revoke");
+    else await run.emit("session_start");
+    finish("server");
+    expect(await pending).toMatchObject({ block: true, reason: expect.stringContaining("context changed") });
+    await run.emit("tool_call", call);
+    expect(run.custom).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects normalized tool-name collisions before registering the second server", async () => {
+    await configure({ "fixture.one": fixture, fixture_one: fixture });
+    const run = await runtime();
+    expect(run.active().filter((name) => name.startsWith("mcp__"))).toEqual(["mcp__fixture_one__echo"]);
+    expect(run.notify).toHaveBeenCalledWith(expect.stringContaining("Duplicate MCP tool name: mcp__fixture_one__echo"), "warning");
+    await run.command("mcp");
+    expect(run.notify).toHaveBeenLastCalledWith(expect.stringContaining("fixture.one: connected (1 tools)"), "info");
   });
 
   it("uses dangerous command rules for auto approvals", async () => {

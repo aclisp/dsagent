@@ -42,6 +42,7 @@ import { discoverProjectCommands } from "./project-profile.js";
 import { registerDSCodeProjectTrust } from "./project-trust.js";
 import { defaultModelForProvider } from "./providers.js";
 import { confirmDestructiveCommand } from "./destructive-command-confirmation.js";
+import { confirmMcpTool } from "./mcp-confirmation.js";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
@@ -136,6 +137,7 @@ export function createDSCodeExtension(
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       const mcp = new MCPManager();
+      let mcpApprovalQueue = Promise.resolve();
       let permission: PermissionMode = options.permission;
       let permissionBeforePlan: Exclude<PermissionMode, "plan"> =
         options.permission === "plan" ? "auto" : options.permission;
@@ -240,6 +242,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
+        mcp.revokeApprovals();
         checkpoints.length = 0;
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
@@ -289,6 +292,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
+        mcp.revokeApprovals();
         await queueSessionPartition(ctx);
         processes.dispose();
         await mcp.close();
@@ -379,6 +383,35 @@ export function createDSCodeExtension(
         ) {
           // The scoped network selector in exec_command is the approval UI for this action.
           return;
+        }
+        if (externalMcp) {
+          const epoch = mcp.approvalEpoch;
+          // Only one prompt at a time; queued calls recheck newly granted scopes.
+          const approval = mcpApprovalQueue.then(async () => {
+            const expired = () => epoch !== mcp.approvalEpoch;
+            const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
+            if (expired()) return stale;
+            if (permission === "plan") return { block: true, reason: "Plan mode blocks MCP tools." };
+            if (permission === "full" || mcp.isApproved(event.toolName)) return;
+            if (!ctx.hasUI) {
+              return {
+                block: true,
+                reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
+              };
+            }
+            const info = mcp.toolInfo(event.toolName);
+            const choice = ctx.mode === "tui" && info
+              ? await confirmMcpTool(ctx.ui, info.server, info.tool, JSON.stringify(event.input, null, 2))
+              : await ctx.ui.confirm(`Allow ${event.toolName}?`, approvalSummary(event.toolName, event.input))
+                ? "once" : "deny";
+            if (expired()) return stale;
+            if (choice !== "once" && choice !== "tool" && choice !== "server") {
+              return { block: true, reason: "Denied by user" };
+            }
+            if (choice === "tool" || choice === "server") mcp.approve(event.toolName, choice);
+          });
+          mcpApprovalQueue = approval.then(() => {}, () => {});
+          return approval;
         }
         if (!ctx.hasUI) {
           return {
@@ -719,11 +752,21 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("mcp", {
-        description: "Show MCP servers, tool names, and summaries",
-        handler: async (_args, ctx) => ctx.ui.notify(
-          mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive"),
-          "info",
-        ),
+        description: "Show MCP tools and session permissions; /mcp revoke clears permissions",
+        handler: async (args, ctx) => {
+          const action = args.trim();
+          if (action === "revoke") {
+            mcp.revokeApprovals();
+            ctx.ui.notify("MCP session permissions revoked. Future calls will require approval in auto/ask mode.", "info");
+            return;
+          }
+          if (action) {
+            ctx.ui.notify("Usage: /mcp or /mcp revoke", "info");
+            return;
+          }
+          const status = mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive");
+          ctx.ui.notify(mcp.toolNames().length > 0 ? `${status}\n\n/mcp revoke — revoke all MCP session permissions` : status, "info");
+        },
       });
 
       pi.registerCommand("x-7f3c9a", {
