@@ -122,7 +122,7 @@ const writeStdinParameters = Type.Object({
 const applyPatchParameters = Type.Object({
   input: Type.String({
     minLength: 1,
-    description: "A complete *** Begin Patch / *** End Patch patch",
+    description: "A complete *** Begin Patch / *** End Patch patch with all file paths relative to the workspace root",
   }),
 });
 
@@ -1121,10 +1121,11 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     name: "apply_patch",
     label: "Apply patch",
     description:
-      "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore.",
+      "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore. All Add File, Update File, Delete File, and Move to paths must be relative to the workspace root. Absolute paths are rejected. Use src/app.ts, not /workspace/project/src/app.ts.",
     promptSnippet: "apply_patch: atomically add, update, move, or delete workspace files",
     promptGuidelines: [
       "Use apply_patch for file changes; keep each patch focused and reviewable.",
+      "All apply_patch file paths must be relative to the workspace root, regardless of any exec_command working directory or shell cd. Absolute paths are rejected.",
       "Never report a change as complete before running relevant validation.",
     ],
     parameters: applyPatchParameters,

@@ -12,6 +12,7 @@ export async function buildSystemPrompt(
       ? `- You have two primary tools: exec_command for inspection/testing and apply_patch for every file change.
 - Use rg or rg --files first when searching. Read only the relevant ranges of large files.
 - apply_patch input must start with "*** Begin Patch" and end with "*** End Patch".
+- All apply_patch file paths must be relative to the workspace root, regardless of any exec_command working directory or shell cd. Absolute paths are rejected.
 - Keep patches focused. After applying one, inspect or test the result before expanding the change.`
       : `- Prefer search_files and list_files over broad shell commands.
 - Use edit_file for focused changes and write_file for new files or complete rewrites.`;
