@@ -34,7 +34,6 @@ import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { DSCODE_VERSION } from "./version.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
-export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
 export const HIDDEN_THINKING_LABEL = "DSCode is thinking";
 const BLINKING_BLOCK_CURSOR = "\x1b[1 q";
 const DEFAULT_CURSOR_STYLE = "\x1b[0 q";
@@ -229,9 +228,6 @@ export function registerCodingTui(
           .slice(1, bottomIndex)
           .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line))
           .map((line) => highlightImageMarkers(line, this.imageAttachments, theme));
-        if (this.getText().length === 0 && content.length > 0) {
-          content[0] = renderEditorPlaceholder(theme, hardwareCursor);
-        }
         const panel = [
           panelLine("", width, theme),
           ...content.map((line, index) =>
@@ -421,16 +417,6 @@ function waitForLoginPoll(signal: AbortSignal): Promise<void> {
 export function formatThinkingLabel(modelName?: string): string {
   const name = modelName?.trim();
   return name ? `${name} is thinking` : HIDDEN_THINKING_LABEL;
-}
-
-export function renderEditorPlaceholder(theme: Theme, hardwareCursor: boolean): string {
-  if (hardwareCursor) {
-    return `${CURSOR_MARKER}${theme.fg("dim", EDITOR_PLACEHOLDER)}`;
-  }
-  return `${CURSOR_MARKER}${theme.inverse(EDITOR_PLACEHOLDER[0]!)}${theme.fg(
-    "dim",
-    EDITOR_PLACEHOLDER.slice(1),
-  )}`;
 }
 
 export function stripFakeCursorHighlight(line: string): string {

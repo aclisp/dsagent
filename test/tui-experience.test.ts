@@ -5,7 +5,6 @@ import {
   highlightImageMarkers,
   minimalStatusParts,
   panelLine,
-  renderEditorPlaceholder,
   renderMinimalStatus,
   stripFakeCursorHighlight,
 } from "../packages/core/src/tui-experience.js";
@@ -19,12 +18,6 @@ const theme = {
 } as unknown as Theme;
 
 describe("DSCode Codex-style input presentation", () => {
-  it("places the native blinking cursor on the first placeholder character", () => {
-    const rendered = renderEditorPlaceholder(theme, true);
-    expect(rendered).toBe(`${CURSOR_MARKER}Ask DSCode to change, explain, or test code`);
-    expect(rendered.slice(CURSOR_MARKER.length)).toMatch(/^Ask/);
-  });
-
   it("removes Pi's steady fake cursor when the native cursor is active", () => {
     expect(stripFakeCursorHighlight(`before${CURSOR_MARKER}\x1b[7mW\x1b[0mrite`)).toBe(
       `before${CURSOR_MARKER}Write`,
