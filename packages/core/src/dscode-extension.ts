@@ -10,6 +10,7 @@ import type {
   ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { generateDiffString, renderDiff } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   commandNeedsNetwork,
@@ -66,6 +67,12 @@ import { Workspace } from "./workspace.js";
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
 const DIFF_ENTRY = "dscode-diff";
+
+interface DiffEntryData {
+  checkpointId: string;
+  patch: string;
+  files?: Array<{ path: string; status: string; diff: string }>;
+}
 
 const planAllowedTools = new Set([
   "read",
@@ -729,6 +736,14 @@ export function createDSCodeExtension(
           pi.appendEntry(DIFF_ENTRY, {
             checkpointId: checkpoint.id,
             patch: checkpoint.patch,
+            files: checkpoint.before.map((before) => {
+              const after = checkpoint.after.find((file) => file.path === before.path)!;
+              return {
+                path: before.path,
+                status: before.content === null ? "added" : after.content === null ? "deleted" : "modified",
+                diff: generateDiffString(before.content ?? "", after.content ?? "").diff,
+              };
+            }),
           });
         },
       });
@@ -1271,12 +1286,18 @@ function registerEntryRenderers(pi: ExtensionAPI): void {
           )
         : undefined,
   );
-  pi.registerEntryRenderer<{ checkpointId: string; patch: string }>(
+  pi.registerEntryRenderer<DiffEntryData>(
     DIFF_ENTRY,
     (entry, _options, theme) =>
       entry.data
         ? new Text(
-            `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${colorPatch(entry.data.patch, theme)}`,
+            `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${
+              entry.data.files
+                ? entry.data.files.map((file) =>
+                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(file.diff)}`,
+                  ).join("\n\n")
+                : colorPatch(entry.data.patch, theme)
+            }`,
             0,
             0,
           )
