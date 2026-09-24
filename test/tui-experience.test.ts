@@ -99,4 +99,45 @@ describe("DSCode Codex-style input presentation", () => {
     );
     expect(visibleWidth(rendered)).toBeLessThanOrEqual(18);
   });
+
+  it("anchors usage to the right and preserves access warnings before long names", () => {
+    const details = {
+      model: "a-very-long-model-name-that-must-shrink",
+      effort: "max",
+      permission: "full" as const,
+      sandbox: "danger-full-access" as const,
+      network: true,
+      cwd: "/工作/很长的项目目录/dscode",
+      contextPercent: 2,
+      usage: { latestCacheHitRate: 92.44, cost: 0.0382 },
+    };
+    for (const width of [72, 100, 140]) {
+      const rendered = renderMinimalStatus(width, details, theme);
+      expect(visibleWidth(rendered)).toBe(width);
+      expect(rendered).toContain("danger full access");
+      expect(rendered).toMatch(/cache 92\.4% · \$0\.038  $/);
+      expect(rendered).not.toContain("\n");
+    }
+    for (let width = 0; width < 72; width++) {
+      expect(visibleWidth(renderMinimalStatus(width, details, theme))).toBeLessThanOrEqual(width);
+    }
+    expect(renderMinimalStatus(22, details, theme)).toMatch(/92\.4% · \$0\.038  $/);
+  });
+
+  it("distinguishes missing cache usage from a zero hit rate", () => {
+    const details = {
+      model: "gpt-6-luna",
+      effort: "max",
+      permission: "auto" as const,
+      sandbox: "workspace-write" as const,
+      network: false,
+      cwd: "/work/dscode",
+      contextPercent: null,
+    };
+    expect(renderMinimalStatus(100, details, theme)).toMatch(/cache — · \$0\.000  $/);
+    expect(renderMinimalStatus(100, {
+      ...details,
+      usage: { latestCacheHitRate: 0, cost: 12.3456 },
+    }, theme)).toMatch(/cache 0\.0% · \$12\.346  $/);
+  });
 });
