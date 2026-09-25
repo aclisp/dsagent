@@ -13,14 +13,29 @@ pnpm build:standalone
 pnpm check:standalone
 ```
 
-Cross-compilation downloads the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) before building.
+On macOS arm64, `pnpm build:standalone` builds **both** macOS arm64 and Linux x86_64 binaries. On Linux x86_64, it builds only the native Linux binary; the macOS artifact requires macOS `codesign`.
+
+To build just one target on this Mac:
+
+```sh
+pnpm build:standalone --target linux-x64
+pnpm build:standalone --target darwin-arm64
+```
+
+`pnpm check:standalone` performs the default build above, then runs the acceptance suite **only for the host platform**. Cross-compilation does not validate execution on the target OS. To test the Mac-built Linux artifact, copy its output directory to a Linux host with this repository's test dependencies and run:
+
+```sh
+node standalone/test/verify.mjs /absolute/path/to/copied/linux-x64
+```
+
+Cross-compilation downloads and caches the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) and build the matching target explicitly with `--target`.
 
 Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
 
 - `dscode`: approximately 71 MiB on macOS arm64, 100 MiB on Linux x86_64; the only file needed at runtime, relocatable to any directory.
 - `dscode.sha256`: SHA-256 checksum file.
-- `build.json`: version, size, dependency removal, and adapter records.
-- `verification.json`: runtime acceptance results, generated only after validation.
+- `build.json`: version, build host, target, size, dependency removal, and adapter records.
+- `verification.json`: runtime acceptance results, generated only after validation; rebuilding removes the previous report.
 
 ```sh
 ./dist/standalone/linux-x64/dscode --version
