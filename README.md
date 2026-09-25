@@ -27,8 +27,8 @@
   REST+SSE, or bring DSCode to a self-hosted Web UI. Live agent and tool activity, interactive requests,
   and persistent sessions let each interface take part in the same workflow.
 - **Built-in WeCom turns chats into operational work.** Teammates can message DSCode directly or
-  mention it in a group chat, share context and supported media, then schedule work whose results
-  return to the originating conversation.
+  mention it in a group chat to assign tasks, send images and files, and receive replies and generated
+  files. Schedule one-time or recurring tasks and have the results delivered to the originating conversation.
 
 DSCode is opinionated by default, lightweight at its core, and flexible where it matters: choose your
 model, then use the same runtime from the terminal, REST+SSE API, self-hosted Web UI, or WeCom.
