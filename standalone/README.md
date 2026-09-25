@@ -75,6 +75,7 @@ The `experiments/standalone/` directory preserves historical feasibility records
 - Excludes SQLite, keyring, the vision CLI, native clipboard helpers, Kerberos, and native WebSocket accelerators.
 - Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
 - Normal sessions, credentials, checkpoints, and user output may still be written to disk. Retains pi's download of missing rg/fd; users supply other external tools and MCP services.
+- DSCode `exec_command` prepends pi's managed `bin` directory to the child process PATH, so previously downloaded `rg` and `fd` are available by name. This does not redirect pi's data directory or extension discovery.
 - Does not automatically check for new versions.
 
 ## Validation coverage and limitations

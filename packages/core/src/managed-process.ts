@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { BoundedOutput } from "./process.js";
+import { BoundedOutput, withPiManagedBinPath } from "./process.js";
 import { stripModelCredentialEnvironment } from "./providers.js";
 import { sandboxCommand, type SandboxOptions } from "./sandbox.js";
 import {
@@ -87,7 +87,7 @@ export class ManagedProcessRegistry {
       : sandboxCommand(command, options.cwd, options.sandbox);
     const env = visionCommand
       ? createVisionProcessEnvironment(process.env, options.thinkingLevel)
-      : stripModelCredentialEnvironment({ ...process.env });
+      : withPiManagedBinPath(stripModelCredentialEnvironment({ ...process.env }));
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd,
