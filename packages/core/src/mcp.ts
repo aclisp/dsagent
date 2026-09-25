@@ -19,7 +19,7 @@ const stdioServerSchema = z.object({
   disabled: z.boolean().optional(),
 });
 const httpServerSchema = z.object({
-  url: z.string().url(),
+  url: z.url(),
   headers: z.record(z.string(), z.string()).optional(),
   disabled: z.boolean().optional(),
 });
@@ -37,6 +37,7 @@ interface ConnectedServer {
 
 interface ConnectedTool {
   name: string;
+  originalName: string;
   summary: string;
 }
 
@@ -47,8 +48,41 @@ export class MCPManager {
   private errors: string[] = [];
   private disabledReason: string | undefined;
   private disabledServers: string[] = [];
+  private readonly approvedTools = new Set<string>();
+  private readonly approvedServers = new Set<string>();
+  private approvalGeneration = 0;
+
+  get approvalEpoch(): number {
+    return this.approvalGeneration;
+  }
+
+  toolInfo(name: string): { server: string; tool: string } | undefined {
+    for (const server of this.servers) {
+      const tool = server.tools.find((tool) => tool.name === name);
+      if (tool) return { server: server.name, tool: tool.originalName };
+    }
+  }
+
+  isApproved(name: string): boolean {
+    const info = this.toolInfo(name);
+    return info !== undefined && (this.approvedTools.has(name) || this.approvedServers.has(info.server));
+  }
+
+  approve(name: string, scope: "tool" | "server"): void {
+    const info = this.toolInfo(name);
+    if (!info) return;
+    if (scope === "server") this.approvedServers.add(info.server);
+    else this.approvedTools.add(name);
+  }
+
+  revokeApprovals(): void {
+    this.approvedTools.clear();
+    this.approvedServers.clear();
+    this.approvalGeneration++;
+  }
 
   async connectConfigured(pi: ExtensionAPI, ctx: ExtensionContext, disabledReason?: string): Promise<void> {
+    this.revokeApprovals();
     this.errors = [];
     this.disabledServers = [];
     this.disabledReason = disabledReason;
@@ -92,9 +126,9 @@ export class MCPManager {
     const active = activeTools === undefined ? undefined : new Set(activeTools);
     const lines: string[] = [];
     for (const server of this.servers) {
-      lines.push(`${server.name}: connected (${server.tools.length} tools)`);
+      lines.push(`${server.name}: connected (${server.tools.length} tools)${this.approvedServers.has(server.name) ? " [all tools allowed for this session]" : ""}`);
       lines.push(...server.tools.map((tool) =>
-        `- ${tool.name}${active ? ` [${active.has(tool.name) ? "active" : inactiveReason}]` : ""}: ${tool.summary}`,
+        `- ${tool.name}${active ? ` [${active.has(tool.name) ? "active" : inactiveReason}]` : ""}${this.approvedTools.has(tool.name) ? " [allowed for this session]" : ""}: ${tool.summary}`,
       ));
     }
     lines.push(...this.errors.map((error) => `error: ${error}`));
@@ -111,6 +145,7 @@ export class MCPManager {
   }
 
   async close(): Promise<void> {
+    this.revokeApprovals();
     await Promise.allSettled(this.servers.map((server) => server.close()));
     this.servers.length = 0;
   }
@@ -134,7 +169,10 @@ export class MCPManager {
           ...(config.args ? { args: config.args } : {}),
           env: environment,
           cwd: config.cwd ? path.resolve(ctx.cwd, config.cwd) : ctx.cwd,
-          stderr: "inherit",
+          // MCP servers are external processes. Their stderr must not bypass the
+          // TUI renderer: startup banners would otherwise be written directly
+          // into the terminal and corrupt the current frame.
+          stderr: "ignore",
         });
         close = async () => transport.close();
         await client.connect(transport as any);
@@ -155,11 +193,19 @@ export class MCPManager {
         listed = await client.listTools({ cursor: listed.nextCursor });
         tools.push(...listed.tools);
       }
+      // Do not let normalized-name collisions associate a tool with the wrong server.
+      const localNames = new Set(this.toolNames());
+      for (const tool of tools) {
+        const name = `mcp__${sanitizeName(serverName)}__${sanitizeName(tool.name)}`;
+        if (localNames.has(name)) throw new Error(`Duplicate MCP tool name: ${name}`);
+        localNames.add(name);
+      }
       const registered: ConnectedTool[] = [];
       for (const tool of tools) {
         const localName = `mcp__${sanitizeName(serverName)}__${sanitizeName(tool.name)}`;
         registered.push({
           name: localName,
+          originalName: tool.name,
           summary: summarizeTool(tool.description, tool.title, tool.name),
         });
         pi.registerTool({

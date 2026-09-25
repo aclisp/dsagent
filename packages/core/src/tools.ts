@@ -286,14 +286,14 @@ export function createCodingTools(workspace: Workspace, harness: HarnessMode = "
   const applyPatchParameters = Type.Object({
     input: Type.String({
       minLength: 1,
-      description: "A complete *** Begin Patch / *** End Patch patch",
+      description: "A complete *** Begin Patch / *** End Patch patch with all file paths relative to the workspace root",
     }),
   });
   const applyPatch: AgentTool<typeof applyPatchParameters> = {
     name: "apply_patch",
     label: "Apply patch",
     description:
-      "Apply an atomic-style patch inside the workspace. Supports Add File, Update File, Delete File, and Move to directives.",
+      "Apply an atomic-style patch inside the workspace. All Add File, Update File, Delete File, and Move to paths must be relative to the workspace root. Absolute paths are rejected. Use src/app.ts, not /workspace/project/src/app.ts.",
     parameters: applyPatchParameters,
     constrainedSampling: {
       type: "grammar",

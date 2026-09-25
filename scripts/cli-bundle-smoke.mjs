@@ -89,7 +89,7 @@ try {
   }
   // Pi's variable-specifier OAuth and Bedrock imports must also resolve after
   // relocation. Import definitions only; do not authenticate or call providers.
-  for (const name of ["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "radius", "xai", "bedrock-converse-stream"]) {
+  for (const name of ["anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai", "bedrock-converse-stream"]) {
     await import(pathToFileURL(path.join(manifest.deep, `${name}.js`)).href);
   }
   console.log("deep: lazy OAuth and Bedrock module imports passed (no remote requests)");

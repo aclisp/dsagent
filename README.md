@@ -174,6 +174,11 @@ Credential and history behavior can be configured in `~/.dscode/config.json`:
 Credential modes are `auto`, `keyring`, and `file`. Set history persistence to `none` to run new
 sessions without writing transcripts. `DSCODE_SQLITE_HOME` relocates only SQLite state.
 
+Cache warming defaults to `off` to avoid additional model requests after an upgrade. To opt in,
+set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
+in `~/.dscode/settings.json`. Existing explicit settings are preserved, and `/status` includes
+cache-warming usage and estimated cost.
+
 Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
 history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
 copied into the new layout on first launch without deleting or overwriting anything. Project skills
@@ -211,6 +216,13 @@ them without confirmation. Without an interactive approval UI, calls requiring a
 are rejected. One server's connection or discovery failure does not stop the session;
 `/mcp` shows errors, discovered tools, and whether each is active. Configuration changes
 take effect on session initialization, without hot reload or automatic reconnection.
+
+The TUI MCP confirmation defaults to **Allow once**. You can also allow that tool
+or all tools from its server for the current session, including future calls with
+different parameters. These permissions apply in `auto` and `ask`; plan mode still
+blocks MCP calls. `/mcp` shows session permissions; `/mcp revoke` clears them all.
+Permissions are kept only in memory and cleared on session creation, switching,
+resuming, or MCP reconnection. Non-TUI confirmations remain single-use.
 
 ## Everyday commands
 

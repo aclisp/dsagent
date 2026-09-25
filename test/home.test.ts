@@ -63,6 +63,22 @@ describe("DSCode home", () => {
       .toBe("legacy\n");
   });
 
+  it("disables cache warming by default without replacing runtime preferences", async () => {
+    const home = await temporaryDirectory();
+    process.env.DSCODE_HOME = home;
+    process.env.DSCODE_SESSIONS_DIR = path.join(home, "sessions");
+    const settingsPath = path.join(home, "settings.json");
+    await fs.writeFile(settingsPath, JSON.stringify({ theme: "custom" }));
+    await initializeDSCodeHome();
+    expect(JSON.parse(await fs.readFile(settingsPath, "utf8"))).toEqual({
+      theme: "custom", cacheWarming: "off",
+    });
+    const optedIn = '{"theme":"custom","cacheWarming":"idle"}\n';
+    await fs.writeFile(settingsPath, optedIn);
+    await initializeDSCodeHome();
+    expect(await fs.readFile(settingsPath, "utf8")).toBe(optedIn);
+  });
+
   async function temporaryDirectory(): Promise<string> {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-home-test-"));
     temporaryDirectories.push(directory);

@@ -188,6 +188,11 @@ network     blocked
 默认 `minimal` harness 只暴露少量高杠杆工具：沙箱命令、后台进程交互、freeform patch 和并行
 delegation。`--harness safe` 会额外提供显式文件读取、文件搜索和自动语言诊断。
 
+TUI 的 MCP 确认框默认选中 **Allow once**（仅本次）。也可以授权本次会话内的单个工具，
+或该 server 的所有工具，包含后续不同参数的调用。授权在 `auto` 和 `ask` 模式下生效，
+`plan` 模式仍禁止 MCP 调用。`/mcp` 展示当前授权，`/mcp revoke` 撤销全部 MCP 会话授权。
+授权仅保存在内存中，新建、切换、恢复会话或 MCP 重连时清除；非 TUI 确认仍只允许单次调用。
+
 ## 常用启动方式
 
 ```bash

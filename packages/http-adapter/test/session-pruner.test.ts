@@ -120,4 +120,34 @@ describe("pruneSessionFile", () => {
     linear.appendMessage(assistantMessage("hi", 2));
     expect(pruneSessionFile(linear)).toBe(false);
   });
+
+  it.each([false, true])("preserves system context and edits after compaction (retain none: %s)", (retainNone) => {
+    const cwd = tempDir();
+    const sessionDir = tempDir();
+    const manager = SessionManager.create(cwd, sessionDir);
+    manager.appendMessage({ role: "system", content: "Follow project rules", timestamp: 1 });
+    manager.appendMessage(userMessage("old", 2));
+    manager.appendMessage(assistantMessage("old answer", 3));
+    const kept = manager.appendMessage(userMessage("retained", 4));
+    manager.appendMessage(assistantMessage("retained answer", 5));
+    manager.appendCompaction("summary", retainNone ? null : kept, 1000);
+    const edited = manager.appendMessage(userMessage("original", 6));
+    const omitted = manager.appendMessage(assistantMessage("discarded attempt", 7));
+    manager.appendContextEdit(edited, { content: "replacement" });
+    manager.appendContextEdit(omitted, null);
+    manager.appendMessage(assistantMessage("final answer", 8));
+
+    const before = manager.buildSessionContext().messages;
+    expect(before).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "system", content: "Follow project rules" }),
+      expect.objectContaining({ role: "user", content: "replacement" }),
+    ]));
+    expect(before.some((message) => message.role === "assistant" &&
+      message.content.some((block) => block.type === "text" && block.text === "discarded attempt"))).toBe(false);
+    expect(pruneSessionFile(manager)).toBe(true);
+    const reopened = SessionManager.open(manager.getSessionFile()!, sessionDir, cwd);
+    expect(reopened.buildSessionContext().messages).toEqual(before);
+    reopened.appendMessage(userMessage("next question", 9));
+    expect(reopened.buildSessionContext().messages).toEqual([...before, userMessage("next question", 9)]);
+  });
 });

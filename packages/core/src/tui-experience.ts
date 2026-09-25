@@ -32,9 +32,9 @@ import {
 import { defaultModelForProvider } from "./providers.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { DSCODE_VERSION } from "./version.js";
+import { summarizeSessionUsage, type SessionUsageSummary } from "./status.js";
 import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
 
-export const EDITOR_PLACEHOLDER = "Ask DSCode to change, explain, or test code";
 export const HIDDEN_THINKING_LABEL = "DSCode is thinking";
 const BLINKING_BLOCK_CURSOR = "\x1b[1 q";
 const DEFAULT_CURSOR_STYLE = "\x1b[0 q";
@@ -93,6 +93,11 @@ export function registerCodingTui(
   pi.on("agent_end", (_event, ctx) => {
     stopWorkingTimer();
     ctx.ui.setWorkingMessage();
+    activeTui?.requestRender();
+  });
+
+  pi.on("turn_end", () => {
+    activeTui?.requestRender();
   });
 
   pi.on("model_select", (event, ctx) => updateModelPresentation(ctx, event.model));
@@ -229,9 +234,6 @@ export function registerCodingTui(
           .slice(1, bottomIndex)
           .map((line) => (hardwareCursor ? stripFakeCursorHighlight(line) : line))
           .map((line) => highlightImageMarkers(line, this.imageAttachments, theme));
-        if (this.getText().length === 0 && content.length > 0) {
-          content[0] = renderEditorPlaceholder(theme, hardwareCursor);
-        }
         const panel = [
           panelLine("", width, theme),
           ...content.map((line, index) =>
@@ -256,6 +258,7 @@ export function registerCodingTui(
             network: access.network,
             cwd: ctx.cwd,
             contextPercent: ctx.getContextUsage()?.percent ?? null,
+            usage: summarizeSessionUsage(ctx.sessionManager.getEntries()),
           },
           theme,
         );
@@ -423,16 +426,6 @@ export function formatThinkingLabel(modelName?: string): string {
   return name ? `${name} is thinking` : HIDDEN_THINKING_LABEL;
 }
 
-export function renderEditorPlaceholder(theme: Theme, hardwareCursor: boolean): string {
-  if (hardwareCursor) {
-    return `${CURSOR_MARKER}${theme.fg("dim", EDITOR_PLACEHOLDER)}`;
-  }
-  return `${CURSOR_MARKER}${theme.inverse(EDITOR_PLACEHOLDER[0]!)}${theme.fg(
-    "dim",
-    EDITOR_PLACEHOLDER.slice(1),
-  )}`;
-}
-
 export function stripFakeCursorHighlight(line: string): string {
   const markerEnd = line.indexOf(CURSOR_MARKER) + CURSOR_MARKER.length;
   if (markerEnd < CURSOR_MARKER.length || !line.startsWith("\x1b[7m", markerEnd)) return line;
@@ -472,6 +465,7 @@ export interface MinimalStatusDetails {
   network: boolean;
   cwd: string;
   contextPercent: number | null;
+  usage?: Pick<SessionUsageSummary, "latestCacheHitRate" | "cost">;
 }
 
 export function minimalStatusParts(details: MinimalStatusDetails): string[] {
@@ -511,11 +505,34 @@ export function renderMinimalStatus(
     }
     return theme.fg("muted", part);
   });
-  return truncateToWidth(
-    `  ${painted.join(theme.fg("dim", " · "))}`,
-    width,
-    theme.fg("dim", "…"),
-  );
+  const separator = theme.fg("dim", " · ");
+  const ellipsis = theme.fg("dim", "…");
+  const hitRate = details.usage?.latestCacheHitRate;
+  const cache = theme.fg("text", hitRate === undefined ? "—" : `${hitRate.toFixed(1)}%`);
+  const cost = theme.fg("text", `$${(details.usage?.cost ?? 0).toFixed(3)}`);
+  const innerWidth = Math.max(0, width - 4);
+  let right = `${theme.fg("muted", "cache ")}${cache}${separator}${cost}`;
+  if (visibleWidth(right) > innerWidth) right = `${cache}${separator}${cost}`;
+  if (visibleWidth(right) > innerWidth) right = cost;
+  if (visibleWidth(right) > innerWidth) return padLine(right, width);
+
+  const leftWidth = Math.max(0, innerWidth - visibleWidth(right) - 2);
+  // Shorten the directory first, then the model, keeping access warnings visible.
+  const fixed = painted.slice(1, -1);
+  const joinLeft = (model: string, cwd: string): string =>
+    [model, ...fixed, cwd].filter(Boolean).join(separator);
+  let model = painted[0]!;
+  let cwd = painted[painted.length - 1]!;
+  const cwdWidth = Math.max(0, leftWidth - visibleWidth(joinLeft(model, "")) - 3);
+  cwd = truncateToWidth(cwd, cwdWidth, ellipsis);
+  if (visibleWidth(joinLeft(model, cwd)) > leftWidth) {
+    cwd = "";
+    const modelWidth = Math.max(0, leftWidth - visibleWidth(fixed.join(separator)) - (fixed.length ? 3 : 0));
+    model = truncateToWidth(model, modelWidth, ellipsis);
+  }
+  const left = truncateToWidth(joinLeft(model, cwd), leftWidth, ellipsis);
+  const gap = innerWidth - visibleWidth(left) - visibleWidth(right);
+  return `  ${left}${" ".repeat(gap)}${right}  `;
 }
 
 export function formatContext(ctx: ExtensionContext): string {

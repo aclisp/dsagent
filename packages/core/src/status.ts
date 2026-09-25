@@ -93,6 +93,7 @@ export function formatTokenCount(value: number): string {
 }
 
 function usageFromEntry(entry: SessionEntry): Usage | undefined {
+  if (entry.type === "usage") return entry.usage;
   if (entry.type === "message" && entry.message.role === "assistant") return entry.message.usage;
   if (entry.type === "message" && entry.message.role === "toolResult") return entry.message.usage;
   if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) {

@@ -10,6 +10,7 @@ import type {
   ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { generateDiffString, renderDiff } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   commandNeedsNetwork,
@@ -18,7 +19,6 @@ import {
   type AccessBoundary,
   type EffectiveAccess,
 } from "./access.js";
-import { classifyCommand } from "./approval.js";
 import { brandBlue } from "./brand.js";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
 import { permissionSchema, type PermissionMode } from "./config.js";
@@ -42,6 +42,12 @@ import {
 import { discoverProjectCommands } from "./project-profile.js";
 import { registerDSCodeProjectTrust } from "./project-trust.js";
 import { defaultModelForProvider } from "./providers.js";
+import { confirmDestructiveCommand } from "./destructive-command-confirmation.js";
+import { confirmMcpTool } from "./mcp-confirmation.js";
+import {
+  DEFAULT_DANGEROUS_COMMAND_INTENT,
+  detectDangerousCommand,
+} from "./dangerous-command.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
 import { registerSessionCommands } from "./session-commands.js";
@@ -61,6 +67,12 @@ import { Workspace } from "./workspace.js";
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
 const DIFF_ENTRY = "dscode-diff";
+
+interface DiffEntryData {
+  checkpointId: string;
+  patch: string;
+  files?: Array<{ path: string; status: string; diff: string }>;
+}
 
 const planAllowedTools = new Set([
   "read",
@@ -117,7 +129,7 @@ const writeStdinParameters = Type.Object({
 const applyPatchParameters = Type.Object({
   input: Type.String({
     minLength: 1,
-    description: "A complete *** Begin Patch / *** End Patch patch",
+    description: "A complete *** Begin Patch / *** End Patch patch with all file paths relative to the workspace root",
   }),
 });
 
@@ -132,6 +144,7 @@ export function createDSCodeExtension(
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       const mcp = new MCPManager();
+      let mcpApprovalQueue = Promise.resolve();
       let permission: PermissionMode = options.permission;
       let permissionBeforePlan: Exclude<PermissionMode, "plan"> =
         options.permission === "plan" ? "auto" : options.permission;
@@ -236,6 +249,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
+        mcp.revokeApprovals();
         checkpoints.length = 0;
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
@@ -285,6 +299,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
+        mcp.revokeApprovals();
         await queueSessionPartition(ctx);
         processes.dispose();
         await mcp.close();
@@ -346,7 +361,8 @@ export function createDSCodeExtension(
           typeof event.input.cmd === "string"
             ? event.input.cmd
             : undefined;
-        const dangerousCommand = command !== undefined && classifyCommand(command) === "dangerous";
+        const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
+        const dangerousCommand = commandAssessment?.dangerous === true;
         if (permission === "plan" && dangerousCommand) {
           return {
             block: true,
@@ -375,6 +391,35 @@ export function createDSCodeExtension(
           // The scoped network selector in exec_command is the approval UI for this action.
           return;
         }
+        if (externalMcp) {
+          const epoch = mcp.approvalEpoch;
+          // Only one prompt at a time; queued calls recheck newly granted scopes.
+          const approval = mcpApprovalQueue.then(async () => {
+            const expired = () => epoch !== mcp.approvalEpoch;
+            const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
+            if (expired()) return stale;
+            if (permission === "plan") return { block: true, reason: "Plan mode blocks MCP tools." };
+            if (permission === "full" || mcp.isApproved(event.toolName)) return;
+            if (!ctx.hasUI) {
+              return {
+                block: true,
+                reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
+              };
+            }
+            const info = mcp.toolInfo(event.toolName);
+            const choice = ctx.mode === "tui" && info
+              ? await confirmMcpTool(ctx.ui, info.server, info.tool, JSON.stringify(event.input, null, 2))
+              : await ctx.ui.confirm(`Allow ${event.toolName}?`, approvalSummary(event.toolName, event.input))
+                ? "once" : "deny";
+            if (expired()) return stale;
+            if (choice !== "once" && choice !== "tool" && choice !== "server") {
+              return { block: true, reason: "Denied by user" };
+            }
+            if (choice === "tool" || choice === "server") mcp.approve(event.toolName, choice);
+          });
+          mcpApprovalQueue = approval.then(() => {}, () => {});
+          return approval;
+        }
         if (!ctx.hasUI) {
           return {
             block: true,
@@ -383,10 +428,16 @@ export function createDSCodeExtension(
           };
         }
         if (dangerousCommand) {
-          const approved = await ctx.ui.confirm(
-            "Run destructive command?",
-            `${command}\n\nThis may delete data or alter system/process state.`,
-          );
+          const assessment = commandAssessment!;
+          const details = [
+            command,
+            "",
+            assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+            assessment.reason ?? "This command may affect files or system state",
+          ].join("\n");
+          const approved = ctx.mode === "tui"
+            ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
+            : await ctx.ui.confirm("Run destructive command?", details);
           if (!approved) return { block: true, reason: "Destructive command denied by user" };
         } else if (
           event.toolName === "apply_patch" &&
@@ -685,6 +736,14 @@ export function createDSCodeExtension(
           pi.appendEntry(DIFF_ENTRY, {
             checkpointId: checkpoint.id,
             patch: checkpoint.patch,
+            files: checkpoint.before.map((before) => {
+              const after = checkpoint.after.find((file) => file.path === before.path)!;
+              return {
+                path: before.path,
+                status: before.content === null ? "added" : after.content === null ? "deleted" : "modified",
+                diff: generateDiffString(before.content ?? "", after.content ?? "").diff,
+              };
+            }),
           });
         },
       });
@@ -708,11 +767,21 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("mcp", {
-        description: "Show MCP servers, tool names, and summaries",
-        handler: async (_args, ctx) => ctx.ui.notify(
-          mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive"),
-          "info",
-        ),
+        description: "Show MCP tools and session permissions; /mcp revoke clears permissions",
+        handler: async (args, ctx) => {
+          const action = args.trim();
+          if (action === "revoke") {
+            mcp.revokeApprovals();
+            ctx.ui.notify("MCP session permissions revoked. Future calls will require approval in auto/ask mode.", "info");
+            return;
+          }
+          if (action) {
+            ctx.ui.notify("Usage: /mcp or /mcp revoke", "info");
+            return;
+          }
+          const status = mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive");
+          ctx.ui.notify(mcp.toolNames().length > 0 ? `${status}\n\n/mcp revoke — revoke all MCP session permissions` : status, "info");
+        },
       });
 
       pi.registerCommand("x-7f3c9a", {
@@ -1067,10 +1136,11 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     name: "apply_patch",
     label: "Apply patch",
     description:
-      "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore.",
+      "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore. All Add File, Update File, Delete File, and Move to paths must be relative to the workspace root. Absolute paths are rejected. Use src/app.ts, not /workspace/project/src/app.ts.",
     promptSnippet: "apply_patch: atomically add, update, move, or delete workspace files",
     promptGuidelines: [
       "Use apply_patch for file changes; keep each patch focused and reviewable.",
+      "All apply_patch file paths must be relative to the workspace root, regardless of any exec_command working directory or shell cd. Absolute paths are rejected.",
       "Never report a change as complete before running relevant validation.",
     ],
     parameters: applyPatchParameters,
@@ -1216,12 +1286,18 @@ function registerEntryRenderers(pi: ExtensionAPI): void {
           )
         : undefined,
   );
-  pi.registerEntryRenderer<{ checkpointId: string; patch: string }>(
+  pi.registerEntryRenderer<DiffEntryData>(
     DIFF_ENTRY,
     (entry, _options, theme) =>
       entry.data
         ? new Text(
-            `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${colorPatch(entry.data.patch, theme)}`,
+            `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${
+              entry.data.files
+                ? entry.data.files.map((file) =>
+                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(file.diff)}`,
+                  ).join("\n\n")
+                : colorPatch(entry.data.patch, theme)
+            }`,
             0,
             0,
           )
