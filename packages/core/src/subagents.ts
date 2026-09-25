@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { runProcess } from "./process.js";
+import { isStandalone } from "./distribution.js";
 import type { DSCodeRuntimeOptions } from "./runtime-options.js";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
 
@@ -162,7 +163,7 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     "--permission",
     readOnly ? "plan" : "auto",
     "--sandbox",
-    readOnly ? "read-only" : "workspace-write",
+    isStandalone ? runtime.sandbox : readOnly ? "read-only" : "workspace-write",
     "--thinking",
     role === "explorer" ? "low" : "max",
     ...(runtime.network ? ["--network"] : []),
@@ -221,6 +222,7 @@ async function createWorktree(cwd: string): Promise<string> {
 }
 
 function childInvocation(): { command: string; prefix: string[] } {
+  if (isStandalone) return { command: process.execPath, prefix: [] };
   const script = process.argv[1];
   if (!script) throw new Error("Cannot locate the DSCode entrypoint");
   if (script.endsWith(".ts")) {

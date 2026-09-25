@@ -1,10 +1,11 @@
 import fs from "node:fs";
+import { embeddedVersion } from "./distribution.js";
 
 interface PackageMetadata {
   version?: unknown;
 }
 
-const metadata = JSON.parse(
+const metadata = embeddedVersion ? { version: embeddedVersion } : JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as PackageMetadata;
 

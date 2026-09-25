@@ -61,6 +61,7 @@ import {
   type ToolPresentationContext,
 } from "./tool-ui.js";
 import { createCodingTools } from "./tools.js";
+import { createDSCodeReadTool } from "./read-tool.js";
 import { formatThinkingLabel, registerCodingTui } from "./tui-experience.js";
 import { Workspace } from "./workspace.js";
 
@@ -191,6 +192,7 @@ export function createDSCodeExtension(
       registerLocalImageInput(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
+      pi.registerTool(createDSCodeReadTool(options.cwd));
       registerCommandTools(
         pi,
         processes,

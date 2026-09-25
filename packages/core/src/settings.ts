@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promi
 import path from "node:path";
 import process from "node:process";
 import { getDSCodeHome } from "./home.js";
+import { isStandalone } from "./distribution.js";
 
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
@@ -53,7 +54,7 @@ export function getDSCodeStorageSettings(
   const settings = readSettingsSync(settingsPath);
   const configuredStore = settings.cli_auth_credentials_store;
   const environmentStore = process.env.DSCODE_CREDENTIALS_STORE;
-  const credentialStore = parseCredentialStoreMode(environmentStore ?? configuredStore ?? "auto");
+  const credentialStore = isStandalone ? "file" : parseCredentialStoreMode(environmentStore ?? configuredStore ?? "auto");
   const historyPersistence = parseHistoryPersistence(settings.history?.persistence ?? "save-all");
   const sqliteHome = process.env.DSCODE_SQLITE_HOME ?? settings.sqlite_home;
   return {

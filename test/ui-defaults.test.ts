@@ -26,6 +26,10 @@ describe("DSCode UI defaults", () => {
       theme: "light/dark",
       quietStartup: true,
       showHardwareCursor: true,
+      hideThinkingBlock: true,
+      tuiMode: "fullscreen",
+      fullscreenExitOutput: "transcript",
+      fullscreenScrollbar: "hidden",
       dscodeUiDefaultsVersion: 1,
     });
   });
@@ -39,6 +43,10 @@ describe("DSCode UI defaults", () => {
       quietStartup: false,
       showHardwareCursor: true,
       theme: "light/dark",
+      hideThinkingBlock: true,
+      tuiMode: "fullscreen",
+      fullscreenExitOutput: "transcript",
+      fullscreenScrollbar: "hidden",
       dscodeUiDefaultsVersion: 1,
     });
   });
@@ -46,11 +54,41 @@ describe("DSCode UI defaults", () => {
   it("respects explicit preferences after the adaptive-theme migration", async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-ui-"));
     temporaryDirectories.push(directory);
-    const contents =
-      '{"theme":"light","quietStartup":true,"showHardwareCursor":false,"dscodeUiDefaultsVersion":1}\n';
+    const contents = `${JSON.stringify({
+      theme: "light",
+      quietStartup: true,
+      showHardwareCursor: false,
+      hideThinkingBlock: false,
+      tuiMode: "regular",
+      fullscreenExitOutput: "resume-hint",
+      fullscreenScrollbar: "always",
+      dscodeUiDefaultsVersion: 1,
+    })}\n`;
     await fs.writeFile(path.join(directory, "settings.json"), contents);
     await ensureDSCodeUiDefaults(directory);
     expect(await fs.readFile(path.join(directory, "settings.json"), "utf8")).toBe(contents);
+  });
+
+  it("adds TUI defaults to existing UI settings without rerunning migrations", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-ui-"));
+    temporaryDirectories.push(directory);
+    await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({
+      theme: "light",
+      quietStartup: false,
+      showHardwareCursor: false,
+      dscodeUiDefaultsVersion: 1,
+    }));
+    await ensureDSCodeUiDefaults(directory);
+    expect(JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"))).toEqual({
+      theme: "light",
+      quietStartup: false,
+      showHardwareCursor: false,
+      hideThinkingBlock: true,
+      tuiMode: "fullscreen",
+      fullscreenExitOutput: "transcript",
+      fullscreenScrollbar: "hidden",
+      dscodeUiDefaultsVersion: 1,
+    });
   });
 
   it("keeps custom themes while recording the migration", async () => {
@@ -65,6 +103,10 @@ describe("DSCode UI defaults", () => {
       theme: "catppuccin",
       quietStartup: true,
       showHardwareCursor: true,
+      hideThinkingBlock: true,
+      tuiMode: "fullscreen",
+      fullscreenExitOutput: "transcript",
+      fullscreenScrollbar: "hidden",
       dscodeUiDefaultsVersion: 1,
     });
   });

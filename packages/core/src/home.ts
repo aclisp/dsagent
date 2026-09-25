@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { ensureDSCodeRuntimeDefaults } from "./runtime-defaults.js";
+import { isStandalone } from "./distribution.js";
 
 const LEGACY_AGENT_ENTRIES = [
   "auth.json",
@@ -45,7 +46,7 @@ export async function initializeDSCodeHome(): Promise<string> {
 
   await fs.mkdir(home, { recursive: true, mode: 0o700 });
   await fs.chmod(home, 0o700).catch(() => undefined);
-  if (process.env.DSCODE_HOME === undefined) {
+  if (!isStandalone && process.env.DSCODE_HOME === undefined) {
     await migrateLegacyDSCodeHome(home);
   }
   await ensureDSCodeRuntimeDefaults(home);

@@ -1,0 +1,95 @@
+# Standalone dscode
+
+Production build entry point for the macOS arm64 and Linux x86_64 standalone runtimes. The executable includes Bun and requires no Node.js, Bun, or node_modules installation.
+See [ADR-0003](../docs/decisions/0003-standalone-cli.md) for product scope. The build script explicitly rejects other platforms; Linux builds use Bun's x64 baseline target so the executable also runs on pre-AVX2 CPUs.
+
+## Build and validate
+
+The build machine needs the project dependencies, pnpm, and Bun **1.3.14**; macOS builds also use the system `codesign`:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:standalone
+pnpm check:standalone
+```
+
+On macOS arm64, `pnpm build:standalone` builds **both** macOS arm64 and Linux x86_64 binaries. On Linux x86_64, it builds only the native Linux binary; the macOS artifact requires macOS `codesign`.
+
+To build just one target on this Mac:
+
+```sh
+pnpm build:standalone --target linux-x64
+pnpm build:standalone --target darwin-arm64
+```
+
+`pnpm check:standalone` performs the default build above, then runs the acceptance suite **only for the host platform**. Cross-compilation does not validate execution on the target OS. To test the Mac-built Linux artifact, copy its output directory to a Linux host with this repository's test dependencies and run:
+
+```sh
+node standalone/test/verify.mjs /absolute/path/to/copied/linux-x64
+```
+
+Cross-compilation downloads and caches the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) and build the matching target explicitly with `--target`.
+
+Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
+
+- `dscode`: approximately 71 MiB on macOS arm64, 100 MiB on Linux x86_64; the only file needed at runtime, relocatable to any directory.
+- `dscode.sha256`: SHA-256 checksum file.
+- `build.json`: version, build host, target, size, dependency removal, and adapter records.
+- `verification.json`: runtime acceptance results, generated only after validation; rebuilding removes the previous report.
+
+```sh
+./dist/standalone/linux-x64/dscode --version
+./dist/standalone/linux-x64/dscode
+```
+
+The existing GitHub release workflow builds and validates each platform on a native runner, then attaches `dscode-v<version>-<platform>.tar.gz` to the release alongside the independent container publication. Each archive contains `dscode` and `dscode.sha256`. Failed standalone jobs can be retried with GitHub Actions' **Re-run failed jobs**; uploading replaces an existing asset with the same name.
+
+The macOS executable currently uses ad-hoc signing; the Linux executable is unsigned. Developer ID signing, notarization, and installer scripts are outside this implementation.
+The ordinary Node distribution continues to use `pnpm build`; the npm package excludes the standalone executable.
+
+## Layout and maintenance boundaries
+
+| Path | Responsibility |
+| --- | --- |
+| `build.mjs` | Platform/version checks, asset collection, compilation of both entry points, signing, and checksums |
+| `cli.mjs` / `runtime.mjs` | Start DSCode, reject unsupported commands, and register OAuth/Bedrock entry points |
+| `pi-adapter.mjs` | Centralize adaptations for the pinned pi version, embed assets and the image worker, and disable user extensions and package resolution |
+| `disabled.mjs` / `*-command*.mjs` / `windows-sandbox.mjs` | Build replacements for explicitly excluded features |
+| `test/` | Local mock model, stdio/HTTP MCP, PTY, and acceptance checks for the relocated executable |
+| `../packages/core/src/distribution.ts` | Compile-time constants controlling distribution-specific Core behavior |
+
+The build does not modify node_modules or maintain a separate copy of Core. Ordinary Node builds leave these constants undefined and retain their existing defaults.
+Core differences are limited to version metadata, file credentials, skipping legacy migration, host sandbox defaults, help, and subagents launching the executable itself.
+Subagents in plan mode retain tool permission restrictions; their default host sandbox is no longer implicitly changed to an OS read-only sandbox by the plan role.
+Explicit sandbox selections still follow the existing rules.
+
+The pi adapter is currently pinned to **0.87.1**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
+When upgrading pi/Bun, review the adapter points and rerun `pnpm check` and `pnpm check:standalone`.
+The `experiments/standalone/` directory preserves historical feasibility records and is not used for production builds.
+
+## Runtime behavior
+
+- Command: `dscode`; default state directory: `~/.dscode`; existing `DSCODE_*` variables are retained.
+- Supports TUI, `-p`, JSON, RPC, subagents, local Skills, stdio/HTTP MCP, image preprocessing, and HTML export.
+- Defaults to `danger-full-access` without implicitly granting `permission=full`; existing approvals remain in effect.
+- Forces file credentials without rewriting configuration to override old keyring settings or migrating keyring credentials.
+- Disables user pi extensions and pi package management; retains the built-in DSCode extension.
+- Excludes SQLite, keyring, the vision CLI, native clipboard helpers, Kerberos, and native WebSocket accelerators.
+- Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
+- Normal sessions, credentials, checkpoints, and user output may still be written to disk. Retains pi's download of missing rg/fd; users supply other external tools and MCP services.
+- DSCode `exec_command` prepends pi's managed `bin` directory to the child process PATH, so previously downloaded `rg` and `fd` are available by name. This does not redirect pi's data directory or extension discovery.
+- Does not automatically check for new versions.
+
+## Validation coverage and limitations
+
+Offline acceptance copies **only one executable** to a temporary directory and uses an isolated HOME and a PATH without Node/Bun. On macOS, Seatbelt additionally denies reads from the source/build directories and restricts writes to the temporary directory; Linux runs the same checks without that OS-level isolation.
+Tests do not use real credentials or call paid models.
+
+Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an explorer subagent launching itself and executing a command, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
+
+These checks do not replace real provider/OAuth/enterprise proxy testing, and do not cover every TUI shortcut or tool combination.
+Acceptance retains temporary directories for inspection; their paths are printed and recorded in `verification.json`.
+
+## Validation record
+
+2026-09-25 Linux x86_64: built with Bun 1.3.14 targeting `bun-linux-x64-baseline` on glibc 2.34; all 20 offline acceptance checks passed, including both PTY/TUI checks, the embedded WASM image worker, an explorer subagent relaunching the executable, and stdio/HTTP MCP. The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version and real provider/OAuth paths remain untested.

@@ -59,6 +59,7 @@ describe("checkpoint extension commands", () => {
       parseRuntimeArgs(["-C", root, "--no-mcp", "--permission", "auto"]).options,
     );
     await (typeof extension === "function" ? extension(pi) : extension.factory(pi));
+    expect(tools.get("read")?.renderShell).toBe("self");
     for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
 
     await fs.writeFile(path.join(root, "config.txt"), "timeout = 1000\n");

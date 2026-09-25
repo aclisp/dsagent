@@ -2,6 +2,7 @@ import type { PermissionMode } from "./config.js";
 import type { ManagedProcessResult } from "./managed-process.js";
 import type { SandboxMode } from "./runtime-options.js";
 import { parseTrustedVisionCommand } from "./vision-command.js";
+import { isStandalone } from "./distribution.js";
 
 export type AccessBoundary = "network" | "host";
 
@@ -23,7 +24,10 @@ export class SessionAccessController {
   effective(permission: PermissionMode): EffectiveAccess {
     if (permission === "full") return { sandbox: "danger-full-access", network: true };
     return {
-      sandbox: permission === "plan" ? "read-only" : this.baseSandbox,
+      // Standalone plan mode retains tool-level restrictions without requiring
+      // an OS sandbox when the selected boundary is host access.
+      sandbox: permission === "plan" && !(isStandalone && this.baseSandbox === "danger-full-access")
+        ? "read-only" : this.baseSandbox,
       network: this.baseNetwork || this.baseSandbox === "danger-full-access",
     };
   }
