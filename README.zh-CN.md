@@ -33,16 +33,38 @@ REST+SSE API、自托管 Web UI 或企业微信使用同一套运行时。
 
 ## 快速开始
 
-### 终端应用（CLI/TUI）
+### 独立可执行文件（推荐）
 
-运行一键安装脚本。它会把 DSCode 安装到 `~/.local/share/dscode`，完成构建，并在 `~/.local/bin`
-创建 `dscode` 启动器。
+推荐新用户下载独立可执行文件，无需安装 Node.js、Bun、包管理器，也无需从源码构建。
+
+1. 打开 [GitHub Releases](https://github.com/aclisp/dsagent/releases)，在 **Assets** 中下载适合你电脑的压缩包：
+
+   | 电脑 | 下载文件 |
+   | --- | --- |
+   | Apple Silicon Mac（M1 或更新芯片） | `dscode-v<version>-darwin-arm64.tar.gz` |
+   | Linux x86_64 / AMD64 | `dscode-v<version>-linux-x64.tar.gz` |
+
+2. 解压压缩包，在解压后的文件夹中打开终端。
+3. 启动 DSCode：
+
+```bash
+./dscode
+```
+
+运行时只需要 `dscode` 这一个可执行文件，可以将它移动到任意文件夹。随附的 `dscode.sha256`
+是校验和文件。独立可执行文件目前支持上表中的两个平台。macOS 版本尚未公证，系统可能要求你在
+**系统设置 → 隐私与安全性** 中允许打开。
+
+登录、首次运行及 CLI/运行时说明见[CLI 与运行时参考](docs/CLI_REFERENCE.zh-CN.md)。
+
+### 一键安装脚本
+
+也可以运行一键安装脚本。它会把 DSCode 安装到 `~/.local/share/dscode`，完成构建，并在
+`~/.local/bin` 创建 `dscode` 启动器。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
 ```
-
-登录、首次运行及 CLI/运行时说明见[CLI 与运行时参考](docs/CLI_REFERENCE.zh-CN.md)。
 
 ### 开发者：从源码构建
 

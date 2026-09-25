@@ -42,7 +42,9 @@ Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux
 ./dist/standalone/linux-x64/dscode
 ```
 
-The macOS executable currently uses ad-hoc signing; the Linux executable is unsigned. Developer ID signing, notarization, download publication, and installer scripts are outside this implementation.
+The existing GitHub release workflow builds and validates each platform on a native runner, then attaches `dscode-v<version>-<platform>.tar.gz` to the release alongside the independent container publication. Each archive contains `dscode` and `dscode.sha256`. Failed standalone jobs can be retried with GitHub Actions' **Re-run failed jobs**; uploading replaces an existing asset with the same name.
+
+The macOS executable currently uses ad-hoc signing; the Linux executable is unsigned. Developer ID signing, notarization, and installer scripts are outside this implementation.
 The ordinary Node distribution continues to use `pnpm build`; the npm package excludes the standalone executable.
 
 ## Layout and maintenance boundaries

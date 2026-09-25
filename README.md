@@ -35,17 +35,39 @@ model, then use the same runtime from the terminal, REST+SSE API, self-hosted We
 
 ## Quick start
 
-### Terminal app (CLI/TUI)
+### Standalone executable (recommended)
 
-Run the one-click installer. It installs DSCode into `~/.local/share/dscode`, builds it, and
-creates a `dscode` launcher in `~/.local/bin`.
+Start with a standalone executable. No Node.js, Bun, package manager, or source build is required.
+
+1. Open [GitHub Releases](https://github.com/aclisp/dsagent/releases) and download the archive for your computer from **Assets**:
+
+   | Computer | Download |
+   | --- | --- |
+   | macOS with Apple Silicon (M1 or later) | `dscode-v<version>-darwin-arm64.tar.gz` |
+   | Linux x86_64 / AMD64 | `dscode-v<version>-linux-x64.tar.gz` |
+
+2. Extract the archive and open a terminal in the extracted folder.
+3. Start DSCode:
+
+```bash
+./dscode
+```
+
+Only the `dscode` executable is needed; you can move it to any folder. The included `dscode.sha256`
+file is its checksum. Standalone downloads currently support the two platforms above. The macOS
+executable is not notarized, so macOS may ask you to allow it in **System Settings → Privacy & Security**.
+
+For login, first-run guidance, and CLI/runtime details, see the
+[CLI & Runtime Reference](docs/CLI_REFERENCE.md).
+
+### One-click installer
+
+Alternatively, run the one-click installer. It installs DSCode into `~/.local/share/dscode`, builds it,
+and creates a `dscode` launcher in `~/.local/bin`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
 ```
-
-For login, first-run guidance, and CLI/runtime details, see the
-[CLI & Runtime Reference](docs/CLI_REFERENCE.md).
 
 ### Developers: build from source
 
