@@ -280,6 +280,29 @@ describe("MCP extension lifecycle", () => {
     expect(await run.emit("tool_call", call)).toMatchObject({ block: true });
   });
 
+  it("gates server operations and control-structure bodies even with unrestricted host access", async () => {
+    const run = await runtime(["--no-mcp", "--sandbox", "danger-full-access", "--network"]);
+    run.confirm.mockClear();
+    for (const cmd of [
+      "rsync -an --delete src/ dst/", "docker compose --dry-run down -v",
+      "systemctl status app", "if true; then git clean -nd; fi",
+      "for f in rm file; do echo \"$f\"; done",
+    ]) {
+      expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd } })).toBeUndefined();
+    }
+    expect(run.confirm).not.toHaveBeenCalled();
+    run.confirm.mockResolvedValue(false);
+    for (const cmd of [
+      "rsync -a --delete src/ dst/", "docker compose down -v", "systemctl restart app",
+      "git worktree remove -f ../old", "unlink data.db",
+      "if true; then rm file; fi", "for f in *.log; do rm \"$f\"; done",
+      "{ docker volume prune -f; }",
+    ]) {
+      expect(await run.emit("tool_call", { toolName: "exec_command", input: { cmd } })).toMatchObject({ block: true });
+      expect(run.confirm).toHaveBeenLastCalledWith("Run destructive command?", expect.stringContaining(cmd));
+    }
+  });
+
   it("continues after one server fails and clears stale active tools on session initialization", async () => {
     await configure({ missing: { command: path.join(root, "missing-command") }, fixture, disabled: { ...fixture, disabled: true } });
     const run = await runtime(["--tools", `read,${mcpTool}`]);
