@@ -1,5 +1,10 @@
 # CLI bundling
 
+The separate standalone-executable investigation is documented in
+[ADR-0003](decisions/0003-standalone-cli.md) and the
+[offline feasibility experiment](../experiments/standalone/README.md).
+The Node-based production bundle described below remains unchanged.
+
 `pnpm build` creates both CLI variants from the same source:
 
 | Entry | Purpose |
