@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  A local-first, multi-provider coding agent with DeepSeek defaults.
+  Your self-hosted AI coding and operations companion, right on your server.
 </p>
 
 <p align="center">
@@ -14,44 +14,28 @@
   <a href="docs/COMPARISON.en.md">Comparison</a>
 </p>
 
-DSCode is an opinionated coding-agent runtime with DeepSeek Flash as its economical default and
-built-in support for Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go. It combines
-provider-aware model routing with local sessions, safe patching, parallel agents, OS sandboxing, and
-transparent usage reporting.
-
-> DSCode is an independent continuation of [dscode](https://github.com/thinkany-ai/dscode). It began as a fork,
-> preserves the upstream Git history, and is now developed and released as a separate product. Selected upstream
-> changes are reviewed and integrated selectively; see [docs/UPSTREAM.md](docs/UPSTREAM.md).
-
-It is not trying to out-feature every general-purpose agent. It keeps the runtime local and inspectable
-while letting each repository task use the model capabilities it actually needs.
-
 ## Why DSCode
 
-- **DeepSeek-first, not DeepSeek-only.** DeepSeek Flash remains the default, with its dedicated
-  Responses adapter, native free-form `apply_patch`, and optional server-side Web Search. Switch to
-  Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go without changing tools or sessions.
-- **Vision when the model supports it.** Paste an image in the TUI or pass an image as `@file`; models
-  such as GPT-5.6 receive the actual image attachment while text-only DeepSeek models fail clearly.
-- **Cost-aware by design.** DeepSeek's 1M context and disk prefix cache are reflected in the runtime;
-  `/status` reports context, cache hits, tokens, reasoning, and estimated cost. See current
-  [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).
-- **Parallel work with clear ownership.** Run explorer, implementer, reviewer, and tester roles with up
-  to four tasks in parallel. Implementers work in isolated Git worktrees; the primary agent owns
-  integration and final validation.
-- **Local control.** Sessions are stored as local tree-shaped JSONL. Commands run in an OS sandbox with
-  network blocked by default, API keys are removed from child-process environments, and every successful
-  patch creates a durable, conflict-safe checkpoint.
-- **No workflow reset.** DSCode understands `AGENTS.md` and `CLAUDE.md`, and supports Agent Skills, MCP,
-  hooks, project trust, background jobs, JSONL/CI, RPC, and a VS Code entry point.
+- **DeepSeek-first, with the freedom to choose.** DSCode pairs DeepSeek Flash with a dedicated Responses
+  integration and native free-form patching. Switch to Codex, OpenAI,
+  Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go while keeping your tools and sessions.
+- **Your AI operations companion, right on the server.** Install DSCode on the Linux server you manage.
+  From its TUI, inspect services and workspaces, run and follow commands, and apply patch changes you
+  can review and undo. A focused four-tool workflow—`read`, `exec_command`, `write_stdin`, and
+  `apply_patch`—covers inspection, command execution, live process control, and reviewable changes.
+- **One runtime, from terminal to integration.** Work in the CLI/TUI, embed the same Core through
+  REST+SSE, or bring DSCode to a self-hosted Web UI. Live agent and tool activity, interactive requests,
+  and persistent sessions let each interface take part in the same workflow.
+- **Built-in WeCom turns chats into operational work.** Teammates can message DSCode directly or
+  mention it in a group chat, share context and supported media, then schedule work whose results
+  return to the originating conversation.
 
-For an evidence-based comparison with Claude Code and Codex, see
-[DSCode compared](docs/COMPARISON.en.md). The short version: those products have broader and more mature
-ecosystems; DSCode is smaller, DeepSeek-first, locally controlled, and MIT-licensed.
+DSCode is opinionated by default, lightweight at its core, and flexible where it matters: choose your
+model, then use the same runtime from the terminal, REST+SSE API, self-hosted Web UI, or WeCom.
 
 ## Quick start
 
-### End users: CLI
+### Terminal app (CLI/TUI)
 
 Run the one-click installer. It installs DSCode into `~/.local/share/dscode`, builds it, and
 creates a `dscode` launcher in `~/.local/bin`.
@@ -60,9 +44,10 @@ creates a `dscode` launcher in `~/.local/bin`.
 curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install.sh | sh
 ```
 
-Then follow [Terminal app](#terminal-app) for login and first run.
+For login, first-run guidance, and CLI/runtime details, see the
+[CLI & Runtime Reference](docs/CLI_REFERENCE.md).
 
-### Developers: source setup
+### Developers: build from source
 
 ```bash
 git clone https://github.com/aclisp/dsagent.git
@@ -74,328 +59,17 @@ pnpm check
 
 The repository's npm packages are private workspace packages and are not currently published to npm.
 
-## Web UI (chat server)
+## Web UI
 
 DSCode also ships a self-hosted web chat server in `packages/web-ui`. The public Docker Hub image
 (`docker.io/aclisp/dsagent`) packages this server for cloud deployment. Run and configure it via the
 [web UI README](packages/web-ui/README.md); Compose templates and deployment instructions are in
 [deploy/cloud/dscode](deploy/cloud/dscode/README.md).
 
-## Terminal app
+## Project origins
 
-Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
-
-Start DSCode from a local source checkout:
-
-```bash
-dscode -C /path/to/project
-```
-
-On a fresh installation, enter `/login` in the TUI and choose a provider. DSCode completes
-authentication and selects that provider's default model. DeepSeek remains the default for
-non-interactive commands and explicit provider-free configuration.
-
-| Provider | ID | Authentication |
-| --- | --- | --- |
-| DeepSeek | `deepseek` | API key |
-| OpenAI Codex | `openai-codex` | Eligible ChatGPT plan |
-| OpenAI | `openai` | API key |
-| Anthropic | `anthropic` | Claude account or API key |
-| OpenRouter | `openrouter` | OpenRouter account or API key |
-| Z.AI Coding Plan | `zai` | API key |
-| Kimi For Coding | `kimi-coding` | Kimi Code account or API key |
-| MiniMax | `minimax` | API key |
-| xAI / Grok | `xai` | Grok/X account or API key |
-| OpenCode Zen Go | `opencode-go` | API key |
-
-The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
-
-When configuring DeepSeek, DSCode masks the API key, then offers an optional API base URL. Press Enter to use
-`https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. By default, credentials
-use the operating system keyring; `~/.dscode/auth.json` is the owner-only fallback for headless hosts
-or unavailable keyring services. The endpoint is stored in `~/.dscode/config.json` with `0600`
-permissions. Resolution order is `--base-url`, `DEEPSEEK_BASE_URL`, saved config, then the official
-DeepSeek URL. To avoid storing a key:
-
-```bash
-export DEEPSEEK_API_KEY="sk-..."
-export DEEPSEEK_BASE_URL="https://api.deepseek.com"
-dscode -C /path/to/project
-```
-
-You can also authenticate before opening the TUI:
-
-```bash
-dscode login deepseek      # DeepSeek API key
-dscode login openai-codex  # browser OAuth; uses ChatGPT plan limits
-dscode login openai        # securely prompts for an OpenAI API key
-dscode login anthropic     # Claude account or Anthropic API key
-dscode login openrouter    # OpenRouter account or API key
-dscode login opencode-go   # OpenCode Zen Go API key
-```
-
-The selected provider and model are saved for later runs. Override them at any time:
-
-```bash
-dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
-dscode --provider deepseek --model deepseek-flash -C /path/to/project
-```
-
-DSCode keeps all of its global state under `~/.dscode`:
-
-```text
-~/.dscode/settings.json    TUI and runtime preferences
-~/.dscode/config.json      DSCode storage policy and DeepSeek endpoint
-~/.dscode/auth.json        Owner-only credential fallback
-~/.dscode/credential-metadata.json  Non-secret keyring index
-~/.dscode/state.sqlite     Thread metadata and desktop runtime state
-~/.dscode/skills/          Global skills
-~/.dscode/extensions/      Global extensions
-~/.dscode/mcp.json         Global MCP servers
-~/.dscode/hooks.json       Global hooks
-~/.dscode/sessions/YYYY/MM/DD/  JSONL session transcripts
-~/.dscode/archived_sessions/   Archived transcripts
-```
-
-The flat `sessions/*.jsonl` names are hard-link compatibility entries for the current terminal
-runtime; each points to the same inode as its date-partitioned transcript and does not duplicate
-content. JSONL is the transcript source of truth. SQLite contains only searchable thread metadata,
-pin/archive state, and file fingerprints.
-
-Credential and history behavior can be configured in `~/.dscode/config.json`:
-
-```json
-{
-  "cli_auth_credentials_store": "auto",
-  "history": { "persistence": "save-all" }
-}
-```
-
-Credential modes are `auto`, `keyring`, and `file`. Set history persistence to `none` to run new
-sessions without writing transcripts. `DSCODE_SQLITE_HOME` relocates only SQLite state.
-
-Cache warming defaults to `off` to avoid additional model requests after an upgrade. To opt in,
-set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
-in `~/.dscode/settings.json`. Existing explicit settings are preserved, and `/status` includes
-cache-warming usage and estimated cost.
-
-Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
-history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
-copied into the new layout on first launch without deleting or overwriting anything. Project skills
-should use the portable `.agents/skills/` convention.
-
-## Default runtime
-
-Fresh installations use:
-
-```text
-model       deepseek-flash
-transport   responses
-thinking    max
-harness     minimal
-permission  auto
-sandbox     workspace-write
-network     blocked
-```
-
-CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
-The `minimal` and `safe` harnesses do not change that default selection. The safe
-harness also registers file/search and language-diagnostic tools for explicit selection.
-CLI delegation can be enabled with `--tools ...,delegate`.
-
-Configured, enabled MCP servers are discovered when a session initializes. Their tools
-are added automatically, including when `--tools` is explicit; `--tools` is no longer
-a strict allowlist of all tools. Use `--tools read --no-mcp` for only the `read` tool.
-`--no-mcp` skips MCP connections and registration. `--no-tools` disables every tool
-and skips MCP, regardless of argument order or permission changes.
-
-CLI plan mode temporarily adds `update_plan` and hides MCP tools, then restores the
-previous selection on exit. `--no-tools` also prevents this temporary addition.
-MCP calls still require approval in `auto`/`ask`; plan forbids them and `full` permits
-them without confirmation. Without an interactive approval UI, calls requiring approval
-are rejected. One server's connection or discovery failure does not stop the session;
-`/mcp` shows errors, discovered tools, and whether each is active. Configuration changes
-take effect on session initialization, without hot reload or automatic reconnection.
-
-The TUI MCP confirmation defaults to **Allow once**. You can also allow that tool
-or all tools from its server for the current session, including future calls with
-different parameters. These permissions apply in `auto` and `ask`; plan mode still
-blocks MCP calls. `/mcp` shows session permissions; `/mcp revoke` clears them all.
-Permissions are kept only in memory and cleared on session creation, switching,
-resuming, or MCP reconnection. Non-TUI confirmations remain single-use.
-
-## Everyday commands
-
-```bash
-# Start a new session
-dscode -C ./my-project
-
-# Continue or select a previous session
-dscode -C ./my-project --continue
-dscode -C ./my-project --resume
-
-# One-shot output, JSONL automation, or IDE RPC
-dscode -C ./my-project -p "Explain the authentication flow"
-dscode -C ./my-project --mode json -p "Fix lint errors and run tests"
-dscode -C ./my-project --mode rpc
-
-# Inspect a screenshot with a vision-capable model
-dscode --provider openai-codex @screenshot.png "Explain this error"
-```
-
-Inside the TUI, paste a PNG, JPEG, GIF, or WebP image and add your question. DSCode immediately replaces
-the terminal's local path with an `[Image #N]` marker, attaches the image bytes to the message, and
-supports up to eight images of 20 MB each per turn.
-
-Inside the TUI:
-
-| Command | Purpose |
-| --- | --- |
-| `/plan` | Enter or leave structured read-only planning |
-| `/permissions` | Show or change `plan`, `ask`, `auto`, or `full` access |
-| `/status` | Show model, context, cache hits, tokens, cost, and session details |
-| `/diff` | Inspect the current patch transcript |
-| `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
-| `/new` / `/clear` | Clear the current context and start a new session (aliases) |
-| `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
-| `/compact` | Compact older context while preserving current work |
-| `/jobs` | Inspect reconnectable background commands |
-| `/mcp` / `/agents` / `/doctor` | Inspect integrations, agents, and runtime health |
-| `/login [provider]` | Choose and authenticate a supported model provider |
-| `/model` | Select a configured model; the choice is saved |
-| `/effort ...` | Change the active model's reasoning effort |
-
-Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
-
-Completed managed processes are removed as soon as `exec_command` or `write_stdin`
-returns their final result. Background processes that finish between reads retain
-their output and exit status until the next `write_stdin` call. Each CLI or Web
-session retains at most 100 such unread completed records. When that
-limit is exceeded, the earliest-completed record is removed, including any unread
-output; later `write_stdin` calls for that ID return `Unknown process`. Running
-processes are never evicted by this limit. `/jobs` keeps showing both running and
-retained completed records.
-
-## Safety model
-
-Permissions decide when DSCode asks. The sandbox decides what a command can actually access.
-
-| Mode | Behavior |
-| --- | --- |
-| `plan` | Read-only exploration; write, delegation, and MCP tools are hidden |
-| `ask` | Commands, writes, delegation, and MCP require approval |
-| `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
-| `full` | Trusted mode with unrestricted host filesystem and network access |
-
-The default command boundary is `workspace-write` with no network. When a command needs network or host
-access, the TUI offers **Allow once**, **Allow this command for this session**, or **Deny**, then retries
-an approved command with the smallest applicable access. Use `--network` to pre-authorize network for a
-run; use `--permission full` only in a trusted workspace. `dscode -y` is the explicit YOLO shortcut: it
-trusts project resources for that run, skips tool approvals, disables the sandbox, and enables network.
-
-macOS uses Seatbelt. Linux and Windows use a configured Docker sandbox:
-
-```bash
-export DSCODE_SANDBOX_IMAGE="your-reviewed-image:tag"
-dscode -C ./project --sandbox workspace-write
-```
-
-If no sandbox backend is available, DSCode fails closed rather than silently executing on the host.
-
-## DeepSeek-specific behavior
-
-- The Responses API is stateless; DSCode replays messages, reasoning items, and tool results from the
-  local session tree.
-- The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
-- Thinking mode removes sampling parameters that DeepSeek ignores and supports `low`, `high`, and `max`
-  effort selection.
-- `apply_patch` uses a native free-form custom tool to avoid JSON escaping for large diffs.
-- Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
-- `--web` adds DeepSeek server-side Web Search without replacing local repository search.
-
-These transformations run only when the active provider is `deepseek`; other providers use their
-native runtime implementations. Provider API keys are stripped from commands, hooks, and stdio MCP
-server environments.
-
-## Extensibility and automation
-
-- Hierarchical `AGENTS.md` and `CLAUDE.md` project instructions
-- User and project Agent Skills
-- Trusted-project hooks and MCP servers
-- Reconnectable background commands
-- JSONL output for CI and a full stdin/stdout RPC mode
-- Reusable `@aclisp/dsagent-core` package with a bundled headless RPC worker
-- VS Code extension in [editors/vscode](editors/vscode/README.md)
-- Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
-
-Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
-after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
-client backed by the exact same Agent, tools, permissions, and local session format as the terminal client:
-
-```ts
-import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
-
-const client = createDSCodeRpcClient({ cwd: "/path/to/project" });
-await client.start();
-client.onEvent((event) => render(event));
-await client.prompt("Review this repository");
-```
-
-The normal `@aclisp/dsagent` build embeds its matching Core build. npm publication is currently disabled;
-developers should use the workspace setup above.
-
-## Build from source
-
-```bash
-git clone https://github.com/aclisp/dsagent.git
-cd dsagent
-corepack enable
-pnpm install
-pnpm check
-pnpm dev -C /path/to/project
-```
-
-The root package exposes a small set of primary commands:
-
-- `pnpm build` builds the workspace packages and all production artifacts, including the CLI, web
-  server, and vision CLI.
-- `pnpm test` runs the full Vitest suite from the repository root, including tests under `packages/`.
-- `pnpm typecheck` type-checks package, test, and root TypeScript. It may build workspace packages
-  first because cross-package type entrypoints are generated under `dist/`.
-- `pnpm check` is the CI/release gate: it builds production artifacts, checks test types, runs the
-  full test suite, and performs package smoke checks.
-- `pnpm dev` runs the CLI from source; `pnpm start` runs the bundled CLI at
-  `dist/bundle/cli.js`, also used by the installed `dscode` command.
-
-The original unbundled CLI is retained at `dist/cli.js`. Run it with
-`pnpm start:unbundled` or `node dist/cli.js` for debugging or comparison.
-Both variants use the same settings, credentials, sessions, and runtime behavior.
-The CLI bundle includes pi's JavaScript dependencies for faster interactive startup;
-native modules and assets remain installed dependencies. See [CLI bundling](docs/CLI_BUNDLING.md).
-
-Additional validation commands:
-
-```bash
-pnpm smoke:live        # real DeepSeek edit-and-test smoke flow
-pnpm acceptance:live   # complete real-API feature acceptance
-```
-
-Daily development happens on `dev`. A versioned merge to `main` automatically creates the matching
-GitHub Release and publishes the full and lean Docker Hub images after CI passes. See
-[Releasing DSCode](docs/RELEASING.md).
-
-## Current boundaries
-
-- DeepSeek Flash accepts image input; DeepSeek V4 Pro remains text-only.
-- ChatGPT-plan access follows the models, limits, and workspace permissions available to the signed-in
-  account; OpenAI API-key usage is billed separately by the API platform.
-- The VS Code extension is a local integration and is not published to the Marketplace yet.
-- Linux and Windows isolation depends on the Docker image you configure.
-- DSCode is an early project. Claude Code and Codex currently have broader IDE, cloud, multimodal, and
-  ecosystem support.
-
-We do not claim that a feature checklist makes DSCode universally better. The project is designed to be
-measured on real repository tasks by success rate, time, cost, safety, and human intervention.
+DSCode originated as a fork of [dscode](https://github.com/thinkany-ai/dscode) and is now developed
+independently. See [Upstream integration notes](docs/UPSTREAM.md).
 
 ## License
 
