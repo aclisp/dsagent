@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { getDSCodeHome } from "./home.js";
+import { isStandalone } from "./distribution.js";
 import {
   getDSCodeStorageSettings,
   type CredentialStoreMode,
@@ -211,7 +212,7 @@ export async function createDSCodeCredentialStore(
   options: CreateCredentialStoreOptions = {},
 ): Promise<CredentialStore> {
   const configured = getDSCodeStorageSettings();
-  const mode = options.mode ?? configured.credentialStore;
+  const mode = isStandalone ? "file" : options.mode ?? configured.credentialStore;
   const file = new FileCredentialStore(options.authPath ?? defaultAuthPath());
   if (mode === "file") return file;
   if (mode === "auto" && !options.keyringFactory && !canUseInteractiveKeyring()) return file;

@@ -18,6 +18,7 @@
     "assets",
     "dist",
     "!dist/cli-bundle-*",
+    "!dist/standalone",
     "packages/core/dist",
     "packages/core/package.json",
     "packages/core/README.md",
@@ -36,6 +37,8 @@
     "dscode-vision": "./dist/vision-cli.js"
   },
   "scripts": {
+    "build:standalone": "pnpm --dir packages/core build && bun standalone/build.mjs",
+    "check:standalone": "pnpm build:standalone && node standalone/test/verify.mjs",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
     "bundle:cli": "node scripts/bundle-cli.mjs",

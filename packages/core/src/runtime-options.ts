@@ -9,6 +9,7 @@ import {
   type PermissionMode,
 } from "./config.js";
 import { DSCODE_VERSION } from "./version.js";
+import { isStandalone } from "./distribution.js";
 import {
   DEFAULT_DEEPSEEK_BASE_URL,
   getDSCodeStorageSettings,
@@ -77,7 +78,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     process.env.DSCODE_PROMPT_CONTRACT ?? "engineering",
   );
   let permission = permissionSchema.parse(process.env.DSCODE_PERMISSION ?? "auto");
-  let sandbox = sandboxModeSchema.parse(process.env.DSCODE_SANDBOX ?? "workspace-write");
+  let sandbox = sandboxModeSchema.parse(process.env.DSCODE_SANDBOX ?? (isStandalone ? "danger-full-access" : "workspace-write"));
   let network = false;
   let webSearch = false;
   let activeTools: string[] | undefined;
@@ -236,7 +237,7 @@ DSCode options:
 Session and editor features:
   /help /settings /new /clear /name /resume /tree /compact /reload /export
   Ctrl+O tool folding, Ctrl+G external editor, Ctrl+P model cycle
-  --name, --fork, --session, --session-dir, --skills, --extension
+  --name, --fork, --session, --session-dir, --skills${isStandalone ? "" : ", --extension"}
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
@@ -249,11 +250,11 @@ Authentication:
   /login                           Choose a provider interactively
   /login <provider>                Authenticate a specific provider
 
-Experimental Windows sandbox:
+${isStandalone ? "Standalone: file credentials; local skills and MCP; no user extensions or package management.\nDefault sandbox: danger-full-access (approvals still apply)." : `Experimental Windows sandbox:
   dscode sandbox setup             Install identities and WFP filters (elevated terminal)
   dscode sandbox status            Inspect native sandbox readiness
   dscode sandbox uninstall         Remove native sandbox state (elevated terminal)
-  DSCODE_WINDOWS_SANDBOX=1         Explicitly opt in after setup succeeds
+  DSCODE_WINDOWS_SANDBOX=1         Explicitly opt in after setup succeeds`}
 `);
 }
 
