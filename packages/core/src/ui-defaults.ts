@@ -5,6 +5,10 @@ interface DSCodePiSettings {
   theme?: string;
   quietStartup?: boolean;
   showHardwareCursor?: boolean;
+  hideThinkingBlock?: boolean;
+  tuiMode?: "regular" | "fullscreen";
+  fullscreenExitOutput?: "transcript" | "resume-hint";
+  fullscreenScrollbar?: "auto" | "always" | "hidden";
   dscodeUiDefaultsVersion?: number;
   [key: string]: unknown;
 }
@@ -12,7 +16,7 @@ interface DSCodePiSettings {
 const CURRENT_UI_DEFAULTS_VERSION = 1;
 const ADAPTIVE_THEME = "light/dark";
 
-/** Apply DSCode's startup surface and native blinking-cursor defaults without replacing preferences. */
+/** Apply DSCode's startup surface, cursor, and TUI defaults without replacing preferences. */
 export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<void> {
   const settingsPath = path.join(agentDirectory, "settings.json");
   let settings: DSCodePiSettings = {};
@@ -38,6 +42,22 @@ export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<vo
   }
   if (settings.showHardwareCursor === undefined) {
     settings.showHardwareCursor = true;
+    changed = true;
+  }
+  if (settings.hideThinkingBlock === undefined) {
+    settings.hideThinkingBlock = true;
+    changed = true;
+  }
+  if (settings.tuiMode === undefined) {
+    settings.tuiMode = "fullscreen";
+    changed = true;
+  }
+  if (settings.fullscreenExitOutput === undefined) {
+    settings.fullscreenExitOutput = "transcript";
+    changed = true;
+  }
+  if (settings.fullscreenScrollbar === undefined) {
+    settings.fullscreenScrollbar = "hidden";
     changed = true;
   }
   if (!changed) return;
