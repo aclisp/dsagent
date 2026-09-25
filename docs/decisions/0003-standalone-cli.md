@@ -1,6 +1,6 @@
 # ADR-0003: Standalone CLI scope and technical validation
 
-Status: Product scope confirmed. The macOS arm64 production runtime build is implemented and has passed offline acceptance checks. Linux and the release workflow remain to be validated.
+Status: Product scope confirmed. The macOS arm64 and Linux x86_64 production runtime builds are implemented and have passed offline acceptance checks. The release workflow remains to be validated.
 
 ## Goal
 
@@ -48,6 +48,8 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 
 2026-09-25: Completed 12 offline checks on macOS arm64 with Bun 1.3.14, including an embedded WASM worker, TUI initialization, text/JSON/RPC, a real explorer subagent, and stdio/HTTP MCP. The experiment used isolated directories, a restricted PATH, and Seatbelt without reading or writing real credentials or user state.
 
-A dedicated production build entry point in `standalone/` was subsequently implemented, adding dependency removal and acceptance checks for HTML export, TUI conversations, real tool execution, command execution inside a subagent, and RPC approvals. The executable is approximately 71 MiB; the ordinary Node distribution retains its existing behavior. Linux x86_64, real OAuth/providers, release signing and notarization, and the release/installation workflow remain pending.
+A dedicated production build entry point in `standalone/` was subsequently implemented, adding dependency removal and acceptance checks for HTML export, TUI conversations, real tool execution, command execution inside a subagent, and RPC approvals. The executable is approximately 71 MiB; the ordinary Node distribution retains its existing behavior.
+
+2026-09-25: Linux x86_64 support added using Bun's x64 baseline target and validated natively on glibc 2.34 with Bun 1.3.14. All 20 offline acceptance checks passed, including both PTY/TUI checks (Linux Seatbelt isolation is unavailable, so isolation strength is lower than on macOS). The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version, real OAuth/providers, release signing, and the release/installation workflow remain pending.
 
 See [standalone/README.md](../../standalone/README.md) for the production build, repeatable acceptance steps, and limitations. See the [standalone experiment record](../../experiments/standalone/README.md) for the initial investigation.

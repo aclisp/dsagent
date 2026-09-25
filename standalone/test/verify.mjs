@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone/darwin-arm64")));
+const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", `${process.platform}-${process.arch}`)));
 const scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "dscode-standalone-run-")));
 const home = path.join(scratch, "home");
 await fs.mkdir(home);
@@ -169,13 +169,14 @@ try {
     const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
     assert.ok(events.some(event => event.type === "agent_end"));
   });
-  if (process.platform === "darwin") await check("TUI initialization under PTY", async () => {
+  // The PTY probe uses Python stdlib only and runs on both macOS and Linux.
+  if (process.platform === "darwin" || process.platform === "linux") await check("TUI initialization under PTY", async () => {
     const result = await run("dscode", base, false, true);
     assert.equal(result.timedOut, false, result.stdout + result.stderr);
     assert.equal(result.code, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /\x1b\[/);
   });
-  if (process.platform === "darwin") await check("TUI model reply and clean exit under PTY", async () => {
+  if (process.platform === "darwin" || process.platform === "linux") await check("TUI model reply and clean exit under PTY", async () => {
     const result = await run("dscode", [...base,"reply once"], false, "dialog");
     assert.equal(result.timedOut,false,result.stdout+result.stderr);
     assert.equal(result.code,0,result.stdout+result.stderr);

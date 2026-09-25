@@ -1,6 +1,6 @@
 # CLI bundling
 
-The macOS arm64 standalone build is documented in
+The macOS arm64 and Linux x86_64 standalone builds are documented in
 [standalone/README.md](../standalone/README.md), with scope in
 [ADR-0003](decisions/0003-standalone-cli.md).
 The Node-based production bundle described below remains unchanged.

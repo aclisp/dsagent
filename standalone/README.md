@@ -1,11 +1,11 @@
 # Standalone dscode
 
-Production build entry point for the macOS arm64 standalone runtime. The executable includes Bun and requires no Node.js, Bun, or node_modules installation.
-See [ADR-0003](../docs/decisions/0003-standalone-cli.md) for product scope. Linux x86_64 still requires native validation; the current build script explicitly rejects other platforms.
+Production build entry point for the macOS arm64 and Linux x86_64 standalone runtimes. The executable includes Bun and requires no Node.js, Bun, or node_modules installation.
+See [ADR-0003](../docs/decisions/0003-standalone-cli.md) for product scope. The build script explicitly rejects other platforms; Linux builds use Bun's x64 baseline target so the executable also runs on pre-AVX2 CPUs.
 
 ## Build and validate
 
-The build machine needs the project dependencies, pnpm, Bun **1.3.14**, and macOS `codesign`:
+The build machine needs the project dependencies, pnpm, and Bun **1.3.14**; macOS builds also use the system `codesign`:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -13,19 +13,21 @@ pnpm build:standalone
 pnpm check:standalone
 ```
 
-Artifacts are written to `dist/standalone/darwin-arm64/`:
+Cross-compilation downloads the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) before building.
 
-- `dscode`: approximately 71 MiB; the only file needed at runtime, relocatable to any directory.
+Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
+
+- `dscode`: approximately 71 MiB on macOS arm64, 100 MiB on Linux x86_64; the only file needed at runtime, relocatable to any directory.
 - `dscode.sha256`: SHA-256 checksum file.
 - `build.json`: version, size, dependency removal, and adapter records.
 - `verification.json`: runtime acceptance results, generated only after validation.
 
 ```sh
-./dist/standalone/darwin-arm64/dscode --version
-./dist/standalone/darwin-arm64/dscode
+./dist/standalone/linux-x64/dscode --version
+./dist/standalone/linux-x64/dscode
 ```
 
-The executable currently uses ad-hoc signing. Developer ID signing, notarization, download publication, and installer scripts are outside this implementation.
+The macOS executable currently uses ad-hoc signing; the Linux executable is unsigned. Developer ID signing, notarization, download publication, and installer scripts are outside this implementation.
 The ordinary Node distribution continues to use `pnpm build`; the npm package excludes the standalone executable.
 
 ## Layout and maintenance boundaries
@@ -62,10 +64,14 @@ The `experiments/standalone/` directory preserves historical feasibility records
 
 ## Validation coverage and limitations
 
-Offline acceptance copies **only one executable** to a temporary directory and uses an isolated HOME and a PATH without Node/Bun. macOS Seatbelt denies reads from the source/build directories and restricts writes to the temporary directory.
+Offline acceptance copies **only one executable** to a temporary directory and uses an isolated HOME and a PATH without Node/Bun. On macOS, Seatbelt additionally denies reads from the source/build directories and restricts writes to the temporary directory; Linux runs the same checks without that OS-level isolation.
 Tests do not use real credentials or call paid models.
 
 Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an explorer subagent launching itself and executing a command, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
 
-These checks do not replace native Linux validation or real provider/OAuth/enterprise proxy testing, and do not cover every TUI shortcut or tool combination.
+These checks do not replace real provider/OAuth/enterprise proxy testing, and do not cover every TUI shortcut or tool combination.
 Acceptance retains temporary directories for inspection; their paths are printed and recorded in `verification.json`.
+
+## Validation record
+
+2026-09-25 Linux x86_64: built with Bun 1.3.14 targeting `bun-linux-x64-baseline` on glibc 2.34; all 20 offline acceptance checks passed, including both PTY/TUI checks, the embedded WASM image worker, an explorer subagent relaunching the executable, and stdio/HTTP MCP. The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version and real provider/OAuth paths remain untested.
