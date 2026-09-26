@@ -59,7 +59,7 @@ async function buildPlatform(platform) {
       target: "bun", minify: { syntax: true, whitespace: true, identifiers: false },
       naming: { asset: "[name].[ext]" },
       define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(version) },
-      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, audit })],
+      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, audit, platform })],
     });
     if (!result.success) throw new AggregateError(result.logs, "Standalone build failed");
     const executable = path.join(work, "dscode");

@@ -17,8 +17,11 @@ function body(source, signature, replacement) {
   return source.slice(0, start) + `${signature} {\n${replacement}\n}` + source.slice(end + 2);
 }
 
-export function piAdapter({ root, pi, tui, photon, assets, worker, audit }) {
+export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platform }) {
   const standalone = path.join(root, "standalone");
+  const macClipboard = platform === "darwin-arm64"
+    ? fs.realpathSync(path.join(tui, "../native/darwin/prebuilds/darwin-arm64/darwin-platform.node"))
+    : undefined;
   const replacements = new Map([
     [path.join(root, "packages/core/dist/vision-command.js"), "vision-command.mjs"],
     [path.join(root, "packages/core/dist/windows-sandbox.js"), "windows-sandbox.mjs"],
@@ -43,7 +46,11 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit }) {
         loader: "js", contents: 'export function createJiti() { throw new Error("User extensions are disabled"); }',
       }));
       build.onLoad({ filter: /\.(?:js|mjs|node)$/ }, ({ path: file }) => {
-        if (file.endsWith(".node")) throw new Error(`Unexpected native module: ${file}`);
+        if (file.endsWith(".node")) {
+          if (file !== macClipboard) throw new Error(`Unexpected native module: ${file}`);
+          audit.inputs.add(file);
+          return;
+        }
         if (/\/(?:state|vision-cli)\.js$/.test(file) && file.includes("/core/dist/")) {
           throw new Error(`Excluded Core module reached standalone graph: ${file}`);
         }
@@ -52,9 +59,12 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit }) {
           audit.adapted.add(path.relative(root, file));
           return { contents: fs.readFileSync(path.join(standalone, replacements.get(file)), "utf8"), loader: "js" };
         }
-        if (file === path.join(tui, "native-platform.js")) return {
-          contents: "export function getNativePlatformHelper() {} export function getNativeClipboard() {}", loader: "js",
-        };
+        if (file === path.join(tui, "native-platform.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { contents: macClipboard
+            ? `const helper = require(${JSON.stringify(macClipboard)});\nexport function getNativePlatformHelper() { return helper; }\nexport function getNativeClipboard() { return helper; }`
+            : "export function getNativePlatformHelper() {} export function getNativeClipboard() {}", loader: "js" };
+        }
         if (file === path.join(pi, "extensions/index.js")) return { contents: "export const builtInExtensions = [];", loader: "js" };
         if (file === path.join(pi, "core/extensions/virtual-modules.js")) return { contents: "export const VIRTUAL_MODULES = {};", loader: "js" };
         if (file === path.join(pi, "utils/photon.js")) return {

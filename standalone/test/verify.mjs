@@ -95,7 +95,7 @@ function run(name, args, rpc = false, tui = false) {
   let argv = process.platform === "darwin" ? ["-p", policy, exe, ...args] : args;
   if (tui) { argv = ["-B", path.join(root, "standalone/test/run_pty.py"), command, ...argv]; command = "/usr/bin/python3"; }
   return new Promise(resolve => {
-    const child = spawn(command, argv, { env: tui ? {...env, TERM:"xterm-256color", ...(tui === "dialog" ? {DSCODE_TEST_TUI_DIALOG:"1"} : {PI_STARTUP_BENCHMARK:"1"})} : env, cwd: scratch, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command, argv, { env: tui ? {...env, TERM:"xterm-256color", ...(tui === "dialog" || tui === "paste" ? {DSCODE_TEST_TUI_DIALOG:"1", ...(tui === "paste" ? {DSCODE_TEST_TUI_PASTE:"1"} : {})} : {PI_STARTUP_BENCHMARK:"1"})} : env, cwd: scratch, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "", timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 20000);
     child.stdout.on("data", chunk => {
@@ -181,6 +181,17 @@ try {
     assert.equal(result.timedOut,false,result.stdout+result.stderr);
     assert.equal(result.code,0,result.stdout+result.stderr);
     assert.match(result.stdout,/standalone ok/);
+  });
+  if (process.platform === "darwin" && process.env.DSCODE_TEST_CLIPBOARD_IMAGE === "1") await check("TUI image paste from macOS clipboard", async () => {
+    try {
+      payload = undefined;
+      const result = await run("dscode", base, false, "paste");
+      assert.equal(result.timedOut, false, result.stdout + result.stderr);
+      assert.equal(result.code, 0, result.stdout + result.stderr);
+      assert.ok(payload?.input.some(item=>Array.isArray(item.content) && item.content.some(part=>part.type === "input_image")), "model request had no pasted image");
+    } finally {
+      for (const name of await fs.readdir(scratch)) if (/^pi-clipboard-[\w-]+\.png$/.test(name)) await fs.unlink(path.join(scratch, name));
+    }
   });
   await check("RPC get_state and EOF", async () => {
     const result = await run("dscode", [...base, "--mode", "rpc"], true);

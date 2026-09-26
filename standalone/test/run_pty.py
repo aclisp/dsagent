@@ -1,6 +1,7 @@
 """Allocate a real PTY for the offline standalone startup probe (stdlib only)."""
 import errno
 import fcntl
+import glob
 import os
 import pty
 import select
@@ -18,6 +19,8 @@ deadline = time.monotonic() + 15
 status = None
 transcript = b""
 sent_exit = False
+sent_paste = False
+sent_submit = False
 try:
     while time.monotonic() < deadline:
         ready, _, _ = select.select([master], [], [], 0.1)
@@ -33,10 +36,18 @@ try:
             sys.stdout.buffer.write(data)
             sys.stdout.buffer.flush()
             transcript += data
-            if os.getenv("DSCODE_TEST_TUI_DIALOG") and not sent_exit and b"standalone ok" in transcript:
+        if os.getenv("DSCODE_TEST_TUI_PASTE"):
+            if not sent_paste and time.monotonic() > deadline - 13:
+                os.write(master, b"describe \x16")
+                sent_paste = True
+            if sent_paste and not sent_submit and glob.glob(os.path.join(os.environ["TMPDIR"], "pi-clipboard-*.png")):
                 time.sleep(0.3)
-                os.write(master, b"\x04")
-                sent_exit = True
+                os.write(master, b"\r")
+                sent_submit = True
+        if os.getenv("DSCODE_TEST_TUI_DIALOG") and not sent_exit and b"standalone ok" in transcript:
+            time.sleep(0.3)
+            os.write(master, b"\x04")
+            sent_exit = True
         child, value = os.waitpid(pid, os.WNOHANG)
         if child:
             status = value
