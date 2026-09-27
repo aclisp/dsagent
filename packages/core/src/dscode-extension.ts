@@ -1,13 +1,10 @@
-import type { AgentTool, AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type {
   BashOperations,
   ExtensionAPI,
   ExtensionContext,
   InlineExtension,
   SessionEntry,
-  Theme,
-  ToolDefinition,
-  ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { generateDiffString, renderDiff } from "@earendil-works/pi-coding-agent";
@@ -23,7 +20,6 @@ import { brandBlue } from "./brand.js";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
 import { permissionSchema, type PermissionMode } from "./config.js";
 import { optimizeDeepSeekResponsesPayload } from "./deepseek.js";
-import { registerDiagnosticsTool } from "./diagnostics.js";
 import { registerNaturalExit } from "./exit.js";
 import { registerHooks } from "./hooks.js";
 import { registerLocalImageInput } from "./image-input.js";
@@ -58,9 +54,7 @@ import {
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
-  type ToolPresentationContext,
 } from "./tool-ui.js";
-import { createCodingTools } from "./tools.js";
 import { createDSCodeReadTool } from "./read-tool.js";
 import { formatThinkingLabel, registerCodingTui } from "./tui-experience.js";
 import { Workspace } from "./workspace.js";
@@ -80,10 +74,6 @@ const planAllowedTools = new Set([
   "grep",
   "find",
   "ls",
-  "read_file",
-  "list_files",
-  "search_files",
-  "language_diagnostics",
   "exec_command",
   "write_stdin",
   "update_plan",
@@ -93,10 +83,6 @@ const askWithoutPromptTools = new Set([
   "grep",
   "find",
   "ls",
-  "read_file",
-  "list_files",
-  "search_files",
-  "language_diagnostics",
 ]);
 
 const execCommandParameters = Type.Object({
@@ -122,7 +108,9 @@ const execCommandParameters = Type.Object({
 
 const writeStdinParameters = Type.Object({
   process_id: Type.String({ minLength: 1 }),
-  chars: Type.Optional(Type.String({ description: "Characters to write to stdin" })),
+  chars: Type.Optional(Type.String({
+    description: "Characters to write to stdin. Omit to poll the process.",
+  })),
   yield_time_ms: Type.Optional(Type.Integer({ minimum: 0, maximum: 30_000 })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
@@ -201,14 +189,6 @@ export function createDSCodeExtension(
         updateStatus,
       );
       registerPatchTool(pi, checkpoints);
-      if (options.harness === "safe") {
-        registerSafeHarness(pi, options.cwd);
-        registerDiagnosticsTool(
-          pi,
-          options,
-          () => effectiveAccess().sandbox,
-        );
-      }
       registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
       if (capabilities.planTool !== false) {
@@ -247,7 +227,7 @@ export function createDSCodeExtension(
 
       pi.on("before_provider_request", (event, ctx) => {
         if (ctx.model?.provider !== "deepseek" || options.transport !== "responses") return;
-        return optimizeDeepSeekResponsesPayload(event.payload, { webSearch: options.webSearch });
+        return optimizeDeepSeekResponsesPayload(event.payload);
       });
 
       pi.on("session_start", async (_event, ctx) => {
@@ -379,7 +359,7 @@ export function createDSCodeExtension(
         if (
           event.toolName === "write_stdin" &&
           isRecord(event.input) &&
-          typeof event.input.chars !== "string" &&
+          (typeof event.input.chars !== "string" || event.input.chars.length === 0) &&
           event.input.terminate !== true
         ) {
           return;
@@ -1060,7 +1040,7 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      const action = args.terminate ? "Stop" : args.chars === undefined ? "Poll" : "Write to";
+      const action = args.terminate ? "Stop" : args.chars ? "Write to" : "Poll";
       return renderToolCall(action, `process ${args.process_id}`, theme, context);
     },
     renderResult(result, renderOptions, theme, context) {
@@ -1190,75 +1170,6 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       });
     },
   });
-}
-
-function registerSafeHarness(pi: ExtensionAPI, initialCwd: string): void {
-  const initialWorkspace = new Workspace(initialCwd);
-  const safeTools = createCodingTools(initialWorkspace, "safe").filter((tool) =>
-    ["read_file", "list_files", "search_files"].includes(tool.name),
-  );
-  for (const template of safeTools) {
-    const definition = {
-      ...template,
-      renderShell: "self" as const,
-      async execute(
-        id: string,
-        params: unknown,
-        signal: AbortSignal | undefined,
-        onUpdate: Parameters<AgentTool["execute"]>[3],
-        ctx: ExtensionContext,
-      ) {
-        const workspace = new Workspace(ctx.cwd);
-        await workspace.initialize();
-        const live = createCodingTools(workspace, "safe").find(
-          (tool) => tool.name === template.name,
-        );
-        if (!live) throw new Error(`Tool disappeared: ${template.name}`);
-        return live.execute(id, params as never, signal, onUpdate);
-      },
-      renderCall(
-        args: Record<string, unknown>,
-        theme: Theme,
-        context: ToolPresentationContext,
-      ) {
-        const { label, detail } = safeToolSummary(template.name, args);
-        return renderToolCall(label, detail, theme, context);
-      },
-      renderResult(
-        result: AgentToolResult<unknown>,
-        renderOptions: ToolRenderResultOptions,
-        theme: Theme,
-        context: ToolPresentationContext,
-      ) {
-        return renderCollapsibleToolResult(result, renderOptions, theme, context, {
-          collapsedSummary: false,
-        });
-      },
-    } as ToolDefinition;
-    pi.registerTool(definition);
-  }
-}
-
-function safeToolSummary(
-  name: string,
-  args: Record<string, unknown>,
-): { label: string; detail: string } {
-  if (name === "read_file") {
-    const range = args.line_start || args.line_end
-      ? `:${String(args.line_start ?? 1)}-${String(args.line_end ?? "")}`
-      : "";
-    return { label: "Read", detail: `${String(args.path ?? "file")}${range}` };
-  }
-  if (name === "list_files") {
-    return { label: "Listed", detail: String(args.pattern ?? "workspace files") };
-  }
-  if (name === "search_files") {
-    return {
-      label: "Searched",
-      detail: `${oneLine(String(args.query ?? ""), 80)} in ${String(args.path ?? ".")}`,
-    };
-  }
-  return { label: name, detail: "" };
 }
 
 function registerEntryRenderers(pi: ExtensionAPI): void {

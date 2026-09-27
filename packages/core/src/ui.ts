@@ -79,7 +79,6 @@ function formatNumber(value: number): string {
 
 interface BannerDetails {
   transport: string;
-  harness: string;
   permission: string;
   effort: string;
 }
@@ -94,7 +93,7 @@ export function printBanner(
     [
       pc.bold(pc.cyan("DSCode")),
       `${pc.dim("model")}      ${model}`,
-      details ? `${pc.dim("runtime")}    ${details.transport} · ${details.harness} harness` : "",
+      details ? `${pc.dim("runtime")}    ${details.transport}` : "",
       details ? `${pc.dim("mode")}       ${details.permission} · effort ${details.effort}` : "",
       `${pc.dim("workspace")}  ${workspace}`,
       resumedMessages > 0 ? `${pc.dim("session")}    resumed (${resumedMessages} messages)` : "",

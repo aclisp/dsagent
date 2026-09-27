@@ -102,14 +102,13 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 model       deepseek-flash
 transport   responses
 thinking    max
-harness     minimal
 permission  auto
 sandbox     workspace-write
 network     blocked
 ```
 
-默认 `minimal` harness 只暴露少量高杠杆工具：沙箱命令、后台进程交互、freeform patch 和并行
-delegation。`--harness safe` 会额外提供显式文件读取、文件搜索和自动语言诊断。
+CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch`。
+可通过 `--tools ...,delegate` 启用 CLI delegation。
 
 TUI 的 MCP 确认框默认选中 **Allow once**（仅本次）。也可以授权本次会话内的单个工具，
 或该 server 的所有工具，包含后续不同参数的调用。授权在 `auto` 和 `ask` 模式下生效，
@@ -188,10 +187,10 @@ dscode -C ./project --sandbox workspace-write
 
 - Responses API 无状态；DSCode 从本地会话树回放消息、reasoning item 和工具结果。
 - Adapter 会删除 DeepSeek 不支持的 OpenAI store、cache retention 和 include 字段。
-- Thinking 模式会删除 DeepSeek 忽略的采样参数，并支持 `low`、`high`、`max` effort。
+- 保留采样参数：DeepSeek 在 thinking 模式使用 `top_p`，其他模式使用 `temperature`。Thinking 支持
+  `low`、`high`、`max` effort。
 - `apply_patch` 使用原生 freeform custom tool，避免大 diff 的 JSON 转义。
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
-- `--web` 加入 DeepSeek 服务端 Web Search，不代替本地仓库搜索。
 
 这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。
 Provider API key 不会传给命令、hooks 或 stdio MCP server。
@@ -205,7 +204,7 @@ Provider API key 不会传给命令、hooks 或 stdio MCP server。
 - 面向 CI 的 JSONL，以及完整 stdin/stdout RPC 模式
 - 可复用的 `@aclisp/dsagent-core` 包及其内置 headless RPC worker
 - [editors/vscode](../editors/vscode/README.md) 中的 VS Code 扩展
-- `safe` harness 自动发现 TypeScript、Pyright、Rust、Go 和 Swift diagnostics
+- 通过 `exec_command` 运行项目的编译器和语言检查
 
 图形客户端和 IDE 集成完成上面的开发者设置后，可以使用私有 workspace 包
 `@aclisp/dsagent-core`，不要求全局安装 CLI。Core 提供凭证、设置 API 和类型化 RPC client，

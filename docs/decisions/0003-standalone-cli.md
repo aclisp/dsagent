@@ -20,7 +20,7 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 | Credentials | Always use file credentials in the standalone distribution, without a keyring dependency |
 | Shared directory | Read existing local Skills and JSONL sessions; do not migrate keyring credentials or rewrite existing configuration to enforce these policies; credentials available only in the keyring require a new login |
 | Images | Retain image paths, `@file` input, and image reads through `read`; embed Photon WASM preprocessing and the image worker |
-| Clipboard | Exclude the native TUI helper; retain ordinary terminal text paste; direct macOS clipboard screenshot access is not required; Linux may use clipboard commands installed by the user |
+| Clipboard | Embed pi's macOS native helper for local TUI image paste; retain ordinary terminal text paste; Linux image paste uses clipboard commands installed by the user; SSH does not expose a local clipboard to a remote CLI |
 | Vision CLI | Exclude `dscode-vision` and its dedicated execution path |
 | Subagents | Retain them by launching the same executable; internal noninteractive execution must not depend on adjacent JS files or system Node |
 | Skills | Support local user and project Skills; users supply the files and any external commands they require |

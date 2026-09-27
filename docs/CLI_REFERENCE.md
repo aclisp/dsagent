@@ -115,15 +115,12 @@ Fresh installations use:
 model       deepseek-flash
 transport   responses
 thinking    max
-harness     minimal
 permission  auto
 sandbox     workspace-write
 network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
-The `minimal` and `safe` harnesses do not change that default selection. The safe
-harness also registers file/search and language-diagnostic tools for explicit selection.
 CLI delegation can be enabled with `--tools ...,delegate`.
 
 Configured, enabled MCP servers are discovered when a session initializes. Their tools
@@ -230,11 +227,10 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - The Responses API is stateless; DSCode replays messages, reasoning items, and tool results from the
   local session tree.
 - The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
-- Thinking mode removes sampling parameters that DeepSeek ignores and supports `low`, `high`, and `max`
-  effort selection.
+- Sampling parameters are preserved: DeepSeek uses `top_p` in thinking mode and `temperature` otherwise.
+  Thinking supports `low`, `high`, and `max` effort selection.
 - `apply_patch` uses a native free-form custom tool to avoid JSON escaping for large diffs.
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
-- `--web` adds DeepSeek server-side Web Search without replacing local repository search.
 
 These transformations run only when the active provider is `deepseek`; other providers use their
 native runtime implementations. Provider API keys are stripped from commands, hooks, and stdio MCP
@@ -249,7 +245,7 @@ server environments.
 - JSONL output for CI and a full stdin/stdout RPC mode
 - Reusable `@aclisp/dsagent-core` package with a bundled headless RPC worker
 - VS Code extension in [editors/vscode](../editors/vscode/README.md)
-- Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
+- Run project compiler and language checks through `exec_command`
 
 Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
 after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC

@@ -71,10 +71,11 @@ The `experiments/standalone/` directory preserves historical feasibility records
 
 - Command: `dscode`; default state directory: `~/.dscode`; existing `DSCODE_*` variables are retained.
 - Supports TUI, `-p`, JSON, RPC, subagents, local Skills, stdio/HTTP MCP, image preprocessing, and HTML export.
+- In the local macOS TUI, `Ctrl+V` reads clipboard images through pi's embedded native helper and attaches them to the prompt. Linux image paste uses `wl-paste` on Wayland or `xclip` on X11 when installed. An SSH session does not expose the client's clipboard to the remote executable.
 - Defaults to `danger-full-access` without implicitly granting `permission=full`; existing approvals remain in effect.
 - Forces file credentials without rewriting configuration to override old keyring settings or migrating keyring credentials.
 - Disables user pi extensions and pi package management; retains the built-in DSCode extension.
-- Excludes SQLite, keyring, the vision CLI, native clipboard helpers, Kerberos, and native WebSocket accelerators.
+- Excludes SQLite, keyring, the vision CLI, Linux native clipboard helpers, Kerberos, and native WebSocket accelerators. The macOS native clipboard helper is embedded in the executable.
 - Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
 - Normal sessions, credentials, checkpoints, and user output may still be written to disk. Retains pi's download of missing rg/fd; users supply other external tools and MCP services.
 - DSCode `exec_command` prepends pi's managed `bin` directory to the child process PATH, so previously downloaded `rg` and `fd` are available by name. This does not redirect pi's data directory or extension discovery.
@@ -87,9 +88,13 @@ Tests do not use real credentials or call paid models.
 
 Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an explorer subagent launching itself and executing a command, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
 
+To verify macOS TUI image paste, first copy an image to the host clipboard, then run `DSCODE_TEST_CLIPBOARD_IMAGE=1 node standalone/test/verify.mjs dist/standalone/darwin-arm64`. This opt-in check sends `Ctrl+V` in a PTY and verifies that the local mock model receives an image. It does not replace the clipboard contents and removes the pasted temporary image afterward.
+
 These checks do not replace real provider/OAuth/enterprise proxy testing, and do not cover every TUI shortcut or tool combination.
 Acceptance retains temporary directories for inspection; their paths are printed and recorded in `verification.json`.
 
 ## Validation record
 
 2026-09-25 Linux x86_64: built with Bun 1.3.14 targeting `bun-linux-x64-baseline` on glibc 2.34; all 20 offline acceptance checks passed, including both PTY/TUI checks, the embedded WASM image worker, an explorer subagent relaunching the executable, and stdio/HTTP MCP. The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version and real provider/OAuth paths remain untested.
+
+2026-09-26 macOS arm64: embedded pi's native clipboard helper in the standalone executable. The relocated executable passed the offline acceptance suite and the opt-in PTY image-paste check with a real clipboard image and local mock model. The Linux x86_64 cross-build completed; this change was not rerun on a Linux host.

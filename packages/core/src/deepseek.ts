@@ -1,14 +1,9 @@
-interface PayloadOptions {
-  webSearch: boolean;
-}
-
 /**
  * Keep Pi's Responses API implementation while shaping the payload to the
  * subset DeepSeek Flash actually supports.
  */
 export function optimizeDeepSeekResponsesPayload(
   payload: unknown,
-  options: PayloadOptions,
 ): unknown {
   if (!isRecord(payload)) return payload;
 
@@ -24,28 +19,22 @@ export function optimizeDeepSeekResponsesPayload(
 
   if (isRecord(next.reasoning)) {
     next.reasoning = { effort: next.reasoning.effort };
-    // Sampling controls do not take effect while thinking is enabled.
-    delete next.temperature;
-    delete next.top_p;
   }
+
+  // Let DeepSeek apply sampling controls: top_p affects thinking mode, while
+  // temperature affects non-thinking mode (including reasoning.effort: "none").
 
   const tools = Array.isArray(next.tools) ? [...next.tools] : [];
   for (let index = 0; index < tools.length; index += 1) {
     const tool = tools[index];
-    if (isRecord(tool) && tool.name === "apply_patch") {
+    if (isRecord(tool) && tool.type === "custom" && tool.name === "apply_patch") {
+      // Keep Pi's custom-tool protocol, using DeepSeek's freeform patch shape.
       tools[index] = {
         type: "custom",
         name: "apply_patch",
         description: tool.description,
       };
     }
-  }
-
-  if (
-    options.webSearch &&
-    !tools.some((tool) => isRecord(tool) && tool.type === "web_search")
-  ) {
-    tools.push({ type: "web_search" });
   }
 
   if (tools.length > 0) next.tools = tools;

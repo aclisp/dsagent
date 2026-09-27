@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent-core",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": true,
   "description": "Reusable multi-provider DSCode agent runtime with local sessions, tools, and RPC.",
   "type": "module",
@@ -48,7 +48,6 @@
     "@earendil-works/pi-tui": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@napi-rs/keyring": "catalog:",
-    "fast-glob": "catalog:",
     "picocolors": "catalog:",
     "typebox": "catalog:",
     "zod": "catalog:"

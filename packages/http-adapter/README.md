@@ -63,8 +63,8 @@ branches are dropped, the live conversation is unchanged.
 ## Runtime arguments
 
 `createHttpAdapter({ runtimeArgs })` forwards a fixed allowlist of DSCode CLI flags to every
-session — values: `--provider --base-url --transport --harness --permission --sandbox --effort
---model --tools`; booleans: `--network --web --no-tools --no-mcp --no-resume`. Anything else is rejected
+session — values: `--provider --base-url --transport --permission --sandbox --effort
+--model --tools`; booleans: `--network --no-tools --no-mcp --no-resume`. Anything else is rejected
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
@@ -79,8 +79,7 @@ History containing plans can still be resumed under the current runtime permissi
 `update_plan` is rejected at startup; this tool is not registered in HTTP hosts.
 `--no-tools` overrides explicit tool selection, including `update_plan`.
 
-The default tool selection is `read,exec_command,write_stdin,apply_patch`, independently
-of the harness. Enabled MCP tools are added even with an explicit `--tools` list.
+The default tool selection is `read,exec_command,write_stdin,apply_patch`. Enabled MCP tools are added even with an explicit `--tools` list.
 `--no-mcp` skips MCP connections and registration; `--no-tools` skips MCP and disables
 all tools regardless of argument order. MCP discovery failures are nonfatal and
 reported through `/mcp`. Existing approval rules apply; discovery occurs on session
