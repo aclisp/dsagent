@@ -28,6 +28,7 @@ interface RuntimeInteractiveMode {
 
 interface RuntimeInteractivePrototype {
   [PATCH_MARKER]?: boolean;
+  shutdown(this: RuntimeInteractiveMode, ...args: unknown[]): Promise<void>;
   updateTerminalTitle(this: RuntimeInteractiveMode): void;
   renderProjectTrustWarningIfNeeded(this: RuntimeInteractiveMode): void;
 }
@@ -36,6 +37,24 @@ export function installDSCodeRuntimeBranding(): void {
   const prototype = InteractiveMode.prototype as unknown as RuntimeInteractivePrototype;
   if (prototype[PATCH_MARKER]) return;
   prototype[PATCH_MARKER] = true;
+
+  const shutdown = prototype.shutdown;
+  prototype.shutdown = async function (...args): Promise<void> {
+    const write = process.stdout.write;
+    const brandedWrite: typeof write = function (this: typeof process.stdout, chunk, ...writeArgs) {
+      if (typeof chunk === "string") {
+        chunk = chunk.replace(/(To resume this session:(?:\s|\u001b\[[0-9;]*m)*)pi(?=\s|$)/u, "$1dscode");
+      }
+      return Reflect.apply(write, this, [chunk, ...writeArgs]);
+    };
+    process.stdout.write = brandedWrite;
+    try {
+      await shutdown.apply(this, args);
+    } finally {
+      // Normal shutdown exits the process; restore if it returns or throws.
+      if (process.stdout.write === brandedWrite) process.stdout.write = write;
+    }
+  };
 
   prototype.updateTerminalTitle = function (): void {
     const cwd = path.basename(this.sessionManager.getCwd());
