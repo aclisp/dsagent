@@ -64,7 +64,7 @@ branches are dropped, the live conversation is unchanged.
 
 `createHttpAdapter({ runtimeArgs })` forwards a fixed allowlist of DSCode CLI flags to every
 session — values: `--provider --base-url --transport --harness --permission --sandbox --effort
---model --tools`; booleans: `--network --web --no-tools --no-mcp --no-resume`. Anything else is rejected
+--model --tools`; booleans: `--network --no-tools --no-mcp --no-resume`. Anything else is rejected
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 

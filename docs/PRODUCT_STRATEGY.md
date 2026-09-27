@@ -98,7 +98,7 @@ task router ── low / high / max ── subagents / worktrees
 Pi agent loop
        │
 DeepSeek adapter
-  Responses replay · apply_patch · web search · cache metrics
+  Responses replay · apply_patch · cache metrics
        │
 execution boundary
   workspace policy · shell policy · container / VM sandbox

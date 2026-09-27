@@ -247,7 +247,7 @@ export function createDSCodeExtension(
 
       pi.on("before_provider_request", (event, ctx) => {
         if (ctx.model?.provider !== "deepseek" || options.transport !== "responses") return;
-        return optimizeDeepSeekResponsesPayload(event.payload, { webSearch: options.webSearch });
+        return optimizeDeepSeekResponsesPayload(event.payload);
       });
 
       pi.on("session_start", async (_event, ctx) => {

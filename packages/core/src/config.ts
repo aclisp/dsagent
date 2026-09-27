@@ -24,7 +24,6 @@ export interface AppConfig {
   transport: ModelTransport;
   harness: HarnessMode;
   permission: PermissionMode;
-  webSearch: boolean;
   resume: boolean;
   verbose: boolean;
 }
@@ -37,7 +36,6 @@ export interface CliOptions {
   transport?: string;
   harness?: string;
   permission?: string;
-  web?: boolean;
   yes?: boolean;
   resume?: boolean;
   verbose?: boolean;
@@ -69,7 +67,6 @@ export function loadConfig(options: CliOptions): AppConfig {
     transport,
     harness,
     permission,
-    webSearch: options.web ?? false,
     resume: options.resume ?? true,
     verbose: options.verbose ?? false,
   };

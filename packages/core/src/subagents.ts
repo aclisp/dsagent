@@ -167,7 +167,6 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     "--thinking",
     role === "explorer" ? "low" : "max",
     ...(runtime.network ? ["--network"] : []),
-    ...(runtime.webSearch ? ["--web"] : []),
     rolePrompt,
   ];
   const env = {

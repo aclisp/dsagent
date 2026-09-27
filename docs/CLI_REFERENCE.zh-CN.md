@@ -188,10 +188,10 @@ dscode -C ./project --sandbox workspace-write
 
 - Responses API 无状态；DSCode 从本地会话树回放消息、reasoning item 和工具结果。
 - Adapter 会删除 DeepSeek 不支持的 OpenAI store、cache retention 和 include 字段。
-- Thinking 模式会删除 DeepSeek 忽略的采样参数，并支持 `low`、`high`、`max` effort。
+- 保留采样参数：DeepSeek 在 thinking 模式使用 `top_p`，其他模式使用 `temperature`。Thinking 支持
+  `low`、`high`、`max` effort。
 - `apply_patch` 使用原生 freeform custom tool，避免大 diff 的 JSON 转义。
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
-- `--web` 加入 DeepSeek 服务端 Web Search，不代替本地仓库搜索。
 
 这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。
 Provider API key 不会传给命令、hooks 或 stdio MCP server。

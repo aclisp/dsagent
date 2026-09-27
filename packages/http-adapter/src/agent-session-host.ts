@@ -369,7 +369,6 @@ const VALUE_RUNTIME_FLAGS = new Set([
 ]);
 const BOOLEAN_RUNTIME_FLAGS = new Set([
   "--network",
-  "--web",
   "--no-tools",
   "--no-mcp",
   "--no-resume",

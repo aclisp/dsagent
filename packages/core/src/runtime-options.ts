@@ -41,7 +41,6 @@ export interface DSCodeRuntimeOptions {
   permission: PermissionMode;
   sandbox: SandboxMode;
   network: boolean;
-  webSearch: boolean;
   activeTools: string[];
   toolsExplicit: boolean;
   noTools: boolean;
@@ -80,7 +79,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let permission = permissionSchema.parse(process.env.DSCODE_PERMISSION ?? "auto");
   let sandbox = sandboxModeSchema.parse(process.env.DSCODE_SANDBOX ?? (isStandalone ? "danger-full-access" : "workspace-write"));
   let network = false;
-  let webSearch = false;
   let activeTools: string[] | undefined;
   let toolsExplicit = false;
   let noTools = false;
@@ -120,8 +118,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       sandbox = sandboxModeSchema.parse(takeValue());
     } else if (flag === "--network") {
       network = true;
-    } else if (flag === "--web") {
-      webSearch = true;
     } else if (flag === "--yes" || flag === "-y") {
       permission = "full";
       yolo = true;
@@ -192,7 +188,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       permission,
       sandbox,
       network,
-      webSearch,
       activeTools,
       toolsExplicit,
       noTools,
@@ -231,7 +226,6 @@ DSCode options:
   --permission <mode>              plan|ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
   --network                        Pre-authorize command network access for this run
-  --web                            Enable DeepSeek server-side web search
   -y, --yes                        YOLO: trust project, skip approvals, allow host + network
 
 Session and editor features:

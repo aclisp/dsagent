@@ -48,7 +48,6 @@ function options(): DSCodeRuntimeOptions {
     permission: "auto",
     sandbox: "workspace-write",
     network: false,
-    webSearch: false,
     activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
     noTools: false,

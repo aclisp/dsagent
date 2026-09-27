@@ -230,11 +230,10 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - The Responses API is stateless; DSCode replays messages, reasoning items, and tool results from the
   local session tree.
 - The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
-- Thinking mode removes sampling parameters that DeepSeek ignores and supports `low`, `high`, and `max`
-  effort selection.
+- Sampling parameters are preserved: DeepSeek uses `top_p` in thinking mode and `temperature` otherwise.
+  Thinking supports `low`, `high`, and `max` effort selection.
 - `apply_patch` uses a native free-form custom tool to avoid JSON escaping for large diffs.
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
-- `--web` adds DeepSeek server-side Web Search without replacing local repository search.
 
 These transformations run only when the active provider is `deepseek`; other providers use their
 native runtime implementations. Provider API keys are stripped from commands, hooks, and stdio MCP

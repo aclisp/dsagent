@@ -337,6 +337,9 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     await expect(
       createAgentSessionHost({ cwd: root, runtimeArgs: ["--thinking", "high"] }),
     ).rejects.toThrow("Unsupported direct session argument");
+    expect(() =>
+      parseHttpRuntimeArgs(["--web"]),
+    ).toThrow("Unsupported direct session argument");
   });
 
   it("rejects final plan configuration before creating a host, without downgrading", async () => {
