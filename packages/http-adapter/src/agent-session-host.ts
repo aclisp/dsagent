@@ -359,7 +359,6 @@ const VALUE_RUNTIME_FLAGS = new Set([
   "--provider",
   "--base-url",
   "--transport",
-  "--harness",
   "--prompt-contract",
   "--permission",
   "--sandbox",

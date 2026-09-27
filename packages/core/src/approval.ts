@@ -23,7 +23,7 @@ export class ApprovalController {
   }
 
   async approve(toolName: string, args: unknown): Promise<ApprovalDecision> {
-    if (toolName === "read_file" || toolName === "list_files" || toolName === "search_files") {
+    if (toolName === "read") {
       return { allowed: true };
     }
 
@@ -31,7 +31,7 @@ export class ApprovalController {
       return { allowed: true };
     }
 
-    if (toolName === "run_command" || toolName === "exec_command") {
+    if (toolName === "exec_command") {
       const command =
         getStringProperty(args, "command") || getStringProperty(args, "cmd");
       const risk = classifyCommand(command);
@@ -48,21 +48,13 @@ export class ApprovalController {
       );
     }
 
-    if (toolName === "write_file" || toolName === "edit_file" || toolName === "apply_patch") {
+    if (toolName === "apply_patch") {
       if (this.mode === "plan") {
         return { allowed: false, reason: "Permission mode is plan; file changes are disabled" };
       }
       if (this.mode === "auto") {
         return { allowed: true };
       }
-    }
-
-    if (toolName === "write_file") {
-      return this.ask(`Write file ${getStringProperty(args, "path")}?`);
-    }
-
-    if (toolName === "edit_file") {
-      return this.ask(`Edit file ${getStringProperty(args, "path")}?`);
     }
 
     if (toolName === "apply_patch") {

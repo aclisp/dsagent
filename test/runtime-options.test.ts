@@ -7,7 +7,6 @@ describe("parseRuntimeArgs", () => {
     model: process.env.DSCODE_MODEL,
     effort: process.env.DSCODE_EFFORT,
     transport: process.env.DSCODE_TRANSPORT,
-    harness: process.env.DSCODE_HARNESS,
     promptContract: process.env.DSCODE_PROMPT_CONTRACT,
     permission: process.env.DSCODE_PERMISSION,
     sandbox: process.env.DSCODE_SANDBOX,
@@ -23,7 +22,6 @@ describe("parseRuntimeArgs", () => {
     restore("DSCODE_MODEL", original.model);
     restore("DSCODE_EFFORT", original.effort);
     restore("DSCODE_TRANSPORT", original.transport);
-    restore("DSCODE_HARNESS", original.harness);
     restore("DSCODE_PROMPT_CONTRACT", original.promptContract);
     restore("DSCODE_PERMISSION", original.permission);
     restore("DSCODE_SANDBOX", original.sandbox);
@@ -33,7 +31,6 @@ describe("parseRuntimeArgs", () => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
     delete process.env.DSCODE_TRANSPORT;
-    delete process.env.DSCODE_HARNESS;
     delete process.env.DSCODE_PERMISSION;
     delete process.env.DSCODE_SANDBOX;
     const parsed = parseRuntimeArgs(["--print", "inspect this repo"]);
@@ -42,7 +39,6 @@ describe("parseRuntimeArgs", () => {
       providerId: "deepseek",
       modelId: "deepseek-flash",
       transport: "responses",
-      harness: "minimal",
       promptContract: "engineering",
       permission: "auto",
       sandbox: "workspace-write",
@@ -116,8 +112,6 @@ describe("parseRuntimeArgs", () => {
 
   it("maps DSCode flags while preserving Pi session and JSON flags", () => {
     const parsed = parseRuntimeArgs([
-      "--harness",
-      "safe",
       "--permission=ask",
       "--sandbox",
       "read-only",
@@ -128,7 +122,6 @@ describe("parseRuntimeArgs", () => {
       "--continue",
     ]);
     expect(parsed.options).toMatchObject({
-      harness: "safe",
       permission: "ask",
       sandbox: "read-only",
       activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
@@ -140,8 +133,8 @@ describe("parseRuntimeArgs", () => {
   });
 
   it("keeps an explicit tool selection in DSCode so late MCP tools can be registered", () => {
-    const parsed = parseRuntimeArgs(["--tools", "read_file,mcp__fixture__echo", "inspect"]);
-    expect(parsed.options.activeTools).toEqual(["read_file", "mcp__fixture__echo"]);
+    const parsed = parseRuntimeArgs(["--tools", "read,mcp__fixture__echo", "inspect"]);
+    expect(parsed.options.activeTools).toEqual(["read", "mcp__fixture__echo"]);
     expect(parsed.options.toolsExplicit).toBe(true);
     expect(parsed.piArgs).not.toContain("--tools");
   });

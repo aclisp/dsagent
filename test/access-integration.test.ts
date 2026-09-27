@@ -221,7 +221,6 @@ function options(cwd: string): DSCodeRuntimeOptions {
     baseUrl: "https://api.deepseek.com",
     modelId: "deepseek-v4-flash",
     transport: "responses",
-    harness: "minimal",
     promptContract: "engineering",
     permission: "auto",
     sandbox: "workspace-write",

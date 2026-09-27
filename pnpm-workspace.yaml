@@ -16,7 +16,6 @@ catalog:
   '@types/node': ^24.13.3
   croner: 10.0.1
   esbuild: ^0.28.2
-  fast-glob: 3.3.3
   fastify: 5.11.0
   marked: 18.0.9
   picocolors: 1.1.1

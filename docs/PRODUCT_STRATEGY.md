@@ -161,7 +161,7 @@ local repo · MCP · skills · language servers · test runners
 ## 当前实现已经落地的 V4 优化
 
 - Responses API 默认通道，Chat Completions 作为 fallback；
-- `minimal`/`safe` 双 harness；
+- 统一的极简工具集；
 - `apply_patch` 原生 custom tool、多文件预校验与逐文件原子写入；
 - 默认 `max`，运行时支持 thinking selector 和 `Shift+Tab` 切换；
 - 始终启用 Pi 的并行 tool execution；

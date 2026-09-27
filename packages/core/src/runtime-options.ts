@@ -1,10 +1,8 @@
 import path from "node:path";
 import { z } from "zod";
 import {
-  harnessSchema,
   permissionSchema,
   transportSchema,
-  type HarnessMode,
   type ModelTransport,
   type PermissionMode,
 } from "./config.js";
@@ -36,7 +34,6 @@ export interface DSCodeRuntimeOptions {
   baseUrl: string;
   modelId: string;
   transport: ModelTransport;
-  harness: HarnessMode;
   promptContract: PromptContractMode;
   permission: PermissionMode;
   sandbox: SandboxMode;
@@ -72,7 +69,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let effortExplicit = process.env.DSCODE_EFFORT !== undefined;
   let effort = process.env.DSCODE_EFFORT;
   let transport = transportSchema.parse(process.env.DSCODE_TRANSPORT ?? "responses");
-  let harness = harnessSchema.parse(process.env.DSCODE_HARNESS ?? "minimal");
   let promptContract = promptContractSchema.parse(
     process.env.DSCODE_PROMPT_CONTRACT ?? "engineering",
   );
@@ -108,8 +104,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       baseUrl = takeValue();
     } else if (flag === "--transport") {
       transport = transportSchema.parse(takeValue());
-    } else if (flag === "--harness") {
-      harness = harnessSchema.parse(takeValue());
     } else if (flag === "--prompt-contract") {
       promptContract = promptContractSchema.parse(takeValue());
     } else if (flag === "--permission") {
@@ -183,7 +177,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       baseUrl: normalizeDeepSeekBaseUrl(baseUrl),
       modelId,
       transport,
-      harness,
       promptContract,
       permission,
       sandbox,
@@ -217,7 +210,6 @@ DSCode options:
   --model <id>                     Model ID (provider default when omitted)
   --effort <level>                 Alias for --thinking; defaults by provider
   --transport <responses|chat>     API transport (default: responses)
-  --harness <minimal|safe>         Tool harness (default: minimal)
   --prompt-contract <mode>         engineering|none (default: engineering)
   --tools <names>                  Select tools; configured MCP tools are added automatically
                                    Default: read,exec_command,write_stdin,apply_patch

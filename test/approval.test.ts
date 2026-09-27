@@ -26,14 +26,14 @@ describe("classifyCommand", () => {
 describe("ApprovalController", () => {
   it("blocks changes without an interactive approver", async () => {
     const controller = new ApprovalController("ask");
-    await expect(controller.approve("write_file", { path: "x.ts" })).resolves.toMatchObject({
+    await expect(controller.approve("apply_patch", { input: "patch" })).resolves.toMatchObject({
       allowed: false,
     });
   });
 
   it("auto-approves when explicitly trusted", async () => {
     const controller = new ApprovalController("full");
-    await expect(controller.approve("run_command", { command: "rm -rf build" })).resolves.toEqual({
+    await expect(controller.approve("exec_command", { cmd: "rm -rf build" })).resolves.toEqual({
       allowed: true,
     });
   });

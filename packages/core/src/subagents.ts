@@ -152,8 +152,6 @@ Return concise evidence, exact file paths, commands/checks, and any unresolved r
     runtime.transport,
     "--model",
     runtime.modelId,
-    "--harness",
-    runtime.harness,
     "--prompt-contract",
     runtime.promptContract,
     "--mode",

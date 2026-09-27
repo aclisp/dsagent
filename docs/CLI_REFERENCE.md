@@ -115,15 +115,12 @@ Fresh installations use:
 model       deepseek-flash
 transport   responses
 thinking    max
-harness     minimal
 permission  auto
 sandbox     workspace-write
 network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
-The `minimal` and `safe` harnesses do not change that default selection. The safe
-harness also registers file/search and language-diagnostic tools for explicit selection.
 CLI delegation can be enabled with `--tools ...,delegate`.
 
 Configured, enabled MCP servers are discovered when a session initializes. Their tools
@@ -248,7 +245,7 @@ server environments.
 - JSONL output for CI and a full stdin/stdout RPC mode
 - Reusable `@aclisp/dsagent-core` package with a bundled headless RPC worker
 - VS Code extension in [editors/vscode](../editors/vscode/README.md)
-- Automatic TypeScript, Pyright, Rust, Go, and Swift diagnostics with the `safe` harness
+- Run project compiler and language checks through `exec_command`
 
 Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
 after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
