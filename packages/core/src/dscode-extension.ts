@@ -108,7 +108,9 @@ const execCommandParameters = Type.Object({
 
 const writeStdinParameters = Type.Object({
   process_id: Type.String({ minLength: 1 }),
-  chars: Type.Optional(Type.String({ description: "Characters to write to stdin" })),
+  chars: Type.Optional(Type.String({
+    description: "Characters to write to stdin. Omit to poll the process.",
+  })),
   yield_time_ms: Type.Optional(Type.Integer({ minimum: 0, maximum: 30_000 })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
@@ -357,7 +359,7 @@ export function createDSCodeExtension(
         if (
           event.toolName === "write_stdin" &&
           isRecord(event.input) &&
-          typeof event.input.chars !== "string" &&
+          (typeof event.input.chars !== "string" || event.input.chars.length === 0) &&
           event.input.terminate !== true
         ) {
           return;
@@ -1038,7 +1040,7 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      const action = args.terminate ? "Stop" : args.chars === undefined ? "Poll" : "Write to";
+      const action = args.terminate ? "Stop" : args.chars ? "Write to" : "Poll";
       return renderToolCall(action, `process ${args.process_id}`, theme, context);
     },
     renderResult(result, renderOptions, theme, context) {
