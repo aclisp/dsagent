@@ -285,7 +285,12 @@ function extractJsonFinalOutput(jsonl: string): string {
         ?.filter((part: Record<string, unknown>) => part.type === "text")
         .map((part: Record<string, unknown>) => String(part.text ?? ""))
         .join("\n");
-      if (text) assistantTexts.push(text);
+      if (event.message.stopReason === "error" || event.message.stopReason === "aborted") {
+        const error = event.message.errorMessage || `Request ${event.message.stopReason}`;
+        assistantTexts.push([text, error].filter(Boolean).join("\n"));
+      } else if (text) {
+        assistantTexts.push(text);
+      }
     } catch {
       // Ignore non-protocol stderr/noise accidentally written to stdout.
     }

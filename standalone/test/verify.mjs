@@ -86,11 +86,11 @@ const env = {
   DEEPSEEK_API_KEY: "offline-fixture", NO_PROXY: "127.0.0.1,localhost",
 };
 const results = [];
-function run(name, args, rpc = false, tui = false) {
+function run(name, args, rpc = false, tui = false, forbidNativeExtraction = false) {
   const exe = path.join(scratch, name);
   // On macOS, deny access to both the checkout and build outputs. PATH has no
   // Node/Bun. Permit only scratch writes: any escaped auxiliary-file write fails.
-  const policy = `(version 1)(allow default)(deny file-read* (subpath ${JSON.stringify(root)}) (subpath ${JSON.stringify(build)}))(deny file-write* (require-not (require-any (subpath ${JSON.stringify(scratch)}) (literal "/dev/null") (literal "/dev/tty"))))`;
+  const policy = `(version 1)(allow default)(deny file-read* (subpath ${JSON.stringify(root)}) (subpath ${JSON.stringify(build)}))(deny file-write* (require-not (require-any (subpath ${JSON.stringify(scratch)}) (literal "/dev/null") (literal "/dev/tty"))))${forbidNativeExtraction ? '(deny file-write* (regex "\\\\.node$"))' : ''}`;
   let command = process.platform === "darwin" ? "/usr/bin/sandbox-exec" : exe;
   let argv = process.platform === "darwin" ? ["-p", policy, exe, ...args] : args;
   if (tui) { argv = ["-B", path.join(root, "standalone/test/run_pty.py"), command, ...argv]; command = "/usr/bin/python3"; }
@@ -204,11 +204,12 @@ try {
     {name:"read",args:{path:"image.png"}},
     {name:"exec_command",args:{cmd:"pwd"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
-    {name:"delegate",args:{tasks:[{role:"explorer",task:"Reply once with evidence."}]}},
+    {name:"delegate",args:{tasks:["explorer", "reviewer", "tester", "explorer"].map((role, index) => ({role, task:`Reply once with evidence for task ${index + 1}.`}))}},
   ]) {
     await check(`real tool execution: ${tool.name}`, async () => {
       plannedTool = tool; toolIssued = false; toolOutputs = []; childCommandIssued = false;
-      const result = await run("dscode", [...base, "--tools", "read,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"]);
+      // JSON parent and children must work without extracting a native UI addon.
+      const result = await run("dscode", [...base, "--tools", "read,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
       const finished = events.find(event => event.type === "tool_execution_end" && event.toolName === tool.name);
@@ -217,7 +218,8 @@ try {
       if (tool.name === "read") assert.ok(finished.result.content.some(item => item.type === "image"),JSON.stringify(finished));
       else if (tool.name === "apply_patch") assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
       else if (tool.name === "delegate") {
-        assert.equal(finished.result.details.results[0].success, true, JSON.stringify(finished));
+        assert.equal(finished.result.details.results.length, tool.args.tasks.length, JSON.stringify(finished));
+        assert.ok(finished.result.details.results.every(result => result.success), JSON.stringify(finished));
         assert.ok(childCommandIssued);
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
       }
