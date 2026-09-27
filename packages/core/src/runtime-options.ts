@@ -223,7 +223,7 @@ DSCode options:
 Session and editor features:
   /help /settings /new /clear /name /resume /tree /compact /reload /export
   Ctrl+O tool folding, Ctrl+G external editor, Ctrl+P model cycle
-  --name, --fork, --session, --session-dir, --skills${isStandalone ? "" : ", --extension"}
+  --name, --fork, --session, --session-dir, --skill, --no-skills${isStandalone ? "" : ", --extension"}
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
