@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "private": true,
   "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
@@ -54,7 +54,7 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/bundle/cli.js",
     "start:unbundled": "node dist/cli.js",
-    "test": "vitest run",
+    "test": "vitest run --exclude standalone/test/tools-install.test.mjs && node --test standalone/test/tools-install.test.mjs",
     "package:check": "node scripts/package-smoke.mjs",
     "typecheck:packages": "pnpm --recursive run typecheck",
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",

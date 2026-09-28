@@ -4,15 +4,15 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
-export const toolVersions = { fd: "10.3.0", rg: "14.1.1" };
+export const toolVersions = { fd: "10.5.0", rg: "15.2.0" };
 const checksums = {
   "darwin-arm64": {
-    fd: "0570263812089120bc2a5d84f9e65cd0c25e4a4d724c80075c357239c74ae904",
-    rg: "24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be",
+    fd: "b67e1836c468e42e411984b56e52fa7abec08c2bd22c867398e7cc134aac5e12",
+    rg: "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
   },
   "linux-x64": {
-    fd: "2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14",
-    rg: "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e",
+    fd: "761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7",
+    rg: "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
   },
 };
 

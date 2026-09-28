@@ -172,8 +172,8 @@ try {
     result = await run("dscode", ["--update-bundled-tools"]);
     assert.equal(result.code, 0, result.stderr);
     assert.equal(payload, undefined, "maintenance must not contact the model");
-    assert.match(result.stdout, /fd: updated to 10\.3\.0/);
-    assert.match(result.stdout, /rg: updated to 14\.1\.1/);
+    assert.match(result.stdout, /fd: updated to 10\.5\.0/);
+    assert.match(result.stdout, /rg: updated to 15\.2\.0/);
     assert.doesNotMatch(result.stdout, /\x1b\[/, "maintenance must not start the TUI");
     for (const tool of ["fd", "rg"]) {
       assert.deepEqual(await fs.readFile(path.join(bin, tool)), expected[tool]);
@@ -266,8 +266,8 @@ try {
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
         assert.match(JSON.stringify(toolOutputs), /home\/bin\/rg/);
         assert.match(JSON.stringify(toolOutputs), /home\/bin\/fd/);
-        assert.match(JSON.stringify(toolOutputs), /ripgrep 14\.1\.1/);
-        assert.match(JSON.stringify(toolOutputs), /fd 10\.3\.0/);
+        assert.match(JSON.stringify(toolOutputs), /ripgrep 15\.2\.0/);
+        assert.match(JSON.stringify(toolOutputs), /fd 10\.5\.0/);
       }
     });
   }

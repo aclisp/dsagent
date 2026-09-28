@@ -30,7 +30,7 @@ node standalone/test/verify.mjs /absolute/path/to/copied/linux-x64
 
 Cross-compilation downloads and caches the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) and build the matching target explicitly with `--target`.
 
-The build also embeds pinned `fd` 10.3.0 and `rg` 14.1.1 binaries for the target platform, with their license notices. Downloads occur on the build host and are checked against SHA-256 hashes in `tools-build.mjs`. For offline builds, set `DSCODE_TOOL_ARCHIVES` to an absolute directory containing the original release `.tar.gz` files named in that module; the same checksums apply. Linux tools use the musl builds.
+The build also embeds pinned `fd` 10.5.0 and `rg` 15.2.0 binaries for the target platform, with their license notices. Downloads occur on the build host and are checked against SHA-256 hashes in `tools-build.mjs`. For offline builds, set `DSCODE_TOOL_ARCHIVES` to an absolute directory containing the original release `.tar.gz` files named in that module; the same checksums apply. Linux tools use the musl builds.
 
 On the first session, missing bundled tools are extracted to `~/.dscode/bin/fd` and `~/.dscode/bin/rg` (or `$DSCODE_HOME/bin`). Pi's completion/search tools and DSCode's child-process PATH use this same directory. No tool download occurs at runtime, including in print/RPC mode. Ordinary startup only checks whether both paths exist: it does not read binary contents or receipts, hash tools, or acquire the installation lock when both are present. Preparation is shared with pi's subsequent tool requests within the process.
 
