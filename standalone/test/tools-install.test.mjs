@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createToolPreparer, installTools } from "../tools-install.mjs";
+import { createToolPreparer, installTools, updateTools } from "../tools-install.mjs";
 
 test("concurrent extraction publishes executable tools once and preserves user replacements", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-tool-test-"));
@@ -19,7 +19,7 @@ test("concurrent extraction publishes executable tools once and preserves user r
       }
     }
     const versions = { fd: "1", rg: "2" };
-    await Promise.all(Array.from({ length: 8 }, () => installTools(home, assets, versions)));
+    await Promise.all(Array.from({ length: 8 }, () => updateTools(home, assets, versions)));
     const bin = path.join(home, "bin");
     for (const tool of ["fd", "rg"]) {
       assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), tool);
@@ -30,7 +30,7 @@ test("concurrent extraction publishes executable tools once and preserves user r
     await fs.writeFile(path.join(bin, "rg"), "user rg");
     await fs.unlink(path.join(bin, "fd"));
     await fs.symlink("/nonexistent/user/fd", path.join(bin, "fd"));
-    await installTools(home, assets, { fd: "3", rg: "3" });
+    await updateTools(home, assets, { fd: "3", rg: "3" });
     assert.equal(await fs.readFile(path.join(bin, "rg"), "utf8"), "user rg");
     assert.equal(await fs.readlink(path.join(bin, "fd")), "/nonexistent/user/fd");
     assert.ok(!(await fs.readdir(bin)).some(name => name.startsWith(".extract-")));
@@ -57,9 +57,24 @@ async function fixture(t) {
   }
   const old = await bundle("1.9.0");
   const newer = await bundle("1.10.0");
-  await installTools(home, old.assets, old.versions);
+  await updateTools(home, old.assets, old.versions);
   return { root, home, bin, old, newer, bundle };
 }
+
+test("ordinary startup neither reads contents nor waits for the updater lock", async t => {
+  const { home, bin, newer } = await fixture(t);
+  await fs.mkdir(path.join(bin, ".dscode-tools.lock"));
+  t.mock.method(fs, "readFile", () => { throw new Error("Startup must not read tools or receipts"); });
+  await installTools(home, newer.assets, newer.versions);
+});
+
+test("ordinary startup installs only missing tools and leaves older managed tools alone", async t => {
+  const { home, bin, newer } = await fixture(t);
+  await fs.unlink(path.join(bin, "fd"));
+  await installTools(home, newer.assets, newer.versions);
+  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
+  assert.equal(await fs.readFile(path.join(bin, "rg"), "utf8"), "rg-1.9.0");
+});
 
 test("startup and subsequent pi tool requests share preparation per home without reacquiring the lock", async t => {
   const { home, bin, newer } = await fixture(t);
@@ -80,6 +95,7 @@ test("startup and subsequent pi tool requests share preparation per home without
 
 test("failed preparation is evicted so the next request can retry", async t => {
   const { home, bin, newer } = await fixture(t);
+  await fs.unlink(path.join(bin, "fd"));
   const license = newer.assets["tools/fd-LICENSES.txt"];
   await fs.unlink(license);
   const prepare = createToolPreparer(newer.assets, newer.versions);
@@ -97,7 +113,7 @@ test("upgrades receipt-owned tools atomically and never downgrades or rewrites t
   const target = path.join(bin, "fd");
   const oldHandle = await fs.open(target, "r");
   try {
-    await installTools(home, newer.assets, newer.versions);
+    await updateTools(home, newer.assets, newer.versions);
     assert.equal(await oldHandle.readFile("utf8"), "fd-1.9.0");
   } finally { await oldHandle.close(); }
   for (const tool of ["fd", "rg"]) {
@@ -105,8 +121,8 @@ test("upgrades receipt-owned tools atomically and never downgrades or rewrites t
     assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
   }
   const before = await fs.stat(target);
-  await installTools(home, old.assets, old.versions);
-  await installTools(home, newer.assets, newer.versions);
+  await updateTools(home, old.assets, old.versions);
+  await updateTools(home, newer.assets, newer.versions);
   assert.equal((await fs.stat(target)).ino, before.ino);
 });
 
@@ -114,9 +130,9 @@ test("independent processes converge on the newest tool version", async t => {
   const { home, bin, old, newer, bundle } = await fixture(t);
   const newest = await bundle("2.0.0");
   const moduleUrl = new URL("../tools-install.mjs", import.meta.url).href;
-  const source = `import { installTools } from ${JSON.stringify(moduleUrl)};
+  const source = `import { updateTools } from ${JSON.stringify(moduleUrl)};
     const [home, bundle] = JSON.parse(process.argv[1]);
-    await installTools(home, bundle.assets, bundle.versions);`;
+    await updateTools(home, bundle.assets, bundle.versions);`;
   const results = await Promise.allSettled([newer, newest, old, newer, newest, old].map(bundle =>
     promisify(execFile)(process.execPath, ["--input-type=module", "-e", source, JSON.stringify([home, bundle])])));
   for (const result of results) assert.equal(result.status, "fulfilled", result.reason?.message);
@@ -133,7 +149,7 @@ test("missing, malformed, or mismatched receipts never authorize replacement", a
         if (receipt === undefined) await fs.unlink(path.join(bin, file));
         else await fs.writeFile(path.join(bin, file), receipt);
       }
-      await installTools(home, newer.assets, newer.versions);
+      await updateTools(home, newer.assets, newer.versions);
       for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-1.9.0`);
     });
   }
@@ -142,7 +158,7 @@ test("missing, malformed, or mismatched receipts never authorize replacement", a
 test("recovers an abandoned lock and an interrupted publication with a prewritten receipt", async t => {
   const { home, bin, newer } = await fixture(t);
   const otherHome = `${home}-new`;
-  await installTools(otherHome, newer.assets, newer.versions);
+  await updateTools(otherHome, newer.assets, newer.versions);
   for (const file of await fs.readdir(path.join(otherHome, "bin"))) {
     if (file.endsWith(".json")) await fs.copyFile(path.join(otherHome, "bin", file), path.join(bin, file));
   }
@@ -150,15 +166,15 @@ test("recovers an abandoned lock and an interrupted publication with a prewritte
   await fs.mkdir(lock);
   const past = new Date(Date.now() - 60_000);
   await fs.utimes(lock, past, past);
-  await installTools(home, newer.assets, newer.versions);
+  await updateTools(home, newer.assets, newer.versions);
   for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-1.10.0`);
 });
 
 test("preparation failure preserves the old binary and releases the lock for a retry", async t => {
   const { home, bin, newer } = await fixture(t);
   const broken = { ...newer.assets, "tools/fd-LICENSES.txt": "/nonexistent/fixture-license" };
-  await assert.rejects(installTools(home, broken, newer.versions), { code: "ENOENT" });
+  await assert.rejects(updateTools(home, broken, newer.versions), { code: "ENOENT" });
   assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.9.0");
-  await installTools(home, newer.assets, newer.versions);
+  await updateTools(home, newer.assets, newer.versions);
   assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
 });

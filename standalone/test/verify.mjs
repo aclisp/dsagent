@@ -152,23 +152,39 @@ try {
     assert.ok(payload.tools.some(tool => tool.name === "exec_command"));
     assert.ok(!result.stderr.includes("USER_EXTENSION_EXECUTED"));
   });
-  await check("startup upgrades receipt-owned bundled tools offline", async () => {
+  await check("only the explicit command upgrades bundled tools offline", async () => {
     const bin = path.join(home, "bin");
     const expected = {};
+    const old = {};
     for (const tool of ["fd", "rg"]) {
       expected[tool] = await fs.readFile(path.join(bin, tool));
       const previous = Buffer.from(`#!/bin/sh\necho old-${tool}\n`);
+      old[tool] = previous;
       const sha256 = createHash("sha256").update(previous).digest("hex");
       await fs.writeFile(path.join(bin, tool), previous);
       await fs.writeFile(path.join(bin, `.${tool}-${sha256}.json`),
         JSON.stringify({ tool, version: "0.0.1", sha256 }));
     }
-    const result = await run("dscode", [...base, "-p", "reply once"]);
+    let result = await run("dscode", [...base, "-p", "reply once"]);
     assert.equal(result.code, 0, result.stderr);
+    for (const tool of ["fd", "rg"]) assert.deepEqual(await fs.readFile(path.join(bin, tool)), old[tool]);
+    payload = undefined;
+    result = await run("dscode", ["--update-bundled-tools"]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(payload, undefined, "maintenance must not contact the model");
+    assert.match(result.stdout, /fd: updated to 10\.3\.0/);
+    assert.match(result.stdout, /rg: updated to 14\.1\.1/);
+    assert.doesNotMatch(result.stdout, /\x1b\[/, "maintenance must not start the TUI");
     for (const tool of ["fd", "rg"]) {
       assert.deepEqual(await fs.readFile(path.join(bin, tool)), expected[tool]);
       assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
     }
+    result = await run("dscode", ["--update-bundled-tools"]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /is not newer/);
+    result = await run("dscode", ["--update-bundled-tools", "-p", "unrelated prompt"]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /Usage:/);
   });
   await check("explicit extensions and package commands rejected", async () => {
     for (const args of [["--extension",forbidden], ["-e",forbidden], ["install","npm:fixture"], ["update"], ["config"]]) {

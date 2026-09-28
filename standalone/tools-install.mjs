@@ -43,7 +43,23 @@ async function publish(source, target, mode, replace = false) {
 }
 
 export async function installTools(home, assets, versions) {
+  return manageTools(home, assets, versions, false);
+}
+
+export async function updateTools(home, assets, versions) {
+  return manageTools(home, assets, versions, true);
+}
+
+async function exists(target) {
+  try { await fs.lstat(target); return true; }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+}
+
+async function manageTools(home, assets, versions, upgrade) {
   const bin = path.join(home, "bin");
+  // Ordinary startup must not read binary contents, receipts, or take a lock
+  // when both paths already exist. lstat preserves even dangling symlinks.
+  if (!upgrade && (await Promise.all(["fd", "rg"].map(tool => exists(path.join(bin, tool))))).every(Boolean)) return;
   await fs.mkdir(bin, { recursive: true, mode: 0o700 });
   // Serialize ownership checks and publication across processes, including old
   // and new releases. Heartbeats allow recovery after an interrupted process.
@@ -53,20 +69,25 @@ export async function installTools(home, assets, versions) {
     retries: { retries: 100, factor: 1, minTimeout: 150, maxTimeout: 150 },
   });
   try {
-    for (const tool of ["fd", "rg"]) await installTool(bin, tool, assets, versions);
+    const results = [];
+    for (const tool of ["fd", "rg"]) results.push(await installTool(bin, tool, assets, versions, upgrade));
+    return results;
   } finally {
     await release();
   }
 }
 
-async function installTool(bin, tool, assets, versions) {
+async function installTool(bin, tool, assets, versions, upgrade) {
   const target = path.join(bin, tool);
+  const report = message => ({ tool, message });
+  if (!upgrade && await exists(target)) return report("already present");
   const current = await installedFile(target);
   if (current) {
     // Never adopt symlinks, unknown files, or locally modified bundled tools.
-    if (!current.sha256) return;
+    if (!current.sha256) return report("preserved (not a regular file)");
     const receipt = await readReceipt(bin, tool, current.sha256);
-    if (!receipt || !isNewer(versions[tool], receipt.version)) return;
+    if (!receipt) return report("preserved (user-managed or modified)");
+    if (!isNewer(versions[tool], receipt.version)) return report(`kept ${receipt.version} (bundled ${versions[tool]} is not newer)`);
   }
   const bytes = await fs.readFile(assets[`tools/${tool}`]);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -79,9 +100,10 @@ async function installTool(bin, tool, assets, versions) {
   if (current) {
     // Also notice non-cooperating user edits made while preparing the upgrade.
     const latest = await installedFile(target);
-    if (!latest || latest.sha256 !== current.sha256 || latest.ino !== current.ino || latest.dev !== current.dev) return;
+    if (!latest || latest.sha256 !== current.sha256 || latest.ino !== current.ino || latest.dev !== current.dev) return report("preserved (changed during upgrade)");
   }
-  await publish(bytes, target, 0o755, Boolean(current));
+  const published = await publish(bytes, target, 0o755, Boolean(current));
+  return report(published ? `${current ? "updated to" : "installed"} ${versions[tool]}` : "preserved (already present)");
 }
 
 async function installedFile(target) {

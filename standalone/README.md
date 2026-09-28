@@ -32,9 +32,19 @@ Cross-compilation downloads and caches the target Bun runtime from the npm regis
 
 The build also embeds pinned `fd` 10.3.0 and `rg` 14.1.1 binaries for the target platform, with their license notices. Downloads occur on the build host and are checked against SHA-256 hashes in `tools-build.mjs`. For offline builds, set `DSCODE_TOOL_ARCHIVES` to an absolute directory containing the original release `.tar.gz` files named in that module; the same checksums apply. Linux tools use the musl builds.
 
-On the first session, bundled tools are extracted to `~/.dscode/bin/fd` and `~/.dscode/bin/rg` (or `$DSCODE_HOME/bin`). Pi's completion/search tools and DSCode's child-process PATH use this same directory. No tool download occurs at runtime, including in print/RPC mode. Extraction publishes complete executable files atomically and supports simultaneous starts. License notices and hash-addressed installation receipts are stored alongside newly extracted binaries. On subsequent startups, a binary whose current SHA-256 matches a valid DSCode receipt is atomically replaced when the embedded tool version is newer. Unrecognized or modified binaries, directories, and symlinks are preserved. Launching an older DSCode executable never downgrades tools. A process lock serializes installation and upgrades, recovers abandoned locks, and keeps concurrent starts from overwriting newer versions. Receipts are published before binaries so interrupted upgrades can resume on the next startup. Preparation runs once per home per process before the TUI opens; pi's subsequent tool requests reuse that result without rehashing binaries or contending on the installation lock. Failed preparation can retry.
+On the first session, missing bundled tools are extracted to `~/.dscode/bin/fd` and `~/.dscode/bin/rg` (or `$DSCODE_HOME/bin`). Pi's completion/search tools and DSCode's child-process PATH use this same directory. No tool download occurs at runtime, including in print/RPC mode. Ordinary startup only checks whether both paths exist: it does not read binary contents or receipts, hash tools, or acquire the installation lock when both are present. Preparation is shared with pi's subsequent tool requests within the process.
 
-Run the extraction checks with `node --test standalone/test/tools-install.test.mjs`. The compiled acceptance suite verifies offline startup upgrades and also exercises `fd`/`rg` through pi's `find`/`grep` tools and `exec_command` with an isolated home and restricted PATH.
+To upgrade existing managed tools from a new executable, run:
+
+```sh
+dscode --update-bundled-tools
+# To target a custom home:
+DSCODE_HOME=/path/to/home dscode --update-bundled-tools
+```
+
+This standalone-only command accepts no other arguments, reports each tool's result, and exits without starting a session or contacting a model. It installs missing tools and atomically upgrades binaries whose current SHA-256 matches a valid DSCode installation receipt when the embedded version is newer. Unrecognized or modified binaries, directories, and symlinks are preserved; older executables never downgrade tools. License notices and hash-addressed receipts accompany installed binaries. A process lock coordinates extraction and explicit upgrades, with abandoned-lock recovery. Interrupted upgrades can be retried by running the command again.
+
+Run the extraction and upgrade checks with `node --test standalone/test/tools-install.test.mjs`. The compiled acceptance suite verifies that ordinary startup preserves older managed tools and that the explicit command upgrades them offline, and also exercises pi's `find`/`grep` tools and `exec_command` with an isolated home and restricted PATH.
 
 Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
 
