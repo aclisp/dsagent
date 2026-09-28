@@ -2,11 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { assets } from "dscode:assets";
 import { getDSCodeHome } from "../packages/core/dist/home.js";
-import { installTools } from "./tools-install.mjs";
+import { createToolPreparer } from "./tools-install.mjs";
 import { versions } from "dscode:tool-versions";
 
+const prepareTools = createToolPreparer(assets, versions);
+
 export function installBundledTools(home = getDSCodeHome()) {
-  return installTools(home, assets, versions);
+  return prepareTools(home);
 }
 
 export function getToolPath(tool) {

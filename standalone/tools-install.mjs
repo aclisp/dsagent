@@ -3,6 +3,22 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import lockfile from "proper-lockfile";
 
+/** Share startup preparation with pi's later, concurrent ensureTool calls. */
+export function createToolPreparer(assets, versions) {
+  const preparations = new Map();
+  return function prepare(home) {
+    let pending = preparations.get(home);
+    if (!pending) {
+      pending = installTools(home, assets, versions).catch(error => {
+        preparations.delete(home);
+        throw error;
+      });
+      preparations.set(home, pending);
+    }
+    return pending;
+  };
+}
+
 /** Publish complete files; replacement is reserved for verified managed copies. */
 async function publish(source, target, mode, replace = false) {
   const temporary = await fs.mkdtemp(path.join(path.dirname(target), ".extract-"));

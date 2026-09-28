@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { installTools } from "../tools-install.mjs";
+import { createToolPreparer, installTools } from "../tools-install.mjs";
 
 test("concurrent extraction publishes executable tools once and preserves user replacements", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-tool-test-"));
@@ -60,6 +60,37 @@ async function fixture(t) {
   await installTools(home, old.assets, old.versions);
   return { root, home, bin, old, newer, bundle };
 }
+
+test("startup and subsequent pi tool requests share preparation per home without reacquiring the lock", async t => {
+  const { home, bin, newer } = await fixture(t);
+  const prepare = createToolPreparer(newer.assets, newer.versions);
+  const startup = prepare(home);
+  assert.equal(prepare(home), startup);
+  await startup;
+  // A later request must not touch even the lock, let alone hash both binaries.
+  const lock = path.join(bin, ".dscode-tools.lock");
+  await fs.mkdir(lock);
+  assert.equal(prepare(home), startup);
+  await prepare(home);
+  const otherHome = `${home}-other`;
+  assert.notEqual(prepare(otherHome), startup);
+  await prepare(otherHome);
+  assert.equal(await fs.readFile(path.join(otherHome, "bin", "fd"), "utf8"), "fd-1.10.0");
+});
+
+test("failed preparation is evicted so the next request can retry", async t => {
+  const { home, bin, newer } = await fixture(t);
+  const license = newer.assets["tools/fd-LICENSES.txt"];
+  await fs.unlink(license);
+  const prepare = createToolPreparer(newer.assets, newer.versions);
+  const failed = prepare(home);
+  await assert.rejects(failed, { code: "ENOENT" });
+  await fs.writeFile(license, "recovered license");
+  const retry = prepare(home);
+  assert.notEqual(retry, failed);
+  await retry;
+  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
+});
 
 test("upgrades receipt-owned tools atomically and never downgrades or rewrites the same version", async t => {
   const { home, bin, old, newer } = await fixture(t);
