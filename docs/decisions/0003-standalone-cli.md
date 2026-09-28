@@ -6,7 +6,7 @@ Status: Product scope confirmed. The macOS arm64 and Linux x86_64 production run
 
 Provide a single `dscode` executable with an embedded runtime, so users do not need to install Node.js, Bun, or pnpm, clone the repository, or build locally. Evaluate Bun standalone first; keep the existing Node distribution unchanged.
 
-Avoid extracting application dependencies such as JS, WASM, and dynamic libraries at runtime wherever possible. Sessions, credentials, checkpoints, Git worktrees, and files requested by users may still be written to disk. Retain pi's automatic download of missing rg/fd as an explicit exception for external tool management: these tools may be downloaded to the tool directory and are not part of the executable. Do not silently remove features or relax permissions to meet packaging requirements.
+Avoid extracting application dependencies such as JS, WASM, and dynamic libraries at runtime wherever possible. Sessions, credentials, checkpoints, Git worktrees, and files requested by users may still be written to disk. Embed pinned rg/fd binaries and extract missing tools into DSCode's bin directory, avoiding first-run network downloads. Do not silently remove features or relax permissions to meet packaging requirements.
 
 ## Confirmed scope
 
@@ -31,7 +31,7 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 | Proxies | Retain ordinary HTTP/HTTPS proxies; exclude Negotiate authentication that depends on the Kerberos module |
 | Static assets | Embed themes and HTML export templates; exclude pi documentation and examples; user-requested HTML exports may be written to disk |
 | Installation and upgrades | Direct downloads or a platform-detecting installer; verify downloads before atomic replacement; no automatic update checks or updates |
-| External tools | Exclude them from the executable; retain pi's automatic download of missing rg/fd; users supply other tools such as Git, npx, and Python |
+| External tools | Embed pinned rg/fd and their licenses; atomically extract missing binaries to `$DSCODE_HOME/bin` (default `~/.dscode/bin`), upgrade receipt-verified DSCode copies only with `--update-bundled-tools`, without downgrades, preserving user replacements and symlinks; pi and command PATH use this directory without runtime downloads; users supply other tools such as Git, npx, and Python |
 
 ## Technical validation criteria
 
@@ -53,3 +53,6 @@ A dedicated production build entry point in `standalone/` was subsequently imple
 2026-09-25: Linux x86_64 support added using Bun's x64 baseline target and validated natively on glibc 2.34 with Bun 1.3.14. All 20 offline acceptance checks passed, including both PTY/TUI checks (Linux Seatbelt isolation is unavailable, so isolation strength is lower than on macOS). The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version, real OAuth/providers, release signing, and the release/installation workflow remain pending.
 
 See [standalone/README.md](../../standalone/README.md) for the production build, repeatable acceptance steps, and limitations. See the [standalone experiment record](../../experiments/standalone/README.md) for the initial investigation.
+
+2026-09-28: Bundled fd 10.3.0 and rg 14.1.1 for both targets. All 23 offline acceptance checks passed on macOS arm64, including explicit offline tool upgrades, pi find/grep, and command-name resolution of both tools. Thirteen focused test cases passed for concurrent installation/upgrades, preservation of user binaries/symlinks, receipt validation, downgrade prevention, interrupted-upgrade recovery, and sharing startup preparation with later pi tool requests. Artifacts are 78.0 MiB (macOS) and 109.9 MiB (Linux); the updated Linux artifact was cross-built only and still needs target-host runtime validation. Ordinary startup only checks for missing tools and avoids hashing or locking when both paths exist. Receipt-verified binaries are upgraded explicitly with `--update-bundled-tools`, with atomic replacement and a process lock; older executables do not downgrade them. Unknown or modified binaries and symlinks remain untouched.
+2026-09-28: Bumped the embedded tools to the upstream latest releases available at build time: fd 10.5.0 and rg 15.2.0. Updated the four target archive checksums; standalone builds continue to download release archives only on the build host and verify them before embedding.

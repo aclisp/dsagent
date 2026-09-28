@@ -30,9 +30,25 @@ node standalone/test/verify.mjs /absolute/path/to/copied/linux-x64
 
 Cross-compilation downloads and caches the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) and build the matching target explicitly with `--target`.
 
+The build also embeds pinned `fd` 10.5.0 and `rg` 15.2.0 binaries for the target platform, with their license notices. Downloads occur on the build host and are checked against SHA-256 hashes in `tools-build.mjs`. For offline builds, set `DSCODE_TOOL_ARCHIVES` to an absolute directory containing the original release `.tar.gz` files named in that module; the same checksums apply. Linux tools use the musl builds.
+
+On the first session, missing bundled tools are extracted to `~/.dscode/bin/fd` and `~/.dscode/bin/rg` (or `$DSCODE_HOME/bin`). Pi's completion/search tools and DSCode's child-process PATH use this same directory. No tool download occurs at runtime, including in print/RPC mode. Ordinary startup only checks whether both paths exist: it does not read binary contents or receipts, hash tools, or acquire the installation lock when both are present. Preparation is shared with pi's subsequent tool requests within the process.
+
+To upgrade existing managed tools from a new executable, run:
+
+```sh
+dscode --update-bundled-tools
+# To target a custom home:
+DSCODE_HOME=/path/to/home dscode --update-bundled-tools
+```
+
+This standalone-only command accepts no other arguments, reports each tool's result, and exits without starting a session or contacting a model. It installs missing tools and atomically upgrades binaries whose current SHA-256 matches a valid DSCode installation receipt when the embedded version is newer. Unrecognized or modified binaries, directories, and symlinks are preserved; older executables never downgrade tools. License notices and hash-addressed receipts accompany installed binaries. A process lock coordinates extraction and explicit upgrades, with abandoned-lock recovery. Interrupted upgrades can be retried by running the command again.
+
+Run the extraction and upgrade checks with `node --test standalone/test/tools-install.test.mjs`. The compiled acceptance suite verifies that ordinary startup preserves older managed tools and that the explicit command upgrades them offline, and also exercises pi's `find`/`grep` tools and `exec_command` with an isolated home and restricted PATH.
+
 Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
 
-- `dscode`: approximately 71 MiB on macOS arm64, 100 MiB on Linux x86_64; the only file needed at runtime, relocatable to any directory.
+- `dscode`: approximately 78 MiB on macOS arm64, 110 MiB on Linux x86_64; the only file to distribute, relocatable to any directory. Missing bundled tools are extracted into DSCode's home at runtime.
 - `dscode.sha256`: SHA-256 checksum file.
 - `build.json`: version, build host, target, size, dependency removal, and adapter records.
 - `verification.json`: runtime acceptance results, generated only after validation; rebuilding removes the previous report.
@@ -77,8 +93,8 @@ The `experiments/standalone/` directory preserves historical feasibility records
 - Disables user pi extensions and pi package management; retains the built-in DSCode extension.
 - Excludes SQLite, keyring, the vision CLI, Linux native clipboard helpers, Kerberos, and native WebSocket accelerators. The macOS native clipboard helper is embedded in the executable.
 - Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
-- Normal sessions, credentials, checkpoints, and user output may still be written to disk. Retains pi's download of missing rg/fd; users supply other external tools and MCP services.
-- DSCode `exec_command` prepends pi's managed `bin` directory to the child process PATH, so previously downloaded `rg` and `fd` are available by name. This does not redirect pi's data directory or extension discovery.
+- Normal sessions, credentials, checkpoints, bundled tools, and user output may still be written to disk. Users supply other external tools and MCP services.
+- DSCode `exec_command` prepends DSCode's `bin` directory to the child process PATH. Ordinary Node installations retain pi's existing managed-tool lookup and download behavior.
 - Does not automatically check for new versions.
 
 ## Validation coverage and limitations

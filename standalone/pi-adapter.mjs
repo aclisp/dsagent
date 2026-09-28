@@ -17,7 +17,7 @@ function body(source, signature, replacement) {
   return source.slice(0, start) + `${signature} {\n${replacement}\n}` + source.slice(end + 2);
 }
 
-export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platform }) {
+export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platform, toolVersions }) {
   const standalone = path.join(root, "standalone");
   const macClipboard = platform === "darwin-arm64"
     ? fs.realpathSync(path.join(tui, "../native/darwin/prebuilds/darwin-arm64/darwin-platform.node"))
@@ -26,10 +26,15 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
     [path.join(root, "packages/core/dist/vision-command.js"), "vision-command.mjs"],
     [path.join(root, "packages/core/dist/windows-sandbox.js"), "windows-sandbox.mjs"],
     [path.join(pi, "package-manager-cli.js"), "package-commands.mjs"],
+    [path.join(pi, "utils/tools-manager.js"), "tools-manager.mjs"],
   ]);
   return {
     name: "dscode-standalone",
     setup(build) {
+      build.onResolve({ filter: /^dscode:tool-versions$/ }, () => ({ path: "tool-versions", namespace: "dscode" }));
+      build.onLoad({ filter: /^tool-versions$/, namespace: "dscode" }, () => ({
+        loader: "js", contents: `export const versions = ${JSON.stringify(toolVersions)};`,
+      }));
       build.onResolve({ filter: /^dscode:assets$/ }, () => ({ path: "assets", namespace: "dscode" }));
       build.onLoad({ filter: /^assets$/, namespace: "dscode" }, () => {
         const entries = Object.entries(assets);
@@ -57,7 +62,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
         audit.inputs.add(file);
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));
-          return { contents: fs.readFileSync(path.join(standalone, replacements.get(file)), "utf8"), loader: "js" };
+          return { contents: `export * from ${JSON.stringify(path.join(standalone, replacements.get(file)))};`, loader: "js" };
         }
         if (file === path.join(tui, "native-platform.js")) {
           audit.adapted.add(path.relative(root, file));
@@ -75,6 +80,10 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
         };
         let source = fs.readFileSync(file, "utf8");
         const original = source;
+        if (file === path.join(root, "packages/core/dist/home.js")) {
+          source = `import { installBundledTools } from ${JSON.stringify(path.join(standalone, "tools-manager.mjs"))};\n` + source;
+          source = replace(source, "await ensureDSCodeRuntimeDefaults(home);", "await ensureDSCodeRuntimeDefaults(home);\n    await installBundledTools(home);");
+        }
         if (file === photon) source = replace(source,
           "const path = require('path').join(__dirname, 'photon_rs_bg.wasm');",
           `const path = require(${JSON.stringify(path.join(path.dirname(photon), "photon_rs_bg.wasm"))});`);

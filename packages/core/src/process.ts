@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stripModelCredentialEnvironment } from "./providers.js";
+import { isStandalone } from "./distribution.js";
+import { getDSCodeHome } from "./home.js";
 
 // Pi's tools manager captures this directory when its modules load, before
 // DSCode points PI_CODING_AGENT_DIR at ~/.dscode. Capture it at the same time
 // so commands can find the binaries pi downloaded without changing extension paths.
-const piManagedBinDir = path.join(getAgentDir(), "bin");
+const piManagedBinDir = isStandalone ? undefined : path.join(getAgentDir(), "bin");
 
 export interface ProcessResult {
   stdout: string;
@@ -106,11 +108,12 @@ export function runProcess(
   });
 }
 
-/** Add pi's managed fd/rg directory to a child process without changing the app environment. */
+/** Expose bundled tools in standalone builds, and pi-managed tools in Node builds. */
 export function withPiManagedBinPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const binDir = piManagedBinDir ?? path.join(getDSCodeHome(), "bin");
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
   const entries = (env[pathKey] ?? "").split(path.delimiter).filter(Boolean);
-  if (!entries.includes(piManagedBinDir)) entries.unshift(piManagedBinDir);
+  if (!entries.includes(binDir)) entries.unshift(binDir);
   return { ...env, [pathKey]: entries.join(path.delimiter) };
 }
 

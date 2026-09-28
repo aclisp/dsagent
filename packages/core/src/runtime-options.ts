@@ -236,7 +236,11 @@ Authentication:
   /login                           Choose a provider interactively
   /login <provider>                Authenticate a specific provider
 
-${isStandalone ? "Standalone: file credentials; local skills and MCP; no user extensions or package management.\nDefault sandbox: danger-full-access (approvals still apply)." : `Experimental Windows sandbox:
+${isStandalone
+  ? `Standalone: file credentials; local skills and MCP; no user extensions or package management.
+  --update-bundled-tools           Update managed fd/rg from this executable and exit
+Default sandbox: danger-full-access (approvals still apply).`
+  : `Experimental Windows sandbox:
   dscode sandbox setup             Install identities and WFP filters (elevated terminal)
   dscode sandbox status            Inspect native sandbox readiness
   dscode sandbox uninstall         Remove native sandbox state (elevated terminal)
