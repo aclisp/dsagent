@@ -81,6 +81,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "esbuild": "catalog:",
+    "proper-lockfile": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

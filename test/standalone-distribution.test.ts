@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -7,6 +9,20 @@ afterEach(() => {
 });
 
 describe("standalone distribution defaults", () => {
+  it("resolves command tools from the current DSCode home instead of pi's import-time home", async () => {
+    vi.stubGlobal("DSCODE_STANDALONE", true);
+    const home = path.join(os.tmpdir(), "dscode-custom-home");
+    vi.stubEnv("DSCODE_HOME", home);
+    vi.resetModules();
+    const { withPiManagedBinPath } = await import("../packages/core/src/process.js");
+    const environment = { PATH: os.tmpdir() };
+    expect(withPiManagedBinPath(environment).PATH).toBe([path.join(home, "bin"), os.tmpdir()].join(path.delimiter));
+    expect(environment.PATH).toBe(os.tmpdir());
+    const otherHome = path.join(os.tmpdir(), "dscode-other-home");
+    vi.stubEnv("DSCODE_HOME", otherHome);
+    expect(withPiManagedBinPath(environment).PATH).toBe([path.join(otherHome, "bin"), os.tmpdir()].join(path.delimiter));
+  });
+
   it("uses host access without granting full tool permissions, including plan subagents", async () => {
     vi.stubGlobal("DSCODE_STANDALONE", true);
     vi.stubEnv("DSCODE_SANDBOX", undefined);

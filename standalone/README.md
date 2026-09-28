@@ -30,9 +30,15 @@ node standalone/test/verify.mjs /absolute/path/to/copied/linux-x64
 
 Cross-compilation downloads and caches the target Bun runtime from the npm registry. On networks where `registry.npmjs.org` is unreachable, point `BUN_COMPILE_TARGET_TARBALL_URL` at a mirror of `@oven/bun-<target>` (for example npmmirror) and build the matching target explicitly with `--target`.
 
+The build also embeds pinned `fd` 10.3.0 and `rg` 14.1.1 binaries for the target platform, with their license notices. Downloads occur on the build host and are checked against SHA-256 hashes in `tools-build.mjs`. For offline builds, set `DSCODE_TOOL_ARCHIVES` to an absolute directory containing the original release `.tar.gz` files named in that module; the same checksums apply. Linux tools use the musl builds.
+
+On the first session, bundled tools are extracted to `~/.dscode/bin/fd` and `~/.dscode/bin/rg` (or `$DSCODE_HOME/bin`). Pi's completion/search tools and DSCode's child-process PATH use this same directory. No tool download occurs at runtime, including in print/RPC mode. Extraction publishes complete executable files atomically and supports simultaneous starts. License notices and hash-addressed installation receipts are stored alongside newly extracted binaries. On subsequent startups, a binary whose current SHA-256 matches a valid DSCode receipt is atomically replaced when the embedded tool version is newer. Unrecognized or modified binaries, directories, and symlinks are preserved. Launching an older DSCode executable never downgrades tools. A process lock serializes installation and upgrades, recovers abandoned locks, and keeps concurrent starts from overwriting newer versions. Receipts are published before binaries so interrupted upgrades can resume on the next startup.
+
+Run the extraction checks with `node --test standalone/test/tools-install.test.mjs`. The compiled acceptance suite verifies offline startup upgrades and also exercises `fd`/`rg` through pi's `find`/`grep` tools and `exec_command` with an isolated home and restricted PATH.
+
 Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64` or `linux-x64`):
 
-- `dscode`: approximately 71 MiB on macOS arm64, 100 MiB on Linux x86_64; the only file needed at runtime, relocatable to any directory.
+- `dscode`: approximately 78 MiB on macOS arm64, 110 MiB on Linux x86_64; the only file to distribute, relocatable to any directory. Missing bundled tools are extracted into DSCode's home at runtime.
 - `dscode.sha256`: SHA-256 checksum file.
 - `build.json`: version, build host, target, size, dependency removal, and adapter records.
 - `verification.json`: runtime acceptance results, generated only after validation; rebuilding removes the previous report.
@@ -77,8 +83,8 @@ The `experiments/standalone/` directory preserves historical feasibility records
 - Disables user pi extensions and pi package management; retains the built-in DSCode extension.
 - Excludes SQLite, keyring, the vision CLI, Linux native clipboard helpers, Kerberos, and native WebSocket accelerators. The macOS native clipboard helper is embedded in the executable.
 - Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
-- Normal sessions, credentials, checkpoints, and user output may still be written to disk. Retains pi's download of missing rg/fd; users supply other external tools and MCP services.
-- DSCode `exec_command` prepends pi's managed `bin` directory to the child process PATH, so previously downloaded `rg` and `fd` are available by name. This does not redirect pi's data directory or extension discovery.
+- Normal sessions, credentials, checkpoints, bundled tools, and user output may still be written to disk. Users supply other external tools and MCP services.
+- DSCode `exec_command` prepends DSCode's `bin` directory to the child process PATH. Ordinary Node installations retain pi's existing managed-tool lookup and download behavior.
 - Does not automatically check for new versions.
 
 ## Validation coverage and limitations

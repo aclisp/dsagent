@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { piAdapter, PI_VERSION } from "./pi-adapter.mjs";
+import { prepareTools, toolVersions } from "./tools-build.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Linux uses the x64 baseline target per ADR-0003.
@@ -47,7 +48,7 @@ async function buildPlatform(platform) {
     // worker URL inherits the checkout's path while the worker lives under /tmp.
     const entry = path.join(work, "cli.mjs");
     fs.writeFileSync(entry, `import ${JSON.stringify(path.join(root, "standalone/cli.mjs"))};\n`);
-    const assets = { "package.json": piPackage };
+    const assets = { "package.json": piPackage, ...await prepareTools(platform, work) };
     for (const name of ["light.json", "dark.json"]) assets[name] = path.join(pi, "modes/interactive/theme", name);
     for (const name of ["template.html", "template.css", "template.js"]) assets[name] = path.join(pi, "core/export-html", name);
     for (const name of ["marked.min.js", "highlight.min.js"]) assets[name] = path.join(pi, "core/export-html/vendor", name);
@@ -59,7 +60,7 @@ async function buildPlatform(platform) {
       target: "bun", minify: { syntax: true, whitespace: true, identifiers: false },
       naming: { asset: "[name].[ext]" },
       define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(version) },
-      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, audit, platform })],
+      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, audit, platform, toolVersions })],
     });
     if (!result.success) throw new AggregateError(result.logs, "Standalone build failed");
     const executable = path.join(work, "dscode");
@@ -77,7 +78,7 @@ async function buildPlatform(platform) {
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     fs.writeFileSync(path.join(out, "dscode.sha256"), `${sha256}  dscode\n`);
     fs.writeFileSync(path.join(out, "build.json"), JSON.stringify({ version, pi: PI_VERSION, bun: Bun.version,
-      platform, target, host, bytes: bytes.length, sha256,
+      platform, target, host, bytes: bytes.length, sha256, tools: toolVersions,
       inputs: audit.inputs.size, excluded: [...audit.excluded].sort(), adapted: [...audit.adapted].sort(),
     }, null, 2) + "\n");
     console.log(`Built ${path.join(out, "dscode")} (${(bytes.length / 1024 / 1024).toFixed(1)} MiB)`);

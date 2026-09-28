@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -151,6 +152,24 @@ try {
     assert.ok(payload.tools.some(tool => tool.name === "exec_command"));
     assert.ok(!result.stderr.includes("USER_EXTENSION_EXECUTED"));
   });
+  await check("startup upgrades receipt-owned bundled tools offline", async () => {
+    const bin = path.join(home, "bin");
+    const expected = {};
+    for (const tool of ["fd", "rg"]) {
+      expected[tool] = await fs.readFile(path.join(bin, tool));
+      const previous = Buffer.from(`#!/bin/sh\necho old-${tool}\n`);
+      const sha256 = createHash("sha256").update(previous).digest("hex");
+      await fs.writeFile(path.join(bin, tool), previous);
+      await fs.writeFile(path.join(bin, `.${tool}-${sha256}.json`),
+        JSON.stringify({ tool, version: "0.0.1", sha256 }));
+    }
+    const result = await run("dscode", [...base, "-p", "reply once"]);
+    assert.equal(result.code, 0, result.stderr);
+    for (const tool of ["fd", "rg"]) {
+      assert.deepEqual(await fs.readFile(path.join(bin, tool)), expected[tool]);
+      assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
+    }
+  });
   await check("explicit extensions and package commands rejected", async () => {
     for (const args of [["--extension",forbidden], ["-e",forbidden], ["install","npm:fixture"], ["update"], ["config"]]) {
       const result = await run("dscode",args);
@@ -202,20 +221,24 @@ try {
   });
   for (const tool of [
     {name:"read",args:{path:"image.png"}},
-    {name:"exec_command",args:{cmd:"pwd"}},
+    {name:"find",args:{pattern:"image.png"}},
+    {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
+    {name:"exec_command",args:{cmd:"pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
     {name:"delegate",args:{tasks:["explorer", "reviewer", "tester", "explorer"].map((role, index) => ({role, task:`Reply once with evidence for task ${index + 1}.`}))}},
   ]) {
     await check(`real tool execution: ${tool.name}`, async () => {
       plannedTool = tool; toolIssued = false; toolOutputs = []; childCommandIssued = false;
       // JSON parent and children must work without extracting a native UI addon.
-      const result = await run("dscode", [...base, "--tools", "read,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
+      const result = await run("dscode", [...base, "--tools", "read,find,grep,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
       const finished = events.find(event => event.type === "tool_execution_end" && event.toolName === tool.name);
       assert.ok(finished, result.stdout);
       assert.equal(finished.isError, false, JSON.stringify(finished));
       if (tool.name === "read") assert.ok(finished.result.content.some(item => item.type === "image"),JSON.stringify(finished));
+      else if (tool.name === "find") assert.match(JSON.stringify(toolOutputs), /image\.png/);
+      else if (tool.name === "grep") assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       else if (tool.name === "apply_patch") assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
       else if (tool.name === "delegate") {
         assert.equal(finished.result.details.results.length, tool.args.tasks.length, JSON.stringify(finished));
@@ -223,7 +246,13 @@ try {
         assert.ok(childCommandIssued);
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
       }
-      else assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
+      else {
+        assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
+        assert.match(JSON.stringify(toolOutputs), /home\/bin\/rg/);
+        assert.match(JSON.stringify(toolOutputs), /home\/bin\/fd/);
+        assert.match(JSON.stringify(toolOutputs), /ripgrep 14\.1\.1/);
+        assert.match(JSON.stringify(toolOutputs), /fd 10\.3\.0/);
+      }
     });
   }
   plannedTool = undefined;
