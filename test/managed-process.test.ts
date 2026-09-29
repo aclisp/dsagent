@@ -19,7 +19,7 @@ describe("ManagedProcessRegistry", () => {
         },
       );
       expect(started.running).toBe(true);
-      expect(started.processId).toMatch(/^[0-9a-f]{11}$/);
+      expect(started.processId).toBe("1");
       const completed = await registry.interact(started.processId, { yieldTimeMs: 2_000 });
       expect(completed.running).toBe(false);
       expect(completed.exitCode).toBe(0);
@@ -30,10 +30,10 @@ describe("ManagedProcessRegistry", () => {
     }
   });
 
-  it("removes commands whose final result is returned by start", async () => {
+  it("removes commands whose final result is returned by start without reusing their IDs", async () => {
     const registry = new ManagedProcessRegistry();
     try {
-      for (const command of ["printf done", "exit 7"]) {
+      for (const [index, command] of ["printf done", "exit 7"].entries()) {
         const completed = await registry.start(command, {
           cwd: os.tmpdir(),
           sandbox: { mode: "danger-full-access", network: false },
@@ -42,6 +42,7 @@ describe("ManagedProcessRegistry", () => {
           thinkingLevel: "low",
         });
         expect(completed).toMatchObject({
+          processId: String(index + 1),
           running: false,
           exitCode: command === "exit 7" ? 7 : 0,
         });

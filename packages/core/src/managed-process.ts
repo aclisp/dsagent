@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { BoundedOutput, withPiManagedBinPath } from "./process.js";
@@ -42,6 +41,7 @@ export interface ManagedProcessRegistryOptions {
 const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
 
 export class ManagedProcessRegistry {
+  private nextProcessId = 1;
   private readonly records = new Map<string, ProcessRecord>();
   // Insertion order tracks completion order, independently of process start order.
   private readonly completedIds = new Set<string>();
@@ -96,7 +96,7 @@ export class ManagedProcessRegistry {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const id = randomUUID().replaceAll("-", "").slice(0, 11);
+    const id = String(this.nextProcessId++);
     let resolveCompletion = (): void => {};
     const completion = new Promise<void>((resolve) => {
       resolveCompletion = resolve;
