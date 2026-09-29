@@ -111,7 +111,10 @@ const writeStdinParameters = Type.Object({
   chars: Type.Optional(Type.String({
     description: "Characters to write to stdin. Omit to poll the process.",
   })),
-  yield_time_ms: Type.Optional(Type.Integer({ minimum: 0, maximum: 30_000 })),
+  yield_time_ms: Type.Optional(Type.Integer({
+    minimum: 0,
+    description: "Milliseconds to wait for output, capped at 30000.",
+  })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
 

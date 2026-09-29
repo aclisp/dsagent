@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
@@ -36,6 +37,35 @@ describe("command access escalation", () => {
     vi.restoreAllMocks();
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
+  });
+
+  it("accepts long write_stdin waits through tool validation", async () => {
+    const tools = new Map<string, any>();
+    const pi = new Proxy({
+      registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
+    }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    }) as unknown as ExtensionAPI;
+    await runExtensionFactory(options(process.cwd()), pi);
+    const interact = vi.spyOn(ManagedProcessRegistry.prototype, "interact").mockResolvedValue({
+      processId: "background-process",
+      running: true,
+      output: "",
+      sandbox: "host",
+    });
+    const tool = tools.get("write_stdin");
+    const args = validateToolArguments(tool, {
+      type: "toolCall",
+      id: "poll",
+      name: "write_stdin",
+      arguments: { process_id: "background-process", yield_time_ms: 60_000 },
+    });
+
+    await tool.execute("poll", args);
+    expect(interact).toHaveBeenLastCalledWith("background-process", {
+      yieldTimeMs: 60_000,
+      terminate: false,
+    });
   });
 
   it("passes the current main-agent thinking level to every managed command", async () => {
