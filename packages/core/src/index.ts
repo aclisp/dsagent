@@ -48,14 +48,6 @@ export {
   type PartitionedSessionPath,
 } from "./home.js";
 export {
-  DSCodeStateStore,
-  getDSCodeStatePath,
-  indexDSCodeSession,
-  listDSCodeThreads,
-  type DSCodeThread,
-  type ListThreadOptions,
-} from "./state.js";
-export {
   DEFAULT_DEEPSEEK_BASE_URL,
   getDSCodeStorageSettings,
   getDSCodeSettingsPath,
