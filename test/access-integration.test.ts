@@ -40,7 +40,7 @@ describe("command access escalation", () => {
     root = undefined;
   });
 
-  it("accepts long write_stdin waits through tool validation", async () => {
+  it.each([{}, { eof: true }, { chars: "last input", eof: true }])("validates and forwards write_stdin options (%j)", async (input) => {
     const tools = new Map<string, any>();
     const pi = new Proxy({
       registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
@@ -59,14 +59,36 @@ describe("command access escalation", () => {
       type: "toolCall",
       id: "poll",
       name: "write_stdin",
-      arguments: { process_id: "background-process", yield_time_ms: 60_000 },
+      arguments: { process_id: "background-process", yield_time_ms: 60_000, ...input },
     });
 
     await tool.execute("poll", args);
     expect(interact).toHaveBeenLastCalledWith("background-process", {
       yieldTimeMs: 60_000,
       terminate: false,
+      ...input,
     });
+  });
+
+  it("requires approval for EOF but still allows polling in ask mode", async () => {
+    const handlers: Array<(event: any, ctx: ExtensionContext) => any> = [];
+    const pi = new Proxy({
+      on(name: string, handler: (event: any, ctx: ExtensionContext) => any) {
+        if (name === "tool_call") handlers.push(handler);
+      },
+    }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    }) as unknown as ExtensionAPI;
+    await runExtensionFactory({ ...options(process.cwd()), permission: "ask" }, pi);
+    const ctx = { hasUI: false } as ExtensionContext;
+    const emit = async (input: Record<string, unknown>) => {
+      for (const handler of handlers) {
+        const result = await handler({ toolName: "write_stdin", input }, ctx);
+        if (result?.block) return result;
+      }
+    };
+    expect(await emit({ process_id: "1" })).toBeUndefined();
+    expect(await emit({ process_id: "1", eof: true })).toMatchObject({ block: true });
   });
 
   it("reports stdin write failures as tool errors while preserving running status", async () => {

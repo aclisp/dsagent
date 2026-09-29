@@ -5,6 +5,61 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 
 describe("ManagedProcessRegistry", () => {
+  it.each([undefined, "tail"])("sends EOF after previous input and optional final chars (%s)", async (chars) => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(nodeCommand(
+        "let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(JSON.stringify(input)));",
+      ), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      const written = await registry.interact(started.processId, { chars: "head", yieldTimeMs: 0 });
+      expect(written.running).toBe(true);
+      expect(written.writeError).toBeUndefined();
+      const ended = await registry.interact(started.processId, {
+        ...(chars === undefined ? {} : { chars }), eof: true, yieldTimeMs: 2_000,
+      });
+      expect(ended).toMatchObject({ running: false, exitCode: 0, output: JSON.stringify(`head${chars ?? ""}`) });
+      expect(ended.writeError).toBeUndefined();
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("keeps a process manageable after EOF and rejects further writes", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(nodeCommand(
+        "process.stdin.resume(); process.stdin.on('end', () => { process.stdout.write('EOF received'); setInterval(() => {}, 1000); });",
+      ), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      const ended = await registry.interact(started.processId, { eof: true, yieldTimeMs: 0 });
+      expect(ended.running).toBe(true);
+      expect(ended.writeError).toBeUndefined();
+      const repeated = await registry.interact(started.processId, { eof: true, yieldTimeMs: 0 });
+      expect(repeated.running).toBe(true);
+      expect(repeated.writeError).toBeUndefined();
+      const failed = await registry.interact(started.processId, { chars: "late", yieldTimeMs: 0 });
+      expect(failed.running).toBe(true);
+      expect(failed.writeError).toContain("stdin is closed");
+      let output = ended.output + repeated.output + failed.output;
+      await expect.poll(async () => {
+        const polled = await registry.interact(started.processId, { yieldTimeMs: 10 });
+        expect(polled.running).toBe(true);
+        expect(polled.writeError).toBeUndefined();
+        output += polled.output;
+        return output;
+      }).toContain("EOF received");
+      await expect(registry.interact(started.processId, { terminate: true, eof: true, chars: "ignored", yieldTimeMs: 2_000 }))
+        .resolves.toMatchObject({ running: false });
+    } finally {
+      registry.dispose();
+    }
+  });
+
   it("writes characters to a running process", async () => {
     const registry = new ManagedProcessRegistry();
     const script = "process.stdin.once('data', data => { process.stdout.write(data); process.exit(0); })";
@@ -27,7 +82,7 @@ describe("ManagedProcessRegistry", () => {
     }
   });
 
-  it.runIf(process.platform !== "win32")("returns closed-stdin write errors and keeps the process manageable", async () => {
+  it.runIf(process.platform !== "win32").each([false, true])("returns closed-stdin write errors and keeps the process manageable (eof=%s)", async (eof) => {
     const registry = new ManagedProcessRegistry();
     try {
       const started = await registry.start("exec <&-; printf ready; sleep 30", {
@@ -44,7 +99,7 @@ describe("ManagedProcessRegistry", () => {
       }).toContain("ready");
 
       // A zero wait must still report the asynchronous write failure in this call.
-      const failed = await registry.interact(started.processId, { chars: "hello\n", yieldTimeMs: 0 });
+      const failed = await registry.interact(started.processId, { chars: "hello\n", eof, yieldTimeMs: 0 });
       expect(failed.running).toBe(true);
       expect(failed.writeError).toContain("EPIPE");
       const repeated = await registry.interact(started.processId, { chars: "again\n", yieldTimeMs: 0 });
@@ -405,6 +460,12 @@ function backgroundCommand(): string {
     return `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`;
   }
   return `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script}'`;
+}
+
+function nodeCommand(script: string): string {
+  return process.platform === "win32"
+    ? `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`
+    : `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script.replaceAll("'", "'\\''")}'`;
 }
 
 function longBackgroundCommand(): string {

@@ -167,7 +167,7 @@ export class ManagedProcessRegistry {
 
   async interact(
     processId: string,
-    options: { chars?: string; yieldTimeMs: number; terminate?: boolean },
+    options: { chars?: string; eof?: boolean; yieldTimeMs: number; terminate?: boolean },
   ): Promise<ManagedProcessResult> {
     const record = this.records.get(processId);
     if (!record) {
@@ -176,19 +176,26 @@ export class ManagedProcessRegistry {
     }
     if (options.terminate) {
       stopChild(record.child);
-    } else if (options.chars) {
+    } else if (options.chars || options.eof) {
       const stdin = record.child.stdin;
-      const error = record.stdinError ?? (
-        !record.running || stdin.destroyed || !stdin.writable
-          ? new Error("Process stdin is closed")
-          : await new Promise<Error | undefined>((resolve) => {
-              try {
-                stdin.write(options.chars!, (error) => resolve(error ?? undefined));
-              } catch (error) {
-                resolve(error instanceof Error ? error : new Error(String(error)));
-              }
-            })
-      );
+      let error = record.stdinError;
+      // Sending EOF again is harmless, but new characters after EOF are an error.
+      const repeatedEof = options.eof && !options.chars && stdin.writableEnded;
+      if (!error && !repeatedEof) {
+        if (!record.running || stdin.destroyed || !stdin.writable) {
+          error = new Error("Process stdin is closed");
+        } else {
+          error = await new Promise<Error | undefined>((resolve) => {
+            try {
+              const onWrite = (error?: Error | null): void => resolve(error ?? undefined);
+              if (options.eof) stdin.end(options.chars ?? "", onWrite);
+              else stdin.write(options.chars!, onWrite);
+            } catch (error) {
+              resolve(error instanceof Error ? error : new Error(String(error)));
+            }
+          });
+        }
+      }
       if (error) {
         return { ...this.result(record), writeError: error.message };
       }

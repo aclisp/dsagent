@@ -114,6 +114,9 @@ const writeStdinParameters = Type.Object({
   chars: Type.Optional(Type.String({
     description: "Characters to write to stdin. Omit to poll the process.",
   })),
+  eof: Type.Optional(Type.Boolean({
+    description: "Close stdin after writing any chars",
+  })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
     description: "Milliseconds to wait for output, capped at 30000.",
@@ -366,7 +369,8 @@ export function createDSCodeExtension(
           event.toolName === "write_stdin" &&
           isRecord(event.input) &&
           (typeof event.input.chars !== "string" || event.input.chars.length === 0) &&
-          event.input.terminate !== true
+          event.input.terminate !== true &&
+          event.input.eof !== true
         ) {
           return;
         }
@@ -1029,7 +1033,7 @@ function registerCommandTools(
     name: "write_stdin",
     label: "Write to process",
     description:
-      "Write characters to, poll, or terminate a managed process returned by exec_command.",
+      "Write characters to, send EOF to, poll, or terminate a managed process returned by exec_command.",
     promptSnippet: "write_stdin: interact with or poll a managed background process",
     parameters: writeStdinParameters,
     renderShell: "self",
@@ -1037,6 +1041,7 @@ function registerCommandTools(
     async execute(_id, params) {
       const result = await registry.interact(params.process_id, {
         ...(params.chars === undefined ? {} : { chars: params.chars }),
+        ...(params.eof === undefined ? {} : { eof: params.eof }),
         yieldTimeMs: params.yield_time_ms ?? 5_000,
         terminate: params.terminate ?? false,
       });
@@ -1049,7 +1054,7 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      const action = args.terminate ? "Stop" : args.chars ? "Write to" : "Poll";
+      const action = args.terminate ? "Stop" : args.eof ? "Send EOF to" : args.chars ? "Write to" : "Poll";
       return renderToolCall(action, `process ${args.process_id}`, theme, context);
     },
     renderResult(result, renderOptions, theme, context) {
