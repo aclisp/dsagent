@@ -28,7 +28,7 @@ describe("ManagedProcessRegistry", () => {
           .toMatchObject({ running: false });
       }
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -52,7 +52,7 @@ describe("ManagedProcessRegistry", () => {
       expect(await registry.interact(started.processId, { chars: "still alive", eof: true, yieldTimeMs: 2_000 }))
         .toMatchObject({ running: false, exitCode: 0, output: "still alive" });
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -73,10 +73,10 @@ describe("ManagedProcessRegistry", () => {
       expect(await registry.interact(started.processId, { yieldTimeMs: 0 })).toMatchObject({ running: true });
       // Session shutdown still owns cleanup, including pending writes.
       const completion = registry.interact(started.processId, { yieldTimeMs: 2_000 });
-      registry.dispose();
+      await registry.dispose();
       expect(await completion).toMatchObject({ running: false });
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -92,7 +92,7 @@ describe("ManagedProcessRegistry", () => {
       expect(await registry.interact(started.processId, { yieldTimeMs: 2_000 }))
         .toMatchObject({ running: false, timedOut: true });
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -114,7 +114,7 @@ describe("ManagedProcessRegistry", () => {
       expect(ended).toMatchObject({ running: false, exitCode: 0, output: JSON.stringify(`head${chars ?? ""}`) });
       expect(ended.writeError).toBeUndefined();
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -147,7 +147,7 @@ describe("ManagedProcessRegistry", () => {
       await expect(registry.interact(started.processId, { terminate: true, eof: true, chars: "ignored", yieldTimeMs: 2_000 }))
         .resolves.toMatchObject({ running: false });
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -169,7 +169,7 @@ describe("ManagedProcessRegistry", () => {
         chars: "hello\n", yieldTimeMs: 2_000,
       })).resolves.toMatchObject({ running: false, output: "hello\n", exitCode: 0 });
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -203,7 +203,7 @@ describe("ManagedProcessRegistry", () => {
         .resolves.toMatchObject({ running: false });
       expect(registry.list()).toEqual([]);
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -227,7 +227,7 @@ describe("ManagedProcessRegistry", () => {
         `Unknown process: 99. Available process IDs: ${running.processId}, ${completed.processId}`,
       );
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -252,7 +252,7 @@ describe("ManagedProcessRegistry", () => {
       expect(completed.output).toContain("done");
       expect(registry.list()).toEqual([]);
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -279,7 +279,7 @@ describe("ManagedProcessRegistry", () => {
         ).rejects.toThrow("Unknown process");
       }
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -300,7 +300,7 @@ describe("ManagedProcessRegistry", () => {
         registry.interact(started.processId, { yieldTimeMs: 0 }),
       ).rejects.toThrow("Unknown process");
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -339,7 +339,7 @@ describe("ManagedProcessRegistry", () => {
       ).resolves.toMatchObject({ running: false });
       expect(registry.list()).toEqual([]);
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   }, 30_000);
 
@@ -377,7 +377,7 @@ describe("ManagedProcessRegistry", () => {
       await new Promise((resolve) => setTimeout(resolve, 1_200));
       await expect(fs.access(marker)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
-      registry.dispose();
+      await registry.dispose();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
@@ -453,7 +453,7 @@ describe("ManagedProcessRegistry", () => {
           thinking: "max",
         });
       } finally {
-        registry.dispose();
+        await registry.dispose();
         restoreEnvironment(environment);
         await fs.rm(root, { recursive: true, force: true });
       }
@@ -497,7 +497,7 @@ describe("ManagedProcessRegistry", () => {
         }),
       ).rejects.toThrow("dscode-vision requires network access");
     } finally {
-      registry.dispose();
+      await registry.dispose();
     }
   });
 
@@ -522,7 +522,7 @@ describe("ManagedProcessRegistry", () => {
           sandbox: "trusted dscode-vision (fixed executable)",
         });
       } finally {
-        registry.dispose();
+        await registry.dispose();
         await fs.rm(root, { recursive: true, force: true });
       }
     },

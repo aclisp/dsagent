@@ -291,9 +291,12 @@ export function createDSCodeExtension(
 
       pi.on("session_shutdown", async (_event, ctx) => {
         mcp.revokeApprovals();
-        await queueSessionPartition(ctx);
-        processes.dispose();
-        await mcp.close();
+        try {
+          await queueSessionPartition(ctx);
+        } finally {
+          await processes.dispose();
+          await mcp.close();
+        }
       });
 
       pi.on("before_agent_start", async (event) => {

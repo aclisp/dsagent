@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { BoundedOutput, withPiManagedBinPath } from "./process.js";
@@ -41,6 +41,22 @@ export interface ManagedProcessRegistryOptions {
 }
 
 const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
+const SHUTDOWN_GRACE_MS = 1_500;
+const liveChildren = new Set<ChildProcessWithoutNullStreams>();
+
+// Runs even when pi exits without emitting session_shutdown (for example, on a crash).
+function killChildrenOnExit(): void {
+  for (const child of liveChildren) forceStopChild(child);
+}
+
+function trackChild(child: ChildProcessWithoutNullStreams): void {
+  if (liveChildren.size === 0) process.on("exit", killChildrenOnExit);
+  liveChildren.add(child);
+  child.once("close", () => {
+    liveChildren.delete(child);
+    if (liveChildren.size === 0) process.removeListener("exit", killChildrenOnExit);
+  });
+}
 
 export class ManagedProcessRegistry {
   private nextProcessId = 1;
@@ -49,6 +65,7 @@ export class ManagedProcessRegistry {
   private readonly completedIds = new Set<string>();
   private readonly visionExecutable: string;
   private readonly maxCompletedProcesses: number;
+  private disposal?: Promise<void>;
 
   constructor(options: ManagedProcessRegistryOptions = {}) {
     this.maxCompletedProcesses = options.maxCompletedProcesses ?? DEFAULT_MAX_COMPLETED_PROCESSES;
@@ -73,6 +90,7 @@ export class ManagedProcessRegistry {
     },
   ): Promise<ManagedProcessResult> {
     options.signal?.throwIfAborted();
+    if (this.disposal) throw new Error("Process registry is disposed");
     const vision = classifyVisionCommand(command);
     if (vision.kind === "invalid") {
       throw new Error(`Invalid dscode-vision command: ${vision.reason}`);
@@ -99,6 +117,7 @@ export class ManagedProcessRegistry {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
+    trackChild(child);
     const id = String(this.nextProcessId++);
     let resolveCompletion = (): void => {};
     const completion = new Promise<void>((resolve) => {
@@ -215,11 +234,25 @@ export class ManagedProcessRegistry {
     }));
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
+    this.disposal ??= this.disposeProcesses();
+    return this.disposal;
+  }
+
+  private async disposeProcesses(): Promise<void> {
+    const running = [...this.records.values()].filter((record) => record.running);
     for (const record of this.records.values()) {
       clearTimeout(record.timeout);
-      stopChild(record.child);
     }
+    for (const record of running) signalProcessTree(record.child, "SIGTERM");
+    const completion = Promise.all(running.map((record) => record.completion)).then(() => {});
+    await waitForCompletion(completion, SHUTDOWN_GRACE_MS);
+    for (const record of running) {
+      if (record.running) forceStopChild(record.child);
+    }
+    // Bound shutdown even if an escaped descendant keeps a pipe open. The exit
+    // hook remains installed for any child whose close event has not arrived.
+    await waitForCompletion(completion, SHUTDOWN_GRACE_MS);
     this.records.clear();
     this.completedIds.clear();
   }
@@ -280,11 +313,22 @@ function stopChild(child: ChildProcessWithoutNullStreams): void {
   if (child.killed) return;
   signalProcessTree(child, "SIGTERM");
   const timer = setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) {
-      signalProcessTree(child, "SIGKILL");
-    }
-  }, 1_500);
+    // The shell may have exited while descendants still hold its pipes open.
+    if (liveChildren.has(child)) forceStopChild(child);
+  }, SHUTDOWN_GRACE_MS);
   timer.unref();
+  child.once("close", () => clearTimeout(timer));
+}
+
+function forceStopChild(child: ChildProcessWithoutNullStreams): void {
+  if (process.platform === "win32" && child.pid !== undefined) {
+    // Exit handlers cannot wait for an asynchronously spawned taskkill.
+    spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
+      ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true, timeout: SHUTDOWN_GRACE_MS });
+    child.kill("SIGKILL");
+    return;
+  }
+  signalProcessTree(child, "SIGKILL");
 }
 
 function signalProcessTree(
