@@ -107,11 +107,17 @@ const execCommandParameters = Type.Object({
 });
 
 const writeStdinParameters = Type.Object({
-  process_id: Type.String({ minLength: 1 }),
+  process_id: Type.String({
+    minLength: 1,
+    description: "Process ID returned by exec_command",
+  }),
   chars: Type.Optional(Type.String({
     description: "Characters to write to stdin. Omit to poll the process.",
   })),
-  yield_time_ms: Type.Optional(Type.Integer({ minimum: 0, maximum: 30_000 })),
+  yield_time_ms: Type.Optional(Type.Integer({
+    minimum: 0,
+    description: "Milliseconds to wait for output, capped at 30000.",
+  })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
 

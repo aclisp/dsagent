@@ -96,7 +96,7 @@ export class ManagedProcessRegistry {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const id = randomUUID().slice(0, 12);
+    const id = randomUUID().replaceAll("-", "").slice(0, 11);
     let resolveCompletion = (): void => {};
     const completion = new Promise<void>((resolve) => {
       resolveCompletion = resolve;
