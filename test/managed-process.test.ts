@@ -19,6 +19,7 @@ describe("ManagedProcessRegistry", () => {
         },
       );
       expect(started.running).toBe(true);
+      expect(started.processId).toMatch(/^[0-9a-f]{12}$/);
       const completed = await registry.interact(started.processId, { yieldTimeMs: 2_000 });
       expect(completed.running).toBe(false);
       expect(completed.exitCode).toBe(0);
