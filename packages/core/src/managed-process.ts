@@ -16,6 +16,7 @@ export interface ManagedProcessResult {
   output: string;
   exitCode?: number | null;
   timedOut?: boolean;
+  writeError?: string;
   sandbox: string;
 }
 
@@ -27,6 +28,7 @@ interface ProcessRecord {
   running: boolean;
   exitCode?: number | null;
   timedOut: boolean;
+  stdinError?: Error;
   sandbox: string;
   completion: Promise<void>;
   resolveCompletion: () => void;
@@ -126,6 +128,10 @@ export class ManagedProcessRegistry {
     };
     child.stdout.on("data", (chunk: Buffer) => append("", chunk));
     child.stderr.on("data", (chunk: Buffer) => append("[stderr] ", chunk));
+    // stdin is a separate EventEmitter: child errors do not cover pipe errors.
+    child.stdin.on("error", (error) => {
+      record.stdinError = error;
+    });
     child.once("error", (error) => {
       append("[error] ", Buffer.from(error.message));
     });
@@ -170,8 +176,22 @@ export class ManagedProcessRegistry {
     }
     if (options.terminate) {
       stopChild(record.child);
-    } else if (options.chars && record.running) {
-      record.child.stdin.write(options.chars);
+    } else if (options.chars) {
+      const stdin = record.child.stdin;
+      const error = record.stdinError ?? (
+        !record.running || stdin.destroyed || !stdin.writable
+          ? new Error("Process stdin is closed")
+          : await new Promise<Error | undefined>((resolve) => {
+              try {
+                stdin.write(options.chars!, (error) => resolve(error ?? undefined));
+              } catch (error) {
+                resolve(error instanceof Error ? error : new Error(String(error)));
+              }
+            })
+      );
+      if (error) {
+        return { ...this.result(record), writeError: error.message };
+      }
     }
 
     if (record.running) {

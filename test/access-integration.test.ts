@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, validateToolArguments, type AssistantMessage, type Message, type Model } from "@earendil-works/pi-ai";
+import { runAgentLoop, type AgentEvent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
@@ -66,6 +67,75 @@ describe("command access escalation", () => {
       yieldTimeMs: 60_000,
       terminate: false,
     });
+  });
+
+  it("reports stdin write failures as tool errors while preserving running status", async () => {
+    const tools = new Map<string, any>();
+    const pi = new Proxy({
+      registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
+    }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    }) as unknown as ExtensionAPI;
+    await runExtensionFactory(options(process.cwd()), pi);
+    vi.spyOn(ManagedProcessRegistry.prototype, "interact").mockResolvedValue({
+      processId: "1", running: true, output: "", sandbox: "host", writeError: "write EPIPE",
+    });
+    const tool = tools.get("write_stdin");
+    const model: Model<"openai-completions"> = {
+      id: "test", name: "test", api: "openai-completions", provider: "openai",
+      baseUrl: "http://localhost", reasoning: false, input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 4096, maxTokens: 1024,
+    };
+    let turn = 0;
+    const streamFn: StreamFn = () => {
+      const callsTool = turn++ === 0;
+      const message: AssistantMessage = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: callsTool
+          ? [{ type: "toolCall", id: "write", name: "write_stdin", arguments: { process_id: "1", chars: "hello" } }]
+          : [{ type: "text", text: "done" }],
+        stopReason: callsTool ? "toolUse" : "stop",
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        timestamp: 0,
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: callsTool ? "toolUse" : "stop", message });
+      return stream;
+    };
+    const events: AgentEvent[] = [];
+    const messages = await runAgentLoop(
+      [{ role: "user", content: "write to the process", timestamp: 0 }],
+      { messages: [], tools: [tool] },
+      { model, convertToLlm: (messages) => messages as Message[] },
+      (event) => { events.push(event); },
+      undefined,
+      streamFn,
+    );
+    const completed = events.find((event) => event.type === "tool_execution_end");
+    expect(completed?.isError).toBe(true);
+    const result = messages.find((message) => message.role === "toolResult");
+    expect(result?.isError).toBe(true);
+    expect(result?.content).toEqual([
+      { type: "text", text: expect.stringContaining("stdin_write_error: write EPIPE") },
+    ]);
+    expect(result?.content).toEqual([
+      { type: "text", text: expect.stringContaining("status: running") },
+    ]);
+    expect(result?.content).toEqual([
+      { type: "text", text: expect.stringContaining("process_id: 1") },
+    ]);
+    const rendered = tool.renderResult(
+      completed!.result,
+      { expanded: false, isPartial: false },
+      createTestTheme(),
+      { isError: completed!.isError, isPartial: false },
+    ).render(120).join("\n");
+    expect(rendered).toContain("stdin_write_error: write EPIPE");
+    expect(rendered).toContain("status: running");
   });
 
   it("passes the current main-agent thinking level to every managed command", async () => {

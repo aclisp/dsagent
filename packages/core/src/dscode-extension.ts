@@ -1040,6 +1040,9 @@ function registerCommandTools(
         yieldTimeMs: params.yield_time_ms ?? 5_000,
         terminate: params.terminate ?? false,
       });
+      if (result.writeError) {
+        throw new Error(formatManagedResult(result));
+      }
       return {
         content: [{ type: "text", text: formatManagedResult(result) }],
         details: result,
@@ -1050,6 +1053,10 @@ function registerCommandTools(
       return renderToolCall(action, `process ${args.process_id}`, theme, context);
     },
     renderResult(result, renderOptions, theme, context) {
+      // pi converts thrown tool errors to text with no managed-process details.
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ManagedProcessResult;
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: managedProcessSummary(details),
@@ -1060,6 +1067,7 @@ function registerCommandTools(
 }
 
 function managedProcessSummary(result: ManagedProcessResult): string {
+  if (result.writeError) return `stdin write failed · process ${result.processId} · ${result.writeError}`;
   if (result.running) return `running · process ${result.processId} · ${result.sandbox}`;
   const lines = result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0;
   return [
@@ -1070,7 +1078,7 @@ function managedProcessSummary(result: ManagedProcessResult): string {
 }
 
 function managedProcessFailed(result: ManagedProcessResult): boolean {
-  return result.timedOut === true ||
+  return Boolean(result.writeError) || result.timedOut === true ||
     (!result.running && result.exitCode !== undefined && result.exitCode !== 0);
 }
 
@@ -1317,6 +1325,7 @@ function formatManagedResult(result: ManagedProcessResult): string {
     result.output.trimEnd(),
     `process_id: ${result.processId}`,
     `status: ${result.running ? "running" : "completed"}`,
+    ...(result.writeError ? [`stdin_write_error: ${result.writeError}`] : []),
     ...(result.running ? ["Use write_stdin to poll or interact."] : []),
     ...(result.exitCode === undefined ? [] : [`exit_code: ${result.exitCode}`]),
     ...(result.timedOut ? ["timed_out: true"] : []),

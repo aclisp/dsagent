@@ -5,6 +5,62 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 
 describe("ManagedProcessRegistry", () => {
+  it("writes characters to a running process", async () => {
+    const registry = new ManagedProcessRegistry();
+    const script = "process.stdin.once('data', data => { process.stdout.write(data); process.exit(0); })";
+    const command = process.platform === "win32"
+      ? `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`
+      : `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script.replaceAll("'", "'\\''")}'`;
+    try {
+      const started = await registry.start(command, {
+        cwd: os.tmpdir(),
+        sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0,
+        timeoutMs: 5_000,
+        thinkingLevel: "low",
+      });
+      await expect(registry.interact(started.processId, {
+        chars: "hello\n", yieldTimeMs: 2_000,
+      })).resolves.toMatchObject({ running: false, output: "hello\n", exitCode: 0 });
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it.runIf(process.platform !== "win32")("returns closed-stdin write errors and keeps the process manageable", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start("exec <&-; printf ready; sleep 30", {
+        cwd: os.tmpdir(),
+        sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0,
+        timeoutMs: 10_000,
+        thinkingLevel: "low",
+      });
+      let output = started.output;
+      await expect.poll(async () => {
+        output += (await registry.interact(started.processId, { yieldTimeMs: 10 })).output;
+        return output;
+      }).toContain("ready");
+
+      // A zero wait must still report the asynchronous write failure in this call.
+      const failed = await registry.interact(started.processId, { chars: "hello\n", yieldTimeMs: 0 });
+      expect(failed.running).toBe(true);
+      expect(failed.writeError).toContain("EPIPE");
+      const repeated = await registry.interact(started.processId, { chars: "again\n", yieldTimeMs: 0 });
+      expect(repeated.running).toBe(true);
+      expect(repeated.writeError).toBeTruthy();
+      const polled = await registry.interact(started.processId, { yieldTimeMs: 0 });
+      expect(polled.running).toBe(true);
+      expect(polled.writeError).toBeUndefined();
+      await expect(registry.interact(started.processId, { terminate: true, yieldTimeMs: 2_000 }))
+        .resolves.toMatchObject({ running: false });
+      expect(registry.list()).toEqual([]);
+    } finally {
+      registry.dispose();
+    }
+  });
+
   it("reports available process IDs, including unread completed processes, for an unknown ID", async () => {
     const registry = new ManagedProcessRegistry();
     try {
