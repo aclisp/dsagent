@@ -72,6 +72,7 @@ export class ManagedProcessRegistry {
       signal?: AbortSignal;
     },
   ): Promise<ManagedProcessResult> {
+    options.signal?.throwIfAborted();
     const vision = classifyVisionCommand(command);
     if (vision.kind === "invalid") {
       throw new Error(`Invalid dscode-vision command: ${vision.reason}`);
@@ -139,7 +140,6 @@ export class ManagedProcessRegistry {
       record.running = false;
       record.exitCode = exitCode;
       clearTimeout(record.timeout);
-      options.signal?.removeEventListener("abort", abort);
       if (this.records.has(id)) {
         this.completedIds.add(id);
         if (this.completedIds.size > this.maxCompletedProcesses) {
@@ -155,20 +155,20 @@ export class ManagedProcessRegistry {
     options.signal?.addEventListener("abort", abort, { once: true });
     if (options.signal?.aborted) abort();
 
-    await Promise.race([
-      completion,
-      new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, Math.max(0, Math.min(options.yieldTimeMs, 30_000)));
-        timer.unref();
-      }),
-    ]);
-    return this.result(record);
+    try {
+      await waitForCompletion(completion, options.yieldTimeMs, options.signal);
+      return this.result(record);
+    } finally {
+      // Once start returns, the registry owns the background process lifetime.
+      options.signal?.removeEventListener("abort", abort);
+    }
   }
 
   async interact(
     processId: string,
-    options: { chars?: string; eof?: boolean; yieldTimeMs: number; terminate?: boolean },
+    options: { chars?: string; eof?: boolean; yieldTimeMs: number; terminate?: boolean; signal?: AbortSignal },
   ): Promise<ManagedProcessResult> {
+    options.signal?.throwIfAborted();
     const record = this.records.get(processId);
     if (!record) {
       const available = [...this.records.keys()].join(", ") || "none";
@@ -185,7 +185,7 @@ export class ManagedProcessRegistry {
         if (!record.running || stdin.destroyed || !stdin.writable) {
           error = new Error("Process stdin is closed");
         } else {
-          error = await new Promise<Error | undefined>((resolve) => {
+          error = await withAbort(new Promise<Error | undefined>((resolve) => {
             try {
               const onWrite = (error?: Error | null): void => resolve(error ?? undefined);
               if (options.eof) stdin.end(options.chars ?? "", onWrite);
@@ -193,7 +193,7 @@ export class ManagedProcessRegistry {
             } catch (error) {
               resolve(error instanceof Error ? error : new Error(String(error)));
             }
-          });
+          }), options.signal);
         }
       }
       if (error) {
@@ -202,13 +202,7 @@ export class ManagedProcessRegistry {
     }
 
     if (record.running) {
-      await Promise.race([
-        record.completion,
-        new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, Math.max(0, Math.min(options.yieldTimeMs, 30_000)));
-          timer.unref();
-        }),
-      ]);
+      await waitForCompletion(record.completion, options.yieldTimeMs, options.signal);
     }
     return this.result(record);
   }
@@ -247,6 +241,38 @@ export class ManagedProcessRegistry {
       ...(record.timedOut ? { timedOut: true } : {}),
       sandbox: record.sandbox,
     };
+  }
+}
+
+async function waitForCompletion(completion: Promise<void>, yieldTimeMs: number, signal?: AbortSignal): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await withAbort(Promise.race([
+      completion,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, Math.max(0, Math.min(yieldTimeMs, 30_000)));
+        timer.unref();
+      }),
+    ]), signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function withAbort<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return pending;
+  signal.throwIfAborted();
+  let abort: () => void = () => {};
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+      }),
+    ]);
+  } finally {
+    signal.removeEventListener("abort", abort);
   }
 }
 

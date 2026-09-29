@@ -5,6 +5,97 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 
 describe("ManagedProcessRegistry", () => {
+  it("cancels an active start without killing processes already yielded by the same run", async () => {
+    const registry = new ManagedProcessRegistry();
+    const controller = new AbortController();
+    const options = {
+      cwd: os.tmpdir(), sandbox: { mode: "danger-full-access" as const, network: false },
+      yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low" as const, signal: controller.signal,
+    };
+    try {
+      const first = await registry.start(longBackgroundCommand(), options);
+      const second = await registry.start(longBackgroundCommand(), options);
+      const pending = registry.start(longBackgroundCommand(), { ...options, yieldTimeMs: 30_000 });
+      const canceled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      const foreground = registry.list().at(-1)!;
+      controller.abort();
+      await canceled;
+      await expect.poll(() => registry.list().find((p) => p.processId === foreground.processId)?.running)
+        .toBe(false);
+      for (const process of [first, second]) {
+        expect(await registry.interact(process.processId, { yieldTimeMs: 0 })).toMatchObject({ running: true });
+        expect(await registry.interact(process.processId, { terminate: true, yieldTimeMs: 2_000 }))
+          .toMatchObject({ running: false });
+      }
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("cancels polling immediately while preserving the process for later input and EOF", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(nodeCommand(
+        "let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(input));",
+      ), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+      });
+      const controller = new AbortController();
+      const pending = registry.interact(started.processId, { yieldTimeMs: 30_000, signal: controller.signal });
+      const canceled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      controller.abort();
+      await canceled;
+      await expect(registry.interact(started.processId, {
+        chars: "must not be written", eof: true, yieldTimeMs: 0, signal: controller.signal,
+      })).rejects.toMatchObject({ name: "AbortError" });
+      expect(await registry.interact(started.processId, { chars: "still alive", eof: true, yieldTimeMs: 2_000 }))
+        .toMatchObject({ running: false, exitCode: 0, output: "still alive" });
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("cancels a blocked stdin write without terminating the process", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(longBackgroundCommand(), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+      });
+      const controller = new AbortController();
+      const pending = registry.interact(started.processId, {
+        chars: "x".repeat(2_000_000), yieldTimeMs: 30_000, signal: controller.signal,
+      });
+      const canceled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      controller.abort();
+      await canceled;
+      expect(await registry.interact(started.processId, { yieldTimeMs: 0 })).toMatchObject({ running: true });
+      // Session shutdown still owns cleanup, including pending writes.
+      const completion = registry.interact(started.processId, { yieldTimeMs: 2_000 });
+      registry.dispose();
+      expect(await completion).toMatchObject({ running: false });
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("preserves background timeouts after detaching the startup signal", async () => {
+    const registry = new ManagedProcessRegistry();
+    const controller = new AbortController();
+    try {
+      const started = await registry.start(longBackgroundCommand(), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 250, thinkingLevel: "low", signal: controller.signal,
+      });
+      controller.abort();
+      expect(await registry.interact(started.processId, { yieldTimeMs: 2_000 }))
+        .toMatchObject({ running: false, timedOut: true });
+    } finally {
+      registry.dispose();
+    }
+  });
+
   it.each([undefined, "tail"])("sends EOF after previous input and optional final chars (%s)", async (chars) => {
     const registry = new ManagedProcessRegistry();
     try {

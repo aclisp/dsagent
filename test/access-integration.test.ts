@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createAssistantMessageEventStream, validateToolArguments, type AssistantMessage, type Message, type Model } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, validateToolArguments, type AssistantMessage, type JsonObject, type Message, type Model } from "@earendil-works/pi-ai";
 import { runAgentLoop, type AgentEvent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +40,7 @@ describe("command access escalation", () => {
     root = undefined;
   });
 
-  it.each([{}, { eof: true }, { chars: "last input", eof: true }])("validates and forwards write_stdin options (%j)", async (input) => {
+  it.each<JsonObject>([{}, { eof: true }, { chars: "last input", eof: true }])("validates and forwards write_stdin options (%j)", async (input) => {
     const tools = new Map<string, any>();
     const pi = new Proxy({
       registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
@@ -62,10 +62,12 @@ describe("command access escalation", () => {
       arguments: { process_id: "background-process", yield_time_ms: 60_000, ...input },
     });
 
-    await tool.execute("poll", args);
+    const controller = new AbortController();
+    await tool.execute("poll", args, controller.signal);
     expect(interact).toHaveBeenLastCalledWith("background-process", {
       yieldTimeMs: 60_000,
       terminate: false,
+      signal: controller.signal,
       ...input,
     });
   });

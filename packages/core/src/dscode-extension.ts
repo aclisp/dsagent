@@ -1038,8 +1038,9 @@ function registerCommandTools(
     parameters: writeStdinParameters,
     renderShell: "self",
     executionMode: "sequential",
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       const result = await registry.interact(params.process_id, {
+        ...(signal ? { signal } : {}),
         ...(params.chars === undefined ? {} : { chars: params.chars }),
         ...(params.eof === undefined ? {} : { eof: params.eof }),
         yieldTimeMs: params.yield_time_ms ?? 5_000,
