@@ -5,6 +5,30 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
 
 describe("ManagedProcessRegistry", () => {
+  it("reports available process IDs, including unread completed processes, for an unknown ID", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      await expect(registry.interact("99", { yieldTimeMs: 0 })).rejects.toThrow(
+        "Unknown process: 99. Available process IDs: none",
+      );
+      const running = await registry.start(longBackgroundCommand(), {
+        cwd: os.tmpdir(),
+        sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0,
+        timeoutMs: 60_000,
+        thinkingLevel: "low",
+      });
+      const completed = await completeUnreadBackgroundJob(registry);
+      await expect(
+        registry.interact("99", { yieldTimeMs: 0 }),
+      ).rejects.toThrow(
+        `Unknown process: 99. Available process IDs: ${running.processId}, ${completed.processId}`,
+      );
+    } finally {
+      registry.dispose();
+    }
+  });
+
   it("yields and reconnects to a background process", async () => {
     const registry = new ManagedProcessRegistry();
     try {

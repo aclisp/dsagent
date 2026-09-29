@@ -164,7 +164,10 @@ export class ManagedProcessRegistry {
     options: { chars?: string; yieldTimeMs: number; terminate?: boolean },
   ): Promise<ManagedProcessResult> {
     const record = this.records.get(processId);
-    if (!record) throw new Error(`Unknown process: ${processId}`);
+    if (!record) {
+      const available = [...this.records.keys()].join(", ") || "none";
+      throw new Error(`Unknown process: ${processId}. Available process IDs: ${available}`);
+    }
     if (options.terminate) {
       stopChild(record.child);
     } else if (options.chars && record.running) {
