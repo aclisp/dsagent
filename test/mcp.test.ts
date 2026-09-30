@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
+  ExtensionToolContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -60,7 +61,7 @@ describe("MCPManager", () => {
     const ctx = {
       cwd: root,
       isProjectTrusted: () => true,
-    } as unknown as ExtensionContext;
+    } as unknown as ExtensionToolContext;
     const manager = new MCPManager();
     try {
       await manager.connectConfigured(pi, ctx);
@@ -116,7 +117,7 @@ describe("MCPManager", () => {
     const ctx = {
       cwd: root,
       isProjectTrusted: () => true,
-    } as unknown as ExtensionContext;
+    } as unknown as ExtensionToolContext;
     const manager = new MCPManager();
     try {
       await manager.connectConfigured(pi, ctx);

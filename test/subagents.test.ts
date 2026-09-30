@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerSubagentTools } from "../packages/core/src/subagents.js";
 import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
@@ -49,7 +49,7 @@ async function delegate(stdout: string, exitCode: number, stderr = "") {
     transport: "responses", promptContract: "engineering", sandbox: "workspace-write", network: false,
   } as DSCodeRuntimeOptions);
   return tool!.execute("audit", { tasks: [{ role: "explorer", task: "Inspect the repository" }] },
-    undefined, undefined, { cwd: "/fixture" } as ExtensionContext);
+    undefined, undefined, { cwd: "/fixture" } as ExtensionToolContext);
 }
 
 describe("delegated child results", () => {

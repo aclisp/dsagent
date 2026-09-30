@@ -42,7 +42,7 @@ describe("DSCode model providers", () => {
     expect(defaultModelForProvider("kimi-coding")).toBe("kimi-for-coding");
     expect(defaultModelForProvider("minimax")).toBe("MiniMax-M2.7");
     expect(defaultModelForProvider("xai")).toBe("grok-4.5");
-    expect(defaultModelForProvider("opencode-go")).toBe("kimi-k2.6");
+    expect(defaultModelForProvider("opencode-go")).toBe("kimi-k3");
     expect(defaultEffortForProvider("opencode-go")).toBe("medium");
   });
 

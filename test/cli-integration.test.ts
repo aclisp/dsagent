@@ -123,6 +123,7 @@ describe("DSCode Pi integration", () => {
     );
 
     expect(execution.exitCode, execution.stderr).toBe(0);
+    expect(execution.stderr).not.toContain("built-in extension `mcp` was not loaded");
     expect(execution.stdout).toContain("mock response");
     expect(payload?.model).toBe("deepseek-v4-flash");
     expect(payload).not.toHaveProperty("prompt_cache_key");

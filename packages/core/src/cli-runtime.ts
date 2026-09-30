@@ -6,6 +6,7 @@ import { createDSCodeExtension } from "./dscode-extension.js";
 import { initializeDSCodeHome } from "./home.js";
 import { installPiLoginSecretMask } from "./pi-login-mask.js";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
+import { dscodePiBuiltinOverrides } from "./pi-builtins.js";
 import { parseSupportedProviderId, type SupportedProviderId } from "./providers.js";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
@@ -57,7 +58,7 @@ export async function runDSCode(argv: string[]): Promise<void> {
 
   const { main } = await import("@earendil-works/pi-coding-agent");
   await main(parsed.piArgs, {
-    extensionFactories: [createDSCodeExtension(parsed.options)],
+    extensionFactories: [...dscodePiBuiltinOverrides, createDSCodeExtension(parsed.options)],
   });
 }
 

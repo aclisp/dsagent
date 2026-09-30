@@ -8,7 +8,7 @@ import {
   SessionManager,
   SettingsManager,
   createReadToolDefinition,
-  type ExtensionContext,
+  type ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
@@ -51,7 +51,7 @@ describe("DSCode read presentation", () => {
       await fs.writeFile(path.join(root, "sample.txt"), "one\ntwo\nthree\nfour");
       const tool = createDSCodeReadTool("/unused-initial-directory");
       const result = await tool.execute("read-1", { path: "sample.txt", offset: 2, limit: 1 },
-        undefined, undefined, { cwd: root } as ExtensionContext);
+        undefined, undefined, { cwd: root } as ExtensionToolContext);
       expect(result.content).toEqual([{ type: "text", text: "two\n\n[2 more lines in file. Use offset=3 to continue.]" }]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });

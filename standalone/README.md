@@ -79,7 +79,7 @@ Core differences are limited to version metadata, file credentials, skipping leg
 Subagents in plan mode retain tool permission restrictions; their default host sandbox is no longer implicitly changed to an OS read-only sandbox by the plan role.
 Explicit sandbox selections still follow the existing rules.
 
-The pi adapter is currently pinned to **0.87.1**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
+The pi adapter is currently pinned to **0.99.1**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
 When upgrading pi/Bun, review the adapter points and rerun `pnpm check` and `pnpm check:standalone`.
 The `experiments/standalone/` directory preserves historical feasibility records and is not used for production builds.
 
