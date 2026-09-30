@@ -3,7 +3,7 @@ import {
   LOGIN_PROVIDER_CHOICES,
   routeDSCodeLogin,
   scopeLoginSuggestions,
-} from "../packages/core/src/login-scope.js";
+} from "../packages/core/src/login-scope.ts";
 
 describe("DSCode provider login", () => {
   it("opens the provider selector for bare login", () => {

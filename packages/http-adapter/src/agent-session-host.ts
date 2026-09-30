@@ -20,12 +20,12 @@ import {
   initializeDSCodeHome,
   parseRuntimeArgs,
 } from "@aclisp/dsagent-core";
-import { pruneSessionFile } from "./session-pruner.js";
+import { pruneSessionFile } from "./session-pruner.ts";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
   type HttpUiBrokerListener,
-} from "./ui-broker.js";
+} from "./ui-broker.ts";
 
 export type AgentSessionStorage =
   | { type: "memory" }

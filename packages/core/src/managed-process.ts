@@ -1,14 +1,14 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { BoundedOutput, withPiManagedBinPath } from "./process.js";
-import { stripModelCredentialEnvironment } from "./providers.js";
-import { sandboxCommand, type SandboxOptions } from "./sandbox.js";
+import { BoundedOutput, withPiManagedBinPath } from "./process.ts";
+import { stripModelCredentialEnvironment } from "./providers.ts";
+import { sandboxCommand, type SandboxOptions } from "./sandbox.ts";
 import {
   classifyVisionCommand,
   createVisionProcessEnvironment,
   DEFAULT_VISION_CLI_EXECUTABLE,
-} from "./vision-command.js";
+} from "./vision-command.ts";
 
 export interface ManagedProcessResult {
   processId: string;

@@ -4,7 +4,7 @@ import {
   HttpUiResponseError,
   createHttpUiBroker,
   type HttpUiBrokerEvent,
-} from "../src/ui-broker.js";
+} from "../src/ui-broker.ts";
 
 const fallback = {} as ExtensionUIContext;
 

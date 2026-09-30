@@ -4,10 +4,10 @@ import { createAssistantMessageEventStream, validateToolArguments, type Assistan
 import { runAgentLoop, type AgentEvent, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
-import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
-import { createTestTheme } from "./fixtures/theme.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
+import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.ts";
+import { createTestTheme } from "./fixtures/theme.ts";
 
 describe("command access escalation", () => {
   it.each(["tui", "json", "rpc"])("keeps CLI plan commands available in %s mode", async (mode) => {

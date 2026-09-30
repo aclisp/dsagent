@@ -2,11 +2,11 @@ import { mkdir } from "node:fs/promises";
 import process from "node:process";
 import { getDSCodeHome } from "@aclisp/dsagent-core";
 import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
-import { resolveChatAgentName } from "./chat-page.js";
-import { resolveConfiguredTimezone } from "./task-scheduler.js";
-import { createWebUiServer } from "./web-ui-server.js";
-import { enforceWebUiSubagentDepth, resolveWebUiRuntimeArgs } from "./web-ui-runtime.js";
-import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.js";
+import { resolveChatAgentName } from "./chat-page.ts";
+import { resolveConfiguredTimezone } from "./task-scheduler.ts";
+import { createWebUiServer } from "./web-ui-server.ts";
+import { enforceWebUiSubagentDepth, resolveWebUiRuntimeArgs } from "./web-ui-runtime.ts";
+import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.ts";
 
 enforceWebUiSubagentDepth();
 

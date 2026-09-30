@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { brandBlue } from "./brand.js";
+import { brandBlue } from "./brand.ts";
 
 export interface WelcomeDetails {
   cwd: string;
@@ -22,10 +22,13 @@ export const DSCODE_LOGO = [
 ];
 
 export class DSCodeWelcomeHeader implements Component {
-  constructor(
-    private readonly details: WelcomeDetails,
-    private readonly theme: Theme,
-  ) {}
+  private readonly details: WelcomeDetails;
+  private readonly theme: Theme;
+
+  constructor(details: WelcomeDetails, theme: Theme) {
+    this.details = details;
+    this.theme = theme;
+  }
 
   render(width: number): string[] {
     return renderWelcome(width, this.details, this.theme);

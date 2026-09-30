@@ -11,10 +11,10 @@ import {
   type ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import { createDSCodeReadTool } from "../packages/core/src/read-tool.js";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
-import { createTestTheme } from "./fixtures/theme.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import { createDSCodeReadTool } from "../packages/core/src/read-tool.ts";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { createTestTheme } from "./fixtures/theme.ts";
 
 const theme = Object.assign(createTestTheme(), { bold: (text: string) => text });
 const context = { isError: false, isPartial: false } as Parameters<NonNullable<ReturnType<typeof createDSCodeReadTool>["renderCall"]>>[2];

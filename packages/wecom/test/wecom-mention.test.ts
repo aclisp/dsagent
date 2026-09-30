@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWeComBotMention } from "../src/wecom-mention.js";
+import { parseWeComBotMention } from "../src/wecom-mention.ts";
 
 describe("WeCom bot mention parsing", () => {
   it("matches an exact Chinese bot name anywhere before punctuation", () => {

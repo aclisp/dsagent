@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { ensureDSCodeRuntimeDefaults } from "./runtime-defaults.js";
-import { isStandalone } from "./distribution.js";
+import { ensureDSCodeRuntimeDefaults } from "./runtime-defaults.ts";
+import { isStandalone } from "./distribution.ts";
 
 const LEGACY_AGENT_ENTRIES = [
   "auth.json",

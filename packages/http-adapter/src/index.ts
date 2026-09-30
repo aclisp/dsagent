@@ -7,7 +7,7 @@ export {
   type AgentSessionStorage,
   type CreateAgentSessionHostOptions,
   type PersistedSessionSummary,
-} from "./agent-session-host.js";
+} from "./agent-session-host.ts";
 export {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
@@ -16,7 +16,7 @@ export {
   type HttpAdapterHostFactoryOptions,
   type HttpSessionListEntry,
   type PersistedSessionLister,
-} from "./http-server.js";
+} from "./http-server.ts";
 export type {
   HttpActivityPhase,
   HttpAdapterEvent,
@@ -24,7 +24,7 @@ export type {
   HttpSessionDescriptor,
   HttpSessionStatus,
   HttpTurnStatus,
-} from "./session-controller.js";
+} from "./session-controller.ts";
 export type {
   SessionPort,
   SessionPortActivation,
@@ -35,15 +35,15 @@ export type {
   SessionPortTurnStartedListener,
   SessionPortTurnSourceContext,
   SessionPortTurnSubmission,
-} from "./session-port.js";
-export { pruneSessionFile } from "./session-pruner.js";
+} from "./session-port.ts";
+export { pruneSessionFile } from "./session-pruner.ts";
 export {
   toHttpSessionMessages,
   type AgentMessage,
   type HttpMessageText,
   type HttpMessageToolCall,
   type HttpSessionMessage,
-} from "./session-messages.js";
+} from "./session-messages.ts";
 export {
   HttpUiResponseError,
   createHttpUiBroker,
@@ -54,4 +54,4 @@ export {
   type HttpUiRequest,
   type HttpUiResponse,
   type HttpUiResponseErrorCode,
-} from "./ui-broker.js";
+} from "./ui-broker.ts";

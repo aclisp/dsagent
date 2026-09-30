@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
-import { brandBlue } from "./brand.js";
+import { brandBlue } from "./brand.ts";
 
 export const PLAN_STATE_ENTRY = "dscode-plan-state";
 

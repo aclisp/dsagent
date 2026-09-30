@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 
 describe("parseRuntimeArgs", () => {
   const original = {

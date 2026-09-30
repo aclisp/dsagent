@@ -12,7 +12,7 @@ export {
   type WeComMarkdownMessage,
   type WeComMessageBody,
   type WeComMessageFrame,
-} from "./wecom-chat-provider.js";
+} from "./wecom-chat-provider.ts";
 export {
   collectWeComOutboundArtifacts,
   DEFAULT_MAX_INBOUND_MEDIA_BYTES,
@@ -33,4 +33,4 @@ export {
   type WeComMediaUploadClient,
   type WeComOutboundArtifact,
   type WeComOutboundMediaKind,
-} from "./wecom-media.js";
+} from "./wecom-media.ts";

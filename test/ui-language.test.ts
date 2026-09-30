@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatThinkingLabel,
   HIDDEN_THINKING_LABEL,
-} from "../packages/core/src/tui-experience.js";
+} from "../packages/core/src/tui-experience.ts";
 
 describe("DSCode runtime UI language", () => {
   it("uses English for the thinking labels", () => {

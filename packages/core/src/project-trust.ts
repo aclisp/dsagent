@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ExtensionAPI, ProjectTrustEventResult } from "@earendil-works/pi-coding-agent";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import { getDSCodeAgentDir } from "./auth.js";
+import { getDSCodeAgentDir } from "./auth.ts";
 
 export function registerDSCodeProjectTrust(
   pi: ExtensionAPI,

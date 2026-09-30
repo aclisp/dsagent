@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getDSCodeHome } from "./home.js";
-import type { SandboxOptions, SandboxedCommand } from "./sandbox.js";
-import type { ShellInvocation } from "./shell.js";
+import { getDSCodeHome } from "./home.ts";
+import type { SandboxOptions, SandboxedCommand } from "./sandbox.ts";
+import type { ShellInvocation } from "./shell.ts";
 
 const EXPERIMENTAL_ENV = "DSCODE_WINDOWS_SANDBOX";
 const HELPER_ENV = "DSCODE_WINDOWS_SANDBOX_HELPER";

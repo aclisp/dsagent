@@ -10,16 +10,16 @@ import {
   type ChatProvider,
 } from "@aclisp/dsagent-chat-client";
 import type { FastifyInstance } from "fastify";
-import { renderChatPage } from "./chat-page.js";
+import { renderChatPage } from "./chat-page.ts";
 import {
   bindWebUiChatProvider,
-} from "./chat-provider.js";
-import { registerFileRoutes } from "./files.js";
+} from "./chat-provider.ts";
+import { registerFileRoutes } from "./files.ts";
 import {
   assertValidScheduleTimezone,
   createTaskScheduler,
   type ScheduledSourceDeliveryPort,
-} from "./task-scheduler.js";
+} from "./task-scheduler.ts";
 
 export interface CreateWebUiServerOptions
   extends CreateHttpAdapterServerOptions {

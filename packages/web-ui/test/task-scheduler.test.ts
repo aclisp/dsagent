@@ -21,7 +21,7 @@ import {
   type ScheduledSourceDeliveryPort,
   type SourceDeliveryRegistration,
   type TaskScheduler,
-} from "../src/task-scheduler.js";
+} from "../src/task-scheduler.ts";
 
 class FakeSessionPort implements SessionPort {
   readonly submissions: Array<{

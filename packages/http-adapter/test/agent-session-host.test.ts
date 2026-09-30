@@ -8,8 +8,8 @@ import {
   PersistedSessionNotFoundError,
   createAgentSessionHost,
   parseHttpRuntimeArgs,
-} from "../src/agent-session-host.js";
-import { createHttpUiBroker, type HttpUiBrokerEvent } from "../src/ui-broker.js";
+} from "../src/agent-session-host.ts";
+import { createHttpUiBroker, type HttpUiBrokerEvent } from "../src/ui-broker.ts";
 
 const ENV_KEYS = [
   "DSCODE_HOME",

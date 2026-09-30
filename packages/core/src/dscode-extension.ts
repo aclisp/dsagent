@@ -15,18 +15,18 @@ import {
   SessionAccessController,
   type AccessBoundary,
   type EffectiveAccess,
-} from "./access.js";
-import { brandBlue } from "./brand.js";
-import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
-import { permissionSchema, type PermissionMode } from "./config.js";
-import { optimizeDeepSeekResponsesPayload } from "./deepseek.js";
-import { registerNaturalExit } from "./exit.js";
-import { registerHooks } from "./hooks.js";
-import { registerLocalImageInput } from "./image-input.js";
-import { partitionSessionFile } from "./home.js";
-import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.js";
-import { MCPManager } from "./mcp.js";
-import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.js";
+} from "./access.ts";
+import { brandBlue } from "./brand.ts";
+import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.ts";
+import { permissionSchema, type PermissionMode } from "./config.ts";
+import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
+import { registerNaturalExit } from "./exit.ts";
+import { registerHooks } from "./hooks.ts";
+import { registerLocalImageInput } from "./image-input.ts";
+import { partitionSessionFile } from "./home.ts";
+import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
+import { MCPManager } from "./mcp.ts";
+import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
 import {
   formatPlanForExecution,
   PLAN_STATE_ENTRY,
@@ -34,30 +34,30 @@ import {
   registerPlanTool,
   restorePlanState,
   type PlanState,
-} from "./plan.js";
-import { discoverProjectCommands } from "./project-profile.js";
-import { registerDSCodeProjectTrust } from "./project-trust.js";
-import { defaultModelForProvider } from "./providers.js";
-import { confirmDestructiveCommand } from "./destructive-command-confirmation.js";
-import { confirmMcpTool } from "./mcp-confirmation.js";
+} from "./plan.ts";
+import { discoverProjectCommands } from "./project-profile.ts";
+import { registerDSCodeProjectTrust } from "./project-trust.ts";
+import { defaultModelForProvider } from "./providers.ts";
+import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
+import { confirmMcpTool } from "./mcp-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
-} from "./dangerous-command.js";
-import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
-import { registerSessionCommands } from "./session-commands.js";
-import { formatStatusReport } from "./status.js";
-import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.js";
-import { registerSubagentTools } from "./subagents.js";
+} from "./dangerous-command.ts";
+import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
+import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
+import { registerSessionCommands } from "./session-commands.ts";
+import { formatStatusReport } from "./status.ts";
+import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
+import { registerSubagentTools } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
-} from "./tool-ui.js";
-import { createDSCodeReadTool } from "./read-tool.js";
-import { formatThinkingLabel, registerCodingTui } from "./tui-experience.js";
-import { Workspace } from "./workspace.js";
+} from "./tool-ui.ts";
+import { createDSCodeReadTool } from "./read-tool.ts";
+import { formatThinkingLabel, registerCodingTui } from "./tui-experience.ts";
+import { Workspace } from "./workspace.ts";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";

@@ -5,15 +5,15 @@ import {
   transportSchema,
   type ModelTransport,
   type PermissionMode,
-} from "./config.js";
-import { DSCODE_VERSION } from "./version.js";
-import { isStandalone } from "./distribution.js";
+} from "./config.ts";
+import { DSCODE_VERSION } from "./version.ts";
+import { isStandalone } from "./distribution.ts";
 import {
   DEFAULT_DEEPSEEK_BASE_URL,
   getDSCodeStorageSettings,
   getStoredDeepSeekBaseUrl,
   normalizeDeepSeekBaseUrl,
-} from "./settings.js";
+} from "./settings.ts";
 import {
   defaultEffortForProvider,
   defaultModelForProvider,
@@ -21,7 +21,7 @@ import {
   parseSupportedProviderId,
   SUPPORTED_PROVIDER_IDS,
   type SupportedProviderId,
-} from "./providers.js";
+} from "./providers.ts";
 
 export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;

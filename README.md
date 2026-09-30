@@ -71,6 +71,9 @@ curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install
 
 ### Developers: build from source
 
+Use Node.js 22.19 or newer. `pnpm dev` runs the CLI source with Node's native
+TypeScript type stripping; `pnpm check` builds and verifies the emitted JavaScript.
+
 ```bash
 git clone https://github.com/aclisp/dsagent.git
 cd dsagent

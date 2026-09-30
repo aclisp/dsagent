@@ -15,25 +15,25 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
-import { getDSCodeAuthPath } from "./auth.js";
-import { brandBlue } from "./brand.js";
-import type { PermissionMode } from "./config.js";
+import { getDSCodeAuthPath } from "./auth.ts";
+import { brandBlue } from "./brand.ts";
+import type { PermissionMode } from "./config.ts";
 import {
   expandEditorImageMarkers,
   extractLocalImageInput,
   formatImageMarker,
   type EditorImageAttachment,
-} from "./image-input.js";
+} from "./image-input.ts";
 import {
   LOGIN_PROVIDER_CHOICES,
   routeDSCodeLogin,
   scopeLoginSuggestions,
-} from "./login-scope.js";
-import { defaultModelForProvider } from "./providers.js";
-import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { DSCODE_VERSION } from "./version.js";
-import { summarizeSessionUsage, type SessionUsageSummary } from "./status.js";
-import { DSCodeWelcomeHeader, formatCwd } from "./welcome.js";
+} from "./login-scope.ts";
+import { defaultModelForProvider } from "./providers.ts";
+import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
+import { DSCODE_VERSION } from "./version.ts";
+import { summarizeSessionUsage, type SessionUsageSummary } from "./status.ts";
+import { DSCodeWelcomeHeader, formatCwd } from "./welcome.ts";
 
 export const HIDDEN_THINKING_LABEL = "DSCode is thinking";
 const BLINKING_BLOCK_CURSOR = "\x1b[1 q";

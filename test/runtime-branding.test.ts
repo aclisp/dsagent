@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
-import { installDSCodeRuntimeBranding } from "../packages/core/src/runtime-branding.js";
+import { installDSCodeRuntimeBranding } from "../packages/core/src/runtime-branding.ts";
 
 describe("DSCode runtime branding", () => {
   it("brands shutdown output and restores stdout when shutdown throws", async () => {

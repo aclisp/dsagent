@@ -5,7 +5,7 @@ import {
   createVisionProcessEnvironment,
   DEFAULT_VISION_CLI_EXECUTABLE,
   parseTrustedVisionCommand,
-} from "../packages/core/src/vision-command.js";
+} from "../packages/core/src/vision-command.ts";
 
 describe("trusted dscode-vision command", () => {
   it("resolves the fixed script from the repository or application root", () => {

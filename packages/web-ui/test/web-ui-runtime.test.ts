@@ -6,7 +6,7 @@ import {
   enforceWebUiSubagentDepth,
   resolveWebUiRuntimeArgs,
   WEB_UI_SUBAGENT_DEPTH,
-} from "../src/web-ui-runtime.js";
+} from "../src/web-ui-runtime.ts";
 
 const originalDepth = process.env.DSCODE_SUBAGENT_DEPTH;
 

@@ -17,7 +17,7 @@ import {
   type WeComMarkdownMessage,
   type WeComMessageBody,
   type WeComMessageFrame,
-} from "../src/wecom-chat-provider.js";
+} from "../src/wecom-chat-provider.ts";
 
 type Listener = (...args: unknown[]) => void;
 

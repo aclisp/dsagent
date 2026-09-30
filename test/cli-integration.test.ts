@@ -96,7 +96,6 @@ describe("DSCode Pi integration", () => {
     const execution = await spawnCapture(
       process.execPath,
       [
-        path.resolve("node_modules/tsx/dist/cli.mjs"),
         "src/cli.ts",
         "-C",
         root,
@@ -143,7 +142,6 @@ describe("DSCode Pi integration", () => {
     const execution = await spawnCapture(
       process.execPath,
       [
-        path.resolve("node_modules/tsx/dist/cli.mjs"),
         "src/cli.ts",
         "--base-url",
         `http://127.0.0.1:${address.port}`,

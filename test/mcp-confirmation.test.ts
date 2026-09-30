@@ -1,8 +1,8 @@
 import type { ExtensionUIContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import { confirmMcpTool } from "../packages/core/src/mcp-confirmation.js";
-import { confirmDestructiveCommand } from "../packages/core/src/destructive-command-confirmation.js";
+import { confirmMcpTool } from "../packages/core/src/mcp-confirmation.ts";
+import { confirmDestructiveCommand } from "../packages/core/src/destructive-command-confirmation.ts";
 
 function dialogHarness(rows = 24) {
   let component!: Component;

@@ -6,7 +6,7 @@ import {
   loadVisionRuntimeConfig,
   parseVisionCliArgs,
   runVisionCli,
-} from "../packages/core/src/vision-cli.js";
+} from "../packages/core/src/vision-cli.ts";
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZBv8AAAAASUVORK5CYII=",

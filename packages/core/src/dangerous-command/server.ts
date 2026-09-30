@@ -1,5 +1,5 @@
-import { makeDangerousMatch, type DangerousMatch } from "./match.js";
-import { parseOptions, type OptionSpec } from "./options.js";
+import { makeDangerousMatch, type DangerousMatch } from "./match.ts";
+import { parseOptions, type OptionSpec } from "./options.ts";
 
 const rsyncDeletionFlags = [
   "--delete", "--del", "--delete-before", "--delete-during", "--delete-delay",

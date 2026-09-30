@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Workspace } from "./workspace.js";
+import { Workspace } from "./workspace.ts";
 
 interface AddAction {
   type: "add";

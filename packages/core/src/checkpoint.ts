@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Workspace } from "./workspace.js";
+import { Workspace } from "./workspace.ts";
 
 export interface FileSnapshot {
   path: string;

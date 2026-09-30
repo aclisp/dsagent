@@ -14,7 +14,7 @@ describe("standalone distribution defaults", () => {
     const home = path.join(os.tmpdir(), "dscode-custom-home");
     vi.stubEnv("DSCODE_HOME", home);
     vi.resetModules();
-    const { withPiManagedBinPath } = await import("../packages/core/src/process.js");
+    const { withPiManagedBinPath } = await import("../packages/core/src/process.ts");
     const environment = { PATH: os.tmpdir() };
     expect(withPiManagedBinPath(environment).PATH).toBe([path.join(home, "bin"), os.tmpdir()].join(path.delimiter));
     expect(environment.PATH).toBe(os.tmpdir());
@@ -28,8 +28,8 @@ describe("standalone distribution defaults", () => {
     vi.stubEnv("DSCODE_SANDBOX", undefined);
     vi.stubEnv("DSCODE_PERMISSION", "auto");
     vi.resetModules();
-    const { parseRuntimeArgs } = await import("../packages/core/src/runtime-options.js");
-    const { SessionAccessController } = await import("../packages/core/src/access.js");
+    const { parseRuntimeArgs } = await import("../packages/core/src/runtime-options.ts");
+    const { SessionAccessController } = await import("../packages/core/src/access.ts");
     expect(parseRuntimeArgs([]).options).toMatchObject({ sandbox: "danger-full-access", permission: "auto" });
     expect(new SessionAccessController("danger-full-access", true).effective("plan")).toEqual({
       sandbox: "danger-full-access", network: true,
@@ -41,7 +41,7 @@ describe("standalone distribution defaults", () => {
   it("keeps Node plan execution read-only even with a host base sandbox", async () => {
     vi.stubGlobal("DSCODE_STANDALONE", false);
     vi.resetModules();
-    const { SessionAccessController } = await import("../packages/core/src/access.js");
+    const { SessionAccessController } = await import("../packages/core/src/access.ts");
     expect(new SessionAccessController("danger-full-access", true).effective("plan").sandbox).toBe("read-only");
   });
 
@@ -49,14 +49,14 @@ describe("standalone distribution defaults", () => {
     vi.stubGlobal("DSCODE_STANDALONE", true);
     vi.stubGlobal("DSCODE_BUILD_VERSION", "standalone-test-version");
     vi.resetModules();
-    const { DSCODE_VERSION } = await import("../packages/core/src/version.js");
+    const { DSCODE_VERSION } = await import("../packages/core/src/version.ts");
     expect(DSCODE_VERSION).toBe("standalone-test-version");
   });
 
   it("forces file credentials even when a caller requests keyring", async () => {
     vi.stubGlobal("DSCODE_STANDALONE", true);
     vi.resetModules();
-    const { createDSCodeCredentialStore, FileCredentialStore } = await import("../packages/core/src/credential-store.js");
+    const { createDSCodeCredentialStore, FileCredentialStore } = await import("../packages/core/src/credential-store.ts");
     const create = vi.fn(() => { throw new Error("Keyring must not be accessed"); });
     const store = await createDSCodeCredentialStore({ mode: "keyring", authPath: "/unused/auth.json", keyringFactory: { create } });
     expect(store).toBeInstanceOf(FileCredentialStore);

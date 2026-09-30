@@ -3,7 +3,7 @@ import {
   DEFAULT_CHAT_AGENT_NAME,
   renderChatPage,
   resolveChatAgentName,
-} from "../src/chat-page.js";
+} from "../src/chat-page.ts";
 
 describe("chat page identity", () => {
   it("uses Steve Code when CHAT_AGENT_NAME is empty", () => {

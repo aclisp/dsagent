@@ -1,5 +1,5 @@
 import { writeSync } from "node:fs";
-import { ManagedProcessRegistry } from "../../packages/core/src/managed-process.js";
+import { ManagedProcessRegistry } from "../../packages/core/src/managed-process.ts";
 
 const mode = process.argv[2];
 const registry = new ManagedProcessRegistry();

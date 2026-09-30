@@ -17,7 +17,7 @@ export {
   type InboundChatMessage,
   type ProactiveDeliveryEvent,
   type ProactiveDeliveryListener,
-} from "./chat-client.js";
+} from "./chat-client.ts";
 export {
   ConversationAliasRegistry,
   ConversationAliasRegistryError,
@@ -31,4 +31,4 @@ export {
   type SenderAddress,
   type SenderReference,
   type SenderResolution,
-} from "./conversation-registry.js";
+} from "./conversation-registry.ts";

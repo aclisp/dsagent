@@ -2,10 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
-import type { EffectiveAccess } from "./access.js";
-import { runProcess } from "./process.js";
-import { sandboxCommand } from "./sandbox.js";
-import { getDSCodeHome } from "./home.js";
+import type { EffectiveAccess } from "./access.ts";
+import { runProcess } from "./process.ts";
+import { sandboxCommand } from "./sandbox.ts";
+import { getDSCodeHome } from "./home.ts";
 
 const hookSchema = z.object({
   command: z.string().min(1),

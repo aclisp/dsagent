@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { embeddedVersion } from "./distribution.js";
+import { embeddedVersion } from "./distribution.ts";
 
 interface PackageMetadata {
   version?: unknown;

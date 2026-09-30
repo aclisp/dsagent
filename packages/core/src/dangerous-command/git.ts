@@ -1,5 +1,5 @@
-import { makeDangerousMatch, type DangerousMatch } from "./match.js";
-import { parseOptions } from "./options.js";
+import { makeDangerousMatch, type DangerousMatch } from "./match.ts";
+import { parseOptions } from "./options.ts";
 
 export function dangerousGitMatch(args: string[], elevated: boolean): DangerousMatch | undefined {
   let index = 0;

@@ -3,12 +3,18 @@ export const CHAT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export class DedupeCache {
   private readonly entries = new Map<string, number>();
+  private readonly now: () => number;
+  private readonly ttlMs: number;
+  private readonly maxEntries: number;
 
   constructor(
-    private readonly now: () => number = Date.now,
-    private readonly ttlMs = CHAT_DEDUPE_TTL_MS,
-    private readonly maxEntries = CHAT_DEDUPE_MAX_ENTRIES,
+    now: () => number = Date.now,
+    ttlMs = CHAT_DEDUPE_TTL_MS,
+    maxEntries = CHAT_DEDUPE_MAX_ENTRIES,
   ) {
+    this.now = now;
+    this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
     if (ttlMs <= 0) throw new Error("Dedupe TTL must be positive");
     if (maxEntries <= 0) throw new Error("Dedupe capacity must be positive");
   }

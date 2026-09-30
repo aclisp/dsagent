@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getDSCodeHome } from "./home.js";
+import { getDSCodeHome } from "./home.ts";
 
 export const SUPPORTED_PROVIDER_IDS = [
   "deepseek",

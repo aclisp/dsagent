@@ -3,12 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
-import { getDSCodeHome } from "./home.js";
-import { isStandalone } from "./distribution.js";
+import { getDSCodeHome } from "./home.ts";
+import { isStandalone } from "./distribution.ts";
 import {
   getDSCodeStorageSettings,
   type CredentialStoreMode,
-} from "./settings.js";
+} from "./settings.ts";
 
 const KEYRING_SERVICE = "ai.thinkany.dscode";
 const STORE_PATCH = Symbol.for("ai.thinkany.dscode.credential-store-installed");
@@ -45,7 +45,11 @@ function defaultAuthPath(): string {
 
 /** Plain JSON fallback compatible with pi's existing auth.json shape. */
 export class FileCredentialStore implements CredentialStore {
-  constructor(readonly authPath = defaultAuthPath()) {}
+  readonly authPath: string;
+
+  constructor(authPath = defaultAuthPath()) {
+    this.authPath = authPath;
+  }
 
   async read(providerId: string): Promise<Credential | undefined> {
     return (await readCredentialData(this.authPath))[providerId];
@@ -86,10 +90,16 @@ export class FileCredentialStore implements CredentialStore {
 
 /** CredentialStore backed by Keychain, Credential Manager, or Secret Service. */
 export class KeyringCredentialStore implements CredentialStore {
+  private readonly factory: DSCodeKeyringFactory;
+  readonly metadataPath: string;
+
   constructor(
-    private readonly factory: DSCodeKeyringFactory,
-    readonly metadataPath = path.join(getDSCodeHome(), "credential-metadata.json"),
-  ) {}
+    factory: DSCodeKeyringFactory,
+    metadataPath = path.join(getDSCodeHome(), "credential-metadata.json"),
+  ) {
+    this.factory = factory;
+    this.metadataPath = metadataPath;
+  }
 
   async read(providerId: string): Promise<Credential | undefined> {
     const serialized = this.factory.create(KEYRING_SERVICE, providerId).getPassword();
@@ -142,10 +152,13 @@ export class KeyringCredentialStore implements CredentialStore {
 }
 
 class AutoCredentialStore implements CredentialStore {
-  constructor(
-    private readonly keyring: KeyringCredentialStore,
-    private readonly file: FileCredentialStore,
-  ) {}
+  private readonly keyring: KeyringCredentialStore;
+  private readonly file: FileCredentialStore;
+
+  constructor(keyring: KeyringCredentialStore, file: FileCredentialStore) {
+    this.keyring = keyring;
+    this.file = file;
+  }
 
   async migrateFileCredentials(): Promise<void> {
     for (const { providerId } of await this.file.list()) {

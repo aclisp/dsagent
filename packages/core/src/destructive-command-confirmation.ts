@@ -2,8 +2,8 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   type DangerousCommandResult,
-} from "./dangerous-command.js";
-import { confirmScrollable } from "./scrollable-confirmation.js";
+} from "./dangerous-command.ts";
+import { confirmScrollable } from "./scrollable-confirmation.ts";
 
 /** Terminal confirmation with a scrollable command and a fixed decision area. */
 export function confirmDestructiveCommand(

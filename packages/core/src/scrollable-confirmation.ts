@@ -41,6 +41,11 @@ export function confirmScrollable<T>(
 }
 
 class ScrollableConfirmationDialog<T> implements Component {
+  private readonly tui: TUI;
+  private readonly theme: Theme;
+  private readonly keybindings: KeybindingsManager;
+  private readonly options: ScrollableConfirmationOptions<T>;
+  private readonly done: (value: T) => void;
   private readonly contentPreview: ScrollablePreview;
   private readonly prefix: Component[];
   private readonly suffix: Component[];
@@ -52,12 +57,17 @@ class ScrollableConfirmationDialog<T> implements Component {
   private selectedChoice = 0;
 
   constructor(
-    private readonly tui: TUI,
-    private readonly theme: Theme,
-    private readonly keybindings: KeybindingsManager,
-    private readonly options: ScrollableConfirmationOptions<T>,
-    private readonly done: (value: T) => void,
+    tui: TUI,
+    theme: Theme,
+    keybindings: KeybindingsManager,
+    options: ScrollableConfirmationOptions<T>,
+    done: (value: T) => void,
   ) {
+    this.tui = tui;
+    this.theme = theme;
+    this.keybindings = keybindings;
+    this.options = options;
+    this.done = done;
     const contentPreview = new ScrollablePreview(options.content);
     const choices = new Container();
     const spacers: [Spacer, Spacer, Spacer, Spacer] = [
@@ -237,7 +247,11 @@ function formatKeybindingText(text: string): string {
 }
 
 class SingleLineText implements Component {
-  constructor(private readonly text: string) {}
+  private readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
 
   render(width: number): string[] {
     const contentWidth = Math.max(1, width - 2);

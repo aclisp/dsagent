@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { DefaultResourceLoader, SettingsManager, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import { dscodePiBuiltinOverrides } from "../packages/core/src/pi-builtins.js";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import { dscodePiBuiltinOverrides } from "../packages/core/src/pi-builtins.ts";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 
 describe("DSCode Pi built-ins", () => {
   it("replaces Pi's MCP and codemode stack before loading, including reload and explicit paths", async () => {

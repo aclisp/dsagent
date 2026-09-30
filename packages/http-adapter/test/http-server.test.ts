@@ -1,27 +1,27 @@
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PersistedSessionNotFoundError } from "../src/agent-session-host.js";
+import { PersistedSessionNotFoundError } from "../src/agent-session-host.ts";
 import {
   createHttpAdapter,
   type HttpAdapterHostFactoryOptions,
   type PersistedSessionLister,
-} from "../src/http-server.js";
+} from "../src/http-server.ts";
 import type {
   HttpAdapterEvent,
   HttpAdapterServerHost,
-} from "../src/session-controller.js";
+} from "../src/session-controller.ts";
 import type {
   SessionPort,
   SessionPortTurnContext,
   SessionPortTurnEvent,
-} from "../src/session-port.js";
-import type { AgentMessage } from "../src/session-messages.js";
+} from "../src/session-port.ts";
+import type { AgentMessage } from "../src/session-messages.ts";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
   type HttpUiBrokerListener,
-} from "../src/ui-broker.js";
+} from "../src/ui-broker.ts";
 
 interface FakeHost extends HttpAdapterServerHost {
   calls: string[];

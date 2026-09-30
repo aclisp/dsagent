@@ -2,15 +2,15 @@ export {
   formatDSCodeError,
   runDSCode,
   runDSCodeProcess,
-} from "./cli-runtime.js";
-export { createDSCodeExtension } from "./dscode-extension.js";
+} from "./cli-runtime.ts";
+export { createDSCodeExtension } from "./dscode-extension.ts";
 export {
   createDSCodeRpcClient,
   getDSCodeRpcEntryPath,
   RpcClient,
   type DSCodeRpcClientOptions,
   type RpcClientOptions,
-} from "./rpc-client.js";
+} from "./rpc-client.ts";
 export {
   authenticateProvider,
   getDSCodeAgentDir,
@@ -27,7 +27,7 @@ export {
   type ApiKeyProviderId,
   type KeyValidation,
   type ProviderLoginResult,
-} from "./auth.js";
+} from "./auth.ts";
 export type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
 export {
   createDSCodeCredentialStore,
@@ -36,7 +36,7 @@ export {
   KeyringCredentialStore,
   type CreateCredentialStoreOptions,
   type DSCodeKeyringFactory,
-} from "./credential-store.js";
+} from "./credential-store.ts";
 export {
   getDSCodeArchivedSessionsDir,
   getDSCodeHome,
@@ -46,7 +46,7 @@ export {
   partitionExistingSessions,
   partitionSessionFile,
   type PartitionedSessionPath,
-} from "./home.js";
+} from "./home.ts";
 export {
   DEFAULT_DEEPSEEK_BASE_URL,
   getDSCodeStorageSettings,
@@ -57,7 +57,7 @@ export {
   type CredentialStoreMode,
   type DSCodeStorageSettings,
   type HistoryPersistence,
-} from "./settings.js";
+} from "./settings.ts";
 export {
   MODEL_CREDENTIAL_ENV_KEYS,
   SUPPORTED_PROVIDER_IDS,
@@ -71,7 +71,7 @@ export {
   stripModelCredentialEnvironment,
   type StoredModelSelection,
   type SupportedProviderId,
-} from "./providers.js";
+} from "./providers.ts";
 export {
   parseRuntimeArgs,
   printDSCodeHelp,
@@ -81,7 +81,7 @@ export {
   type ParsedRuntimeArgs,
   type PromptContractMode,
   type SandboxMode,
-} from "./runtime-options.js";
+} from "./runtime-options.ts";
 export {
   loadVisionRuntimeConfig,
   parseVisionCliArgs,
@@ -91,5 +91,5 @@ export {
   type ParsedVisionCliArgs,
   type VisionCliInvocation,
   type VisionRuntimeConfig,
-} from "./vision-cli.js";
-export { DSCODE_VERSION } from "./version.js";
+} from "./vision-cli.ts";
+export { DSCODE_VERSION } from "./version.ts";

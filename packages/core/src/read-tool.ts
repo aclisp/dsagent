@@ -1,5 +1,5 @@
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
-import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
 
 /** Keep pi's read semantics while using the same presentation as DSCode tools. */
 export function createDSCodeReadTool(cwd: string): ReturnType<typeof createReadToolDefinition> {

@@ -11,7 +11,7 @@ import {
   saveDeepSeekKey,
   saveProviderApiKey,
   validateDeepSeekKey,
-} from "../packages/core/src/auth.js";
+} from "../packages/core/src/auth.ts";
 
 describe("DSCode authentication", () => {
   const temporaryDirectories: string[] = [];

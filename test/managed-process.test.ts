@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ManagedProcessRegistry } from "../packages/core/src/managed-process.js";
+import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
 
 describe("ManagedProcessRegistry", () => {
   it("cancels an active start without killing processes already yielded by the same run", async () => {

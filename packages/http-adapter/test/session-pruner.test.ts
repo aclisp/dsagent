@@ -4,7 +4,7 @@ import path from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { pruneSessionFile } from "../src/session-pruner.js";
+import { pruneSessionFile } from "../src/session-pruner.ts";
 
 const tempDirs: string[] = [];
 

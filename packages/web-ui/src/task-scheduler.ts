@@ -20,7 +20,7 @@ import {
   type ScheduleTask,
   type ScheduleValidationError,
   type ValidScheduleConfig,
-} from "./schedule-config.js";
+} from "./schedule-config.ts";
 
 const SCHEDULE_FILE = "schedules.yaml";
 const STATUS_FILE = "schedules.status.json";
@@ -331,7 +331,10 @@ class DefaultTaskScheduler implements TaskScheduler {
   private loadedAt = new Date(0).toISOString();
   private disposed = false;
 
-  private constructor(private readonly options: CreateTaskSchedulerOptions) {
+  private readonly options: CreateTaskSchedulerOptions;
+
+  private constructor(options: CreateTaskSchedulerOptions) {
+    this.options = options;
     this.directoryPath = path.join(options.workspacePath, SCHEDULE_DIRECTORY);
     this.scheduleFilePath = path.join(this.directoryPath, SCHEDULE_FILE);
     this.statusFilePath = path.join(this.directoryPath, STATUS_FILE);

@@ -7,7 +7,7 @@ describe.skipIf(process.platform === "win32")("managed process host shutdown", (
     "leaves no child behind after %s shutdown",
     async (mode) => {
       const host = spawn(process.execPath, [
-        "--import", "tsx", fileURLToPath(new URL("./fixtures/managed-process-shutdown-host.ts", import.meta.url)), mode,
+        fileURLToPath(new URL("./fixtures/managed-process-shutdown-host.ts", import.meta.url)), mode,
       ], { stdio: ["ignore", "pipe", "pipe"], timeout: 10_000, killSignal: "SIGKILL" });
       let output = "";
       let errors = "";

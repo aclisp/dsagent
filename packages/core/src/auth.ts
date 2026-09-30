@@ -10,21 +10,21 @@ import type {
   Provider,
 } from "@earendil-works/pi-ai";
 import pc from "picocolors";
-import { createDSCodeCredentialStore } from "./credential-store.js";
-import { getDSCodeHome } from "./home.js";
+import { createDSCodeCredentialStore } from "./credential-store.ts";
+import { getDSCodeHome } from "./home.ts";
 import {
   defaultModelForProvider,
   providerDisplayName,
   providerEnvironmentKey,
   SUPPORTED_PROVIDER_IDS,
   type SupportedProviderId,
-} from "./providers.js";
+} from "./providers.ts";
 import {
   getDSCodeSettingsPath,
   getDSCodeStorageSettings,
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
-} from "./settings.js";
+} from "./settings.ts";
 
 const PROVIDER_ID = "deepseek";
 

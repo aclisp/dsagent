@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectDangerousCommand } from "../packages/core/src/dangerous-command.js";
+import { detectDangerousCommand } from "../packages/core/src/dangerous-command.ts";
 
 describe("dangerous command rules", () => {
   it.each([

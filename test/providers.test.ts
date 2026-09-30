@@ -17,7 +17,7 @@ import {
   parseSupportedProviderId,
   stripModelCredentialEnvironment,
   type SupportedProviderId,
-} from "../packages/core/src/providers.js";
+} from "../packages/core/src/providers.ts";
 
 describe("DSCode model providers", () => {
   const temporaryDirectories: string[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DedupeCache } from "../src/dedupe-cache.js";
+import { DedupeCache } from "../src/dedupe-cache.ts";
 
 describe("DedupeCache", () => {
   it("rejects duplicates until their TTL expires", () => {

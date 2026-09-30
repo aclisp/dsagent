@@ -10,7 +10,7 @@ import {
   WeComMediaStore,
   type WeComMediaDownloadClient,
   type WeComMediaUploadClient,
-} from "../src/wecom-media.js";
+} from "../src/wecom-media.ts";
 
 const tempDirectories: string[] = [];
 

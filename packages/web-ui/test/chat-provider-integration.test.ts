@@ -26,7 +26,7 @@ import {
   type WeComMarkdownMessage,
   type WeComMessageFrame,
 } from "@aclisp/dsagent-wecom";
-import { createWebUiServer } from "../src/web-ui-server.js";
+import { createWebUiServer } from "../src/web-ui-server.ts";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -84,11 +84,13 @@ class FakeChatProvider implements ChatProvider {
   startCalls = 0;
   disposeCalls = 0;
   private readonly listeners = new Set<ChatProviderListener>();
+  private readonly startFailure: Error | undefined;
 
   constructor(
     providerId = "fake",
-    private readonly startFailure?: Error,
+    startFailure?: Error,
   ) {
+    this.startFailure = startFailure;
     this.providerId = providerId;
   }
 
