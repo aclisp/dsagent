@@ -1,7 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { PermissionMode } from "./config.js";
-import { formatCwd } from "./welcome.js";
+import type { PermissionMode } from "./config.ts";
+import { formatCwd } from "./welcome.ts";
 
 export interface SessionUsageSummary {
   input: number;

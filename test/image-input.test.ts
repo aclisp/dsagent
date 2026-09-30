@@ -8,7 +8,7 @@ import {
   expandEditorImageMarkers,
   extractLocalImageInput,
   registerLocalImageInput,
-} from "../packages/core/src/image-input.js";
+} from "../packages/core/src/image-input.ts";
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZBv8AAAAASUVORK5CYII=",

@@ -3,7 +3,7 @@ import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
-import type { SupportedProviderId } from "./providers.js";
+import type { SupportedProviderId } from "./providers.ts";
 
 export type DSCodeRpcClientOptions = Omit<RpcClientOptions, "cliPath" | "provider"> & {
   /** Model provider for this session. Defaults to DeepSeek. */
@@ -23,7 +23,8 @@ export function createDSCodeRpcClient(options: DSCodeRpcClientOptions = {}): Rpc
 }
 
 export function getDSCodeRpcEntryPath(): string {
-  return fileURLToPath(new URL("./rpc-entry.js", import.meta.url));
+  const entry = import.meta.url.endsWith(".ts") ? "./rpc-entry.ts" : "./rpc-entry.js";
+  return fileURLToPath(new URL(entry, import.meta.url));
 }
 
 export { RpcClient };

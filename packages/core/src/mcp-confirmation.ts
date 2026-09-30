@@ -1,5 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { confirmScrollable } from "./scrollable-confirmation.js";
+import { confirmScrollable } from "./scrollable-confirmation.ts";
 
 export type McpApprovalChoice = "once" | "tool" | "server" | "deny";
 

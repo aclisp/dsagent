@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactWeComPrivateUrls } from "../src/wecom-url-redaction.js";
+import { redactWeComPrivateUrls } from "../src/wecom-url-redaction.ts";
 
 const workspaceId = "k9x7q2m4v8w1z5t3";
 const replacement = "[私密链接已隐藏]";

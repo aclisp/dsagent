@@ -249,10 +249,13 @@ export class ConversationAliasRegistry {
   private readonly sendersByAlias = new Map<string, SenderReference>();
   private mutation = Promise.resolve();
 
-  private constructor(
-    private readonly filePath: string | undefined,
-    private readonly random: () => string,
-  ) {}
+  private readonly filePath: string | undefined;
+  private readonly random: () => string;
+
+  private constructor(filePath: string | undefined, random: () => string) {
+    this.filePath = filePath;
+    this.random = random;
+  }
 
   static async open(
     options: ConversationAliasRegistryOptions = {},

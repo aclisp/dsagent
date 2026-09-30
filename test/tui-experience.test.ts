@@ -7,7 +7,7 @@ import {
   panelLine,
   renderMinimalStatus,
   stripFakeCursorHighlight,
-} from "../packages/core/src/tui-experience.js";
+} from "../packages/core/src/tui-experience.ts";
 
 const theme = {
   fg: (color: string, text: string) =>

@@ -4,12 +4,13 @@ import path from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
+  ExtensionToolContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { MCPManager } from "../packages/core/src/mcp.js";
-import { MODEL_CREDENTIAL_ENV_KEYS } from "../packages/core/src/providers.js";
+import { MCPManager } from "../packages/core/src/mcp.ts";
+import { MODEL_CREDENTIAL_ENV_KEYS } from "../packages/core/src/providers.ts";
 
 describe("MCPManager", () => {
   let root: string | undefined;
@@ -60,7 +61,7 @@ describe("MCPManager", () => {
     const ctx = {
       cwd: root,
       isProjectTrusted: () => true,
-    } as unknown as ExtensionContext;
+    } as unknown as ExtensionToolContext;
     const manager = new MCPManager();
     try {
       await manager.connectConfigured(pi, ctx);
@@ -116,7 +117,7 @@ describe("MCPManager", () => {
     const ctx = {
       cwd: root,
       isProjectTrusted: () => true,
-    } as unknown as ExtensionContext;
+    } as unknown as ExtensionToolContext;
     const manager = new MCPManager();
     try {
       await manager.connectConfigured(pi, ctx);

@@ -9,8 +9,8 @@ import type {
   ConversationReference,
   SenderAddress,
   SenderReference,
-} from "./conversation-registry.js";
-import { DedupeCache } from "./dedupe-cache.js";
+} from "./conversation-registry.ts";
+import { DedupeCache } from "./dedupe-cache.ts";
 
 export const GROUP_BUSY_REPLY =
   "我正在处理其他工作，刚才的请求没有被记录。请稍后重新 @我发送一次。";

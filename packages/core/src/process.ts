@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { stripModelCredentialEnvironment } from "./providers.js";
-import { isStandalone } from "./distribution.js";
-import { getDSCodeHome } from "./home.js";
+import { stripModelCredentialEnvironment } from "./providers.ts";
+import { isStandalone } from "./distribution.ts";
+import { getDSCodeHome } from "./home.ts";
 
 // Pi's tools manager captures this directory when its modules load, before
 // DSCode points PI_CODING_AGENT_DIR at ~/.dscode. Capture it at the same time
@@ -134,13 +134,15 @@ function signalProcessTree(
 }
 
 export class BoundedOutput {
+  private readonly limit: number;
   private readonly headLimit: number;
   private readonly tailLimit: number;
   private head = "";
   private tail = "";
   private seen = 0;
 
-  constructor(private readonly limit: number) {
+  constructor(limit: number) {
+    this.limit = limit;
     this.headLimit = Math.floor(limit * 0.75);
     this.tailLimit = limit - this.headLimit;
   }

@@ -6,7 +6,7 @@ import {
   restorePlanState,
   validatePlanSteps,
   type PlanState,
-} from "../packages/core/src/plan.js";
+} from "../packages/core/src/plan.ts";
 
 describe("structured plan state", () => {
   const plan: PlanState = {

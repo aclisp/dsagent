@@ -4,9 +4,9 @@ import path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
-import { createTestTheme } from "./fixtures/theme.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { createTestTheme } from "./fixtures/theme.ts";
 
 describe("checkpoint extension commands", () => {
   let root: string;
@@ -43,6 +43,7 @@ describe("checkpoint extension commands", () => {
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
     const notify = vi.fn();
     const confirm = vi.fn(async () => true);
+    const select = vi.fn<(title: string, items: string[]) => Promise<string | undefined>>(async () => undefined);
     const ctx = {
       cwd: root,
       mode: "rpc",
@@ -50,10 +51,14 @@ describe("checkpoint extension commands", () => {
       ui: new Proxy({
         notify,
         confirm,
+        select,
         theme: createTestTheme(),
       }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }),
       isProjectTrusted: () => true,
-      sessionManager: { getBranch: () => [], getSessionFile: () => undefined },
+      sessionManager: {
+        getBranch: () => entries.map((entry) => ({ type: "custom", ...entry })),
+        getSessionFile: () => undefined,
+      },
     };
     const extension = createDSCodeExtension(
       parseRuntimeArgs(["-C", root, "--no-mcp", "--permission", "auto"]).options,
@@ -61,6 +66,8 @@ describe("checkpoint extension commands", () => {
     await (typeof extension === "function" ? extension(pi) : extension.factory(pi));
     expect(tools.get("read")?.renderShell).toBe("self");
     for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
+    await commands.get("diff")!.handler("history", ctx);
+    expect(notify).toHaveBeenCalledWith("No patch checkpoints in this branch.", "info");
 
     await fs.writeFile(path.join(root, "config.txt"), "timeout = 1000\n");
     const patch = [
@@ -112,6 +119,60 @@ describe("checkpoint extension commands", () => {
     await commands.get("undo")!.handler("", ctx);
     await expect(fs.access(path.join(root, "checkpoint.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(notify).toHaveBeenCalledWith("Restored checkpoint.txt, config.txt", "info");
+
+    const originalDiff = entries.find((entry) => entry.customType === "dscode-diff")!.data as { checkpointId: string };
+    const secondPatch = "*** Begin Patch\n*** Add File: second.txt\n+second\n*** End Patch";
+    await tools.get("apply_patch")!.execute("call-next", { input: secondPatch }, undefined, undefined, ctx as any);
+    // Replaying the current branch must retain older checkpoints and their undo status.
+    for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
+    await commands.get("diff")!.handler("", ctx);
+    expect(entries.at(-1)).toMatchObject({ data: { patch: secondPatch } });
+    await commands.get("diff")!.handler(originalDiff.checkpointId, ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
+    await expect(fs.access(path.join(root, "checkpoint.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    select.mockImplementationOnce(async (_title, items) => {
+      expect(items[0]).toContain("second.txt");
+      const older = items.find((item) => item.startsWith(originalDiff.checkpointId));
+      expect(older).toContain("(undone)");
+      return older;
+    });
+    await commands.get("diff")!.handler("history", ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
+    expect(select).toHaveBeenCalledWith("Patch history — 1–2 of 2, newest first", expect.any(Array));
+
+    const count = entries.length;
+    await commands.get("diff")!.handler("history", ctx); // cancelled picker
+    await commands.get("diff")!.handler("missing", ctx);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Unknown checkpoint: missing"), "warning");
+    await commands.get("diff")!.handler("history", { ...ctx, hasUI: false });
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("/diff <checkpoint-id>"), "info");
+    expect(entries).toHaveLength(count);
+
+    for (let index = 0; index < 19; index++) {
+      await tools.get("apply_patch")!.execute(`page-${index}`, {
+        input: `*** Begin Patch\n*** Add File: page-${index}.txt\n+page\n*** End Patch`,
+      }, undefined, undefined, ctx as any);
+    }
+    select.mockImplementationOnce(async (title, items) => {
+      expect(title).toContain("1–10 of 21");
+      expect(items).toHaveLength(11);
+      expect(items).not.toContain("Newer patches…");
+      return "Older patches…";
+    }).mockImplementationOnce(async (title, items) => {
+      expect(title).toContain("11–20 of 21");
+      expect(items).toHaveLength(12);
+      return "Newer patches…";
+    }).mockResolvedValueOnce("Older patches…")
+      .mockResolvedValueOnce("Older patches…")
+      .mockImplementationOnce(async (title, items) => {
+        expect(title).toContain("21–21 of 21");
+        expect(items).toHaveLength(2);
+        expect(items).not.toContain("Older patches…");
+        return items[0];
+      });
+    await commands.get("diff")!.handler("history", ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
   });
 
   it("explains force overwrite in the confirmation request", async () => {

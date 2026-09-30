@@ -1,14 +1,13 @@
-import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { runProcess } from "./process.js";
-import { isStandalone } from "./distribution.js";
-import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
+import { runProcess } from "./process.ts";
+import { isStandalone } from "./distribution.ts";
+import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
 
 const agentTaskSchema = Type.Object({
   role: Type.Union([
@@ -222,11 +221,6 @@ function childInvocation(): { command: string; prefix: string[] } {
   if (isStandalone) return { command: process.execPath, prefix: [] };
   const script = process.argv[1];
   if (!script) throw new Error("Cannot locate the DSCode entrypoint");
-  if (script.endsWith(".ts")) {
-    const executable = path.resolve(path.dirname(script), "..", "node_modules", ".bin", "tsx");
-    if (!fs.existsSync(executable)) throw new Error("tsx executable is unavailable for subagents");
-    return { command: executable, prefix: [script] };
-  }
   return { command: process.execPath, prefix: [script] };
 }
 

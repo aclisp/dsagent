@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildWindowsSandboxCommand,
   parseWindowsSandboxLifecycleCommand,
-} from "../packages/core/src/windows-sandbox.js";
+} from "../packages/core/src/windows-sandbox.ts";
 
 describe("Windows native sandbox protocol", () => {
   const requests: string[] = [];

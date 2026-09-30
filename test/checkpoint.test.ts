@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { capturePatchCheckpoint, restoreCheckpoint } from "../packages/core/src/checkpoint.js";
-import { applyWorkspacePatch } from "../packages/core/src/patch.js";
-import { Workspace } from "../packages/core/src/workspace.js";
+import { capturePatchCheckpoint, restoreCheckpoint } from "../packages/core/src/checkpoint.ts";
+import { applyWorkspacePatch } from "../packages/core/src/patch.ts";
+import { Workspace } from "../packages/core/src/workspace.ts";
 
 describe("patch checkpoints", () => {
   let root: string;

@@ -2,14 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { DSCODE_VERSION } from "./version.js";
+import { DSCODE_VERSION } from "./version.ts";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { z } from "zod";
-import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
-import { getDSCodeHome } from "./home.js";
-import { stripModelCredentialEnvironment } from "./providers.js";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
+import { getDSCodeHome } from "./home.ts";
+import { stripModelCredentialEnvironment } from "./providers.ts";
 
 const stdioServerSchema = z.object({
   command: z.string().min(1),

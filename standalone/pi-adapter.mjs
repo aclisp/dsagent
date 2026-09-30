@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "0.87.1";
+export const PI_VERSION = "0.99.1";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);
@@ -60,6 +60,10 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
           throw new Error(`Excluded Core module reached standalone graph: ${file}`);
         }
         audit.inputs.add(file);
+        if (file === path.join(root, "packages/core/dist/themes.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function getDSCodeThemePaths() { return [assets["dscode-light.json"], assets["dscode-dark.json"]]; }' };
+        }
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));
           return { contents: `export * from ${JSON.stringify(path.join(standalone, replacements.get(file)))};`, loader: "js" };
@@ -73,6 +77,12 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
             : "export function getNativePlatformHelper() {} export function getNativeClipboard() {}", loader: "js" };
         }
         if (file === path.join(pi, "extensions/index.js")) return { contents: "export const builtInExtensions = [];", loader: "js" };
+        for (const [name, factory] of [["codemode", "createCodemodeExtension"], ["mcp", "createMcpExtension"], ["tool-search", "createToolSearchExtension"]]) {
+          if (file === path.join(pi, "extensions", name, "index.js")) return {
+            contents: `export function ${factory}() { throw new Error("Pi ${name} is disabled in DSCode"); } export default () => {};`,
+            loader: "js",
+          };
+        }
         if (file === path.join(pi, "core/extensions/virtual-modules.js")) return { contents: "export const VIRTUAL_MODULES = {};", loader: "js" };
         if (file === path.join(pi, "utils/photon.js")) return {
           // The WASM loader is adapted below; no global fs monkey-patch or disk fallback.
@@ -110,7 +120,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
         if (file === path.join(pi, "core/package-manager.js")) {
           // Retain upstream local skill/prompt/theme discovery and trust semantics.
           source = replace(source, "const packageSources = this.dedupePackages(allPackages);", "const packageSources = [];");
-          source = replace(source, "const packageSources = sources.map((source) => ({ pkg: source, scope }));", "const packageSources = [];");
+          source = replace(source, "const packageSources = sources\n            .filter((source) => !source.startsWith(BUILTIN_PATH_PREFIX))\n            .map((source) => ({ pkg: source, scope }));", "const packageSources = [];");
         }
         if (file === path.join(pi, "core/extensions/loader.js")) {
           source = body(source, "async function loadExtensionModule(extensionPath, cacheToken)",

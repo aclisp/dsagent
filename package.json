@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
@@ -20,6 +20,7 @@
     "!dist/cli-bundle-*",
     "!dist/standalone",
     "packages/core/dist",
+    "packages/core/themes",
     "packages/core/package.json",
     "packages/core/README.md",
     "packages/core/LICENSE",
@@ -51,7 +52,7 @@
     "prepack": "pnpm build && pnpm build:windows-sandbox",
     "prepublishOnly": "pnpm check",
     "predev": "pnpm --dir packages/core run build",
-    "dev": "tsx src/cli.ts",
+    "dev": "node src/cli.ts",
     "start": "node dist/bundle/cli.js",
     "start:unbundled": "node dist/cli.js",
     "test": "vitest run --exclude standalone/test/tools-install.test.mjs && node --test standalone/test/tools-install.test.mjs",
@@ -82,7 +83,6 @@
     "@types/node": "catalog:",
     "esbuild": "catalog:",
     "proper-lockfile": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

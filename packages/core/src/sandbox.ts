@@ -2,14 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { stripModelCredentialEnvironment } from "./providers.js";
-import type { SandboxMode } from "./runtime-options.js";
-import { hostShellCommand } from "./shell.js";
+import { stripModelCredentialEnvironment } from "./providers.ts";
+import type { SandboxMode } from "./runtime-options.ts";
+import { hostShellCommand } from "./shell.ts";
 import {
   windowsNativeSandboxCommand,
   windowsNativeSandboxDescription,
   windowsNativeSandboxEnabled,
-} from "./windows-sandbox.js";
+} from "./windows-sandbox.ts";
 
 export interface SandboxOptions {
   mode: SandboxMode;

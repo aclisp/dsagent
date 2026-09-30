@@ -1,8 +1,8 @@
-import type { PermissionMode } from "./config.js";
-import type { ManagedProcessResult } from "./managed-process.js";
-import type { SandboxMode } from "./runtime-options.js";
-import { parseTrustedVisionCommand } from "./vision-command.js";
-import { isStandalone } from "./distribution.js";
+import type { PermissionMode } from "./config.ts";
+import type { ManagedProcessResult } from "./managed-process.ts";
+import type { SandboxMode } from "./runtime-options.ts";
+import { parseTrustedVisionCommand } from "./vision-command.ts";
+import { isStandalone } from "./distribution.ts";
 
 export type AccessBoundary = "network" | "host";
 
@@ -16,10 +16,13 @@ export class SessionAccessController {
   private readonly networkCommands = new Set<string>();
   private readonly hostCommands = new Set<string>();
 
-  constructor(
-    private readonly baseSandbox: SandboxMode,
-    private readonly baseNetwork: boolean,
-  ) {}
+  private readonly baseSandbox: SandboxMode;
+  private readonly baseNetwork: boolean;
+
+  constructor(baseSandbox: SandboxMode, baseNetwork: boolean) {
+    this.baseSandbox = baseSandbox;
+    this.baseNetwork = baseNetwork;
+  }
 
   effective(permission: PermissionMode): EffectiveAccess {
     if (permission === "full") return { sandbox: "danger-full-access", network: true };

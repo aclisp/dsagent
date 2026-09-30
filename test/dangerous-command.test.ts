@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand } from "../packages/core/src/approval.js";
-import { detectDangerousCommand } from "../packages/core/src/dangerous-command.js";
+import { detectDangerousCommand } from "../packages/core/src/dangerous-command.ts";
 
 describe("dangerous command rules", () => {
   it.each([
@@ -40,7 +39,6 @@ describe("dangerous command rules", () => {
     "git -C repo rm -f tracked.ts", "git rm -f -- --cached", "git rm -f -- -n",
     "nohup rm x", "nohup -- /bin/rm x", "nohup bash -euo pipefail -c 'rm x'",
   ])("detects %s", (command) => {
-    expect(classifyCommand(command)).toBe("dangerous");
     expect(detectDangerousCommand(command).reason).toBeTruthy();
   });
 
@@ -102,7 +100,7 @@ describe("dangerous command rules", () => {
     "git rm --cached --force tracked.ts", "git rm --help", "git rm -- -f",
     "nohup echo rm", "nohup --help", "nohup --version", "nohup --unknown rm",
   ])("does not flag %s", (command) => {
-    expect(classifyCommand(command)).not.toBe("dangerous");
+    expect(detectDangerousCommand(command).dangerous).toBe(false);
   });
 
   // These negative results describe coverage limits, not safe commands.

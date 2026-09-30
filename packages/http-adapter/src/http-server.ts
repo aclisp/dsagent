@@ -12,24 +12,24 @@ import {
   listPersistedSessions,
   parseHttpRuntimeArgs,
   type PersistedSessionSummary,
-} from "./agent-session-host.js";
+} from "./agent-session-host.ts";
 import {
   SessionController,
   type HttpAdapterServerHost,
   type HttpSessionDescriptor,
-} from "./session-controller.js";
+} from "./session-controller.ts";
 import type {
   SessionPort,
   SessionPortTurnEvent,
   SessionPortTurnListener,
   SessionPortTurnStartedEvent,
   SessionPortTurnStartedListener,
-} from "./session-port.js";
-import { toHttpSessionMessages } from "./session-messages.js";
+} from "./session-port.ts";
+import { toHttpSessionMessages } from "./session-messages.ts";
 import {
   HttpUiResponseError,
   type HttpUiResponse,
-} from "./ui-broker.js";
+} from "./ui-broker.ts";
 
 export interface HttpAdapterHostFactoryOptions {
   cwd: string;

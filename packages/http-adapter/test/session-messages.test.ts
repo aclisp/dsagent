@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "../src/session-messages.js";
-import { toHttpSessionMessages } from "../src/session-messages.js";
+import type { AgentMessage } from "../src/session-messages.ts";
+import { toHttpSessionMessages } from "../src/session-messages.ts";
 
 describe("toHttpSessionMessages", () => {
   it("normalizes string user content and drops image blocks", () => {

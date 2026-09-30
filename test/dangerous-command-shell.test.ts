@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { detectDangerousCommand } from "../packages/core/src/dangerous-command.js";
-import { simpleCommands } from "../packages/core/src/dangerous-command/shell.js";
+import { detectDangerousCommand } from "../packages/core/src/dangerous-command.ts";
+import { simpleCommands } from "../packages/core/src/dangerous-command/shell.ts";
 
 describe("literal shell control structures", () => {
   it.each([

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 
 describe("parseRuntimeArgs", () => {
   const original = {
@@ -80,20 +80,20 @@ describe("parseRuntimeArgs", () => {
       .toBe("engineering");
   });
 
-  it("selects OpenCode Zen Go with the default kimi-k2.6 model", () => {
+  it("selects OpenCode Zen Go with the default kimi-k3 model", () => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
     const parsed = parseRuntimeArgs(["--provider", "opencode-go"]);
     expect(parsed.options).toMatchObject({
       providerId: "opencode-go",
-      modelId: "kimi-k2.6",
+      modelId: "kimi-k3",
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining([
         "--provider",
         "opencode-go",
         "--model",
-        "kimi-k2.6",
+        "kimi-k3",
         "--thinking",
         "medium",
       ]),

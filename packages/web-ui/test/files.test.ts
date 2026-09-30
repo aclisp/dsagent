@@ -4,8 +4,8 @@ import path from "node:path";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHttpAdapter } from "../../http-adapter/src/http-server.js";
-import { registerFileRoutes } from "../src/files.js";
+import { createHttpAdapter } from "../../http-adapter/src/http-server.ts";
+import { registerFileRoutes } from "../src/files.ts";
 
 const BOUNDARY = "----dscode-test-boundary";
 const CRLF = "\r\n";

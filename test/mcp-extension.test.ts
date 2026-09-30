@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import { parseRuntimeArgs } from "../packages/core/src/runtime-options.js";
-import { createTestTheme } from "./fixtures/theme.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { createTestTheme } from "./fixtures/theme.ts";
 
 const baseTools = ["read", "exec_command", "write_stdin", "apply_patch"];
 const mcpTool = "mcp__fixture__echo";

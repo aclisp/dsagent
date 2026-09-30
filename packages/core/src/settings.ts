@@ -3,8 +3,8 @@ import fs from "node:fs";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { getDSCodeHome } from "./home.js";
-import { isStandalone } from "./distribution.js";
+import { getDSCodeHome } from "./home.ts";
+import { isStandalone } from "./distribution.ts";
 
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 

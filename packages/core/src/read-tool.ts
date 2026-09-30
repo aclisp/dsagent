@@ -1,5 +1,5 @@
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
-import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.js";
+import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
 
 /** Keep pi's read semantics while using the same presentation as DSCode tools. */
 export function createDSCodeReadTool(cwd: string): ReturnType<typeof createReadToolDefinition> {
@@ -11,7 +11,7 @@ export function createDSCodeReadTool(cwd: string): ReturnType<typeof createReadT
       const range = args.limit !== undefined
         ? `:${start}-${start + args.limit - 1}`
         : args.offset !== undefined ? `:${start}…` : "";
-      return renderToolCall("Read", `${args.path ?? "file"}${range}`, theme, context);
+      return renderToolCall("Read", `${args.path ?? "file"}${range}`, theme, context, context.expanded);
     },
     renderResult(result, options, theme, context) {
       return renderCollapsibleToolResult(result, options, theme, context);

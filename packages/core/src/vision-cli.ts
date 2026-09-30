@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { FileCredentialStore } from "./credential-store.js";
-import { getDSCodeHome } from "./home.js";
-import { detectImageMimeType } from "./image-input.js";
-import { MODEL_CREDENTIAL_ENV_KEYS } from "./providers.js";
+import { FileCredentialStore } from "./credential-store.ts";
+import { getDSCodeHome } from "./home.ts";
+import { detectImageMimeType } from "./image-input.ts";
+import { MODEL_CREDENTIAL_ENV_KEYS } from "./providers.ts";
 
 const DEFAULT_PROMPT =
   "Describe this image in detail for another assistant. Transcribe all visible text faithfully and explain details that may be relevant to the user's request.";

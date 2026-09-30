@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureDSCodeUiDefaults } from "../packages/core/src/ui-defaults.js";
+import { ensureDSCodeUiDefaults } from "../packages/core/src/ui-defaults.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -11,6 +11,24 @@ afterEach(async () => {
 });
 
 describe("DSCode UI defaults", () => {
+  it("migrates the previous adaptive default while retaining other preferences", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-ui-"));
+    temporaryDirectories.push(directory);
+    await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({
+      theme: "light/dark",
+      quietStartup: false,
+      dscodeUiDefaultsVersion: 1,
+    }));
+    await ensureDSCodeUiDefaults(directory);
+    const settings = JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"));
+    expect(settings.theme).toBe("dscode-light/dscode-dark");
+    expect(settings.quietStartup).toBe(false);
+    expect(settings.dscodeUiDefaultsVersion).toBe(2);
+    const migrated = await fs.readFile(path.join(directory, "settings.json"), "utf8");
+    await ensureDSCodeUiDefaults(directory);
+    expect(await fs.readFile(path.join(directory, "settings.json"), "utf8")).toBe(migrated);
+  });
+
   it("migrates a persisted built-in theme to automatic light/dark mode once", async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-ui-"));
     temporaryDirectories.push(directory);
@@ -23,14 +41,14 @@ describe("DSCode UI defaults", () => {
       dscodeUiDefaultsVersion: number;
     };
     expect(settings).toEqual({
-      theme: "light/dark",
+      theme: "dscode-light/dscode-dark",
       quietStartup: true,
       showHardwareCursor: true,
       hideThinkingBlock: true,
       tuiMode: "fullscreen",
       fullscreenExitOutput: "transcript",
       fullscreenScrollbar: "hidden",
-      dscodeUiDefaultsVersion: 1,
+      dscodeUiDefaultsVersion: 2,
     });
   });
 
@@ -42,12 +60,12 @@ describe("DSCode UI defaults", () => {
     expect(JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"))).toEqual({
       quietStartup: false,
       showHardwareCursor: true,
-      theme: "light/dark",
+      theme: "dscode-light/dscode-dark",
       hideThinkingBlock: true,
       tuiMode: "fullscreen",
       fullscreenExitOutput: "transcript",
       fullscreenScrollbar: "hidden",
-      dscodeUiDefaultsVersion: 1,
+      dscodeUiDefaultsVersion: 2,
     });
   });
 
@@ -62,7 +80,7 @@ describe("DSCode UI defaults", () => {
       tuiMode: "regular",
       fullscreenExitOutput: "resume-hint",
       fullscreenScrollbar: "always",
-      dscodeUiDefaultsVersion: 1,
+      dscodeUiDefaultsVersion: 2,
     })}\n`;
     await fs.writeFile(path.join(directory, "settings.json"), contents);
     await ensureDSCodeUiDefaults(directory);
@@ -87,7 +105,7 @@ describe("DSCode UI defaults", () => {
       tuiMode: "fullscreen",
       fullscreenExitOutput: "transcript",
       fullscreenScrollbar: "hidden",
-      dscodeUiDefaultsVersion: 1,
+      dscodeUiDefaultsVersion: 2,
     });
   });
 
@@ -107,7 +125,7 @@ describe("DSCode UI defaults", () => {
       tuiMode: "fullscreen",
       fullscreenExitOutput: "transcript",
       fullscreenScrollbar: "hidden",
-      dscodeUiDefaultsVersion: 1,
+      dscodeUiDefaultsVersion: 2,
     });
   });
 });

@@ -4,7 +4,7 @@ import {
   defaultWorkspacesConfig,
   parseWorkspaces,
   resolveWorkspacesConfig,
-} from "../src/workspaces.js";
+} from "../src/workspaces.ts";
 
 describe("default workspace configuration", () => {
   it("uses a URL-safe stable id under the DSCode home", () => {

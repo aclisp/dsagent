@@ -96,7 +96,6 @@ describe("DSCode Pi integration", () => {
     const execution = await spawnCapture(
       process.execPath,
       [
-        path.resolve("node_modules/tsx/dist/cli.mjs"),
         "src/cli.ts",
         "-C",
         root,
@@ -123,6 +122,7 @@ describe("DSCode Pi integration", () => {
     );
 
     expect(execution.exitCode, execution.stderr).toBe(0);
+    expect(execution.stderr).not.toContain("built-in extension `mcp` was not loaded");
     expect(execution.stdout).toContain("mock response");
     expect(payload?.model).toBe("deepseek-v4-flash");
     expect(payload).not.toHaveProperty("prompt_cache_key");
@@ -142,7 +142,6 @@ describe("DSCode Pi integration", () => {
     const execution = await spawnCapture(
       process.execPath,
       [
-        path.resolve("node_modules/tsx/dist/cli.mjs"),
         "src/cli.ts",
         "--base-url",
         `http://127.0.0.1:${address.port}`,

@@ -4,8 +4,8 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type {
   SessionPortTurnContext,
   SessionPortTurnEvent,
-} from "./session-port.js";
-import type { AgentMessage } from "./session-messages.js";
+} from "./session-port.ts";
+import type { AgentMessage } from "./session-messages.ts";
 import type {
   HttpUiBroker,
   HttpUiBrokerEvent,
@@ -13,7 +13,7 @@ import type {
   HttpUiEvent,
   HttpUiRequest,
   HttpUiResponse,
-} from "./ui-broker.js";
+} from "./ui-broker.ts";
 
 export interface HttpAdapterServerHost {
   readonly session: {
@@ -143,14 +143,24 @@ export class SessionController {
   private hasStartedModelTurn = false;
   private disposePromise: Promise<void> | undefined;
   private readonly unsubscribeBrokerEvents: () => void;
+  readonly id: string;
+  readonly workspaceId: string;
+  private readonly host: HttpAdapterServerHost;
+  private readonly log: SessionControllerLogger;
+  private readonly publishTerminalTurn: (event: SessionPortTurnEvent) => void;
 
   constructor(
-    readonly id: string,
-    readonly workspaceId: string,
-    private readonly host: HttpAdapterServerHost,
-    private readonly log: SessionControllerLogger,
-    private readonly publishTerminalTurn: (event: SessionPortTurnEvent) => void,
+    id: string,
+    workspaceId: string,
+    host: HttpAdapterServerHost,
+    log: SessionControllerLogger,
+    publishTerminalTurn: (event: SessionPortTurnEvent) => void,
   ) {
+    this.id = id;
+    this.workspaceId = workspaceId;
+    this.host = host;
+    this.log = log;
+    this.publishTerminalTurn = publishTerminalTurn;
     this.unsubscribeBrokerEvents = host.subscribe((event) => {
       this.handleActivityEvent(event);
       if (

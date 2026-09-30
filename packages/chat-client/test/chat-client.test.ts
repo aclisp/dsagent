@@ -19,7 +19,7 @@ import {
   type ChatDeliveryResult,
   type ChatReplyTarget,
   type InboundChatMessage,
-} from "../src/index.js";
+} from "../src/index.ts";
 
 class FakeSessionPort implements SessionPort {
   readonly activations: string[] = [];

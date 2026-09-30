@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createDSCodeCredentialStore,
   type DSCodeKeyringFactory,
-} from "../packages/core/src/credential-store.js";
+} from "../packages/core/src/credential-store.ts";
 
 class MemoryKeyring implements DSCodeKeyringFactory {
   readonly values = new Map<string, string>();

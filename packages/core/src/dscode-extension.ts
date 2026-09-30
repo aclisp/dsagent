@@ -15,18 +15,18 @@ import {
   SessionAccessController,
   type AccessBoundary,
   type EffectiveAccess,
-} from "./access.js";
-import { brandBlue } from "./brand.js";
-import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.js";
-import { permissionSchema, type PermissionMode } from "./config.js";
-import { optimizeDeepSeekResponsesPayload } from "./deepseek.js";
-import { registerNaturalExit } from "./exit.js";
-import { registerHooks } from "./hooks.js";
-import { registerLocalImageInput } from "./image-input.js";
-import { partitionSessionFile } from "./home.js";
-import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.js";
-import { MCPManager } from "./mcp.js";
-import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.js";
+} from "./access.ts";
+import { brandBlue } from "./brand.ts";
+import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.ts";
+import { permissionSchema, type PermissionMode } from "./config.ts";
+import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
+import { registerNaturalExit } from "./exit.ts";
+import { registerHooks } from "./hooks.ts";
+import { registerLocalImageInput } from "./image-input.ts";
+import { partitionSessionFile } from "./home.ts";
+import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
+import { MCPManager } from "./mcp.ts";
+import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
 import {
   formatPlanForExecution,
   PLAN_STATE_ENTRY,
@@ -34,30 +34,30 @@ import {
   registerPlanTool,
   restorePlanState,
   type PlanState,
-} from "./plan.js";
-import { discoverProjectCommands } from "./project-profile.js";
-import { registerDSCodeProjectTrust } from "./project-trust.js";
-import { defaultModelForProvider } from "./providers.js";
-import { confirmDestructiveCommand } from "./destructive-command-confirmation.js";
-import { confirmMcpTool } from "./mcp-confirmation.js";
+} from "./plan.ts";
+import { discoverProjectCommands } from "./project-profile.ts";
+import { registerDSCodeProjectTrust } from "./project-trust.ts";
+import { defaultModelForProvider } from "./providers.ts";
+import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
+import { confirmMcpTool } from "./mcp-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
-} from "./dangerous-command.js";
-import type { DSCodeRuntimeOptions } from "./runtime-options.js";
-import { executeSandboxedCommand, sandboxDescription } from "./sandbox.js";
-import { registerSessionCommands } from "./session-commands.js";
-import { formatStatusReport } from "./status.js";
-import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.js";
-import { registerSubagentTools } from "./subagents.js";
+} from "./dangerous-command.ts";
+import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
+import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
+import { registerSessionCommands } from "./session-commands.ts";
+import { formatStatusReport } from "./status.ts";
+import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
+import { registerSubagentTools } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
-} from "./tool-ui.js";
-import { createDSCodeReadTool } from "./read-tool.js";
-import { formatThinkingLabel, registerCodingTui } from "./tui-experience.js";
-import { Workspace } from "./workspace.js";
+} from "./tool-ui.ts";
+import { createDSCodeReadTool } from "./read-tool.ts";
+import { formatThinkingLabel, registerCodingTui } from "./tui-experience.ts";
+import { Workspace } from "./workspace.ts";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
@@ -113,6 +113,9 @@ const writeStdinParameters = Type.Object({
   }),
   chars: Type.Optional(Type.String({
     description: "Characters to write to stdin. Omit to poll the process.",
+  })),
+  eof: Type.Optional(Type.Boolean({
+    description: "Close stdin after writing any chars",
   })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
@@ -288,9 +291,12 @@ export function createDSCodeExtension(
 
       pi.on("session_shutdown", async (_event, ctx) => {
         mcp.revokeApprovals();
-        await queueSessionPartition(ctx);
-        processes.dispose();
-        await mcp.close();
+        try {
+          await queueSessionPartition(ctx);
+        } finally {
+          await processes.dispose();
+          await mcp.close();
+        }
       });
 
       pi.on("before_agent_start", async (event) => {
@@ -366,7 +372,8 @@ export function createDSCodeExtension(
           event.toolName === "write_stdin" &&
           isRecord(event.input) &&
           (typeof event.input.chars !== "string" || event.input.chars.length === 0) &&
-          event.input.terminate !== true
+          event.input.terminate !== true &&
+          event.input.eof !== true
         ) {
           return;
         }
@@ -712,11 +719,55 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("diff", {
-        description: "Show the latest patch diff in the transcript",
-        handler: async (_args, ctx) => {
-          const checkpoint = [...checkpoints]
-            .reverse()
-            .find((candidate) => !undone.has(candidate.id));
+        description: "Show a patch diff: /diff [checkpoint-id|history]",
+        getArgumentCompletions: (prefix) => [
+          { value: "history", label: "history — choose a previous patch" },
+          ...[...checkpoints].reverse().map((checkpoint) => ({
+            value: checkpoint.id,
+            label: `${checkpoint.id} — ${checkpoint.before.map((file) => file.path).join(", ")}${undone.has(checkpoint.id) ? " (undone)" : ""}`,
+          })),
+        ].filter((item) => item.value.startsWith(prefix)),
+        handler: async (args, ctx) => {
+          const selection = args.trim();
+          const history = [...checkpoints].reverse();
+          let checkpoint: PatchCheckpoint | undefined;
+          if (selection === "history") {
+            if (history.length === 0) {
+              ctx.ui.notify("No patch checkpoints in this branch.", "info");
+              return;
+            }
+            const pageSize = 10;
+            const label = (candidate: PatchCheckpoint) =>
+              `${candidate.id} — ${candidate.before.map((file) => file.path).join(", ")}${undone.has(candidate.id) ? " (undone)" : ""}`;
+            if (!ctx.hasUI) {
+              ctx.ui.notify(`${history.slice(0, pageSize).map(label).join("\n")}\nUse /checkpoints to list all patches or /diff <checkpoint-id> to inspect one.`, "info");
+              return;
+            }
+            let offset = 0;
+            while (!checkpoint) {
+              const page = history.slice(offset, offset + pageSize);
+              const labels = page.map(label);
+              const options = [...labels];
+              if (offset > 0) options.push("Newer patches…");
+              if (offset + pageSize < history.length) options.push("Older patches…");
+              const selected = await ctx.ui.select(
+                `Patch history — ${offset + 1}–${offset + page.length} of ${history.length}, newest first`,
+                options,
+              );
+              if (selected === undefined) return;
+              if (selected === "Older patches…") offset += pageSize;
+              else if (selected === "Newer patches…") offset -= pageSize;
+              else checkpoint = page[labels.indexOf(selected)];
+            }
+          } else if (selection) {
+            checkpoint = history.find((candidate) => candidate.id === selection);
+            if (!checkpoint) {
+              ctx.ui.notify(`Unknown checkpoint: ${selection}. Use /diff history or /checkpoints to list patches.`, "warning");
+              return;
+            }
+          } else {
+            checkpoint = history.find((candidate) => !undone.has(candidate.id));
+          }
           if (!checkpoint) {
             ctx.ui.notify("No active patch diff is available.", "info");
             return;
@@ -1014,7 +1065,7 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context);
+      return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context, context.expanded);
     },
     renderResult(result, renderOptions, theme, context) {
       const details = result.details as ManagedProcessResult;
@@ -1029,27 +1080,46 @@ function registerCommandTools(
     name: "write_stdin",
     label: "Write to process",
     description:
-      "Write characters to, poll, or terminate a managed process returned by exec_command.",
+      "Write characters to, send EOF to, poll, or terminate a managed process returned by exec_command.",
     promptSnippet: "write_stdin: interact with or poll a managed background process",
     parameters: writeStdinParameters,
     renderShell: "self",
     executionMode: "sequential",
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       const result = await registry.interact(params.process_id, {
+        ...(signal ? { signal } : {}),
         ...(params.chars === undefined ? {} : { chars: params.chars }),
+        ...(params.eof === undefined ? {} : { eof: params.eof }),
         yieldTimeMs: params.yield_time_ms ?? 5_000,
         terminate: params.terminate ?? false,
       });
+      if (result.writeError) {
+        throw new Error(formatManagedResult(result));
+      }
       return {
         content: [{ type: "text", text: formatManagedResult(result) }],
         details: result,
       };
     },
     renderCall(args, theme, context) {
-      const action = args.terminate ? "Stop" : args.chars ? "Write to" : "Poll";
-      return renderToolCall(action, `process ${args.process_id}`, theme, context);
+      const chars = !args.terminate && args.chars ? args.chars : undefined;
+      const action = args.terminate ? "Stop" : chars
+        ? args.eof ? "Write and send EOF to" : "Write to"
+        : args.eof ? "Send EOF to" : "Poll";
+      const detail = `process ${args.process_id}${chars ? ` · ${Buffer.byteLength(chars, "utf8")} bytes` : ""}`;
+      const header = renderToolCall(action, detail, theme, context);
+      if (!context.expanded || !chars) return header;
+      return new Text(
+        `${header.render(10_000)[0]?.trimEnd() ?? ""}\n${theme.fg("mdCode", `    ${JSON.stringify(chars)}`)}\n`,
+        0,
+        0,
+      );
     },
     renderResult(result, renderOptions, theme, context) {
+      // pi converts thrown tool errors to text with no managed-process details.
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ManagedProcessResult;
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: managedProcessSummary(details),
@@ -1060,6 +1130,7 @@ function registerCommandTools(
 }
 
 function managedProcessSummary(result: ManagedProcessResult): string {
+  if (result.writeError) return `stdin write failed · process ${result.processId} · ${result.writeError}`;
   if (result.running) return `running · process ${result.processId} · ${result.sandbox}`;
   const lines = result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0;
   return [
@@ -1070,7 +1141,7 @@ function managedProcessSummary(result: ManagedProcessResult): string {
 }
 
 function managedProcessFailed(result: ManagedProcessResult): boolean {
-  return result.timedOut === true ||
+  return Boolean(result.writeError) || result.timedOut === true ||
     (!result.running && result.exitCode !== undefined && result.exitCode !== 0);
 }
 
@@ -1317,6 +1388,7 @@ function formatManagedResult(result: ManagedProcessResult): string {
     result.output.trimEnd(),
     `process_id: ${result.processId}`,
     `status: ${result.running ? "running" : "completed"}`,
+    ...(result.writeError ? [`stdin_write_error: ${result.writeError}`] : []),
     ...(result.running ? ["Use write_stdin to poll or interact."] : []),
     ...(result.exitCode === undefined ? [] : [`exit_code: ${result.exitCode}`]),
     ...(result.timedOut ? ["timed_out: true"] : []),

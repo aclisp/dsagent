@@ -6,17 +6,17 @@ import {
   type HttpActivityPhase,
   type HttpAdapterEvent,
   type HttpAdapterServerHost,
-} from "../src/session-controller.js";
+} from "../src/session-controller.ts";
 import type {
   SessionPortTurnContext,
   SessionPortTurnEvent,
-} from "../src/session-port.js";
-import type { AgentMessage } from "../src/session-messages.js";
+} from "../src/session-port.ts";
+import type { AgentMessage } from "../src/session-messages.ts";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
   type HttpUiBrokerListener,
-} from "../src/ui-broker.js";
+} from "../src/ui-broker.ts";
 
 interface FakeHost extends HttpAdapterServerHost {
   calls: string[];

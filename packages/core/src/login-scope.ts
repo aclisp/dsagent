@@ -3,7 +3,7 @@ import {
   parseSupportedProviderId,
   SUPPORTED_PROVIDER_IDS,
   type SupportedProviderId,
-} from "./providers.js";
+} from "./providers.ts";
 
 export const LOGIN_PROVIDER_CHOICES: ReadonlyArray<{
   providerId: SupportedProviderId;

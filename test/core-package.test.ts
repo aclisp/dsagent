@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDSCodeRpcClient,
   getDSCodeRpcEntryPath,
-} from "../packages/core/src/rpc-client.js";
+} from "../packages/core/src/rpc-client.ts";
 
 describe("@aclisp/dsagent-core package boundary", () => {
   it("keeps the CLI and core package versions in lockstep", () => {

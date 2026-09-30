@@ -1,8 +1,8 @@
-import { simpleCommands } from "./dangerous-command/shell.js";
-import { elevatedCommand, shellCommandPayload, wrappedCommand } from "./dangerous-command/wrappers.js";
-import { makeDangerousMatch, withIntent, type DangerousMatch } from "./dangerous-command/match.js";
-import { dangerousGitMatch } from "./dangerous-command/git.js";
-import { dangerousServerMatch } from "./dangerous-command/server.js";
+import { simpleCommands } from "./dangerous-command/shell.ts";
+import { elevatedCommand, shellCommandPayload, wrappedCommand } from "./dangerous-command/wrappers.ts";
+import { makeDangerousMatch, withIntent, type DangerousMatch } from "./dangerous-command/match.ts";
+import { dangerousGitMatch } from "./dangerous-command/git.ts";
+import { dangerousServerMatch } from "./dangerous-command/server.ts";
 
 export interface DangerousCommandResult {
   dangerous: boolean;

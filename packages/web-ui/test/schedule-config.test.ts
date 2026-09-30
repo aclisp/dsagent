@@ -7,7 +7,7 @@ import {
   loadScheduleConfig,
   parseScheduleSource,
   scheduleDefinitionHash,
-} from "../src/schedule-config.js";
+} from "../src/schedule-config.ts";
 
 const temporaryDirectories: string[] = [];
 const NOW = new Date("2026-08-24T12:00:00.000Z");

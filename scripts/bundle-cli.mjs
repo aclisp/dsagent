@@ -69,6 +69,20 @@ export async function buildCliBundle({
           contents: 'export { HttpsProxyAgent } from "https-proxy-agent";', loader: "js", resolveDir: args.pluginData,
         }));
         context.onLoad({ filter: /\.js$/ }, args => {
+          // The package root also re-exports these factories for user
+          // extensions, so excluding only the built-in list is insufficient.
+          for (const [name, factory] of [["codemode", "createCodemodeExtension"], ["mcp", "createMcpExtension"], ["tool-search", "createToolSearchExtension"]]) {
+            if (args.path === path.join(piDist, "extensions", name, "index.js")) return {
+              contents: `export function ${factory}() { throw new Error("Pi ${name} is disabled in DSCode"); } export default () => {};`,
+              loader: "js",
+            };
+          }
+          // Keep the existing llama.cpp provider; DSCode supplies its own MCP
+          // and does not load Pi's codemode/tool-search implementations.
+          if (args.path === path.join(piDist, "extensions/index.js")) return {
+            contents: 'import llamaExtension from "./llama/index.js"; export const builtInExtensions = [{ name: "llama.cpp", factory: llamaExtension, builtin: true }];',
+            loader: "js",
+          };
           // The worker URL must refer to our emitted worker, not pi's original.
           if (args.path === path.join(piDist, "utils/image-resize.js")) return;
           let contents = readFileSync(args.path, "utf8");
@@ -106,7 +120,7 @@ export async function buildCliBundle({
   const lazy = await build({
     ...options,
     entryPoints: {
-      ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
+      ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "meta", "openai-chatgpt", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
       "bedrock-converse-stream": path.join(aiDist, "api/bedrock-converse-stream.js"),
       "image-resize-worker": path.join(piDist, "utils/image-resize-worker.js"),
     },

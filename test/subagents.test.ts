@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerSubagentTools } from "../packages/core/src/subagents.js";
-import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
+import { registerSubagentTools } from "../packages/core/src/subagents.ts";
+import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.ts";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
@@ -25,10 +25,10 @@ function assistant(content: string, stopReason = "stop", errorMessage?: string):
   });
 }
 
-async function delegate(stdout: string, exitCode: number, stderr = "") {
+async function delegate(stdout: string, exitCode: number, stderr = "", entry = "/fixture/cli.js") {
   vi.stubEnv("DSCODE_SUBAGENT_DEPTH", "0");
-  // The real CLI entrypoint is a JavaScript file; do not resolve Vitest's entrypoint.
-  vi.spyOn(process, "argv", "get").mockReturnValue([process.execPath, "/fixture/cli.js"]);
+  // Exercise the real CLI invocation shape instead of Vitest's entrypoint.
+  vi.spyOn(process, "argv", "get").mockReturnValue([process.execPath, entry]);
   vi.mocked(spawn).mockImplementationOnce(() => {
     const child = Object.assign(new EventEmitter(), {
       stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn(),
@@ -49,7 +49,7 @@ async function delegate(stdout: string, exitCode: number, stderr = "") {
     transport: "responses", promptContract: "engineering", sandbox: "workspace-write", network: false,
   } as DSCodeRuntimeOptions);
   return tool!.execute("audit", { tasks: [{ role: "explorer", task: "Inspect the repository" }] },
-    undefined, undefined, { cwd: "/fixture" } as ExtensionContext);
+    undefined, undefined, { cwd: "/fixture" } as ExtensionToolContext);
 }
 
 describe("delegated child results", () => {
@@ -65,9 +65,10 @@ describe("delegated child results", () => {
     expect(result.content).toEqual([{ type: "text", text: expect.stringContaining(expected) }]);
   });
 
-  it("keeps the final successful answer and ignores non-protocol output", async () => {
-    const result = await delegate(["startup noise", assistant("Investigating"), assistant("Done")].join("\n"), 0);
+  it.each(["/fixture/cli.js", "/fixture/src/cli.ts"])("launches %s with Node and keeps the final successful answer", async (entry) => {
+    const result = await delegate(["startup noise", assistant("Investigating"), assistant("Done")].join("\n"), 0, "", entry);
     expect(result.details).toMatchObject({ results: [{ success: true, output: "Done" }] });
+    expect(spawn).toHaveBeenCalledWith(process.execPath, expect.arrayContaining([entry]), expect.any(Object));
   });
 
   it("keeps stderr for failures before a JSON message is emitted", async () => {

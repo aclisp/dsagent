@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createDSCodeExtension } from "../packages/core/src/dscode-extension.js";
-import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.js";
+import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
+import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.ts";
 
 describe("DeepSeek provider registration", () => {
   it("keeps Flash and Pro available when another provider is active", () => {

@@ -1,20 +1,22 @@
 import process from "node:process";
 import pc from "picocolors";
-import { ensureFirstRunAuth, runAuthCommand } from "./auth.js";
-import { installDSCodeCredentialStore } from "./credential-store.js";
-import { createDSCodeExtension } from "./dscode-extension.js";
-import { initializeDSCodeHome } from "./home.js";
-import { installPiLoginSecretMask } from "./pi-login-mask.js";
-import { installPiMarkdownCodeBlocks } from "./pi-markdown.js";
-import { parseSupportedProviderId, type SupportedProviderId } from "./providers.js";
-import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.js";
-import { installDSCodeRuntimeBranding } from "./runtime-branding.js";
-import { ensureDSCodeUiDefaults } from "./ui-defaults.js";
-import { DSCODE_VERSION } from "./version.js";
+import { ensureFirstRunAuth, runAuthCommand } from "./auth.ts";
+import { installDSCodeCredentialStore } from "./credential-store.ts";
+import { createDSCodeExtension } from "./dscode-extension.ts";
+import { initializeDSCodeHome } from "./home.ts";
+import { installPiLoginSecretMask } from "./pi-login-mask.ts";
+import { installPiMarkdownCodeBlocks } from "./pi-markdown.ts";
+import { dscodePiBuiltinOverrides } from "./pi-builtins.ts";
+import { parseSupportedProviderId, type SupportedProviderId } from "./providers.ts";
+import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.ts";
+import { installDSCodeRuntimeBranding } from "./runtime-branding.ts";
+import { ensureDSCodeUiDefaults } from "./ui-defaults.ts";
+import { getDSCodeThemePaths } from "./themes.ts";
+import { DSCODE_VERSION } from "./version.ts";
 import {
   parseWindowsSandboxLifecycleCommand,
   runWindowsSandboxLifecycle,
-} from "./windows-sandbox.js";
+} from "./windows-sandbox.ts";
 
 /** Run one DSCode CLI, JSON, or RPC process using the shared runtime. */
 export async function runDSCode(argv: string[]): Promise<void> {
@@ -56,8 +58,8 @@ export async function runDSCode(argv: string[]): Promise<void> {
   await installDSCodeCredentialStore();
 
   const { main } = await import("@earendil-works/pi-coding-agent");
-  await main(parsed.piArgs, {
-    extensionFactories: [createDSCodeExtension(parsed.options)],
+  await main([...getDSCodeThemePaths().flatMap((themePath) => ["--theme", themePath]), ...parsed.piArgs], {
+    extensionFactories: [...dscodePiBuiltinOverrides, createDSCodeExtension(parsed.options)],
   });
 }
 

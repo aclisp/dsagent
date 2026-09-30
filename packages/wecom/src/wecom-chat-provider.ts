@@ -22,8 +22,8 @@ import type {
   InboundChatMessage,
   ChatConversation,
 } from "@aclisp/dsagent-chat-client";
-import { parseWeComBotMention } from "./wecom-mention.js";
-import { redactWeComPrivateUrls } from "./wecom-url-redaction.js";
+import { parseWeComBotMention } from "./wecom-mention.ts";
+import { redactWeComPrivateUrls } from "./wecom-url-redaction.ts";
 import {
   collectWeComOutboundArtifacts,
   DEFAULT_MAX_INBOUND_MEDIA_BYTES,
@@ -33,7 +33,7 @@ import {
   type WeComMediaDownloadClient,
   type WeComMediaReference,
   type WeComMediaUploadClient,
-} from "./wecom-media.js";
+} from "./wecom-media.ts";
 
 const MAX_MESSAGE_BYTES = 20_480;
 const MAX_PENDING_REPLIES = 10_000;

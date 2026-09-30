@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getDSCodeHome } from "./home.js";
+import { getDSCodeHome } from "./home.ts";
 
 export const SUPPORTED_PROVIDER_IDS = [
   "deepseek",
@@ -26,7 +26,7 @@ const DEFAULT_MODELS: Record<SupportedProviderId, string> = {
   "kimi-coding": "kimi-for-coding",
   minimax: "MiniMax-M2.7",
   xai: "grok-4.5",
-  "opencode-go": "kimi-k2.6",
+  "opencode-go": "kimi-k3",
 };
 
 const DEFAULT_EFFORTS: Record<SupportedProviderId, string> = {
