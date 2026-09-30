@@ -44,3 +44,11 @@ desktop/interactive processes and falls back safely for headless processes.
 
 For graphical authentication, use `saveProviderApiKey()` for API-key providers or pass UI callbacks
 to `authenticateProvider()` for provider OAuth and API-key flows. No terminal rendering is required.
+
+## Themes
+
+The DSCode CLI defaults to `dscode-light/dscode-dark`, following the terminal's
+appearance. These bundled themes preserve Pi 0.87.1's colors exactly; only their
+names differ. The previous `light/dark` default migrates once to the DSCode pair.
+Explicit single-theme and custom selections remain unchanged. Pi's current
+`light`, `dark`, and `system` themes remain available in `/settings`.

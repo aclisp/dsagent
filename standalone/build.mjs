@@ -50,6 +50,7 @@ async function buildPlatform(platform) {
     fs.writeFileSync(entry, `import ${JSON.stringify(path.join(root, "standalone/cli.mjs"))};\n`);
     const assets = { "package.json": piPackage, ...await prepareTools(platform, work) };
     for (const name of ["light.json", "dark.json"]) assets[name] = path.join(pi, "modes/interactive/theme", name);
+    for (const name of ["dscode-light.json", "dscode-dark.json"]) assets[name] = path.join(root, "packages/core/themes", name);
     for (const name of ["template.html", "template.css", "template.js"]) assets[name] = path.join(pi, "core/export-html", name);
     for (const name of ["marked.min.js", "highlight.min.js"]) assets[name] = path.join(pi, "core/export-html/vendor", name);
     for (const name of fs.readdirSync(path.join(pi, "modes/interactive/assets"))) assets[name] = path.join(pi, "modes/interactive/assets", name);

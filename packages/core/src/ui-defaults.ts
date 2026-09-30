@@ -13,8 +13,8 @@ interface DSCodePiSettings {
   [key: string]: unknown;
 }
 
-const CURRENT_UI_DEFAULTS_VERSION = 1;
-const ADAPTIVE_THEME = "light/dark";
+const CURRENT_UI_DEFAULTS_VERSION = 2;
+const ADAPTIVE_THEME = "dscode-light/dscode-dark";
 
 /** Apply DSCode's startup surface, cursor, and TUI defaults without replacing preferences. */
 export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<void> {
@@ -29,8 +29,11 @@ export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<vo
   if ((settings.dscodeUiDefaultsVersion ?? 0) < CURRENT_UI_DEFAULTS_VERSION) {
     // Older Pi versions persisted the theme detected at first launch. Migrate
     // built-in light/dark choices once so the UI follows the terminal again;
-    // custom themes and later explicit choices remain untouched.
-    if (settings.theme === undefined || settings.theme === "light" || settings.theme === "dark") {
+    // the previous adaptive default now uses DSCode's Pi 0.87.1 palettes.
+    // Custom themes and later explicit single-theme choices remain untouched.
+    const legacyDetectedTheme = (settings.dscodeUiDefaultsVersion ?? 0) < 1 &&
+      (settings.theme === "light" || settings.theme === "dark");
+    if (settings.theme === undefined || settings.theme === "light/dark" || legacyDetectedTheme) {
       settings.theme = ADAPTIVE_THEME;
     }
     settings.dscodeUiDefaultsVersion = CURRENT_UI_DEFAULTS_VERSION;

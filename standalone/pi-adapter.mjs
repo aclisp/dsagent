@@ -60,6 +60,10 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
           throw new Error(`Excluded Core module reached standalone graph: ${file}`);
         }
         audit.inputs.add(file);
+        if (file === path.join(root, "packages/core/dist/themes.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function getDSCodeThemePaths() { return [assets["dscode-light.json"], assets["dscode-dark.json"]]; }' };
+        }
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));
           return { contents: `export * from ${JSON.stringify(path.join(standalone, replacements.get(file)))};`, loader: "js" };

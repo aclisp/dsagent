@@ -20,6 +20,7 @@
     "!dist/cli-bundle-*",
     "!dist/standalone",
     "packages/core/dist",
+    "packages/core/themes",
     "packages/core/package.json",
     "packages/core/README.md",
     "packages/core/LICENSE",

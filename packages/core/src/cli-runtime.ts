@@ -11,6 +11,7 @@ import { parseSupportedProviderId, type SupportedProviderId } from "./providers.
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.ts";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.ts";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.ts";
+import { getDSCodeThemePaths } from "./themes.ts";
 import { DSCODE_VERSION } from "./version.ts";
 import {
   parseWindowsSandboxLifecycleCommand,
@@ -57,7 +58,7 @@ export async function runDSCode(argv: string[]): Promise<void> {
   await installDSCodeCredentialStore();
 
   const { main } = await import("@earendil-works/pi-coding-agent");
-  await main(parsed.piArgs, {
+  await main([...getDSCodeThemePaths().flatMap((themePath) => ["--theme", themePath]), ...parsed.piArgs], {
     extensionFactories: [...dscodePiBuiltinOverrides, createDSCodeExtension(parsed.options)],
   });
 }
