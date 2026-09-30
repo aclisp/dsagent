@@ -246,7 +246,8 @@ auto-discovered and listed in the system prompt, and the model loads a skill's `
 The Web UI keeps the CLI checkpoint commands available. `/checkpoints` lists the current branch's
 durable `apply_patch` checkpoints, `/diff` displays the latest active patch, and
 `/diff <checkpoint-id>` displays an earlier patch (including an undone patch).
-`/diff history` opens a checkpoint picker, newest first. Diffs appear in a complete,
+`/diff history` opens a checkpoint picker, newest first, with 10 checkpoints per page
+and Older/Newer options. Diffs appear in a complete,
 scrollable monospace block, and `/undo` restores the latest active checkpoint after browser
 confirmation. Cancelled, successful, and rejected restores are shown immediately. `--force`
 confirms that later edits will be overwritten; it does not bypass workspace path protection.

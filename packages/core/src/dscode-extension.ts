@@ -736,16 +736,29 @@ export function createDSCodeExtension(
               ctx.ui.notify("No patch checkpoints in this branch.", "info");
               return;
             }
-            const labels = history.map((candidate) =>
-              `${candidate.id} — ${candidate.before.map((file) => file.path).join(", ")}${undone.has(candidate.id) ? " (undone)" : ""}`,
-            );
+            const pageSize = 10;
+            const label = (candidate: PatchCheckpoint) =>
+              `${candidate.id} — ${candidate.before.map((file) => file.path).join(", ")}${undone.has(candidate.id) ? " (undone)" : ""}`;
             if (!ctx.hasUI) {
-              ctx.ui.notify(`${labels.join("\n")}\nUse /diff <checkpoint-id> to inspect a patch.`, "info");
+              ctx.ui.notify(`${history.slice(0, pageSize).map(label).join("\n")}\nUse /checkpoints to list all patches or /diff <checkpoint-id> to inspect one.`, "info");
               return;
             }
-            const selected = await ctx.ui.select("Patch history — newest first", labels);
-            if (selected === undefined) return;
-            checkpoint = history[labels.indexOf(selected)];
+            let offset = 0;
+            while (!checkpoint) {
+              const page = history.slice(offset, offset + pageSize);
+              const labels = page.map(label);
+              const options = [...labels];
+              if (offset > 0) options.push("Newer patches…");
+              if (offset + pageSize < history.length) options.push("Older patches…");
+              const selected = await ctx.ui.select(
+                `Patch history — ${offset + 1}–${offset + page.length} of ${history.length}, newest first`,
+                options,
+              );
+              if (selected === undefined) return;
+              if (selected === "Older patches…") offset += pageSize;
+              else if (selected === "Newer patches…") offset -= pageSize;
+              else checkpoint = page[labels.indexOf(selected)];
+            }
           } else if (selection) {
             checkpoint = history.find((candidate) => candidate.id === selection);
             if (!checkpoint) {

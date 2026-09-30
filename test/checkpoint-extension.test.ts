@@ -139,15 +139,40 @@ describe("checkpoint extension commands", () => {
     });
     await commands.get("diff")!.handler("history", ctx);
     expect(entries.at(-1)!.data).toEqual(originalDiff);
-    expect(select).toHaveBeenCalledWith("Patch history — newest first", expect.any(Array));
+    expect(select).toHaveBeenCalledWith("Patch history — 1–2 of 2, newest first", expect.any(Array));
 
     const count = entries.length;
     await commands.get("diff")!.handler("history", ctx); // cancelled picker
     await commands.get("diff")!.handler("missing", ctx);
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("Unknown checkpoint: missing"), "warning");
     await commands.get("diff")!.handler("history", { ...ctx, hasUI: false });
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Use /diff <checkpoint-id>"), "info");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("/diff <checkpoint-id>"), "info");
     expect(entries).toHaveLength(count);
+
+    for (let index = 0; index < 19; index++) {
+      await tools.get("apply_patch")!.execute(`page-${index}`, {
+        input: `*** Begin Patch\n*** Add File: page-${index}.txt\n+page\n*** End Patch`,
+      }, undefined, undefined, ctx as any);
+    }
+    select.mockImplementationOnce(async (title, items) => {
+      expect(title).toContain("1–10 of 21");
+      expect(items).toHaveLength(11);
+      expect(items).not.toContain("Newer patches…");
+      return "Older patches…";
+    }).mockImplementationOnce(async (title, items) => {
+      expect(title).toContain("11–20 of 21");
+      expect(items).toHaveLength(12);
+      return "Newer patches…";
+    }).mockResolvedValueOnce("Older patches…")
+      .mockResolvedValueOnce("Older patches…")
+      .mockImplementationOnce(async (title, items) => {
+        expect(title).toContain("21–21 of 21");
+        expect(items).toHaveLength(2);
+        expect(items).not.toContain("Older patches…");
+        return items[0];
+      });
+    await commands.get("diff")!.handler("history", ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
   });
 
   it("explains force overwrite in the confirmation request", async () => {
