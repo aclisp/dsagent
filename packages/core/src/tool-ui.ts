@@ -17,11 +17,17 @@ export function renderToolCall(
   detail: string | undefined,
   theme: Theme,
   context: ToolPresentationContext,
+  expanded = false,
 ): Text {
   const bulletColor = context.isError ? "error" : context.isPartial ? "muted" : "success";
+  const title = `${theme.fg(bulletColor, "•")} ${theme.fg("toolTitle", theme.bold(label))}`;
+  if (expanded && detail) {
+    const command = detail.split("\n").map((line) => theme.fg("mdCode", `    ${line}`)).join("\n");
+    return new Text(`${title}\n${command}\n`, 0, 0);
+  }
   const normalizedDetail = detail ? oneLine(detail) : "";
   return new Text(
-    `${theme.fg(bulletColor, "•")} ${theme.fg("toolTitle", theme.bold(label))}${
+    `${title}${
       normalizedDetail ? ` ${theme.fg("muted", normalizedDetail)}` : ""
     }`,
     0,

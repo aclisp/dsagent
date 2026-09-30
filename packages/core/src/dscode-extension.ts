@@ -1021,7 +1021,7 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context);
+      return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context, context.expanded);
     },
     renderResult(result, renderOptions, theme, context) {
       const details = result.details as ManagedProcessResult;
