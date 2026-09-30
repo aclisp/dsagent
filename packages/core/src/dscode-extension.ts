@@ -7,7 +7,7 @@ import type {
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { generateDiffString, renderDiff } from "@earendil-works/pi-coding-agent";
+import { generateDiffString, renderDiff, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   commandNeedsNetwork,
@@ -20,6 +20,7 @@ import { brandBlue } from "./brand.ts";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.ts";
 import { permissionSchema, type PermissionMode } from "./config.ts";
 import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
+import { isStandalone } from "./distribution.ts";
 import { registerNaturalExit } from "./exit.ts";
 import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
@@ -301,6 +302,12 @@ export function createDSCodeExtension(
 
       pi.on("before_agent_start", async (event) => {
         lastAgentFailed = false;
+        if (isStandalone) {
+          event.systemPromptOptions.sections.docs = [
+            "This standalone CLI omits local Pi docs/examples and disables user extensions and Pi package management.",
+            `For questions about Pi, start at: https://raw.githubusercontent.com/earendil-works/pi/v${PI_VERSION}/packages/coding-agent/docs/index.md`,
+          ].join("\n");
+        }
         const currentAccess = effectiveAccess();
         const systemPrompt = effectiveSystemPrompt(
           event.systemPrompt,
