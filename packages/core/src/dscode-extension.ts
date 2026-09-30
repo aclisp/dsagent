@@ -1102,8 +1102,18 @@ function registerCommandTools(
       };
     },
     renderCall(args, theme, context) {
-      const action = args.terminate ? "Stop" : args.eof ? "Send EOF to" : args.chars ? "Write to" : "Poll";
-      return renderToolCall(action, `process ${args.process_id}`, theme, context);
+      const chars = !args.terminate && args.chars ? args.chars : undefined;
+      const action = args.terminate ? "Stop" : chars
+        ? args.eof ? "Write and send EOF to" : "Write to"
+        : args.eof ? "Send EOF to" : "Poll";
+      const detail = `process ${args.process_id}${chars ? ` · ${Buffer.byteLength(chars, "utf8")} bytes` : ""}`;
+      const header = renderToolCall(action, detail, theme, context);
+      if (!context.expanded || !chars) return header;
+      return new Text(
+        `${header.render(10_000)[0]?.trimEnd() ?? ""}\n${theme.fg("mdCode", `    ${JSON.stringify(chars)}`)}\n`,
+        0,
+        0,
+      );
     },
     renderResult(result, renderOptions, theme, context) {
       // pi converts thrown tool errors to text with no managed-process details.

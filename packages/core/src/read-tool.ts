@@ -11,7 +11,7 @@ export function createDSCodeReadTool(cwd: string): ReturnType<typeof createReadT
       const range = args.limit !== undefined
         ? `:${start}-${start + args.limit - 1}`
         : args.offset !== undefined ? `:${start}…` : "";
-      return renderToolCall("Read", `${args.path ?? "file"}${range}`, theme, context);
+      return renderToolCall("Read", `${args.path ?? "file"}${range}`, theme, context, context.expanded);
     },
     renderResult(result, options, theme, context) {
       return renderCollapsibleToolResult(result, options, theme, context);
