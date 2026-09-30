@@ -4,6 +4,7 @@ import path from "node:path";
 interface DSCodePiSettings {
   theme?: string;
   quietStartup?: boolean;
+  collapseChangelog?: boolean;
   showHardwareCursor?: boolean;
   hideThinkingBlock?: boolean;
   tuiMode?: "regular" | "fullscreen";
@@ -41,6 +42,10 @@ export async function ensureDSCodeUiDefaults(agentDirectory: string): Promise<vo
   }
   if (settings.quietStartup === undefined) {
     settings.quietStartup = true;
+    changed = true;
+  }
+  if (settings.collapseChangelog === undefined) {
+    settings.collapseChangelog = true;
     changed = true;
   }
   if (settings.showHardwareCursor === undefined) {

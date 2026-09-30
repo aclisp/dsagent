@@ -17,6 +17,7 @@ describe("DSCode UI defaults", () => {
     await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({
       theme: "light/dark",
       quietStartup: false,
+      collapseChangelog: true,
       dscodeUiDefaultsVersion: 1,
     }));
     await ensureDSCodeUiDefaults(directory);
@@ -43,6 +44,7 @@ describe("DSCode UI defaults", () => {
     expect(settings).toEqual({
       theme: "dscode-light/dscode-dark",
       quietStartup: true,
+      collapseChangelog: true,
       showHardwareCursor: true,
       hideThinkingBlock: true,
       tuiMode: "fullscreen",
@@ -59,6 +61,7 @@ describe("DSCode UI defaults", () => {
     await ensureDSCodeUiDefaults(directory);
     expect(JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"))).toEqual({
       quietStartup: false,
+      collapseChangelog: true,
       showHardwareCursor: true,
       theme: "dscode-light/dscode-dark",
       hideThinkingBlock: true,
@@ -75,6 +78,7 @@ describe("DSCode UI defaults", () => {
     const contents = `${JSON.stringify({
       theme: "light",
       quietStartup: true,
+      collapseChangelog: false,
       showHardwareCursor: false,
       hideThinkingBlock: false,
       tuiMode: "regular",
@@ -93,6 +97,7 @@ describe("DSCode UI defaults", () => {
     await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({
       theme: "light",
       quietStartup: false,
+      collapseChangelog: true,
       showHardwareCursor: false,
       dscodeUiDefaultsVersion: 1,
     }));
@@ -100,6 +105,7 @@ describe("DSCode UI defaults", () => {
     expect(JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"))).toEqual({
       theme: "light",
       quietStartup: false,
+      collapseChangelog: true,
       showHardwareCursor: false,
       hideThinkingBlock: true,
       tuiMode: "fullscreen",
@@ -120,6 +126,7 @@ describe("DSCode UI defaults", () => {
     expect(JSON.parse(await fs.readFile(path.join(directory, "settings.json"), "utf8"))).toEqual({
       theme: "catppuccin",
       quietStartup: true,
+      collapseChangelog: true,
       showHardwareCursor: true,
       hideThinkingBlock: true,
       tuiMode: "fullscreen",
