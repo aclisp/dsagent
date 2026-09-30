@@ -43,6 +43,7 @@ describe("checkpoint extension commands", () => {
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
     const notify = vi.fn();
     const confirm = vi.fn(async () => true);
+    const select = vi.fn<(title: string, items: string[]) => Promise<string | undefined>>(async () => undefined);
     const ctx = {
       cwd: root,
       mode: "rpc",
@@ -50,10 +51,14 @@ describe("checkpoint extension commands", () => {
       ui: new Proxy({
         notify,
         confirm,
+        select,
         theme: createTestTheme(),
       }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }),
       isProjectTrusted: () => true,
-      sessionManager: { getBranch: () => [], getSessionFile: () => undefined },
+      sessionManager: {
+        getBranch: () => entries.map((entry) => ({ type: "custom", ...entry })),
+        getSessionFile: () => undefined,
+      },
     };
     const extension = createDSCodeExtension(
       parseRuntimeArgs(["-C", root, "--no-mcp", "--permission", "auto"]).options,
@@ -61,6 +66,8 @@ describe("checkpoint extension commands", () => {
     await (typeof extension === "function" ? extension(pi) : extension.factory(pi));
     expect(tools.get("read")?.renderShell).toBe("self");
     for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
+    await commands.get("diff")!.handler("history", ctx);
+    expect(notify).toHaveBeenCalledWith("No patch checkpoints in this branch.", "info");
 
     await fs.writeFile(path.join(root, "config.txt"), "timeout = 1000\n");
     const patch = [
@@ -112,6 +119,35 @@ describe("checkpoint extension commands", () => {
     await commands.get("undo")!.handler("", ctx);
     await expect(fs.access(path.join(root, "checkpoint.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(notify).toHaveBeenCalledWith("Restored checkpoint.txt, config.txt", "info");
+
+    const originalDiff = entries.find((entry) => entry.customType === "dscode-diff")!.data as { checkpointId: string };
+    const secondPatch = "*** Begin Patch\n*** Add File: second.txt\n+second\n*** End Patch";
+    await tools.get("apply_patch")!.execute("call-next", { input: secondPatch }, undefined, undefined, ctx as any);
+    // Replaying the current branch must retain older checkpoints and their undo status.
+    for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
+    await commands.get("diff")!.handler("", ctx);
+    expect(entries.at(-1)).toMatchObject({ data: { patch: secondPatch } });
+    await commands.get("diff")!.handler(originalDiff.checkpointId, ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
+    await expect(fs.access(path.join(root, "checkpoint.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    select.mockImplementationOnce(async (_title, items) => {
+      expect(items[0]).toContain("second.txt");
+      const older = items.find((item) => item.startsWith(originalDiff.checkpointId));
+      expect(older).toContain("(undone)");
+      return older;
+    });
+    await commands.get("diff")!.handler("history", ctx);
+    expect(entries.at(-1)!.data).toEqual(originalDiff);
+    expect(select).toHaveBeenCalledWith("Patch history — newest first", expect.any(Array));
+
+    const count = entries.length;
+    await commands.get("diff")!.handler("history", ctx); // cancelled picker
+    await commands.get("diff")!.handler("missing", ctx);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Unknown checkpoint: missing"), "warning");
+    await commands.get("diff")!.handler("history", { ...ctx, hasUI: false });
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Use /diff <checkpoint-id>"), "info");
+    expect(entries).toHaveLength(count);
   });
 
   it("explains force overwrite in the confirmation request", async () => {

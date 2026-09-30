@@ -719,11 +719,42 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("diff", {
-        description: "Show the latest patch diff in the transcript",
-        handler: async (_args, ctx) => {
-          const checkpoint = [...checkpoints]
-            .reverse()
-            .find((candidate) => !undone.has(candidate.id));
+        description: "Show a patch diff: /diff [checkpoint-id|history]",
+        getArgumentCompletions: (prefix) => [
+          { value: "history", label: "history — choose a previous patch" },
+          ...[...checkpoints].reverse().map((checkpoint) => ({
+            value: checkpoint.id,
+            label: `${checkpoint.id} — ${checkpoint.before.map((file) => file.path).join(", ")}${undone.has(checkpoint.id) ? " (undone)" : ""}`,
+          })),
+        ].filter((item) => item.value.startsWith(prefix)),
+        handler: async (args, ctx) => {
+          const selection = args.trim();
+          const history = [...checkpoints].reverse();
+          let checkpoint: PatchCheckpoint | undefined;
+          if (selection === "history") {
+            if (history.length === 0) {
+              ctx.ui.notify("No patch checkpoints in this branch.", "info");
+              return;
+            }
+            const labels = history.map((candidate) =>
+              `${candidate.id} — ${candidate.before.map((file) => file.path).join(", ")}${undone.has(candidate.id) ? " (undone)" : ""}`,
+            );
+            if (!ctx.hasUI) {
+              ctx.ui.notify(`${labels.join("\n")}\nUse /diff <checkpoint-id> to inspect a patch.`, "info");
+              return;
+            }
+            const selected = await ctx.ui.select("Patch history — newest first", labels);
+            if (selected === undefined) return;
+            checkpoint = history[labels.indexOf(selected)];
+          } else if (selection) {
+            checkpoint = history.find((candidate) => candidate.id === selection);
+            if (!checkpoint) {
+              ctx.ui.notify(`Unknown checkpoint: ${selection}. Use /diff history or /checkpoints to list patches.`, "warning");
+              return;
+            }
+          } else {
+            checkpoint = history.find((candidate) => !undone.has(candidate.id));
+          }
           if (!checkpoint) {
             ctx.ui.notify("No active patch diff is available.", "info");
             return;
