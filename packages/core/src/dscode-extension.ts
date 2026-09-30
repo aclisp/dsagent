@@ -63,6 +63,10 @@ import { Workspace } from "./workspace.ts";
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
 const DIFF_ENTRY = "dscode-diff";
+const STANDALONE_DOCS = [
+  "This standalone CLI omits local Pi docs/examples and disables user extensions and Pi package management.",
+  `For questions about Pi, start at: https://raw.githubusercontent.com/earendil-works/pi/v${PI_VERSION}/packages/coding-agent/docs/index.md`,
+].join("\n");
 
 interface DiffEntryData {
   checkpointId: string;
@@ -303,10 +307,7 @@ export function createDSCodeExtension(
       pi.on("before_agent_start", async (event) => {
         lastAgentFailed = false;
         if (isStandalone) {
-          event.systemPromptOptions.sections.docs = [
-            "This standalone CLI omits local Pi docs/examples and disables user extensions and Pi package management.",
-            `For questions about Pi, start at: https://raw.githubusercontent.com/earendil-works/pi/v${PI_VERSION}/packages/coding-agent/docs/index.md`,
-          ].join("\n");
+          event.systemPromptOptions.sections.docs = STANDALONE_DOCS;
         }
         const currentAccess = effectiveAccess();
         const systemPrompt = effectiveSystemPrompt(
@@ -833,7 +834,9 @@ export function createDSCodeExtension(
       pi.registerCommand("x-7f3c9a", {
         description: "Show an internal runtime diagnostic snapshot",
         handler: async (_args, ctx) => {
-          const base = ctx.getSystemPrompt();
+          let base = ctx.getSystemPrompt();
+          // Pi drops before_agent_start overrides when idle; preview the next run's docs.
+          if (isStandalone) base = base.replace(/<docs>[\s\S]*?<\/docs>/, `<docs>\n${STANDALONE_DOCS}\n</docs>`);
           // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
           const effective = base.includes("# DSCode engineering contract")
             ? base
