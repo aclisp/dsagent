@@ -670,7 +670,7 @@ function toolLabel(name) {
   if (["read_file", "read", "view_image"].includes(name)) return name === "view_image" ? "查看图片" : "读取文件";
   if (["list_files", "search_files", "find", "glob"].includes(name)) return "查找文件";
   if (["apply_patch", "write_file", "edit_file", "edit", "write"].includes(name)) return "修改文件";
-  if (["exec_command", "run_command", "bash", "write_stdin"].includes(name)) return "执行命令";
+  if (["exec_command", "bash", "write_stdin"].includes(name)) return "执行命令";
   if (name === "update_plan") return "更新计划";
   if (name.includes("web") || name.includes("search")) return "搜索资料";
   return "执行操作";

@@ -338,14 +338,13 @@ export function createDSCodeExtension(
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
         if (
           event.toolName === "bash" ||
-          event.toolName === "run_command" ||
           event.toolName === "edit" ||
           event.toolName === "write"
         ) {
           return {
             block: true,
             reason:
-              event.toolName === "bash" || event.toolName === "run_command"
+              event.toolName === "bash"
                 ? "This shell tool bypasses DSCode's managed OS sandbox. Use exec_command instead."
                 : "This write tool bypasses DSCode checkpoints. Use apply_patch instead.",
           };
