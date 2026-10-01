@@ -197,6 +197,43 @@ Provider API key 不会传给命令、hooks 或 stdio MCP server。
 
 ## 扩展与自动化
 
+### 输入 hooks
+
+内置 hook runner 支持在 `~/.dscode/hooks.json` 和可信项目的 `.dscode/hooks.json` 中配置
+`hooks.input`，standalone CLI 同样可用。全局 hooks 先运行，项目 hooks 后运行。例如：
+
+```json
+{
+  "hooks": {
+    "input": [
+      {
+        "command": "node",
+        "args": ["{cwd}/append-input.cjs", "{payload}"]
+      }
+    ]
+  }
+}
+```
+
+在项目目录创建 `append-input.cjs`：
+
+```js
+const input = JSON.parse(process.argv[2]);
+process.stdout.write(`${input.text}\n\n请用中文回复。`);
+```
+
+`{payload}` 只包含 `event: "input"` 和 `text`。向 stdout 输出完整的替换消息，格式为纯文本；
+不输出内容或只输出空白字符时保留原文本。非空输出原样保留，包括空白字符；后续 hooks 收到更新后的
+文本。诊断信息写入 stderr。
+
+DSCode 在 skill/template 展开前对 CLI 和 RPC 的用户输入运行这些 hooks，也支持排队消息。
+Extensions 生成的输入和由 extensions 直接处理的命令不会触发它们。附件与消息投递行为仍由
+DSCode/Pi 控制，hooks 只能替换文本。命令失败、超时或输出截断时会产生 extension error；Pi 使用进入
+该 handler 时的输入继续处理，不应用已经完成的部分替换。Hooks 使用当前 sandbox/network 权限；standalone 版本也需要系统
+提供相应的外部可执行程序。修改 hook 配置后需重启会话。
+
+### 扩展能力
+
 - 分层读取 `AGENTS.md` 和 `CLAUDE.md`
 - 用户级和项目级 Agent Skills
 - 可信项目 hooks 与 MCP server

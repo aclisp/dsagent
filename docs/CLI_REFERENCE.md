@@ -247,6 +247,45 @@ server environments.
 - VS Code extension in [editors/vscode](../editors/vscode/README.md)
 - Run project compiler and language checks through `exec_command`
 
+### Input hooks
+
+The built-in hook runner supports `hooks.input` in `~/.dscode/hooks.json` and trusted-project
+`.dscode/hooks.json`, including in the standalone CLI. Global hooks run before project hooks.
+For example, configure a project-local script:
+
+```json
+{
+  "hooks": {
+    "input": [
+      {
+        "command": "node",
+        "args": ["{cwd}/append-input.cjs", "{payload}"]
+      }
+    ]
+  }
+}
+```
+
+Create `append-input.cjs` in the project directory:
+
+```js
+const input = JSON.parse(process.argv[2]);
+process.stdout.write(`${input.text}\n\nPlease respond in Chinese.`);
+```
+
+`{payload}` contains only `event: "input"` and `text`. Write the complete replacement message as
+plain text to stdout; empty or whitespace-only output leaves the text unchanged. Nonempty output
+is preserved exactly, including whitespace, and later hooks receive the updated text. Write
+diagnostics to stderr.
+
+DSCode applies these hooks to human input from the CLI and RPC, including queued messages, before
+skill/template expansion. Extension-generated input and commands handled directly by extensions
+bypass them. Attachments and delivery behavior remain controlled by DSCode/Pi; hooks can only
+replace text. Failed, timed-out, or truncated responses raise an extension error; Pi continues
+with the input received by this handler, without applying partial replacements.
+Hooks use the current sandbox/network access and require an external executable even in standalone
+builds. Restart the session after editing hook configuration.
+
 Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
 after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
 client backed by the exact same Agent, tools, permissions, and local session format as the terminal client:

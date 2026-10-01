@@ -91,6 +91,7 @@ The `experiments/standalone/` directory preserves historical feasibility records
 - Defaults to `danger-full-access` without implicitly granting `permission=full`; existing approvals remain in effect.
 - Forces file credentials without rewriting configuration to override old keyring settings or migrating keyring credentials.
 - Disables user pi extensions and pi package management; retains the built-in DSCode extension.
+- Replaces Pi's local documentation paths in the system prompt with its version-matched online documentation index and a brief standalone limitation statement.
 - Excludes SQLite, keyring, the vision CLI, Linux native clipboard helpers, Kerberos, and native WebSocket accelerators. The macOS native clipboard helper is embedded in the executable.
 - Embeds themes, HTML templates, Photon WASM, and the image worker without requiring adjacent auxiliary files; disables Bun's automatic loading of project `.env`, bunfig, tsconfig, and package.json as runtime configuration.
 - Normal sessions, credentials, checkpoints, bundled tools, and user output may still be written to disk. Users supply other external tools and MCP services.
