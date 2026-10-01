@@ -21,7 +21,7 @@ all of those. The difference is the design center:
 | DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, native free-form patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
 | Model access and images | DeepSeek API key, OpenAI API key, or eligible ChatGPT plan; image input on models that advertise vision support | Claude account/API access with multimodal support | ChatGPT plan or OpenAI API access with multimodal support |
 | Context and cost | 1M context; `/status` exposes DeepSeek cache hits, tokens, reasoning, and estimated cost | Product-specific context and usage reporting | Product-specific context and usage reporting |
-| Parallel work | Four built-in roles, up to four concurrent tasks; implementers use isolated Git worktrees | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
+| Parallel work | One investigation-only child per call; the parent handles edits and validation | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
 | Safety | Workspace sandbox and no command network by default; scoped per-command network/host approvals; durable patch checkpoints | Configurable permission and sandbox system with filesystem and network controls | OS sandbox, approvals, and no network by default for local commands |
 | Runtime ownership | MIT-licensed runtime with a focused DeepSeek adapter | Full product runtime is proprietary; Anthropic publishes its sandbox runtime separately | Open-source CLI plus broader OpenAI product surfaces |
 | Extensibility | `AGENTS.md`, `CLAUDE.md`, Skills, hooks, MCP, JSONL, RPC | Project instructions, skills, hooks, MCP, plugins | `AGENTS.md`, skills, hooks, MCP, plugins, SDK, app server |
@@ -43,23 +43,17 @@ the cache-read price directly and exposes current cache, token, reasoning, and c
 `/status`. We avoid hard-coding price claims here because provider pricing changes; use the official
 [DeepSeek pricing page](https://api-docs.deepseek.com/quick_start/pricing/).
 
-### 3. Opinionated parallelism
+### 3. Independent investigation
 
-DSCode ships four roles instead of asking every project to invent them:
-
-- `explorer`: read-only repository investigation
-- `implementer`: candidate changes in an isolated worktree
-- `reviewer`: independent read-only review
-- `tester`: focused tests and failure diagnosis
-
-Up to four tasks run concurrently, while the primary agent owns integration and final validation. Claude
-Code and Codex also support parallel agents and worktrees; DSCode's distinction is the built-in role model
-and its use of DeepSeek V4 Flash's cost and concurrency profile.
+Opt-in `delegate` starts one child with a fresh context to inspect files and return evidence.
+The child can only read and search files; it cannot execute commands, edit files, use MCP,
+or delegate. The parent owns changes and verification. There are no built-in roles,
+parallel task queues, or automatic worktrees.
 
 ### 4. Local, inspectable control
 
 DSCode keeps sessions locally, uses an OS-enforced command sandbox, blocks command network by default,
-strips model-provider API keys from child-process environments, and creates a durable checkpoint after every
+strips model-provider API keys from shell-command environments, and creates a durable checkpoint after every
 successful patch. Conflict-safe `/undo` refuses to overwrite files changed after the checkpoint.
 
 ### 5. A small, forkable runtime

@@ -68,16 +68,11 @@ session — values: `--provider --base-url --transport --permission --sandbox --
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
-HTTP hosts support `ask`, `auto`, and `full` permissions. Final `plan` configuration,
-including an effective `DSCODE_PERMISSION=plan`, is rejected by `createHttpAdapter`
-before the server starts and by `createAgentSessionHost` before creating a session.
-Explicit permission arguments override the environment as in the CLI; there is no
-automatic downgrade. `/plan`, `/permissions plan`, `/base-url`, and `/agents` fail
-without invoking the model. CLI TUI, JSON, and RPC plan support is unchanged.
-History containing plans can still be resumed under the current runtime permission.
-`--sandbox read-only` remains supported. An effective tool selection containing
-`update_plan` is rejected at startup; this tool is not registered in HTTP hosts.
-`--no-tools` overrides explicit tool selection, including `update_plan`.
+CLI and HTTP hosts support `ask`, `auto`, and `full` permissions.
+`--sandbox read-only` remains available as a command sandbox boundary.
+`/base-url` and CLI session-navigation commands fail without invoking the model.
+HTTP does not register the CLI-only `delegate` tool, and explicitly selecting it
+is rejected at startup. `--no-tools` overrides explicit tool selection.
 
 The default tool selection is `read,exec_command,write_stdin,apply_patch`. Enabled MCP tools are added even with an explicit `--tools` list.
 `--no-mcp` skips MCP connections and registration; `--no-tools` skips MCP and disables

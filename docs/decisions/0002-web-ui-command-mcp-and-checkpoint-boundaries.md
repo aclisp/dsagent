@@ -2,29 +2,24 @@
 
 - 状态：已接受；任务 1、jobs 专项、任务 2、任务 3 已实现并验收
 - 日期：2026-09-07
-- 更新：2026-09-07
+- 更新：2026-10-02（规划移除与子进程简化见 ADR-0004）
 
 ## 背景
 
 DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和生命周期边界不同。
-需要明确以下行为，避免 Web UI 把 CLI 专用命令、计划权限或未发现的 MCP 工具暴露给用户，
+需要明确以下行为，避免 Web UI 把 CLI 专用命令、未发现的 MCP 工具暴露给用户，
 同时让 Web UI 能安全使用 Core 已有的 checkpoint 恢复能力。
 
 ## 决策
 
 ### 1. HTTP host 的命令与权限边界
 
-1. HTTP host 拒绝 CLI 会改变会话结构或依赖 TUI 的命令：`/plan`、`/base-url`、`/agents`、
-   `/clear`、`/new`、`/resume`、`/fork`、`/clone`、`/import` 和 `/tree`。命令名不区分大小写，
-   带参数的调用也必须在进入模型前拒绝。CLI 保留这些命令的原有注册和行为。
-2. Web/HTTP host 不支持 `plan` 权限。运行时参数最终解析为 `permission=plan` 时，服务器启动
-   直接失败，不自动降级为 `auto`；`/permissions plan` 请求同样失败，不调用模型、不改变权限
-   或会话。`/permissions` 只展示 `ask|auto|full`。
-3. CLI 的 TUI、JSON 和 RPC 模式继续支持 `plan`，历史 session 中已有的 plan 权限记录和结构化
-   计划可以在 Web 中恢复并查看，但不会在 Web 中自动执行计划。
-4. Web/HTTP host 不注册、不允许激活 `update_plan`。显式选择该工具时启动失败；`--no-tools`
-   优先级最高，因此 `--no-tools` 与显式 `update_plan` 同时出现时仍然禁用全部工具。CLI 保留
-   `update_plan` 及其 plan 模式行为。
+1. HTTP host 拒绝 CLI 会改变会话结构或依赖 TUI 的命令：`/base-url`、`/clear`、`/new`、
+   `/resume`、`/fork`、`/clone`、`/import` 和 `/tree`。命令名不区分大小写，带参数也必须
+   在进入模型前拒绝。
+2. CLI 和 Web/HTTP host 使用相同的 `ask|auto|full` 权限集合。
+3. Web/HTTP host 不注册、不允许激活 `delegate`，显式选择该工具时启动失败。
+   `--no-tools` 优先级最高，同时显式选择 `delegate` 时仍禁用全部工具。
 
 ### 2. 默认工具与 MCP
 
@@ -41,9 +36,7 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
    已发现、当前 active、配置禁用和失败原因。
 5. MCP 只在 session 初始化时发现，不增加热加载或自动重连；配置变化需要重新初始化 session。
    重新初始化前清理旧的 MCP 注册和 active 工具，避免 stale tool 泄漏。
-6. CLI plan 模式保留 `update_plan` 和允许只读探索的工具，暂时停用 MCP；退出 plan 后恢复
-   进入前的工具集合。`ask`/`auto` 下 MCP 调用仍需审批，非交互环境无法审批时拒绝，`full`
-   保留免审批语义。
+6. `ask`/`auto` 下 MCP 调用仍需审批，非交互环境无法审批时拒绝，`full` 保留免审批语义。
 
 ### 3. Managed jobs 生命周期
 
@@ -78,14 +71,14 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 
 ## 非目标
 
-- Web 不新增 plan 权限或 `update_plan` 展示能力。
+- Web 不新增 CLI 子进程调查能力。
 - MCP 不增加热加载、自动重连或 `/mcp reload`。
 - jobs 不引入过期时间、持久化、轻量完成状态或活跃进程数量限制。
 - checkpoint UI 不扩展为版本管理或仓库级 Git diff 工具。
 
 ## 实现入口
 
-- `packages/http-adapter/src/agent-session-host.ts`：HTTP 命令限制、plan 权限和 Web 工具边界。
+- `packages/http-adapter/src/agent-session-host.ts`：HTTP 命令限制、权限和 Web 工具边界。
 - `packages/core/src/runtime-options.ts`：默认工具、显式工具选择、`--no-tools` 与 `--no-mcp`。
 - `packages/core/src/mcp.ts`：MCP 配置、连接、发现、状态和关闭。
 - `packages/core/src/dscode-extension.ts`：权限过滤、MCP 初始化、jobs 与 checkpoint 命令。

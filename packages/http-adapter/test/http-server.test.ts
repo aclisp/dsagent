@@ -256,21 +256,9 @@ function turnUrl(sessionId: string): string {
 }
 
 describe("createHttpAdapter", () => {
-  it("rejects plan before opening a server or activating a session", () => {
-    const createHost = vi.fn();
-    for (const runtimeArgs of [["--permission", "plan"], ["--permission=plan"]]) {
-      expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs, createHost }))
-        .toThrow("Plan permission is not supported");
-    }
-    vi.stubEnv("DSCODE_PERMISSION", "plan");
-    expect(() => createHttpAdapter({ workspaces: WORKSPACES, createHost }))
-      .toThrow("Plan permission is not supported");
-    expect(createHost).not.toHaveBeenCalled();
-  });
-
-  it("rejects update_plan before opening the HTTP server", () => {
-    expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs: ["--tools", "read,update_plan"] }))
-      .toThrow("update_plan tool is not supported");
+  it("rejects delegate before opening the HTTP server", () => {
+    expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs: ["--tools", "read,delegate"] }))
+      .toThrow("delegate tool is not supported");
   });
   it.each([
     [["*"], "wildcard"],

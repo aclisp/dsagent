@@ -1,19 +1,9 @@
-import process from "node:process";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseRuntimeArgs } from "@aclisp/dsagent-core";
 import {
   DEFAULT_WEB_UI_RUNTIME_ARGS,
-  enforceWebUiSubagentDepth,
   resolveWebUiRuntimeArgs,
-  WEB_UI_SUBAGENT_DEPTH,
 } from "../src/web-ui-runtime.ts";
-
-const originalDepth = process.env.DSCODE_SUBAGENT_DEPTH;
-
-afterEach(() => {
-  if (originalDepth === undefined) delete process.env.DSCODE_SUBAGENT_DEPTH;
-  else process.env.DSCODE_SUBAGENT_DEPTH = originalDepth;
-});
 
 describe("Web UI runtime", () => {
   it("uses the local-development runtime defaults when RUNTIME_ARGS is absent", () => {
@@ -35,12 +25,4 @@ describe("Web UI runtime", () => {
     ]);
   });
 
-  it("forces the subagent depth to one", () => {
-    process.env.DSCODE_SUBAGENT_DEPTH = "0";
-
-    enforceWebUiSubagentDepth();
-
-    expect(WEB_UI_SUBAGENT_DEPTH).toBe(1);
-    expect(process.env.DSCODE_SUBAGENT_DEPTH).toBe("1");
-  });
 });

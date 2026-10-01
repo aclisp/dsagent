@@ -108,11 +108,14 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch`。
-可通过 `--tools ...,delegate` 启用 CLI delegation。
+可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
+一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
+使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
+父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
 
 TUI 的 MCP 确认框默认选中 **Allow once**（仅本次）。也可以授权本次会话内的单个工具，
 或该 server 的所有工具，包含后续不同参数的调用。授权在 `auto` 和 `ask` 模式下生效，
-`plan` 模式仍禁止 MCP 调用。`/mcp` 展示当前授权，`/mcp revoke` 撤销全部 MCP 会话授权。
+`/mcp` 展示当前授权，`/mcp revoke` 撤销全部 MCP 会话授权。
 授权仅保存在内存中，新建、切换、恢复会话或 MCP 重连时清除；非 TUI 确认仍只允许单次调用。
 
 ## 常用启动方式
@@ -142,8 +145,7 @@ TUI 常用命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `/plan` | 进入或退出结构化只读规划 |
-| `/permissions` | 查看或切换 `plan`、`ask`、`auto`、`full` 权限 |
+| `/permissions` | 查看或切换 `ask`、`auto`、`full` 权限 |
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
 | `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |
@@ -151,7 +153,7 @@ TUI 常用命令：
 | `/resume` / `/fork` / `/tree` | 导航树形本地会话 |
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |
 | `/jobs` | 查看可重连的后台命令 |
-| `/mcp` / `/agents` / `/doctor` | 查看集成、agent 和运行状态 |
+| `/mcp` / `/doctor` | 查看集成和运行状态 |
 | `/login [provider]` | 选择并认证支持的模型供应商 |
 | `/model` | 选择已配置的模型，并保存选择 |
 | `/effort ...` | 调整当前模型的 reasoning effort |
@@ -164,7 +166,6 @@ TUI 常用命令：
 
 | 模式 | 行为 |
 | --- | --- |
-| `plan` | 只读调查；隐藏写入、delegate 和 MCP 工具 |
 | `ask` | 命令、写入、delegate 和 MCP 都需要批准 |
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |

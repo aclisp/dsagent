@@ -121,7 +121,12 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
-CLI delegation can be enabled with `--tools ...,delegate`.
+CLI investigation can be enabled with `--tools ...,delegate`. `delegate({task: "..."})`
+launches one child at a time in the current workspace with a fresh conversation and
+no saved session. It uses the current model and thinking level and returns final
+findings. Children can only use `read`, `grep`, `find`, and `ls`; commands, edits, MCP,
+and nested delegation are unavailable. Children disable user extensions and command
+hooks. Calls time out after two minutes and are cancelled with the parent tool call. The parent handles all edits and verification.
 
 Configured, enabled MCP servers are discovered when a session initializes. Their tools
 are added automatically, including when `--tools` is explicit; `--tools` is no longer
@@ -129,18 +134,14 @@ a strict allowlist of all tools. Use `--tools read --no-mcp` for only the `read`
 `--no-mcp` skips MCP connections and registration. `--no-tools` disables every tool
 and skips MCP, regardless of argument order or permission changes.
 
-CLI plan mode temporarily adds `update_plan` and hides MCP tools, then restores the
-previous selection on exit. `--no-tools` also prevents this temporary addition.
-MCP calls still require approval in `auto`/`ask`; plan forbids them and `full` permits
-them without confirmation. Without an interactive approval UI, calls requiring approval
-are rejected. One server's connection or discovery failure does not stop the session;
+MCP calls require approval in `auto`/`ask`; `full` permits them without confirmation.
+Without an interactive approval UI, calls requiring approval are rejected. One server's connection or discovery failure does not stop the session;
 `/mcp` shows errors, discovered tools, and whether each is active. Configuration changes
 take effect on session initialization, without hot reload or automatic reconnection.
 
 The TUI MCP confirmation defaults to **Allow once**. You can also allow that tool
 or all tools from its server for the current session, including future calls with
-different parameters. These permissions apply in `auto` and `ask`; plan mode still
-blocks MCP calls. `/mcp` shows session permissions; `/mcp revoke` clears them all.
+different parameters. These permissions apply in `auto` and `ask`. `/mcp` shows session permissions; `/mcp revoke` clears them all.
 Permissions are kept only in memory and cleared on session creation, switching,
 resuming, or MCP reconnection. Non-TUI confirmations remain single-use.
 
@@ -171,8 +172,7 @@ Inside the TUI:
 
 | Command | Purpose |
 | --- | --- |
-| `/plan` | Enter or leave structured read-only planning |
-| `/permissions` | Show or change `plan`, `ask`, `auto`, or `full` access |
+| `/permissions` | Show or change `ask`, `auto`, or `full` access |
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
 | `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
@@ -180,7 +180,7 @@ Inside the TUI:
 | `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
 | `/compact` | Compact older context while preserving current work |
 | `/jobs` | Inspect reconnectable background commands |
-| `/mcp` / `/agents` / `/doctor` | Inspect integrations, agents, and runtime health |
+| `/mcp` / `/doctor` | Inspect integrations and runtime health |
 | `/login [provider]` | Choose and authenticate a supported model provider |
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
@@ -202,7 +202,6 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 
 | Mode | Behavior |
 | --- | --- |
-| `plan` | Read-only exploration; write, delegation, and MCP tools are hidden |
 | `ask` | Commands, writes, delegation, and MCP require approval |
 | `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
 | `full` | Trusted mode with unrestricted host filesystem and network access |

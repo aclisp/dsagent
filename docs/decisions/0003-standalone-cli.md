@@ -6,7 +6,7 @@ Status: Product scope confirmed. The macOS arm64 and Linux x86_64 production run
 
 Provide a single `dscode` executable with an embedded runtime, so users do not need to install Node.js, Bun, or pnpm, clone the repository, or build locally. Evaluate Bun standalone first; keep the existing Node distribution unchanged.
 
-Avoid extracting application dependencies such as JS, WASM, and dynamic libraries at runtime wherever possible. Sessions, credentials, checkpoints, Git worktrees, and files requested by users may still be written to disk. Embed pinned rg/fd binaries and extract missing tools into DSCode's bin directory, avoiding first-run network downloads. Do not silently remove features or relax permissions to meet packaging requirements.
+Avoid extracting application dependencies such as JS, WASM, and dynamic libraries at runtime wherever possible. Sessions, credentials, checkpoints, and files requested by users may still be written to disk. Embed pinned rg/fd binaries and extract missing tools into DSCode's bin directory, avoiding first-run network downloads. Do not silently remove features or relax permissions to meet packaging requirements.
 
 ## Confirmed scope
 
@@ -16,7 +16,7 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 | Platforms | Linux x86_64 (glibc) and macOS arm64; use Bun's x64 baseline target for Linux; exclude Linux arm64, Windows, Alpine/musl, and Intel Macs |
 | Execution modes | TUI, `-p`, `--mode json`, and `--mode rpc`; retain help, version, and authentication management commands |
 | Default sandbox | Main process and subagents default to `danger-full-access`; this does not imply `permission=full` or `-y` |
-| Approvals | Retain existing permission rules and subagent role permissions; print/JSON modes reject operations requiring approval when no confirmation interface is available; RPC provides approvals through its protocol |
+| Approvals | Retain existing permission rules; investigation children have only file-reading/search tools; print/JSON modes reject operations requiring approval when no confirmation interface is available; RPC provides approvals through its protocol |
 | Credentials | Always use file credentials in the standalone distribution, without a keyring dependency |
 | Shared directory | Read existing local Skills and JSONL sessions; do not migrate keyring credentials or rewrite existing configuration to enforce these policies; credentials available only in the keyring require a new login |
 | Images | Retain image paths, `@file` input, and image reads through `read`; embed Photon WASM preprocessing and the image worker |
@@ -48,7 +48,7 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 
 2026-09-25: Completed 12 offline checks on macOS arm64 with Bun 1.3.14, including an embedded WASM worker, TUI initialization, text/JSON/RPC, a real explorer subagent, and stdio/HTTP MCP. The experiment used isolated directories, a restricted PATH, and Seatbelt without reading or writing real credentials or user state.
 
-A dedicated production build entry point in `standalone/` was subsequently implemented, adding dependency removal and acceptance checks for HTML export, TUI conversations, real tool execution, command execution inside a subagent, and RPC approvals. The executable is approximately 71 MiB; the ordinary Node distribution retains its existing behavior.
+A dedicated production build entry point in `standalone/` was subsequently implemented, adding dependency removal and acceptance checks for HTML export, TUI conversations, real tool execution, file reading inside an investigation-only subagent, and RPC approvals. The executable is approximately 71 MiB; the ordinary Node distribution retains its existing behavior.
 
 2026-09-25: Linux x86_64 support added using Bun's x64 baseline target and validated natively on glibc 2.34 with Bun 1.3.14. All 20 offline acceptance checks passed, including both PTY/TUI checks (Linux Seatbelt isolation is unavailable, so isolation strength is lower than on macOS). The executable is 104,560,768 bytes (99.7 MiB) and links only against glibc, libpthread, libdl, and libm. Minimum glibc version, real OAuth/providers, release signing, and the release/installation workflow remain pending.
 

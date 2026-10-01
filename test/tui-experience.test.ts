@@ -45,7 +45,7 @@ describe("DSCode Codex-style input presentation", () => {
       minimalStatusParts({
         model: "deepseek-v4-flash",
         effort: "max",
-        permission: "plan",
+        permission: "auto",
         sandbox: "danger-full-access",
         network: false,
         cwd: "/work/dscode",
@@ -53,7 +53,7 @@ describe("DSCode Codex-style input presentation", () => {
       }),
     ).toEqual([
       "deepseek-v4-flash  max",
-      "plan",
+      "danger full access",
       "ctx 91%",
       "/work/dscode",
     ]);

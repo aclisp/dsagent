@@ -75,10 +75,10 @@ V4 Flash 支持 `low`、`high`、`max`。最终形态不应让用户每次手选
 | --- | --- | --- | --- |
 | 编码闭环 | 搜索、编辑、Shell、验证、长任务恢复 | V4 原生 minimal harness | 已实现并有模拟 API 集成测试 |
 | 交互体验 | 完整 TUI、diff review、历史、后台任务、IDE | 复用 `pi-tui`/`pi-coding-agent`，不重造基础设施 | TUI 完整；VS Code 为本地薄集成 |
-| 安全 | 权限规则；Codex 还有 OS sandbox | 策略层可定制，企业可接自己的沙箱 | 四档权限、checkpoint、Seatbelt/Docker |
+| 安全 | 权限规则；Codex 还有 OS sandbox | 策略层可定制，企业可接自己的沙箱 | 三档权限、checkpoint、Seatbelt/Docker |
 | 扩展 | MCP、skills、hooks、项目指令 | Pi 扩展生态 + 开放 runtime | 已接入，并受 project trust 约束 |
 | 长上下文 | 成熟的压缩与会话管理 | V4 1M + 自动硬盘前缀缓存 | 树形 JSONL、自动/手动 compact |
-| 多 agent | 子 agent、后台/云任务、worktree | V4 Flash 的成本和并发可支撑更激进并行 | 四角色、四并发、implementer worktree |
+| 多 agent | 子 agent、后台/云任务、worktree | V4 Flash 的成本和并发可支撑更激进并行 | 单任务只读调查子进程 |
 | 多模态 | 图片、文件和 UI 工作流 | 可由外部视觉模型/工具补足 | V4 Responses 目前文本限定 |
 | 透明度 | 产品内状态与用量能力不同 | 每轮展示 token、cache hit、reasoning、cost | 已有基础指标 |
 | 本地/团队控制 | 闭源产品行为可配置但 runtime 不可替换 | Pi runtime 可审计、可 fork、可私有扩展 | 这是结构性优势 |
@@ -91,9 +91,9 @@ V4 Flash 支持 `low`、`high`、`max`。最终形态不应让用户每次手选
 ```text
 CLI / TUI / IDE
        │
-session · plan · approvals · diff review · undo
+session · approvals · diff review · undo
        │
-task router ── low / high / max ── subagents / worktrees
+current model / effort · single investigation child
        │
 Pi agent loop
        │
@@ -166,13 +166,13 @@ local repo · MCP · skills · language servers · test runners
 - 默认 `max`，运行时支持 thinking selector 和 `Shift+Tab` 切换；
 - 始终启用 Pi 的并行 tool execution；
 - 清理 DeepSeek 不支持的 Responses 字段和思考模式下无效的采样参数；
-- 工作区权限模式和 plan mode；
+- 工作区权限模式；
 - 自动/手动 context compaction；
 - 每轮 cache hit、reasoning token 和费用可见。
 - Pi TUI、树形 JSONL session、fork/resume/compact；
 - Seatbelt/Docker OS sandbox、默认禁网、checkpoint/undo；
 - MCP、Agent Skills、hooks、project trust；
-- 后台进程、四角色 worktree subagents、JSONL/RPC 和 VS Code 薄集成。
+- 后台进程、单任务只读调查子进程、JSONL/RPC 和 VS Code 薄集成。
 
 ## 官方资料
 

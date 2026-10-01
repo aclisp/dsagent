@@ -223,14 +223,11 @@ no machine-specific paths; its prompt mounts resolve through the repository-rela
 
 ## Agent toolset
 
-Web UI and all HTTP hosts support `ask`, `auto`, and `full` permissions. A final
-`plan` permission from runtime arguments or `DSCODE_PERMISSION` causes startup to
-fail; it is never silently changed to `auto`. `/plan`, `/permissions plan`,
-`/base-url`, and `/agents` are rejected without invoking the model. CLI TUI, JSON,
-and RPC retain plan support. Historical plans may be loaded without executing them;
-the current runtime permission applies. `--sandbox read-only` remains supported
-but is not equivalent to plan permission. Explicit `update_plan` selection also fails
-at startup; HTTP hosts do not register that tool.
+CLI and Web/HTTP hosts support `ask`, `auto`, and `full` permissions.
+`--sandbox read-only` remains available as a command sandbox boundary.
+HTTP rejects `/base-url` and session-navigation commands without invoking the model.
+The CLI-only `delegate` tool is not registered by HTTP hosts; explicitly selecting it
+fails at startup. `--no-tools` takes precedence over tool selection.
 
 The default tools are `read,exec_command,write_stdin,apply_patch`, as in the CLI.
 Enabled MCP tools are discovered at session initialization and added even when
@@ -257,11 +254,9 @@ create checkpoints.
 
 The other DSCode tools are TUI-first and don't fit this deployment:
 
-- `update_plan` is unsupported, including explicit selection; use the CLI for structured plans.
-- `delegate` is excluded: subagents re-invoke the process entrypoint (`./dist/server.js`, not
-  the DSCode CLI), require a Git repository for implementer worktrees, and need a sandbox
-  backend for their `read-only`/`workspace-write` modes — none of which exist inside the
-  container. The Web UI fixes the internal subagent depth at `1`, so Core skips its registration.
+- `delegate` is excluded: children re-invoke the CLI entrypoint, whereas the HTTP host
+  runs inside the server process. HTTP disables registration directly, without
+  changing the process-wide subagent depth.
 
 ### Vision analysis CLI
 

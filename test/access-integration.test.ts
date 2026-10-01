@@ -10,7 +10,7 @@ import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.
 import { createTestTheme } from "./fixtures/theme.ts";
 
 describe("command access escalation", () => {
-  it.each(["tui", "json", "rpc"])("keeps CLI plan commands available in %s mode", async (mode) => {
+  it.each(["tui", "json", "rpc"])("keeps ordinary permissions without planning commands in %s mode", async (mode) => {
     const commands = new Map<string, any>();
     let activeTools = ["read", "exec_command", "write_stdin", "apply_patch"];
     const pi = new Proxy({
@@ -25,10 +25,10 @@ describe("command access escalation", () => {
       get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
     });
     const ctx = { mode, ui, hasUI: mode === "tui", model: undefined };
-    expect(commands.get("permissions").description).toContain("plan|ask|auto|full");
-    await commands.get("permissions").handler("plan", ctx);
-    expect(activeTools).toEqual(["read", "exec_command", "write_stdin", "update_plan"]);
-    await commands.get("plan").handler("", ctx);
+    expect(commands.get("permissions").description).toContain("ask|auto|full");
+    expect(commands.has("plan")).toBe(false);
+    expect(commands.has("agents")).toBe(false);
+    await commands.get("permissions").handler("ask", ctx);
     expect(activeTools).toEqual(["read", "exec_command", "write_stdin", "apply_patch"]);
   });
 
@@ -349,7 +349,7 @@ function options(cwd: string): DSCodeRuntimeOptions {
     permission: "auto",
     sandbox: "workspace-write",
     network: false,
-    activeTools: ["update_plan", "exec_command", "write_stdin", "apply_patch"],
+    activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
     toolsExplicit: false,
     noTools: false,
     noMcp: false,

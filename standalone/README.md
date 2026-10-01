@@ -76,7 +76,7 @@ The ordinary Node distribution continues to use `pnpm build`; the npm package ex
 
 The build does not modify node_modules or maintain a separate copy of Core. Ordinary Node builds leave these constants undefined and retain their existing defaults.
 Core differences are limited to version metadata, file credentials, skipping legacy migration, host sandbox defaults, help, and subagents launching the executable itself.
-Subagents in plan mode retain tool permission restrictions; their default host sandbox is no longer implicitly changed to an OS read-only sandbox by the plan role.
+Investigation-only subagents relaunch the executable with only `read`, `grep`, `find`, and `ls`. They cannot run commands, edit files, use MCP, or delegate; user extensions and command hooks are disabled.
 Explicit sandbox selections still follow the existing rules.
 
 The pi adapter is currently pinned to **0.99.1**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
@@ -103,7 +103,7 @@ The `experiments/standalone/` directory preserves historical feasibility records
 Offline acceptance copies **only one executable** to a temporary directory and uses an isolated HOME and a PATH without Node/Bun. On macOS, Seatbelt additionally denies reads from the source/build directories and restricts writes to the temporary directory; Linux runs the same checks without that OS-level isolation.
 Tests do not use real credentials or call paid models.
 
-Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an explorer subagent launching itself and executing a command, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
+Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an investigation-only subagent relaunching itself and reading a file, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
 
 To verify macOS TUI image paste, first copy an image to the host clipboard, then run `DSCODE_TEST_CLIPBOARD_IMAGE=1 node standalone/test/verify.mjs dist/standalone/darwin-arm64`. This opt-in check sends `Ctrl+V` in a PTY and verifies that the local mock model receives an image. It does not replace the clipboard contents and removes the pasted temporary image afterward.
 

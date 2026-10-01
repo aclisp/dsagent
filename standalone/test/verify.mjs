@@ -33,7 +33,8 @@ let fail = false;
 let plannedTool;
 let toolIssued = false;
 let toolOutputs = [];
-let childCommandIssued = false;
+let childReadIssued = false;
+let childTools = [];
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -56,10 +57,10 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ error: { message: "offline rejection" } }));
     return;
   }
-  const childCall = plannedTool?.name === "delegate" && toolIssued && !childCommandIssued && !payload.tools.some(tool=>tool.name === "delegate");
+  const childCall = plannedTool?.name === "delegate" && toolIssued && !childReadIssued && !payload.tools.some(tool=>tool.name === "delegate");
   const call = plannedTool && !toolIssued || childCall;
-  const currentTool = childCall ? {name:"exec_command",args:{cmd:"pwd"}} : plannedTool;
-  if (childCall) childCommandIssued = true;
+  const currentTool = childCall ? {name:"read",args:{path:"home/forbidden.js"}} : plannedTool;
+  if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
   const item = call
     ? currentTool.name === "apply_patch"
@@ -241,11 +242,11 @@ try {
     {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
     {name:"exec_command",args:{cmd:"pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
-    {name:"delegate",args:{tasks:["explorer", "reviewer", "tester", "explorer"].map((role, index) => ({role, task:`Reply once with evidence for task ${index + 1}.`}))}},
+    {name:"delegate",args:{task:"Read home/forbidden.js and return file evidence."}},
   ]) {
     await check(`real tool execution: ${tool.name}`, async () => {
-      plannedTool = tool; toolIssued = false; toolOutputs = []; childCommandIssued = false;
-      // JSON parent and children must work without extracting a native UI addon.
+      plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false;
+      // JSON parent and child must work without extracting a native UI addon.
       const result = await run("dscode", [...base, "--tools", "read,find,grep,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
@@ -257,10 +258,11 @@ try {
       else if (tool.name === "grep") assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       else if (tool.name === "apply_patch") assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
       else if (tool.name === "delegate") {
-        assert.equal(finished.result.details.results.length, tool.args.tasks.length, JSON.stringify(finished));
-        assert.ok(finished.result.details.results.every(result => result.success), JSON.stringify(finished));
-        assert.ok(childCommandIssued);
-        assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
+        assert.equal(finished.result.details.success, true, JSON.stringify(finished));
+        assert.equal(finished.result.details.output, "standalone ok");
+        assert.ok(childReadIssued);
+        assert.deepEqual(childTools, ["find", "grep", "ls", "read"]);
+        assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       }
       else {
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);

@@ -91,6 +91,8 @@ describe("MCP extension lifecycle", () => {
   ])("controls the engineering contract with --prompt-contract $mode", async ({ mode, includesContract }) => {
     const run = await runtime(["--prompt-contract", mode]);
     const result = await run.emit("before_agent_start", { systemPrompt: "base prompt" });
+    expect(run.tools.has("update_plan")).toBe(false);
+    expect(result.systemPrompt).not.toContain("update_plan");
     if (includesContract) {
       expect(result.systemPrompt).toContain("# DSCode engineering contract");
     } else {
@@ -105,21 +107,8 @@ describe("MCP extension lifecycle", () => {
     expect(run.tools.has(mcpTool)).toBe(false);
     await run.command("mcp");
     expect(run.notify).toHaveBeenCalledWith(`MCP disabled by ${flag}.`, "info");
-    await run.command("permissions", "plan");
-    await run.command("permissions", "plan");
     await run.command("permissions", "auto");
     expect(run.active()).toEqual(flag === "--no-tools" ? [] : ["read"]);
-  });
-
-  it("hides MCP in plan and restores the original tools after repeated plan requests", async () => {
-    const run = await runtime(["--permission", "plan"]);
-    expect(run.active()).toEqual(["read", "exec_command", "write_stdin", "update_plan"]);
-    await run.command("permissions", "plan");
-    await run.command("mcp");
-    expect(run.notify).toHaveBeenCalledWith(expect.stringContaining("[disabled in plan mode]"), "info");
-    expect(await run.emit("tool_call", { toolName: mcpTool, input: {} })).toMatchObject({ block: true });
-    await run.command("plan");
-    expect(run.active()).toEqual([...baseTools, mcpTool]);
   });
 
   it("keeps MCP approvals in auto/ask, blocks noninteractive approval, and allows full", async () => {
@@ -154,8 +143,6 @@ describe("MCP extension lifecycle", () => {
     expect(await run.emit("tool_call", { toolName: "mcp__fixture__other", input: {} })).toMatchObject({ block: true });
     await run.command("mcp");
     expect(run.notify).toHaveBeenLastCalledWith(expect.stringContaining("[allowed for this session]"), "info");
-    await run.command("permissions", "plan");
-    expect(await run.emit("tool_call", { toolName: mcpTool, input: {} })).toMatchObject({ block: true });
   });
 
   it("allows all tools only on the selected server, using registered server identity", async () => {

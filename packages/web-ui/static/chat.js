@@ -671,7 +671,6 @@ function toolLabel(name) {
   if (["list_files", "search_files", "find", "glob"].includes(name)) return "查找文件";
   if (["apply_patch", "write_file", "edit_file", "edit", "write"].includes(name)) return "修改文件";
   if (["exec_command", "bash", "write_stdin"].includes(name)) return "执行命令";
-  if (name === "update_plan") return "更新计划";
   if (name.includes("web") || name.includes("search")) return "搜索资料";
   return "执行操作";
 }
@@ -1081,9 +1080,6 @@ function modalButton(label, primary, onClick) {
 
 function friendlyOptionLabel(option) {
   const labels = {
-    "Execute the plan": "执行计划",
-    "Stay in plan mode": "保持计划模式",
-    "Refine the plan": "调整计划",
     "Allow once": "仅本次允许",
     "Allow this command for this session": "本会话允许此命令",
     Deny: "拒绝",
@@ -1177,9 +1173,6 @@ function friendlyRequest(request) {
         ),
       };
     }
-    if (title === "Plan ready — what next?") {
-      return { title: "计划已准备好，下一步怎么做？" };
-    }
     if (title === "Select a model provider") {
       return { title: "选择模型提供商" };
     }
@@ -1188,9 +1181,6 @@ function friendlyRequest(request) {
 
   if (request.method === "input" && title === "DeepSeek API base URL") {
     return { title: "设置 DeepSeek API 地址" };
-  }
-  if (request.method === "editor" && title === "How should the plan change?") {
-    return { title: "你希望如何调整计划？" };
   }
   return { title: request.title, message: request.message };
 }

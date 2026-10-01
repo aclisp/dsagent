@@ -215,7 +215,7 @@ DSCode options:
                                    Default: read,exec_command,write_stdin,apply_patch
   --no-mcp                         Skip MCP connections and tools
   --no-tools                       Disable all tools and MCP, regardless of argument order
-  --permission <mode>              plan|ask|auto|full (full grants host + network)
+  --permission <mode>              ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
   --network                        Pre-authorize command network access for this run
   -y, --yes                        YOLO: trust project, skip approvals, allow host + network
@@ -227,7 +227,7 @@ Session and editor features:
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
-  /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
+  /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /doctor
 
 Authentication:
   dscode login [provider]          Sign in to a supported model provider

@@ -470,8 +470,7 @@ export interface MinimalStatusDetails {
 
 export function minimalStatusParts(details: MinimalStatusDetails): string[] {
   const parts = [`${details.model}  ${details.effort}`];
-  if (details.permission === "plan") parts.push("plan");
-  if (details.permission !== "plan" && details.sandbox === "danger-full-access") {
+  if (details.sandbox === "danger-full-access") {
     parts.push("danger full access");
   } else if (details.permission === "full") {
     parts.push("full permission");
@@ -500,7 +499,7 @@ export function renderMinimalStatus(
     ) {
       return theme.fg("error", part);
     }
-    if (part === "plan" || part === "full permission" || part.startsWith("ctx ")) {
+    if (part === "full permission" || part.startsWith("ctx ")) {
       return theme.fg("warning", part);
     }
     return theme.fg("muted", part);

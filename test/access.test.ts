@@ -26,12 +26,7 @@ describe("Codex-style scoped access escalation", () => {
     expect(access.describeGrants()).toContain("network (1 command)");
   });
 
-  it("keeps plan mode read-only while retaining an explicit network grant", () => {
-    const access = new SessionAccessController("workspace-write", true);
-    expect(access.effective("plan")).toEqual({ sandbox: "read-only", network: true });
-  });
-
-  it("scopes session host access to one command and never carries it into plan mode", () => {
+  it("scopes session host access to one command", () => {
     const access = new SessionAccessController("workspace-write", false);
     access.grantForSession("host", "touch ~/.config/tool/config.json");
     expect(access.forCommand("auto", "touch ~/.config/tool/config.json")).toEqual({
@@ -40,10 +35,6 @@ describe("Codex-style scoped access escalation", () => {
     });
     expect(access.forCommand("auto", "pnpm test")).toEqual({
       sandbox: "workspace-write",
-      network: false,
-    });
-    expect(access.forCommand("plan", "touch ~/.config/tool/config.json")).toEqual({
-      sandbox: "read-only",
       network: false,
     });
   });

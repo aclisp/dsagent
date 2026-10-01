@@ -2,7 +2,6 @@ import type { PermissionMode } from "./config.ts";
 import type { ManagedProcessResult } from "./managed-process.ts";
 import type { SandboxMode } from "./runtime-options.ts";
 import { parseTrustedVisionCommand } from "./vision-command.ts";
-import { isStandalone } from "./distribution.ts";
 
 export type AccessBoundary = "network" | "host";
 
@@ -27,10 +26,7 @@ export class SessionAccessController {
   effective(permission: PermissionMode): EffectiveAccess {
     if (permission === "full") return { sandbox: "danger-full-access", network: true };
     return {
-      // Standalone plan mode retains tool-level restrictions without requiring
-      // an OS sandbox when the selected boundary is host access.
-      sandbox: permission === "plan" && !(isStandalone && this.baseSandbox === "danger-full-access")
-        ? "read-only" : this.baseSandbox,
+      sandbox: this.baseSandbox,
       network: this.baseNetwork || this.baseSandbox === "danger-full-access",
     };
   }
@@ -38,7 +34,7 @@ export class SessionAccessController {
   forCommand(permission: PermissionMode, command: string): EffectiveAccess {
     const current = this.effective(permission);
     const key = commandKey(command);
-    if (permission !== "plan" && this.hostCommands.has(key)) {
+    if (this.hostCommands.has(key)) {
       return { sandbox: "danger-full-access", network: true };
     }
     return this.networkCommands.has(key) ? { ...current, network: true } : current;

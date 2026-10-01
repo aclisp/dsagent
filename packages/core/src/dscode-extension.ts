@@ -28,14 +28,6 @@ import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
 import { MCPManager } from "./mcp.ts";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
-import {
-  formatPlanForExecution,
-  PLAN_STATE_ENTRY,
-  planWidgetLines,
-  registerPlanTool,
-  restorePlanState,
-  type PlanState,
-} from "./plan.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
 import { defaultModelForProvider } from "./providers.ts";
@@ -50,7 +42,7 @@ import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
-import { registerSubagentTools } from "./subagents.ts";
+import { isSubagent, registerSubagentTools, SUBAGENT_TOOLS } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
@@ -74,15 +66,6 @@ interface DiffEntryData {
   files?: Array<{ path: string; status: string; diff: string }>;
 }
 
-const planAllowedTools = new Set([
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "exec_command",
-  "write_stdin",
-  "update_plan",
-]);
 const askWithoutPromptTools = new Set([
   "read",
   "grep",
@@ -138,9 +121,9 @@ const applyPatchParameters = Type.Object({
 
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
-  capabilities: { planMode?: boolean; planTool?: boolean } = {},
+  capabilities: { subagents?: boolean } = {},
 ): InlineExtension {
-  const permissionModes = capabilities.planMode === false ? "ask|auto|full" : "plan|ask|auto|full";
+  const permissionModes = "ask|auto|full";
   return {
     name: "dscode",
     factory(pi) {
@@ -149,16 +132,11 @@ export function createDSCodeExtension(
       const mcp = new MCPManager();
       let mcpApprovalQueue = Promise.resolve();
       let permission: PermissionMode = options.permission;
-      let permissionBeforePlan: Exclude<PermissionMode, "plan"> =
-        options.permission === "plan" ? "auto" : options.permission;
       const checkpoints: PatchCheckpoint[] = [];
       const undone = new Set<string>();
-      let toolsBeforePlan: string[] | undefined;
       let projectCommands: string[] = [];
       let lastAgentFailed = false;
       let sessionPartition = Promise.resolve();
-      let planState: PlanState | undefined;
-      let lastOfferedPlanRevision = 0;
       const access = new SessionAccessController(options.sandbox, options.network);
       const effectiveAccess = (): EffectiveAccess => access.effective(permission);
 
@@ -182,12 +160,9 @@ export function createDSCodeExtension(
         })}`;
         ctx.ui.setStatus(
           "dscode",
-          permission === "plan"
-            ? ctx.ui.theme.fg("warning", status)
-            : brandBlue(status, ctx.ui.theme),
+          brandBlue(status, ctx.ui.theme),
         );
         ctx.ui.setTitle(`DSCode — ${ctx.cwd}`);
-        ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
       };
 
       registerDeepSeekProvider(pi, options);
@@ -203,41 +178,9 @@ export function createDSCodeExtension(
         updateStatus,
       );
       registerPatchTool(pi, checkpoints);
-      registerSubagentTools(pi, options);
+      if (capabilities.subagents !== false) registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
-      if (capabilities.planTool !== false) {
-        registerPlanTool(
-          pi,
-          () => planState,
-          (nextPlan, ctx) => {
-            planState = nextPlan;
-            ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
-          },
-        );
-      }
       registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
-
-      const applyPermissionTools = (): void => {
-        if (options.noTools) {
-          toolsBeforePlan = undefined;
-          pi.setActiveTools([]);
-          return;
-        }
-        if (permission === "plan") {
-          const active = pi.getActiveTools();
-          if (toolsBeforePlan === undefined) {
-            toolsBeforePlan = active;
-          }
-          pi.setActiveTools(
-            [...new Set([...toolsBeforePlan.filter((tool) => planAllowedTools.has(tool)), "update_plan"])],
-          );
-          return;
-        }
-        if (toolsBeforePlan !== undefined) {
-          pi.setActiveTools(toolsBeforePlan);
-          toolsBeforePlan = undefined;
-        }
-      };
 
       pi.on("before_provider_request", (event, ctx) => {
         if (ctx.model?.provider !== "deepseek" || options.transport !== "responses") return;
@@ -250,8 +193,6 @@ export function createDSCodeExtension(
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
         restoreCheckpointState(ctx.sessionManager.getBranch(), checkpoints, undone);
-        planState = restorePlanState(ctx.sessionManager.getBranch());
-        lastOfferedPlanRevision = planState?.revision ?? 0;
         updateStatus(ctx);
         ctx.ui.setHiddenThinkingLabel(
           formatThinkingLabel(ctx.model?.name ?? ctx.model?.id ?? options.modelId),
@@ -261,7 +202,6 @@ export function createDSCodeExtension(
           pi.setActiveTools(
             pi.getActiveTools().filter((tool) => !staleMcpTools.has(tool)),
           );
-          toolsBeforePlan = toolsBeforePlan?.filter((tool) => !staleMcpTools.has(tool));
         }
         await mcp.close();
         try {
@@ -281,8 +221,6 @@ export function createDSCodeExtension(
           ...mcp.toolNames(),
         ])];
         pi.setActiveTools(intendedTools);
-        toolsBeforePlan = undefined;
-        applyPermissionTools();
         await queueSessionPartition(ctx);
       });
 
@@ -316,26 +254,14 @@ export function createDSCodeExtension(
           currentAccess,
           options.promptContract,
         );
-        if (permission !== "plan") return { systemPrompt };
-        return {
-          systemPrompt,
-          message: {
-            customType: "dscode-plan-context",
-            display: false,
-            content: [
-              "[PLAN MODE ACTIVE]",
-              "Explore and reason only. File mutation tools are unavailable.",
-              `Commands run in a read-only OS sandbox with network ${currentAccess.network ? "enabled" : "subject to scoped approval"}.`,
-              ...(options.noTools ? [] : ["Use update_plan to publish a concrete implementation plan after exploration."]),
-              "Include validation and important risks in the plan steps or explanation.",
-              "Do not claim to have changed or tested anything you could not actually run.",
-            ].join("\n"),
-          },
-        };
+        return { systemPrompt };
       });
 
       pi.on("tool_call", async (event, ctx) => {
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
+        if (isSubagent() && !(SUBAGENT_TOOLS as readonly string[]).includes(event.toolName)) {
+          return { block: true, reason: "Investigation-only children can only read and search files." };
+        }
         if (
           event.toolName === "bash" ||
           event.toolName === "edit" ||
@@ -349,12 +275,6 @@ export function createDSCodeExtension(
                 : "This write tool bypasses DSCode checkpoints. Use apply_patch instead.",
           };
         }
-        if (permission === "plan" && !planAllowedTools.has(event.toolName)) {
-          return {
-            block: true,
-            reason: `Plan mode does not allow ${event.toolName}. Run /plan to leave plan mode.`,
-          };
-        }
         const externalMcp = event.toolName.startsWith("mcp__");
         const command =
           event.toolName === "exec_command" &&
@@ -364,12 +284,6 @@ export function createDSCodeExtension(
             : undefined;
         const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
         const dangerousCommand = commandAssessment?.dangerous === true;
-        if (permission === "plan" && dangerousCommand) {
-          return {
-            block: true,
-            reason: "Plan mode blocks destructive commands. Leave plan mode before running this command.",
-          };
-        }
         const needsApproval =
           permission === "ask" ||
           (permission === "auto" && (externalMcp || dangerousCommand));
@@ -400,7 +314,6 @@ export function createDSCodeExtension(
             const expired = () => epoch !== mcp.approvalEpoch;
             const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
             if (expired()) return stale;
-            if (permission === "plan") return { block: true, reason: "Plan mode blocks MCP tools." };
             if (permission === "full" || mcp.isApproved(event.toolName)) return;
             if (!ctx.hasUI) {
               return {
@@ -495,91 +408,10 @@ export function createDSCodeExtension(
           (event.message.stopReason === "error" || event.message.stopReason === "aborted");
       });
 
-      pi.on("agent_end", async (_event, ctx) => {
-        if (
-          permission !== "plan" ||
-          ctx.mode !== "tui" ||
-          !planState ||
-          planState.revision <= lastOfferedPlanRevision
-        ) {
-          return;
-        }
-        lastOfferedPlanRevision = planState.revision;
-        ctx.ui.setWorkingVisible(false);
-        let choice: string | undefined;
-        try {
-          choice = await ctx.ui.select("Plan ready — what next?", [
-            "Execute the plan",
-            "Stay in plan mode",
-            "Refine the plan",
-          ]);
-        } finally {
-          ctx.ui.setWorkingVisible(true);
-        }
-        if (choice === "Execute the plan") {
-          permission = permissionBeforePlan;
-          applyPermissionTools();
-          updateStatus(ctx);
-          pi.appendEntry("dscode-permission", { permission });
-          pi.sendUserMessage(
-            [
-              "Execute the approved plan below. Keep update_plan statuses current as you work.",
-              "Maintain at most one in_progress step and only mark completed after verification.",
-              "",
-              formatPlanForExecution(planState),
-            ].join("\n"),
-            { deliverAs: "followUp" },
-          );
-        } else if (choice === "Refine the plan") {
-          const refinement = await ctx.ui.editor("How should the plan change?", "");
-          if (refinement?.trim()) {
-            pi.sendUserMessage(
-              `Refine the current plan using update_plan. Requested changes:\n${refinement.trim()}`,
-              { deliverAs: "followUp" },
-            );
-          }
-        }
-      });
-
       pi.on("agent_settled", (_event, ctx) => {
         if (ctx.mode === "json" || ctx.mode === "print") {
           process.exitCode = lastAgentFailed ? 1 : 0;
         }
-      });
-
-      pi.registerCommand("plan", {
-        description: "Toggle read-only planning; use /plan show or /plan clear",
-        handler: async (args, ctx) => {
-          const action = args.trim();
-          if (action === "show") {
-            ctx.ui.notify(
-              planState ? formatPlanForExecution(planState) : "No structured plan is available.",
-              "info",
-            );
-            return;
-          }
-          if (action === "clear") {
-            planState = undefined;
-            pi.appendEntry(PLAN_STATE_ENTRY, { cleared: true, updatedAt: new Date().toISOString() });
-            ctx.ui.setWidget("dscode-plan", undefined);
-            ctx.ui.notify("Structured plan cleared.", "info");
-            return;
-          }
-          if (action) {
-            ctx.ui.notify("Expected /plan, /plan show, or /plan clear", "warning");
-            return;
-          }
-          if (permission === "plan") {
-            permission = permissionBeforePlan;
-          } else {
-            permissionBeforePlan = permission;
-            permission = "plan";
-          }
-          applyPermissionTools();
-          updateStatus(ctx);
-          pi.appendEntry("dscode-permission", { permission });
-          ctx.ui.notify(`Permission mode: ${permission}`, "info");
-        },
       });
 
       pi.registerCommand("permissions", {
@@ -590,7 +422,7 @@ export function createDSCodeExtension(
             ctx.ui.notify(
               [
                 `permission: ${permission}`,
-                ...(capabilities.planMode === false ? [`available modes: ${permissionModes}`] : []),
+                `available modes: ${permissionModes}`,
                 `sandbox: ${currentAccess.sandbox}`,
                 `network: ${currentAccess.network ? "enabled" : "blocked"}`,
                 `session grants: ${access.describeGrants().join(", ") || "none"}`,
@@ -601,7 +433,7 @@ export function createDSCodeExtension(
             return;
           }
           const parsed = permissionSchema.safeParse(args.trim());
-          if (!parsed.success || (capabilities.planMode === false && parsed.data === "plan")) {
+          if (!parsed.success) {
             ctx.ui.notify(`Expected /permissions ${permissionModes}`, "warning");
             return;
           }
@@ -612,11 +444,7 @@ export function createDSCodeExtension(
             );
             if (!approved) return;
           }
-          if (parsed.data === "plan" && permission !== "plan") {
-            permissionBeforePlan = permission;
-          }
           permission = parsed.data;
-          applyPermissionTools();
           updateStatus(ctx);
           pi.appendEntry("dscode-permission", { permission });
           ctx.ui.notify(`Permission mode: ${permission}`, "info");
@@ -825,7 +653,7 @@ export function createDSCodeExtension(
             ctx.ui.notify("Usage: /mcp or /mcp revoke", "info");
             return;
           }
-          const status = mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive");
+          const status = mcp.detailedStatus(pi.getActiveTools());
           ctx.ui.notify(mcp.toolNames().length > 0 ? `${status}\n\n/mcp revoke — revoke all MCP session permissions` : status, "info");
         },
       });
@@ -934,7 +762,7 @@ export function createDSCodeExtension(
         },
       });
 
-      registerHooks(pi, effectiveAccess);
+      if (!isSubagent()) registerHooks(pi, effectiveAccess);
     },
   };
 }
@@ -1056,7 +884,7 @@ function registerCommandTools(
       });
       let result = await run(commandAccess);
       const boundary = detectSandboxBoundary(params.cmd, result, commandAccess);
-      if (boundary && !(getPermission() === "plan" && boundary === "host")) {
+      if (boundary) {
         commandAccess = await requestCommandAccess(
           boundary,
           params.cmd,
@@ -1164,9 +992,6 @@ async function requestCommandAccess(
   onAccessChanged: (ctx: ExtensionContext) => void,
 ): Promise<EffectiveAccess> {
   if (permission === "full") return controller.effective(permission);
-  if (permission === "plan" && boundary === "host") {
-    throw new Error("Plan mode cannot grant write access outside the read-only sandbox.");
-  }
   const boundaryLabel =
     boundary === "network"
       ? "network access"
@@ -1427,8 +1252,6 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    "- Use update_plan for complex multi-step work. Keep at most one step in_progress and update statuses as verified work advances.",
-    "- Use delegate only for genuinely independent work. The parent agent owns integration and final verification.",
     `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
     `- Command network access is ${access.network ? "enabled" : "disabled until the user grants scoped access"}; do not work around this boundary.`,
     ...(access.network
