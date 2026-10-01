@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import type { EffectiveAccess } from "./access.ts";
-import { runProcess } from "./process.ts";
+import { runProcess, type ProcessResult } from "./process.ts";
 import { sandboxCommand } from "./sandbox.ts";
 import { getDSCodeHome } from "./home.ts";
 
@@ -16,12 +16,14 @@ const hooksConfigSchema = z.object({
   hooks: z
     .object({
       sessionStart: z.array(hookSchema).default([]),
+      input: z.array(hookSchema).default([]),
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
       agentEnd: z.array(hookSchema).default([]),
     })
     .default({
       sessionStart: [],
+      input: [],
       beforeTool: [],
       afterTool: [],
       agentEnd: [],
@@ -36,6 +38,7 @@ export function registerHooks(
 ): void {
   let config: HookConfig = {
     sessionStart: [],
+    input: [],
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
@@ -49,6 +52,22 @@ export function registerHooks(
       { event: "sessionStart" },
       getAccess(),
     );
+  });
+
+  pi.on("input", async (event, ctx) => {
+    // Only human input is customizable; Pi retains attachments and delivery behavior.
+    if (event.source === "extension") return { action: "continue" };
+    let text = event.text;
+    for (const hook of config.input) {
+      const result = await runHook(hook, ctx, { event: "input", text }, getAccess());
+      const failure = hookFailure(hook, result);
+      if (failure) throw new Error(failure);
+      if (result.truncated) throw new Error(`Input hook ${hook.command} output was truncated`);
+      if (result.stdout.trim()) text = result.stdout;
+    }
+    return text !== event.text
+      ? { action: "transform", text }
+      : { action: "continue" };
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -77,6 +96,7 @@ export function registerHooks(
 async function loadHookConfig(cwd: string, includeProject: boolean): Promise<HookConfig> {
   const merged: HookConfig = {
     sessionStart: [],
+    input: [],
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
@@ -104,33 +124,50 @@ async function runHooks(
   access: EffectiveAccess,
 ): Promise<string | undefined> {
   for (const hook of hooks) {
-    const args = hook.args.map((argument) =>
-      argument
-        .replaceAll("{cwd}", ctx.cwd)
-        .replaceAll("{payload}", JSON.stringify(payload))
-        .replaceAll("{tool}", typeof payload.tool === "string" ? payload.tool : ""),
+    const result = await runHook(hook, ctx, payload, access);
+    const failure = hookFailure(hook, result);
+    if (failure) return failure;
+  }
+  return undefined;
+}
+
+async function runHook(
+  hook: Hook,
+  ctx: ExtensionContext,
+  payload: Record<string, unknown>,
+  access: EffectiveAccess,
+): Promise<ProcessResult> {
+  const args = hook.args.map((argument) =>
+    argument
+      .replaceAll("{cwd}", ctx.cwd)
+      .replaceAll("{payload}", JSON.stringify(payload))
+      .replaceAll("{tool}", typeof payload.tool === "string" ? payload.tool : ""),
+  );
+  const command =
+    process.platform === "win32" && access.sandbox === "danger-full-access"
+      ? `& ${[hook.command, ...args].map(powerShellQuote).join(" ")}`
+      : [hook.command, ...args].map(shellQuote).join(" ");
+  const invocation = sandboxCommand(command, ctx.cwd, {
+    mode: access.sandbox,
+    network: access.network,
+  });
+  return runProcess(invocation.command, invocation.args, {
+    cwd: ctx.cwd,
+    signal: ctx.signal,
+    timeoutMs: hook.timeoutMs,
+    maxOutputBytes: 20_000,
+  });
+}
+
+function hookFailure(hook: Hook, result: ProcessResult): string | undefined {
+  if (result.timedOut || result.exitCode !== 0) {
+    return (
+      result.stderr.trim() ||
+      result.stdout.trim() ||
+      (result.timedOut
+        ? `Hook ${hook.command} timed out`
+        : `Hook ${hook.command} exited with ${result.exitCode}`)
     );
-    const command =
-      process.platform === "win32" && access.sandbox === "danger-full-access"
-        ? `& ${[hook.command, ...args].map(powerShellQuote).join(" ")}`
-        : [hook.command, ...args].map(shellQuote).join(" ");
-    const invocation = sandboxCommand(command, ctx.cwd, {
-      mode: access.sandbox,
-      network: access.network,
-    });
-    const result = await runProcess(invocation.command, invocation.args, {
-      cwd: ctx.cwd,
-      signal: ctx.signal,
-      timeoutMs: hook.timeoutMs,
-      maxOutputBytes: 20_000,
-    });
-    if (result.exitCode !== 0) {
-      return (
-        result.stderr.trim() ||
-        result.stdout.trim() ||
-        `Hook ${hook.command} exited with ${result.exitCode}`
-      );
-    }
   }
   return undefined;
 }
