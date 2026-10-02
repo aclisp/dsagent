@@ -16,6 +16,10 @@ export function pruneSessionFile(manager: SessionManager): boolean {
 
   const entries = manager.getEntries();
   const keptIds = new Set(manager.buildContextEntries().map((entry) => entry.id));
+  // Pi's script store is branch state, including writes before compaction.
+  for (const entry of manager.getBranch()) {
+    if (entry.type === "custom" && entry.customType === "codemode-store") keptIds.add(entry.id);
+  }
   const kept = entries.filter((entry) => keptIds.has(entry.id));
   if (kept.length === entries.length) return false;
 

@@ -22,7 +22,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | --- | --- | --- |
 | `WORKSPACES` | `dscode-workspace=<DSCODE_HOME>/workspace` on loopback hosts | Comma-separated `id=path` pairs; IDs must be 16-128 URL-safe characters (`A-Z`, `a-z`, `0-9`, `_`, `-`). Directories are created if missing. The implicit local default is predictable and is rejected when `HOST` is not a loopback address; use a random high-entropy ID for exposed deployments |
 | `TZ` | `Asia/Shanghai` | Valid IANA timezone used by every recurring task; explicit blank or invalid values still fail startup |
-| `RUNTIME_ARGS` | `--provider openrouter --model deepseek-v4.1-flash --permission auto --network --effort max` | Whitespace-split DSCode flags forwarded to every session. This default targets direct local startup; container deployments must override it with a sandbox backend such as `--sandbox danger-full-access`. Core supplies the four default tools and adds configured MCP tools — see "Agent toolset". Add `--prompt-contract none` only for a deeply customized persona; the default remains `engineering`. |
+| `RUNTIME_ARGS` | `--provider openrouter --model deepseek-v4.1-flash --permission auto --network --effort max` | Whitespace-split DSCode flags forwarded to every session. This default targets direct local startup; container deployments must override it with a sandbox backend such as `--sandbox danger-full-access`. Core supplies six default tools and Pi MCP discovery — see "Agent toolset". Add `--prompt-contract none` only for a deeply customized persona; the default remains `engineering`. |
 | `DSCODE_VISION_MODEL` | — | OpenRouter model ID used by `dscode-vision`; the matching `models.json` entry must declare `input: ["text", "image"]` |
 | `CHAT_AGENT_NAME` | `Steve Code` | Display name used throughout the friendly `/chat/:workspaceId` page; does not rename the raw debug UI |
 | `HOST` / `PORT` | `127.0.0.1` / `8899` | Listen address |
@@ -229,12 +229,16 @@ HTTP rejects `/base-url` and session-navigation commands without invoking the mo
 The CLI-only `delegate` tool is not registered by HTTP hosts; explicitly selecting it
 fails at startup. `--no-tools` takes precedence over tool selection.
 
-The default tools are `read,exec_command,write_stdin,apply_patch`, as in the CLI.
-Enabled MCP tools are discovered at session initialization and added even when
-`--tools` is explicit. Use `--no-mcp` to skip MCP connections and tools. `--no-tools`
-disables all tools and skips MCP regardless of argument order. Failed MCP connections
-do not prevent the session from starting; `/mcp` reports errors and active tools.
-There is no hot reload or automatic reconnection. Existing approval rules still apply.
+The default tools are `read,exec_command,write_stdin,apply_patch,codemode,tool_search`.
+Pi owns MCP discovery, schema, OAuth, and `/mcp`. Global config is `DSCODE_HOME/mcp.json`;
+trusted projects use `.pi/mcp.json`. Default MCP exposure is `codemode`, so tools are
+callable from scripts without advertising every schema. `tool_search` loads matching
+tools; `exposure: "direct"` advertises tools immediately. `--tools` chooses the initial
+active set; `--no-mcp` skips MCP and `--no-tools` disables all tools.
+Nested codemode calls keep DSCode's permissions and checkpoints. MCP tools and resources
+require per-call approval in `ask`/`auto`. SSE events retain `parentToolCallId`, and
+history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
+
 The web-ui also permanently disables `delegate`. `read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via

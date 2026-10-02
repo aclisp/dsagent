@@ -17,7 +17,7 @@ function body(source, signature, replacement) {
   return source.slice(0, start) + `${signature} {\n${replacement}\n}` + source.slice(end + 2);
 }
 
-export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platform, toolVersions }) {
+export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorker, audit, platform, toolVersions }) {
   const standalone = path.join(root, "standalone");
   const macClipboard = platform === "darwin-arm64"
     ? fs.realpathSync(path.join(tui, "../native/darwin/prebuilds/darwin-arm64/darwin-platform.node"))
@@ -77,12 +77,6 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
             : "export function getNativePlatformHelper() {} export function getNativeClipboard() {}", loader: "js" };
         }
         if (file === path.join(pi, "extensions/index.js")) return { contents: "export const builtInExtensions = [];", loader: "js" };
-        for (const [name, factory] of [["codemode", "createCodemodeExtension"], ["mcp", "createMcpExtension"], ["tool-search", "createToolSearchExtension"]]) {
-          if (file === path.join(pi, "extensions", name, "index.js")) return {
-            contents: `export function ${factory}() { throw new Error("Pi ${name} is disabled in DSCode"); } export default () => {};`,
-            loader: "js",
-          };
-        }
         if (file === path.join(pi, "core/extensions/virtual-modules.js")) return { contents: "export const VIRTUAL_MODULES = {};", loader: "js" };
         if (file === path.join(pi, "utils/photon.js")) return {
           // The WASM loader is adapted below; no global fs monkey-patch or disk fallback.
@@ -99,6 +93,8 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
           `const path = require(${JSON.stringify(path.join(path.dirname(photon), "photon_rs_bg.wasm"))});`);
         if (file === path.join(pi, "config.js")) {
           source = 'import { assets } from "dscode:assets";\n' + source;
+          source = body(source, "export function getQuickJSWasmPath()", 'return assets["quickjs.wasm"];');
+          source = body(source, "export function getCodemodeWorkerSpecifier()", `return new URL(${JSON.stringify(`./${path.basename(codemodeWorker)}`)}, import.meta.url);`);
           source = body(source, "export function getPackageJsonPath()", 'return assets["package.json"];');
           source = body(source, "export function getThemesDir()", 'return dirname(assets["dark.json"]);');
           source = body(source, "export function getBundledInteractiveAssetPath(name)", 'return assets[name];');
@@ -116,6 +112,11 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, audit, platfo
         if (file === path.join(pi, "core/resource-loader.js")) {
           source = replace(source, "this.additionalExtensionPaths = options.additionalExtensionPaths ?? [];", "this.additionalExtensionPaths = [];");
           source = replace(source, "this.noExtensions = options.noExtensions ?? false;", "this.noExtensions = true;");
+          // User extensions stay disabled; native built-ins are factory-backed
+          // and need no module loader or package installation.
+          source = replace(source,
+            "? cliEnabledExtensions\n            : this.mergePaths(cliEnabledExtensions, enabledExtensions)",
+            '? this.mergePaths(cliEnabledExtensions, enabledExtensions.filter(path => path.startsWith("builtin:")))\n            : this.mergePaths(cliEnabledExtensions, enabledExtensions)');
         }
         if (file === path.join(pi, "core/package-manager.js")) {
           // Retain upstream local skill/prompt/theme discovery and trust semantics.

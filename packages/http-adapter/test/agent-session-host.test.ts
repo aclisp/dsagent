@@ -69,7 +69,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       expect(host.session.sessionManager.isPersisted()).toBe(false);
       expect(host.session.extensionRunner.hasUI()).toBe(true);
       expect(host.session.getActiveToolNames()).toEqual(
-        ["read", "exec_command", "write_stdin", "apply_patch"],
+        ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"],
       );
       expect(host.session.getAllTools().some((tool) => tool.name === "delegate")).toBe(false);
       expect(
@@ -337,7 +337,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
   });
 
   it.each([
-    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search", "mcp__fixture__echo"] },
     { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
     { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
@@ -350,13 +350,13 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
       await fs.mkdir(home);
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: {
-        fixture: { command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
+        fixture: { exposure: "direct", command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
       } }));
       const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full", ...runtimeArgs] });
       try {
         const events: HttpUiBrokerEvent[] = [];
         host.subscribe((event) => events.push(event));
-        await host.prompt("/mcp");
+        if (!runtimeArgs.includes("--no-mcp") && !runtimeArgs.includes("--no-tools")) await host.prompt("/mcp");
         expect(host.session.getActiveToolNames(), JSON.stringify(events)).toEqual(expected);
         if (expected.includes("mcp__fixture__echo")) {
           const tool = host.session.agent.state.tools.find((tool) => tool.name === "mcp__fixture__echo")!;

@@ -6,7 +6,7 @@ import { createDSCodeExtension } from "./dscode-extension.ts";
 import { initializeDSCodeHome } from "./home.ts";
 import { installPiLoginSecretMask } from "./pi-login-mask.ts";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.ts";
-import { dscodePiBuiltinOverrides } from "./pi-builtins.ts";
+import { createDSCodePiBuiltins, installMcpCredentialGuard } from "./pi-builtins.ts";
 import { parseSupportedProviderId, type SupportedProviderId } from "./providers.ts";
 import { parseRuntimeArgs, printDSCodeHelp } from "./runtime-options.ts";
 import { installDSCodeRuntimeBranding } from "./runtime-branding.ts";
@@ -23,6 +23,13 @@ export async function runDSCode(argv: string[]): Promise<void> {
   const windowsSandboxCommand = parseWindowsSandboxLifecycleCommand(argv);
   if (windowsSandboxCommand) {
     runWindowsSandboxLifecycle(windowsSandboxCommand);
+    return;
+  }
+  if (argv[0] === "mcp") {
+    await initializeDSCodeHome();
+    await installMcpCredentialGuard();
+    const { main } = await import("@earendil-works/pi-coding-agent");
+    await main(argv);
     return;
   }
   const parsed = parseRuntimeArgs(argv);
@@ -59,7 +66,7 @@ export async function runDSCode(argv: string[]): Promise<void> {
 
   const { main } = await import("@earendil-works/pi-coding-agent");
   await main([...getDSCodeThemePaths().flatMap((themePath) => ["--theme", themePath]), ...parsed.piArgs], {
-    extensionFactories: [...dscodePiBuiltinOverrides, createDSCodeExtension(parsed.options)],
+    extensionFactories: [...await createDSCodePiBuiltins(parsed.options), createDSCodeExtension(parsed.options)],
   });
 }
 

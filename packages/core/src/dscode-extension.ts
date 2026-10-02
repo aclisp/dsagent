@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type {
   BashOperations,
   ExtensionAPI,
@@ -26,13 +27,12 @@ import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
 import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
-import { MCPManager } from "./mcp.ts";
+import { isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
 import { defaultModelForProvider } from "./providers.ts";
 import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
-import { confirmMcpTool } from "./mcp-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
@@ -129,8 +129,15 @@ export function createDSCodeExtension(
     factory(pi) {
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
-      const mcp = new MCPManager();
-      let mcpApprovalQueue = Promise.resolve();
+      let approvalQueue = Promise.resolve();
+      let pendingRestoredTools: string[] = [];
+      const activateRestoredTools = () => {
+        if (pendingRestoredTools.length === 0) return;
+        const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+        const ready = pendingRestoredTools.filter((name) => registered.has(name));
+        if (ready.length) pi.setActiveTools([...new Set([...pi.getActiveTools(), ...ready])]);
+        pendingRestoredTools = pendingRestoredTools.filter((name) => !registered.has(name));
+      };
       let permission: PermissionMode = options.permission;
       const checkpoints: PatchCheckpoint[] = [];
       const undone = new Set<string>();
@@ -188,7 +195,6 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
-        mcp.revokeApprovals();
         checkpoints.length = 0;
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
@@ -197,30 +203,17 @@ export function createDSCodeExtension(
         ctx.ui.setHiddenThinkingLabel(
           formatThinkingLabel(ctx.model?.name ?? ctx.model?.id ?? options.modelId),
         );
-        const staleMcpTools = new Set(mcp.toolNames());
-        if (staleMcpTools.size > 0) {
-          pi.setActiveTools(
-            pi.getActiveTools().filter((tool) => !staleMcpTools.has(tool)),
-          );
+        // The SDK supplies an initial set even on resume. Restore Pi's transcript
+        // declaration, then activate missing MCP tools as native discovery finishes.
+        // /reload already preserves the live selection in Pi.
+        if (["startup", "new", "resume", "fork"].includes(_event.reason)) {
+          const restored = options.toolsExplicit ? undefined : getCurrentSystemMessage(
+            ctx.sessionManager.buildSessionProjection().messages,
+          )?.toolsAdded?.map((tool) => tool.name);
+          pendingRestoredTools = (restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
+          pi.setActiveTools(options.noTools ? [] : restored ? pendingRestoredTools : options.activeTools);
+          activateRestoredTools();
         }
-        await mcp.close();
-        try {
-          await mcp.connectConfigured(
-            pi,
-            ctx,
-            options.noTools ? "--no-tools" : options.noMcp ? "--no-mcp" : undefined,
-          );
-          if (mcp.initializationErrors().length > 0) {
-            ctx.ui.notify(`MCP initialization: ${mcp.initializationErrors().join("\n")}`, "warning");
-          }
-        } catch (error) {
-          ctx.ui.notify(`MCP initialization failed: ${(error as Error).message}`, "warning");
-        }
-        const intendedTools = options.noTools ? [] : [...new Set([
-          ...options.activeTools.filter((tool) => !tool.startsWith("mcp__")),
-          ...mcp.toolNames(),
-        ])];
-        pi.setActiveTools(intendedTools);
         await queueSessionPartition(ctx);
       });
 
@@ -233,31 +226,26 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
-        mcp.revokeApprovals();
         try {
           await queueSessionPartition(ctx);
         } finally {
           await processes.dispose();
-          await mcp.close();
         }
       });
 
       pi.on("before_agent_start", async (event) => {
+        activateRestoredTools();
         lastAgentFailed = false;
         if (isStandalone) {
           event.systemPromptOptions.sections.docs = STANDALONE_DOCS;
         }
-        const currentAccess = effectiveAccess();
-        const systemPrompt = effectiveSystemPrompt(
-          event.systemPrompt,
-          projectCommands,
-          currentAccess,
-          options.promptContract,
-        );
-        return { systemPrompt };
+        if (options.promptContract === "engineering") {
+          event.systemPromptOptions.sections.dscode = engineeringInstructions(projectCommands, effectiveAccess());
+        }
       });
 
       pi.on("tool_call", async (event, ctx) => {
+        activateRestoredTools();
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
         if (isSubagent() && !(SUBAGENT_TOOLS as readonly string[]).includes(event.toolName)) {
           return { block: true, reason: "Investigation-only children can only read and search files." };
@@ -275,7 +263,9 @@ export function createDSCodeExtension(
                 : "This write tool bypasses DSCode checkpoints. Use apply_patch instead.",
           };
         }
-        const externalMcp = event.toolName.startsWith("mcp__");
+        // Orchestration has no effects itself; nested calls pass through this hook.
+        if (event.toolName === "codemode" || event.toolName === "tool_search") return;
+        const externalMcp = isMcpTool(event.toolName);
         const command =
           event.toolName === "exec_command" &&
           isRecord(event.input) &&
@@ -307,69 +297,47 @@ export function createDSCodeExtension(
           // The scoped network selector in exec_command is the approval UI for this action.
           return;
         }
-        if (externalMcp) {
-          const epoch = mcp.approvalEpoch;
-          // Only one prompt at a time; queued calls recheck newly granted scopes.
-          const approval = mcpApprovalQueue.then(async () => {
-            const expired = () => epoch !== mcp.approvalEpoch;
-            const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
-            if (expired()) return stale;
-            if (permission === "full" || mcp.isApproved(event.toolName)) return;
-            if (!ctx.hasUI) {
-              return {
-                block: true,
-                reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
-              };
-            }
-            const info = mcp.toolInfo(event.toolName);
-            const choice = ctx.mode === "tui" && info
-              ? await confirmMcpTool(ctx.ui, info.server, info.tool, JSON.stringify(event.input, null, 2))
-              : await ctx.ui.confirm(`Allow ${event.toolName}?`, approvalSummary(event.toolName, event.input))
-                ? "once" : "deny";
-            if (expired()) return stale;
-            if (choice !== "once" && choice !== "tool" && choice !== "server") {
-              return { block: true, reason: "Denied by user" };
-            }
-            if (choice === "tool" || choice === "server") mcp.approve(event.toolName, choice);
-          });
-          mcpApprovalQueue = approval.then(() => {}, () => {});
-          return approval;
-        }
-        if (!ctx.hasUI) {
-          return {
-            block: true,
-            reason:
-              "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
-          };
-        }
-        if (dangerousCommand) {
-          const assessment = commandAssessment!;
-          const details = [
-            command,
-            "",
-            assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
-            assessment.reason ?? "This command may affect files or system state",
-          ].join("\n");
-          const approved = ctx.mode === "tui"
-            ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
-            : await ctx.ui.confirm("Run destructive command?", details);
-          if (!approved) return { block: true, reason: "Destructive command denied by user" };
-        } else if (
-          event.toolName === "apply_patch" &&
-          isRecord(event.input) &&
-          typeof event.input.input === "string"
-        ) {
-          for (const section of patchApprovalSections(event.input.input)) {
-            const approved = await ctx.ui.confirm(`Apply ${section.file}?`, section.patch);
-            if (!approved) return { block: true, reason: `Denied ${section.file} by user` };
+        // Codemode can request several actions concurrently. Keep approval UI serial.
+        const approval = approvalQueue.then(async () => {
+          if (permission === "full") return;
+          if (!ctx.hasUI) {
+            return {
+              block: true,
+              reason:
+                "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
+            };
           }
-        } else {
-          const approved = await ctx.ui.confirm(
-            `Allow ${event.toolName}?`,
-            approvalSummary(event.toolName, event.input),
-          );
-          if (!approved) return { block: true, reason: "Denied by user" };
-        }
+          if (dangerousCommand) {
+            const assessment = commandAssessment!;
+            const details = [
+              command,
+              "",
+              assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+              assessment.reason ?? "This command may affect files or system state",
+            ].join("\n");
+            const approved = ctx.mode === "tui"
+              ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
+              : await ctx.ui.confirm("Run destructive command?", details);
+            if (!approved) return { block: true, reason: "Destructive command denied by user" };
+          } else if (
+            event.toolName === "apply_patch" &&
+            isRecord(event.input) &&
+            typeof event.input.input === "string"
+          ) {
+            for (const section of patchApprovalSections(event.input.input)) {
+              const approved = await ctx.ui.confirm(`Apply ${section.file}?`, section.patch);
+              if (!approved) return { block: true, reason: `Denied ${section.file} by user` };
+            }
+          } else {
+            const approved = await ctx.ui.confirm(
+              `Allow ${event.toolName}?`,
+              approvalSummary(event.toolName, event.input),
+            );
+            if (!approved) return { block: true, reason: "Denied by user" };
+          }
+        });
+        approvalQueue = approval.then(() => {}, () => {});
+        return approval;
       });
 
       pi.on("user_bash", (_event, ctx) => {
@@ -640,24 +608,6 @@ export function createDSCodeExtension(
         },
       });
 
-      pi.registerCommand("mcp", {
-        description: "Show MCP tools and session permissions; /mcp revoke clears permissions",
-        handler: async (args, ctx) => {
-          const action = args.trim();
-          if (action === "revoke") {
-            mcp.revokeApprovals();
-            ctx.ui.notify("MCP session permissions revoked. Future calls will require approval in auto/ask mode.", "info");
-            return;
-          }
-          if (action) {
-            ctx.ui.notify("Usage: /mcp or /mcp revoke", "info");
-            return;
-          }
-          const status = mcp.detailedStatus(pi.getActiveTools());
-          ctx.ui.notify(mcp.toolNames().length > 0 ? `${status}\n\n/mcp revoke — revoke all MCP session permissions` : status, "info");
-        },
-      });
-
       pi.registerCommand("x-7f3c9a", {
         description: "Show an internal runtime diagnostic snapshot",
         handler: async (_args, ctx) => {
@@ -755,7 +705,6 @@ export function createDSCodeExtension(
                 ? `context: ${usage.tokens?.toLocaleString() ?? "?"}/${usage.contextWindow.toLocaleString()}`
                 : "context: unavailable",
               `checkpoints: ${checkpoints.length - undone.size} active`,
-              `mcp:\n${mcp.status()}`,
             ].join("\n"),
             "info",
           );

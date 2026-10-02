@@ -604,6 +604,10 @@ async function renderHistory() {
       }
     } else if (message.role === "toolResult") {
       outToolResult(message.toolName, message.isError);
+      for (const call of message.nestedCalls?.calls ?? []) {
+        outToolCall(call.name, call.arguments ?? {});
+        outToolResult(call.name, call.status !== "ok");
+      }
     } else if (message.role === "compactionSummary") {
       outHtml('<pre class="muted">— earlier context summarized —</pre>');
     }

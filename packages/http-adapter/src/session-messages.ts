@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent, TextContent, ThinkingContent, ToolCall } from "@earendil-works/pi-ai";
+import type { ImageContent, NestedToolCalls, TextContent, ThinkingContent, ToolCall } from "@earendil-works/pi-ai";
 
 export type { AgentMessage };
 
@@ -28,6 +28,7 @@ export type HttpSessionMessage =
       toolCallId: string;
       toolName: string;
       isError: boolean;
+      nestedCalls?: NestedToolCalls;
       content: HttpMessageText[];
     }
   | { role: "compactionSummary"; timestamp: number; summary: string };
@@ -65,6 +66,7 @@ export function toHttpSessionMessages(messages: readonly AgentMessage[]): HttpSe
           toolCallId: message.toolCallId,
           toolName: message.toolName,
           isError: message.isError,
+          ...(message.nestedCalls ? { nestedCalls: message.nestedCalls } : {}),
           content: textBlocks(message.content),
         });
         break;

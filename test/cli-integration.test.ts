@@ -12,7 +12,7 @@ describe("DSCode Pi integration", () => {
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-cli-mcp-"));
     await fs.writeFile(path.join(root, "mcp.json"), JSON.stringify({ mcpServers: {
-      fixture: { command: process.execPath, args: [path.resolve("test/fixtures/mcp-server.mjs")] },
+      fixture: { exposure: "direct", command: process.execPath, args: [path.resolve("test/fixtures/mcp-server.mjs")] },
     } }));
   });
 
@@ -23,6 +23,15 @@ describe("DSCode Pi integration", () => {
     server = undefined;
     await fs.rm(root, { recursive: true, force: true });
   });
+
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("runs Pi MCP CLI without model auth or DSCode argument parsing (%s)", async (entry) => {
+    const env = { PATH: process.env.PATH, HOME: root, DSCODE_HOME: root, DSCODE_PROVIDER: "invalid-for-model-parser", PI_OFFLINE: "1" };
+    const result = await spawnCapture(process.execPath, [path.resolve(entry), "mcp", "add", "local", "-l", "--cwd", root, "--", process.execPath, "--version"], env, root);
+    expect(result.exitCode, result.stderr).toBe(0);
+    const config = JSON.parse(await fs.readFile(path.join(root, ".pi/mcp.json"), "utf8"));
+    expect(config.mcpServers.local).toMatchObject({ command: process.execPath, args: ["--version"], cwd: root });
+    await expect(fs.stat(path.join(root, ".dscode/mcp.json"))).rejects.toThrow();
+  }, 15_000);
 
   it.each([
     { toolArgs: [], noTools: false },
@@ -129,7 +138,7 @@ describe("DSCode Pi integration", () => {
     expect(payload).not.toHaveProperty("include");
     expect(payload?.reasoning).toEqual({ effort: "max" });
     expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
-      noTools ? [] : ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"].sort(),
+      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"]), "mcp__fixture__echo"].sort(),
     );
   }, 15_000);
 
@@ -249,10 +258,11 @@ function spawnCapture(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv,
+  cwd = process.cwd(),
 ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: process.cwd(),
+      cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });

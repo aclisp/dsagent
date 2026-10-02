@@ -107,16 +107,24 @@ sandbox     workspace-write
 network     blocked
 ```
 
-CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch`。
+CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode,tool_search`。
 可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
 一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
 使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
 父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
 
-TUI 的 MCP 确认框默认选中 **Allow once**（仅本次）。也可以授权本次会话内的单个工具，
-或该 server 的所有工具，包含后续不同参数的调用。授权在 `auto` 和 `ask` 模式下生效，
-`/mcp` 展示当前授权，`/mcp revoke` 撤销全部 MCP 会话授权。
-授权仅保存在内存中，新建、切换、恢复会话或 MCP 重连时清除；非 TUI 确认仍只允许单次调用。
+MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+（默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
+`enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `tool-search` 或 `direct`。
+默认工具通过 codemode 调用，`tool_search` 可将匹配工具加载到模型。
+`--tools` 选择初始工具集合；`--no-mcp` 不加载 MCP，`--no-tools` 禁用所有工具。
+
+`/mcp` 和 `dscode mcp add|remove|list|login|logout` 由 Pi 提供。CLI MCP 管理命令
+不需要模型登录；`dscode mcp add ... -l` 写入项目 `.pi/mcp.json`。
+MCP 工具和资源调用在 `auto`/`ask` 下逐次批准，`full` 下自动执行；
+没有交互 UI 时拒绝需要批准的调用。codemode 内部调用执行相同的权限检查，
+使用 `exec_command` 保留沙箱，使用 `apply_patch` 保留 checkpoint 和 `/undo`。
+codemode 使用普通 `on` 模式，禁用直接模型调用的 `models` API。
 
 ## 常用启动方式
 
@@ -194,7 +202,7 @@ dscode -C ./project --sandbox workspace-write
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
 
 这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。
-Provider API key 不会传给命令、hooks 或 stdio MCP server。
+环境中的 Provider API key 不会传给命令、hooks 或 stdio MCP server；MCP server 的显式 `env` 配置仍可提供凭据。
 
 ## 扩展与自动化
 

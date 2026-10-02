@@ -27,11 +27,11 @@ export function optimizeDeepSeekResponsesPayload(
   const tools = Array.isArray(next.tools) ? [...next.tools] : [];
   for (let index = 0; index < tools.length; index += 1) {
     const tool = tools[index];
-    if (isRecord(tool) && tool.type === "custom" && tool.name === "apply_patch") {
-      // Keep Pi's custom-tool protocol, using DeepSeek's freeform patch shape.
+    if (isRecord(tool) && tool.type === "custom" && (tool.name === "apply_patch" || tool.name === "codemode")) {
+      // Keep Pi's custom-tool protocol, using DeepSeek's freeform input shape.
       tools[index] = {
         type: "custom",
-        name: "apply_patch",
+        name: tool.name,
         description: tool.description,
       };
     }

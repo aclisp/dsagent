@@ -7,10 +7,12 @@ checkpoints, and RPC behavior used by the `@aclisp/dsagent` terminal client. Dee
 default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go are supported by the same
 runtime.
 
-The runtime uses Pi 1.0.0 with DSCode's own MCP integration. Pi's built-in MCP,
-Codemode, and tool search extensions are disabled; DSCode does not add virtual
-model routing or classifier calls. The upstream packages still include those APIs
-and transitive dependencies.
+The runtime uses Pi 1.0.0's native MCP, codemode, and tool-search extensions.
+Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, `codemode`,
+and `tool_search`. Codemode runs in normal `on` mode with `models` disabled;
+its nested tool calls retain DSCode permissions, sandboxing, and checkpoints.
+Pi owns the MCP schema, discovery, OAuth, `/mcp`, and `dscode mcp` commands.
+Global configuration is `DSCODE_HOME/mcp.json`; trusted projects use `.pi/mcp.json`.
 
 ```ts
 import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";

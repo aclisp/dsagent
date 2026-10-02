@@ -63,8 +63,8 @@ const server = http.createServer(async (request, response) => {
   if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
   const item = call
-    ? currentTool.name === "apply_patch"
-      ? {id:"fc_probe",call_id:"call_probe",type:"custom_tool_call",status:"completed",name:currentTool.name,input:currentTool.args.input}
+    ? currentTool.name === "apply_patch" || currentTool.name === "codemode"
+      ? {id:"fc_probe",call_id:"call_probe",type:"custom_tool_call",status:"completed",name:currentTool.name,input:currentTool.args.input ?? currentTool.args.code}
       : {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
     : { id: "msg_probe", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "standalone ok", annotations: [], logprobs: [] }] };
   const events = [
@@ -294,8 +294,8 @@ try {
   for (const transport of ["stdio", "http"]) {
     await check(`MCP ${transport} discovery and call`, async () => {
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({mcpServers:{fixture:transport === "stdio"
-        ? {command:"/usr/bin/python3",args:["-B",path.join(scratch,"mcp.py")]}
-        : {url:`http://127.0.0.1:${server.address().port}/mcp`}}}));
+        ? {exposure:"direct",command:"/usr/bin/python3",args:["-B",path.join(scratch,"mcp.py")]}
+        : {exposure:"direct",url:`http://127.0.0.1:${server.address().port}/mcp`}}}));
       plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued = false; toolOutputs = [];
       const result = await run("dscode", [...base, "--permission", "full", "-p", "run MCP once"]);
       assert.equal(result.code, 0, result.stderr);
@@ -303,6 +303,16 @@ try {
     });
   }
   plannedTool = undefined;
+  await check("native codemode worker calls MCP and records nested history", async () => {
+    plannedTool = {name:"codemode",args:{code:'console.log(await tools.mcp__fixture__echo({})); console.log(typeof models);'}};
+    toolIssued=false; toolOutputs=[];
+    const result = await run("dscode",[...base,"--permission","full","--mode","json","-p","run native script"]);
+    assert.equal(result.code,0,result.stderr);
+    assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
+    assert.match(JSON.stringify(toolOutputs),/undefined/);
+    assert.match(result.stdout,/"parentToolCallId":"call_probe(?:\|[^"]*)?"/);
+    assert.match(result.stdout,/"nestedCalls"/);
+  });
   await check("auto permissions deny noninteractive MCP", async () => {
     plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued=false; toolOutputs=[];
     const result = await run("dscode",[...base,"--mode","json","-p","try MCP"]);

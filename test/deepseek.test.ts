@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { optimizeDeepSeekResponsesPayload } from "../packages/core/src/deepseek.ts";
 
 describe("optimizeDeepSeekResponsesPayload", () => {
-  it("uses DeepSeek's stateless Responses subset and freeform patch tool", () => {
+  it.each(["apply_patch", "codemode"])("uses DeepSeek's stateless Responses subset and freeform %s tool", (name) => {
     const result = optimizeDeepSeekResponsesPayload(
       {
         model: "deepseek-v4-flash",
@@ -13,7 +13,7 @@ describe("optimizeDeepSeekResponsesPayload", () => {
         tools: [
           {
             type: "custom",
-            name: "apply_patch",
+            name,
             description: "patch",
             format: { type: "grammar" },
           },
@@ -26,7 +26,7 @@ describe("optimizeDeepSeekResponsesPayload", () => {
     expect(result).not.toHaveProperty("include");
     expect(result.reasoning).toEqual({ effort: "max" });
     expect(result.tools).toEqual([
-      { type: "custom", name: "apply_patch", description: "patch" },
+      { type: "custom", name, description: "patch" },
     ]);
   });
 

@@ -1,51 +1,169 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DefaultResourceLoader, SettingsManager, type InlineExtension } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { DefaultResourceLoader, ProjectTrustStore, SettingsManager, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
-import { dscodePiBuiltinOverrides } from "../packages/core/src/pi-builtins.ts";
+import { createDSCodePiBuiltins } from "../packages/core/src/pi-builtins.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { createAgentSessionHost } from "../packages/http-adapter/src/agent-session-host.ts";
+
+const roots: string[] = [];
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+});
+
+async function setup() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-pi-native-"));
+  roots.push(root);
+  const agentDir = path.join(root, "agent");
+  await fs.mkdir(agentDir);
+  vi.stubEnv("DSCODE_HOME", agentDir);
+  vi.stubEnv("DSCODE_SESSIONS_DIR", path.join(root, "sessions"));
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+  vi.stubEnv("PI_CODING_AGENT_SESSION_DIR", path.join(root, "sessions"));
+  vi.stubEnv("DEEPSEEK_API_KEY", "inherited-test-key");
+  new ProjectTrustStore(agentDir).set(root, true);
+  return { root, agentDir };
+}
+
+async function fixtureConfig(directory: string, env?: Record<string, string>) {
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, "mcp.json"), JSON.stringify({ mcpServers: {
+    fixture: { command: process.execPath, args: [path.resolve("test/fixtures/mcp-server.mjs")], ...(env ? { env } : {}) },
+    disabled: { enabled: false, command: "must-not-run" },
+  } }));
+}
+
+async function executeCode(host: Awaited<ReturnType<typeof createAgentSessionHost>>, code: string) {
+  const message = {
+    role: "assistant" as const,
+    content: [{ type: "toolCall" as const, id: "code-parent", name: "codemode", arguments: { code } }],
+    api: host.session.model!.api, provider: host.session.model!.provider, model: host.session.model!.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "toolUse" as const, timestamp: Date.now(),
+  };
+  host.session.agent.state.messages = [...host.session.agent.state.messages, message];
+  host.session.sessionManager.appendMessage(message);
+  const tool = host.session.agent.state.tools.find((tool) => tool.name === "codemode")!;
+  const result = await tool.execute("code-parent", { code });
+  return { result, text: result.content.filter((block) => block.type === "text").map((block) => block.text).join("\n") };
+}
 
 describe("DSCode Pi built-ins", () => {
-  it("replaces Pi's MCP and codemode stack before loading, including reload and explicit paths", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-pi-builtins-"));
-    try {
-      const agentDir = path.join(root, "agent");
-      await fs.mkdir(agentDir);
-      const upstreamFactory = vi.fn(() => { throw new Error("Upstream built-in must not load"); });
-      const upstreamBuiltins: InlineExtension[] = ["mcp", "codemode", "tool-search"].map((name) => ({
-        name, builtin: true, factory: upstreamFactory,
-      }));
-      const settingsManager = SettingsManager.create(root, agentDir, { projectTrusted: true });
-      const loader = new DefaultResourceLoader({
-        cwd: root,
-        agentDir,
-        settingsManager,
-        additionalExtensionPaths: ["builtin:mcp", "builtin:codemode", "builtin:tool-search"],
-        extensionFactories: [
-          ...upstreamBuiltins,
-          ...dscodePiBuiltinOverrides,
-          createDSCodeExtension(parseRuntimeArgs(["-C", root, "--no-mcp"]).options),
-        ],
-      });
-      for (let reload = 0; reload < 2; reload++) {
-        await loader.reload();
-        const result = loader.getExtensions();
-        expect(result.errors).toEqual([]);
-        expect(result.warnings ?? []).toEqual([]);
-        const tools = result.extensions.flatMap((extension) => [...extension.tools.keys()]);
-        expect(tools).toContain("exec_command");
-        expect(tools).not.toContain("codemode");
-        expect(tools).not.toContain("tool_search");
-        const mcpCommands = result.extensions.flatMap((extension) => [...extension.commands.keys()])
-          .filter((name) => name === "mcp");
-        expect(mcpCommands).toEqual(["mcp"]);
-        expect(result.runtime.pendingVirtualModelRegistrations).toEqual([]);
-      }
-      expect(upstreamFactory).not.toHaveBeenCalled();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
+  it.each([
+    { args: [], depth: "0", tools: ["codemode", "tool_search"], mcp: true },
+    { args: ["--no-mcp"], depth: "0", tools: ["codemode", "tool_search"], mcp: false },
+    { args: ["--no-tools"], depth: "0", tools: [], mcp: false },
+    { args: [], depth: "1", tools: [], mcp: false },
+  ])("loads native factories or suppresses them before startup and reload ($args, child $depth)", async ({ args, depth, tools, mcp }) => {
+    const { root, agentDir } = await setup();
+    vi.stubEnv("DSCODE_SUBAGENT_DEPTH", depth);
+    const options = parseRuntimeArgs(["-C", root, ...args]).options;
+    const upstreamFactory = vi.fn(() => { throw new Error("Default must be replaced"); });
+    const upstream: InlineExtension[] = ["mcp", "codemode", "tool-search"].map((name) => ({ name, builtin: true, factory: upstreamFactory }));
+    const loader = new DefaultResourceLoader({
+      cwd: root, agentDir,
+      settingsManager: SettingsManager.create(root, agentDir, { projectTrusted: true }),
+      additionalExtensionPaths: ["builtin:mcp", "builtin:codemode", "builtin:tool-search"],
+      extensionFactories: [...upstream, ...await createDSCodePiBuiltins(options), createDSCodeExtension(options)],
+    });
+    for (let reload = 0; reload < 2; reload++) {
+      await loader.reload();
+      const result = loader.getExtensions();
+      expect(result.errors).toEqual([]);
+      expect(result.warnings ?? []).toEqual([]);
+      const registered = result.extensions.flatMap((extension) => [...extension.tools.keys()]);
+      expect(registered.filter((name) => ["codemode", "tool_search"].includes(name)).sort()).toEqual(tools);
+      expect(result.extensions.flatMap((extension) => [...extension.commands.keys()]).includes("mcp")).toBe(mcp);
+      expect(result.runtime.pendingVirtualModelRegistrations).toEqual([]);
     }
+    expect(upstreamFactory).not.toHaveBeenCalled();
   });
+
+  it("uses project .pi config, deferred discovery, nested hooks and sanitized MCP credentials", async () => {
+    const { root } = await setup();
+    await fixtureConfig(path.join(root, ".pi"));
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"] });
+    try {
+      host.subscribe((event) => {
+        if (event.type === "ui_request" && event.request.method === "confirm" && event.request.title.startsWith("Undo")) {
+          host.uiBroker.respond({ requestId: event.request.id, confirmed: true });
+        }
+      });
+      await host.prompt("/mcp");
+      expect(host.session.getActiveToolNames()).not.toContain("mcp__fixture__echo");
+      expect(host.session.getCallableToolNames()).toContain("mcp__fixture__echo");
+      expect(host.session.getAllTools().some((tool) => tool.name.startsWith("mcp__disabled__"))).toBe(false);
+      const nested: string[] = [];
+      const unsubscribe = host.session.subscribe((event) => {
+        if (event.type === "tool_execution_start" && event.parentToolCallId) nested.push(event.parentToolCallId);
+      });
+      const { text } = await executeCode(host, 'console.log(await tools.mcp__fixture__echo({text:"NATIVE_OK"})); console.log(typeof models);');
+      unsubscribe();
+      expect(text).toContain("NATIVE_OK|DEEPSEEK_API_KEY=unset");
+      expect(text).toContain("undefined");
+      expect(nested).toContain("code-parent");
+      const search = host.session.agent.state.tools.find((tool) => tool.name === "tool_search")!;
+      await search.execute("search", { query: "echo" });
+      expect(host.session.getActiveToolNames()).toContain("mcp__fixture__echo");
+      await host.session.reload();
+      await host.prompt("/mcp");
+      expect(host.session.getActiveToolNames()).toContain("mcp__fixture__echo");
+      await executeCode(host, 'console.log(await tools.apply_patch({input:"*** Begin Patch\\n*** Add File: nested.txt\\n+checkpoint\\n*** End Patch"}));');
+      expect(await fs.readFile(path.join(root, "nested.txt"), "utf8")).toContain("checkpoint");
+      await host.prompt("/undo");
+      await expect(fs.stat(path.join(root, "nested.txt"))).rejects.toThrow();
+    } finally { await host.dispose(); }
+  }, 15_000);
+
+  it("restores Pi's saved tool loadout and script store when an HTTP session resumes", async () => {
+    const { root, agentDir } = await setup();
+    await fixtureConfig(agentDir);
+    const first = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"], session: { type: "persistent" } });
+    const id = first.session.sessionManager.getSessionId();
+    try {
+      await first.prompt("/mcp");
+      const search = first.session.agent.state.tools.find((tool) => tool.name === "tool_search")!;
+      await search.execute("search", { query: "echo" });
+      first.session.sessionManager.appendMessage({
+        role: "system", content: "", timestamp: Date.now(),
+        toolsAdded: first.session.agent.state.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+      });
+      await executeCode(first, 'store("saved", "RESUMED_STORE_OK");');
+    } finally { await first.dispose(); }
+    const resumed = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"], session: { type: "resume", id } });
+    try {
+      await resumed.prompt("/mcp");
+      const { text } = await executeCode(resumed, 'console.log(await tools.mcp__fixture__echo({text:load("saved")}));');
+      expect(text).toContain("RESUMED_STORE_OK");
+      expect(resumed.session.getActiveToolNames()).toContain("mcp__fixture__echo");
+      expect(resumed.session.getActiveToolNames()).not.toContain("bash");
+    } finally { await resumed.dispose(); }
+  }, 15_000);
+
+  it("checks nested MCP and resource permissions and preserves explicitly configured credentials", async () => {
+    const { root, agentDir } = await setup();
+    await fixtureConfig(agentDir, { DEEPSEEK_API_KEY: "explicit-server-key", FIXTURE_RESOURCES: "1" });
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"] });
+    try {
+      await host.prompt("/mcp");
+      expect((await executeCode(host, 'console.log(await tools.mcp__fixture__echo({text:"explicit"}));')).text).toContain("DEEPSEEK_API_KEY=explicit-server-key");
+      await host.prompt("/permissions auto");
+      const pending: string[] = [];
+      const unsubscribe = host.subscribe((event) => {
+        if (event.type === "ui_request" && event.request.method === "confirm") {
+          pending.push(event.request.title);
+          host.uiBroker.respond({ requestId: event.request.id, confirmed: false });
+        }
+      });
+      const { text } = await executeCode(host, 'await tools.mcp__fixture__echo({text:"deny"});');
+      expect(text).toContain("Denied by user");
+      expect(pending).toContain("Allow mcp__fixture__echo?");
+      await executeCode(host, 'await tools.list_mcp_resources({});');
+      expect(pending).toContain("Allow list_mcp_resources?");
+      unsubscribe();
+    } finally { await host.dispose(); }
+  }, 15_000);
 });

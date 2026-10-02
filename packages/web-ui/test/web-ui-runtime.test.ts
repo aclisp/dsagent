@@ -11,7 +11,7 @@ describe("Web UI runtime", () => {
     expect(resolveWebUiRuntimeArgs("   ")).toEqual([...DEFAULT_WEB_UI_RUNTIME_ARGS]);
     expect(DEFAULT_WEB_UI_RUNTIME_ARGS).not.toContain("--tools");
     expect(parseRuntimeArgs(resolveWebUiRuntimeArgs(undefined)).options.activeTools)
-      .toEqual(["read", "exec_command", "write_stdin", "apply_patch"]);
+      .toEqual(["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"]);
   });
 
   it("preserves an explicit RUNTIME_ARGS value", () => {

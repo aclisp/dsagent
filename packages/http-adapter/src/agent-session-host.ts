@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   createDSCodeExtension,
+  createDSCodePiBuiltins,
   getDSCodeSessionsDir,
   initializeDSCodeHome,
   parseRuntimeArgs,
@@ -95,7 +96,7 @@ export async function createAgentSessionHost(
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
       resourceLoaderOptions: {
-        extensionFactories: [createDSCodeExtension(runtimeOptions, { subagents: false })],
+        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, { subagents: false })],
       },
     });
     const model = services.modelRuntime.getModel(
@@ -115,7 +116,7 @@ export async function createAgentSessionHost(
       model,
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       // SDK `tools` is a permanent registry allowlist, not just the active set.
-      // Core selects active tools after MCP discovery in session_start.
+      // Core selects the initial active set; Pi owns MCP discovery and restoration.
       ...(runtimeOptions.noTools ? { noTools: "all" as const } : {}),
       excludeTools: ["delegate"],
     });

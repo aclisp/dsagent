@@ -2,7 +2,7 @@
 
 - 状态：已接受；任务 1、jobs 专项、任务 2、任务 3 已实现并验收
 - 日期：2026-09-07
-- 更新：2026-10-02（规划移除与子进程简化见 ADR-0004）
+- 更新：2026-10-02（规划移除与子进程简化见 ADR-0004；默认工具与 MCP 决策由 ADR-0005 取代）
 
 ## 背景
 
@@ -23,20 +23,7 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 
 ### 2. 默认工具与 MCP
 
-1. CLI 和 Web UI server 在没有 `--tools` 时，默认启用四个常规工具：
-   `read`、`exec_command`、`write_stdin`、`apply_patch`。显式选择这四个工具与省略参数的
-   结果一致；CLI 的其他常规工具需要显式选择，Web 继续禁用 `delegate`。
-2. MCP 工具由 Core 在 session 初始化时从 `DSCODE_HOME/mcp.json` 和受信任项目的
-   `.dscode/mcp.json` 中发现、注册，并自动加入当前工具集合。用户不需要在 `--tools` 中逐个
-   指定 `mcp__...` 工具；显式选择四个常规工具时仍然自动加入已发现的 MCP 工具。
-3. `--no-tools` 禁用常规工具和 MCP 工具，参数顺序不影响结果；`--no-mcp` 保留常规工具但
-   不读取、连接或注册 MCP。显式列出的 MCP 名称不能绕过 `--no-mcp`。
-4. MCP server 的 `disabled` 配置、项目可信检查和配置文件错误保持有效。单个 server 连接或
-   发现失败不会阻止 session 启动；错误通过初始化提示和 `/mcp` 暴露。`/mcp` 区分已连接、
-   已发现、当前 active、配置禁用和失败原因。
-5. MCP 只在 session 初始化时发现，不增加热加载或自动重连；配置变化需要重新初始化 session。
-   重新初始化前清理旧的 MCP 注册和 active 工具，避免 stale tool 泄漏。
-6. `ask`/`auto` 下 MCP 调用仍需审批，非交互环境无法审批时拒绝，`full` 保留免审批语义。
+此节由 [ADR-0005](0005-native-pi-mcp.md) 取代，使用 Pi 原生 MCP、codemode 和 tool-search。
 
 ### 3. Managed jobs 生命周期
 
@@ -72,7 +59,6 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 ## 非目标
 
 - Web 不新增 CLI 子进程调查能力。
-- MCP 不增加热加载、自动重连或 `/mcp reload`。
 - jobs 不引入过期时间、持久化、轻量完成状态或活跃进程数量限制。
 - checkpoint UI 不扩展为版本管理或仓库级 Git diff 工具。
 
@@ -80,8 +66,8 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 
 - `packages/http-adapter/src/agent-session-host.ts`：HTTP 命令限制、权限和 Web 工具边界。
 - `packages/core/src/runtime-options.ts`：默认工具、显式工具选择、`--no-tools` 与 `--no-mcp`。
-- `packages/core/src/mcp.ts`：MCP 配置、连接、发现、状态和关闭。
-- `packages/core/src/dscode-extension.ts`：权限过滤、MCP 初始化、jobs 与 checkpoint 命令。
+- `packages/core/src/pi-builtins.ts`：原生 Pi 扩展注册与 MCP 环境凭据过滤。
+- `packages/core/src/dscode-extension.ts`：权限过滤、初始工具集合、jobs 与 checkpoint 命令。
 - `packages/core/src/managed-process.ts`：后台进程结果与完成记录回收。
 - `packages/core/src/checkpoint.ts`：快照、冲突检测和恢复。
 - `packages/http-adapter/src/session-controller.ts`：checkpoint diff 的 SSE 转换。

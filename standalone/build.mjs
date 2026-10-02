@@ -44,11 +44,14 @@ async function buildPlatform(platform) {
     process.chdir(work);
     const worker = path.join(work, "image-worker.js");
     fs.writeFileSync(worker, `import ${JSON.stringify(path.join(pi, "utils/image-resize-worker.js"))};\n`);
-    // Give the two embedded entrypoints the same virtual root. Otherwise Bun's
+    const codemodeWorker = path.join(work, "codemode-worker.js");
+    fs.writeFileSync(codemodeWorker, `import ${JSON.stringify(path.join(pi, "extensions/codemode/worker.js"))};\n`);
+    // Give the embedded entrypoints the same virtual root. Otherwise Bun's
     // worker URL inherits the checkout's path while the worker lives under /tmp.
     const entry = path.join(work, "cli.mjs");
     fs.writeFileSync(entry, `import ${JSON.stringify(path.join(root, "standalone/cli.mjs"))};\n`);
     const assets = { "package.json": piPackage, ...await prepareTools(platform, work) };
+    assets["quickjs.wasm"] = createRequire(path.join(pi, "index.js")).resolve("quickjs-wasi/quickjs.wasm");
     for (const name of ["light.json", "dark.json"]) assets[name] = path.join(pi, "modes/interactive/theme", name);
     for (const name of ["dscode-light.json", "dscode-dark.json"]) assets[name] = path.join(root, "packages/core/themes", name);
     for (const name of ["template.html", "template.css", "template.js"]) assets[name] = path.join(pi, "core/export-html", name);
@@ -56,12 +59,12 @@ async function buildPlatform(platform) {
     for (const name of fs.readdirSync(path.join(pi, "modes/interactive/assets"))) assets[name] = path.join(pi, "modes/interactive/assets", name);
     const audit = { inputs: new Set(), excluded: new Set(), adapted: new Set() };
     const result = await Bun.build({
-      entrypoints: [entry, worker],
+      entrypoints: [entry, worker, codemodeWorker],
       compile: { outfile: path.join(work, "dscode"), target, autoloadBunfig: false, autoloadDotenv: false, autoloadTsconfig: false, autoloadPackageJson: false },
       target: "bun", minify: { syntax: true, whitespace: true, identifiers: false },
       naming: { asset: "[name].[ext]" },
       define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(version) },
-      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, audit, platform, toolVersions })],
+      plugins: [piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorker, audit, platform, toolVersions })],
     });
     if (!result.success) throw new AggregateError(result.logs, "Standalone build failed");
     const executable = path.join(work, "dscode");

@@ -15,6 +15,9 @@ catalogs:
     '@earendil-works/pi-coding-agent':
       specifier: 1.0.0
       version: 1.0.0
+    '@earendil-works/pi-mcp':
+      specifier: 1.0.0
+      version: 1.0.0
     '@earendil-works/pi-tui':
       specifier: 1.0.0
       version: 1.0.0
@@ -86,12 +89,12 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: 'catalog:'
         version: 1.0.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(ws@8.21.1)(zod@4.6.5)
+      '@earendil-works/pi-mcp':
+        specifier: 'catalog:'
+        version: 1.0.0
       '@earendil-works/pi-tui':
         specifier: 'catalog:'
         version: 1.0.0
-      '@modelcontextprotocol/sdk':
-        specifier: 'catalog:'
-        version: 1.30.0(zod@4.6.5)
       '@napi-rs/keyring':
         specifier: 'catalog:'
         version: 1.3.0
@@ -105,6 +108,9 @@ importers:
         specifier: 'catalog:'
         version: 4.6.5
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.6.5)
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.19
@@ -148,12 +154,12 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: 'catalog:'
         version: 1.0.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(ws@8.21.1)(zod@4.6.5)
+      '@earendil-works/pi-mcp':
+        specifier: 'catalog:'
+        version: 1.0.0
       '@earendil-works/pi-tui':
         specifier: 'catalog:'
         version: 1.0.0
-      '@modelcontextprotocol/sdk':
-        specifier: 'catalog:'
-        version: 1.30.0(zod@4.6.5)
       '@napi-rs/keyring':
         specifier: 'catalog:'
         version: 1.3.0

@@ -67,9 +67,9 @@ The ordinary Node distribution continues to use `pnpm build`; the npm package ex
 
 | Path | Responsibility |
 | --- | --- |
-| `build.mjs` | Platform/version checks, asset collection, compilation of both entry points, signing, and checksums |
+| `build.mjs` | Platform/version checks, asset collection, compilation of CLI and worker entry points, signing, and checksums |
 | `cli.mjs` / `runtime.mjs` | Start DSCode, reject unsupported commands, and register OAuth/Bedrock entry points |
-| `pi-adapter.mjs` | Centralize adaptations for the pinned pi version, embed assets and the image worker, and disable user extensions and package resolution |
+| `pi-adapter.mjs` | Centralize adaptations for the pinned pi version, embed assets and image/codemode workers, and disable user extensions and package resolution |
 | `disabled.mjs` / `*-command*.mjs` / `windows-sandbox.mjs` | Build replacements for explicitly excluded features |
 | `test/` | Local mock model, stdio/HTTP MCP, PTY, and acceptance checks for the relocated executable |
 | `../packages/core/src/distribution.ts` | Compile-time constants controlling distribution-specific Core behavior |
@@ -86,7 +86,7 @@ The `experiments/standalone/` directory preserves historical feasibility records
 ## Runtime behavior
 
 - Command: `dscode`; default state directory: `~/.dscode`; existing `DSCODE_*` variables are retained.
-- Supports TUI, `-p`, JSON, RPC, subagents, local Skills, stdio/HTTP MCP, image preprocessing, and HTML export.
+- Supports TUI, `-p`, JSON, RPC, subagents, local Skills, native Pi codemode/tool-search, stdio/HTTP MCP, image preprocessing, and HTML export.
 - In the local macOS TUI, `Ctrl+V` reads clipboard images through pi's embedded native helper and attaches them to the prompt. Linux image paste uses `wl-paste` on Wayland or `xclip` on X11 when installed. An SSH session does not expose the client's clipboard to the remote executable.
 - Defaults to `danger-full-access` without implicitly granting `permission=full`; existing approvals remain in effect.
 - Forces file credentials without rewriting configuration to override old keyring settings or migrating keyring credentials.
