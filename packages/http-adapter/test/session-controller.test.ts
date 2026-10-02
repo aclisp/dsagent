@@ -494,6 +494,7 @@ describe("SessionController", () => {
     broker.publishSessionEvent({
       type: "tool_execution_start",
       toolCallId: "tool-1",
+      parentToolCallId: "code-parent",
       toolName: "read",
       args: { path: "README.md" },
     } as AgentSessionEvent);
@@ -502,11 +503,13 @@ describe("SessionController", () => {
       type: "tool",
       phase: "started",
       toolCallId: "tool-1",
+      parentToolCallId: "code-parent",
     });
 
     broker.publishSessionEvent({
       type: "tool_execution_end",
       toolCallId: "tool-1",
+      parentToolCallId: "code-parent",
       toolName: "read",
       result: { content: [] },
       isError: false,
@@ -515,6 +518,7 @@ describe("SessionController", () => {
       type: "tool",
       phase: "completed",
       toolCallId: "tool-1",
+      parentToolCallId: "code-parent",
     });
 
     broker.publishSessionEvent({ type: "turn_end" } as AgentSessionEvent);

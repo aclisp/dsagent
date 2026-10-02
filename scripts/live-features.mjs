@@ -20,14 +20,13 @@ try {
   await prepareFixture();
   await verifySessionResume();
   await verifyMcpToolUse();
-  await verifyParallelDelegation();
+  await verifyInvestigation();
   passed = true;
   process.stdout.write("Live feature acceptance passed.\n");
 } finally {
   if (process.env.DSCODE_KEEP_SMOKE === "1" || !passed) {
     process.stdout.write(`Feature fixture retained for inspection: ${fixture}\n`);
   } else {
-    await removeFixtureWorktrees();
     await fs.rm(fixture, { recursive: true, force: true });
   }
 }
@@ -88,7 +87,7 @@ async function verifySessionResume() {
     "--effort",
     "low",
     "--permission",
-    "plan",
+    "auto",
     "--sandbox",
     "read-only",
     "-p",
@@ -105,7 +104,7 @@ async function verifySessionResume() {
     "--effort",
     "low",
     "--permission",
-    "plan",
+    "auto",
     "--sandbox",
     "read-only",
     "-p",
@@ -153,54 +152,21 @@ async function verifyMcpToolUse() {
   process.stdout.write("✓ live model → MCP call; model API key stripped from stdio\n");
 }
 
-async function verifyParallelDelegation() {
+async function verifyInvestigation() {
   const execution = await runCli([
-    "-C",
-    fixture,
-    "--mode",
-    "json",
-    "--print",
-    "--no-session",
-    "--approve",
-    "--permission",
-    "full",
-    "--sandbox",
-    "workspace-write",
-    "--effort",
-    "low",
-    [
-      "You must call delegate exactly once with these two independent tasks and no other tool first:",
-      "1) explorer: Read package.json and report the package name with exact file evidence. Do not modify files.",
-      "2) implementer: In the isolated worktree, create agent-result.txt containing exactly IMPLEMENTER_OK and no other changes; verify the file.",
-      "After delegate completes, summarize both results. Do not integrate the implementer worktree.",
-    ].join("\n"),
+    "-C", fixture, "--mode", "json", "--print", "--no-session", "--approve",
+    "--permission", "auto", "--no-mcp", "--tools", "read,delegate", "--effort", "low",
+    'Call delegate exactly once with task "Read package.json and report its package name with file evidence." Then summarize the findings.',
   ]);
-  assertCliOk(execution, "parallel delegation turn");
+  assertCliOk(execution, "child investigation");
   const events = jsonEvents(execution.stdout);
-  const starts = events.filter(
-    (event) => event.type === "tool_execution_start" && event.toolName === "delegate",
-  );
-  assert.equal(starts.length, 1, "model should invoke delegate exactly once");
-  const completed = events.find(
-    (event) => event.type === "tool_execution_end" && event.toolName === "delegate",
-  );
+  assert.equal(events.filter(event => event.type === "tool_execution_start" && event.toolName === "delegate").length, 1);
+  const completed = events.find(event => event.type === "tool_execution_end" && event.toolName === "delegate");
   assert.ok(completed, "delegate did not complete");
-  assert.equal(completed.isError, false, "delegate returned an error");
-  const results = completed.result?.details?.results;
-  assert.ok(Array.isArray(results), "delegate result details are missing");
-  assert.equal(results.length, 2, "delegate did not return both tasks");
-  assert.ok(results.every((result) => result.success), "one or more delegated agents failed");
-  assert.deepEqual(
-    new Set(results.map((result) => result.role)),
-    new Set(["explorer", "implementer"]),
-  );
-  const implementer = results.find((result) => result.role === "implementer");
-  assert.ok(implementer?.worktree, "implementer did not use an isolated worktree");
-  assert.match(implementer.diff ?? "", /agent-result\.txt/);
-  assert.match(implementer.diff ?? "", /IMPLEMENTER_OK/);
-  await fs.access(path.join(implementer.worktree, "agent-result.txt"));
-  await assert.rejects(fs.access(path.join(fixture, "agent-result.txt")));
-  process.stdout.write("✓ live parallel explorer/implementer delegation with isolated worktree diff\n");
+  assert.notEqual(completed.isError, true, JSON.stringify(completed.result));
+  assert.equal(completed.result.details.success, true);
+  assert.match(completed.result.details.output, /dscode-live-features/);
+  process.stdout.write("✓ live investigation-only child agent returned file evidence\n");
 }
 
 async function runCli(args) {
@@ -239,36 +205,6 @@ function jsonEvents(stdout) {
         return [];
       }
     });
-}
-
-async function removeFixtureWorktrees() {
-  const listed = await run("git", ["worktree", "list", "--porcelain"], fixture, process.env);
-  if (listed.exitCode !== 0) return;
-  const worktrees = listed.stdout
-    .split("\n")
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length));
-  for (const worktree of worktrees) {
-    if (await pathsReferToSameDirectory(worktree, fixture)) continue;
-    // macOS reports /private/var for worktrees even when os.tmpdir() returned /var.
-    // Validate the exact mkdtemp shape instead of comparing those aliased prefixes.
-    if (
-      path.basename(worktree) !== "workspace" ||
-      !path.basename(path.dirname(worktree)).startsWith("dscode-worktree-")
-    ) {
-      continue;
-    }
-    await assertCommand("git", ["worktree", "remove", "--force", worktree], fixture);
-    await fs.rm(path.dirname(worktree), { recursive: true, force: true });
-  }
-}
-
-async function pathsReferToSameDirectory(left, right) {
-  try {
-    return (await fs.realpath(left)) === (await fs.realpath(right));
-  } catch {
-    return path.resolve(left) === path.resolve(right);
-  }
 }
 
 function run(command, args, cwd, env) {

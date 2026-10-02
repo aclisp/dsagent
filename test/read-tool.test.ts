@@ -80,7 +80,7 @@ describe("DSCode read presentation", () => {
         settingsManager,
         extensionFactories: [createDSCodeExtension(
           parseRuntimeArgs(["-C", root, "--no-mcp"]).options,
-          { planMode: false, planTool: false },
+          { subagents: false },
         )],
       });
       await resourceLoader.reload();

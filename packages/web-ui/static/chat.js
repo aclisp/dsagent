@@ -667,12 +667,27 @@ function streamAssistantDelta(event) {
 }
 
 function toolLabel(name) {
-  if (["read_file", "read", "view_image"].includes(name)) return name === "view_image" ? "查看图片" : "读取文件";
-  if (["list_files", "search_files", "find", "glob"].includes(name)) return "查找文件";
-  if (["apply_patch", "write_file", "edit_file", "edit", "write"].includes(name)) return "修改文件";
-  if (["exec_command", "run_command", "bash", "write_stdin"].includes(name)) return "执行命令";
-  if (name === "update_plan") return "更新计划";
-  if (name.includes("web") || name.includes("search")) return "搜索资料";
+  const labels = {
+    read: "读取文件",
+    grep: "搜索内容",
+    find: "查找文件",
+    ls: "浏览目录",
+    apply_patch: "修改文件",
+    edit: "修改文件",
+    write: "写入文件",
+    exec_command: "执行命令",
+    write_stdin: "跟进命令",
+    bash: "执行命令",
+    powershell: "执行命令",
+    delegate: "委派调查",
+    codemode: "运行脚本",
+    tool_search: "查找工具",
+    list_mcp_resources: "浏览资源",
+    list_mcp_resource_templates: "浏览模板",
+    read_mcp_resource: "读取资源",
+  };
+  if (Object.hasOwn(labels, name)) return labels[name];
+  if (name.startsWith("mcp__")) return "调用工具";
   return "执行操作";
 }
 
@@ -1081,9 +1096,6 @@ function modalButton(label, primary, onClick) {
 
 function friendlyOptionLabel(option) {
   const labels = {
-    "Execute the plan": "执行计划",
-    "Stay in plan mode": "保持计划模式",
-    "Refine the plan": "调整计划",
     "Allow once": "仅本次允许",
     "Allow this command for this session": "本会话允许此命令",
     Deny: "拒绝",
@@ -1154,6 +1166,9 @@ function friendlyRequest(request) {
   }
 
   if (request.method === "select") {
+    if (title.startsWith("Allow MCP tool?\n")) {
+      return { title: "确认 MCP 工具调用", message: title.slice("Allow MCP tool?\n".length), highlightReadOnlyHint: true };
+    }
     const accessMatch = /^(Allow network access\?|Allow unrestricted host access\?)\n([\s\S]*)$/i.exec(title);
     if (accessMatch) {
       const network = /^Allow network/i.test(accessMatch[1]);
@@ -1177,9 +1192,6 @@ function friendlyRequest(request) {
         ),
       };
     }
-    if (title === "Plan ready — what next?") {
-      return { title: "计划已准备好，下一步怎么做？" };
-    }
     if (title === "Select a model provider") {
       return { title: "选择模型提供商" };
     }
@@ -1188,9 +1200,6 @@ function friendlyRequest(request) {
 
   if (request.method === "input" && title === "DeepSeek API base URL") {
     return { title: "设置 DeepSeek API 地址" };
-  }
-  if (request.method === "editor" && title === "How should the plan change?") {
-    return { title: "你希望如何调整计划？" };
   }
   return { title: request.title, message: request.message };
 }
@@ -1233,6 +1242,18 @@ function showUiRequest(request, turnId) {
 
   if (friendly.message) {
     modalMessage.textContent = friendly.message;
+    const hint = friendly.highlightReadOnlyHint && /^Read-only hint: (true|false|Not provided)(?= —)/m.exec(friendly.message);
+    if (hint) {
+      const start = hint.index + "Read-only hint: ".length;
+      const value = document.createElement("strong");
+      value.className = "mcp-hint-value";
+      value.textContent = hint[1];
+      modalMessage.replaceChildren(
+        document.createTextNode(friendly.message.slice(0, start)),
+        value,
+        document.createTextNode(friendly.message.slice(start + hint[1].length)),
+      );
+    }
     modalMessage.hidden = false;
   }
 
@@ -1473,6 +1494,12 @@ function renderHistoryMessage(message, currentTurn) {
       message.timestamp,
       toolResultOutcome(message.content, message.isError),
     );
+    for (const call of message.nestedCalls?.calls ?? []) {
+      recordTool(
+        turn, call.id, call.name, "completed", call.status !== "ok", message.timestamp,
+        toolResultOutcome(call.error ?? "", call.status !== "ok"),
+      );
+    }
     return turn;
   }
   if (message.role === "compactionSummary") {

@@ -23,7 +23,7 @@ describe("standalone distribution defaults", () => {
     expect(withPiManagedBinPath(environment).PATH).toBe([path.join(otherHome, "bin"), os.tmpdir()].join(path.delimiter));
   });
 
-  it("uses host access without granting full tool permissions, including plan subagents", async () => {
+  it("uses host access without granting full tool permissions", async () => {
     vi.stubGlobal("DSCODE_STANDALONE", true);
     vi.stubEnv("DSCODE_SANDBOX", undefined);
     vi.stubEnv("DSCODE_PERMISSION", "auto");
@@ -31,18 +31,18 @@ describe("standalone distribution defaults", () => {
     const { parseRuntimeArgs } = await import("../packages/core/src/runtime-options.ts");
     const { SessionAccessController } = await import("../packages/core/src/access.ts");
     expect(parseRuntimeArgs([]).options).toMatchObject({ sandbox: "danger-full-access", permission: "auto" });
-    expect(new SessionAccessController("danger-full-access", true).effective("plan")).toEqual({
+    expect(new SessionAccessController("danger-full-access", true).effective("auto")).toEqual({
       sandbox: "danger-full-access", network: true,
     });
     expect(parseRuntimeArgs(["--sandbox", "read-only"]).options.sandbox).toBe("read-only");
-    expect(new SessionAccessController("workspace-write", false).effective("plan").sandbox).toBe("read-only");
+    expect(new SessionAccessController("read-only", false).effective("auto").sandbox).toBe("read-only");
   });
 
-  it("keeps Node plan execution read-only even with a host base sandbox", async () => {
+  it("keeps the explicit Node sandbox selection", async () => {
     vi.stubGlobal("DSCODE_STANDALONE", false);
     vi.resetModules();
     const { SessionAccessController } = await import("../packages/core/src/access.ts");
-    expect(new SessionAccessController("danger-full-access", true).effective("plan").sandbox).toBe("read-only");
+    expect(new SessionAccessController("danger-full-access", true).effective("auto").sandbox).toBe("danger-full-access");
   });
 
   it("uses embedded version metadata", async () => {

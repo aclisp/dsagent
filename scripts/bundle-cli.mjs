@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const piDist = path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
 const aiDist = path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-ai")));
 const tuiDist = path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui")));
+const codemodeDist = realpathSync(path.resolve(piDist, "../../pi-codemode/dist"));
 
 /** Also used by the isolated startup benchmark, so it measures the production builder. */
 export async function buildCliBundle({
@@ -25,6 +26,7 @@ export async function buildCliBundle({
     [piDist, ["piOrigin", "@earendil-works/pi-coding-agent"]],
     [aiDist, ["aiOrigin", "@earendil-works/pi-ai"]],
     [tuiDist, ["tuiOrigin", "@earendil-works/pi-tui"]],
+    [codemodeDist, ["codemodeOrigin", "@earendil-works/pi-codemode"]],
   ]);
   const options = {
     absWorkingDir: root,
@@ -48,9 +50,10 @@ export async function buildCliBundle({
         context.onLoad({ filter: /^origins$/, namespace: "dscode" }, () => ({
           contents: `import { createRequire } from "node:module";
             import { pathToFileURL } from "node:url";
-            ${[...origins.values()].map(([name, pkg]) => `export const ${name} = import.meta.resolve(${JSON.stringify(pkg)});`).join("\n")}
+            ${[...origins.values()].filter(([name]) => name !== "codemodeOrigin").map(([name, pkg]) => `export const ${name} = import.meta.resolve(${JSON.stringify(pkg)});`).join("\n")}
             export const piRequire = createRequire(piOrigin);
-            export function resolvePiDependency(name) { return pathToFileURL(piRequire.resolve(name)).href; }`,
+            export function resolvePiDependency(name) { return pathToFileURL(piRequire.resolve(name)).href; }
+            export const codemodeOrigin = new URL("../../pi-codemode/dist/index.js", piOrigin).href;`,
           loader: "js",
         }));
         // Adaptations from pi's build-coding-agent-bundle.mjs: preserve virtual
@@ -69,23 +72,14 @@ export async function buildCliBundle({
           contents: 'export { HttpsProxyAgent } from "https-proxy-agent";', loader: "js", resolveDir: args.pluginData,
         }));
         context.onLoad({ filter: /\.js$/ }, args => {
-          // The package root also re-exports these factories for user
-          // extensions, so excluding only the built-in list is insufficient.
-          for (const [name, factory] of [["codemode", "createCodemodeExtension"], ["mcp", "createMcpExtension"], ["tool-search", "createToolSearchExtension"]]) {
-            if (args.path === path.join(piDist, "extensions", name, "index.js")) return {
-              contents: `export function ${factory}() { throw new Error("Pi ${name} is disabled in DSCode"); } export default () => {};`,
-              loader: "js",
-            };
-          }
-          // Keep the existing llama.cpp provider; DSCode supplies its own MCP
-          // and does not load Pi's codemode/tool-search implementations.
-          if (args.path === path.join(piDist, "extensions/index.js")) return {
-            contents: 'import llamaExtension from "./llama/index.js"; export const builtInExtensions = [{ name: "llama.cpp", factory: llamaExtension, builtin: true }];',
-            loader: "js",
-          };
           // The worker URL must refer to our emitted worker, not pi's original.
           if (args.path === path.join(piDist, "utils/image-resize.js")) return;
           let contents = readFileSync(args.path, "utf8");
+          if (args.path === path.join(piDist, "config.js")) {
+            const specifier = "resolveCodemodeWorkerSpecifier(runtime, import.meta.url)";
+            if (!contents.includes(specifier)) throw new Error("Pi codemode worker path changed; review the bundle adapter");
+            contents = contents.replace(specifier, "resolveCodemodeWorkerSpecifier(runtime, __codemodeBundleUrl)");
+          }
           if (!contents.includes("import.meta.url")) return;
           if (args.path.startsWith(`${coreDist}${path.sep}`)) {
             const relative = path.relative(outdir, args.path).split(path.sep).join("/");
@@ -104,7 +98,8 @@ export async function buildCliBundle({
               contents = contents.replace(specifier, 'import(resolvePiDependency("@silvia-odwyer/photon-node"))');
               imports += ", resolvePiDependency";
             }
-            return { contents: `import { ${imports} } from "dscode-bundle-origins";\n${contents}`, loader: "js" };
+            const workerBase = args.path === path.join(piDist, "config.js") ? "const __codemodeBundleUrl = import.meta.url;\n" : "";
+            return { contents: `import { ${imports} } from "dscode-bundle-origins";\n${workerBase}${contents}`, loader: "js" };
           }
           throw new Error(`Unreviewed module-relative runtime path: ${args.path}`);
         });
@@ -123,6 +118,7 @@ export async function buildCliBundle({
       ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "meta", "openai-chatgpt", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
       "bedrock-converse-stream": path.join(aiDist, "api/bedrock-converse-stream.js"),
       "image-resize-worker": path.join(piDist, "utils/image-resize-worker.js"),
+      "codemode-worker": path.join(piDist, "extensions/codemode/worker.js"),
     },
     outdir,
     splitting: false,

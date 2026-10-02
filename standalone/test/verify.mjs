@@ -33,7 +33,8 @@ let fail = false;
 let plannedTool;
 let toolIssued = false;
 let toolOutputs = [];
-let childCommandIssued = false;
+let childReadIssued = false;
+let childTools = [];
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -51,20 +52,24 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   toolOutputs.push(...(payload.input ?? []).filter(item => item.type === "function_call_output" || item.type === "custom_tool_call_output"));
+  if (payload.tools?.some(tool => tool.type === "custom" && tool.name !== "apply_patch") ||
+      payload.input?.some(item => item.type === "custom_tool_call" && item.name !== "apply_patch")) {
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "Only apply_patch supports custom tools" } }));
+    return;
+  }
   if (fail) {
     response.writeHead(401, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: { message: "offline rejection" } }));
     return;
   }
-  const childCall = plannedTool?.name === "delegate" && toolIssued && !childCommandIssued && !payload.tools.some(tool=>tool.name === "delegate");
+  const childCall = plannedTool?.name === "delegate" && toolIssued && !childReadIssued && !payload.tools.some(tool=>tool.name === "delegate");
   const call = plannedTool && !toolIssued || childCall;
-  const currentTool = childCall ? {name:"exec_command",args:{cmd:"pwd"}} : plannedTool;
-  if (childCall) childCommandIssued = true;
+  const currentTool = childCall ? {name:"read",args:{path:"home/forbidden.js"}} : plannedTool;
+  if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
   const item = call
-    ? currentTool.name === "apply_patch"
-      ? {id:"fc_probe",call_id:"call_probe",type:"custom_tool_call",status:"completed",name:currentTool.name,input:currentTool.args.input}
-      : {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
+    ? {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
     : { id: "msg_probe", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "standalone ok", annotations: [], logprobs: [] }] };
   const events = [
     { type: "response.created", response: { id: "resp_probe", status: "in_progress", output: [] } },
@@ -241,11 +246,11 @@ try {
     {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
     {name:"exec_command",args:{cmd:"pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
-    {name:"delegate",args:{tasks:["explorer", "reviewer", "tester", "explorer"].map((role, index) => ({role, task:`Reply once with evidence for task ${index + 1}.`}))}},
+    {name:"delegate",args:{task:"Read home/forbidden.js and return file evidence."}},
   ]) {
     await check(`real tool execution: ${tool.name}`, async () => {
-      plannedTool = tool; toolIssued = false; toolOutputs = []; childCommandIssued = false;
-      // JSON parent and children must work without extracting a native UI addon.
+      plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false;
+      // JSON parent and child must work without extracting a native UI addon.
       const result = await run("dscode", [...base, "--tools", "read,find,grep,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
@@ -255,12 +260,20 @@ try {
       if (tool.name === "read") assert.ok(finished.result.content.some(item => item.type === "image"),JSON.stringify(finished));
       else if (tool.name === "find") assert.match(JSON.stringify(toolOutputs), /image\.png/);
       else if (tool.name === "grep") assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
-      else if (tool.name === "apply_patch") assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
+      else if (tool.name === "apply_patch") {
+        assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
+        assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type,"function");
+        const replayedPatch = payload.input.find(item => item.name === "apply_patch");
+        assert.equal(replayedPatch.type,"function_call");
+        assert.deepEqual(JSON.parse(replayedPatch.arguments),tool.args);
+        assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedPatch.call_id));
+      }
       else if (tool.name === "delegate") {
-        assert.equal(finished.result.details.results.length, tool.args.tasks.length, JSON.stringify(finished));
-        assert.ok(finished.result.details.results.every(result => result.success), JSON.stringify(finished));
-        assert.ok(childCommandIssued);
-        assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
+        assert.equal(finished.result.details.success, true, JSON.stringify(finished));
+        assert.equal(finished.result.details.output, "standalone ok");
+        assert.ok(childReadIssued);
+        assert.deepEqual(childTools, ["find", "grep", "ls", "read"]);
+        assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       }
       else {
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
@@ -292,8 +305,8 @@ try {
   for (const transport of ["stdio", "http"]) {
     await check(`MCP ${transport} discovery and call`, async () => {
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({mcpServers:{fixture:transport === "stdio"
-        ? {command:"/usr/bin/python3",args:["-B",path.join(scratch,"mcp.py")]}
-        : {url:`http://127.0.0.1:${server.address().port}/mcp`}}}));
+        ? {exposure:"direct",command:"/usr/bin/python3",args:["-B",path.join(scratch,"mcp.py")]}
+        : {exposure:"direct",url:`http://127.0.0.1:${server.address().port}/mcp`}}}));
       plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued = false; toolOutputs = [];
       const result = await run("dscode", [...base, "--permission", "full", "-p", "run MCP once"]);
       assert.equal(result.code, 0, result.stderr);
@@ -301,6 +314,21 @@ try {
     });
   }
   plannedTool = undefined;
+  await check("native codemode worker calls MCP and records nested history", async () => {
+    plannedTool = {name:"codemode",args:{code:'console.log(await tools.mcp__fixture__echo({})); console.log(typeof models);'}};
+    toolIssued=false; toolOutputs=[];
+    const result = await run("dscode",[...base,"--permission","full","--mode","json","-p","run native script"]);
+    assert.equal(result.code,0,result.stderr);
+    assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
+    assert.match(JSON.stringify(toolOutputs),/undefined/);
+    assert.equal(payload.tools.find(tool => tool.name === "codemode").type,"function");
+    const replayedCode = payload.input.find(item => item.name === "codemode");
+    assert.equal(replayedCode.type,"function_call");
+    assert.deepEqual(JSON.parse(replayedCode.arguments),plannedTool.args);
+    assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedCode.call_id));
+    assert.match(result.stdout,/"parentToolCallId":"call_probe(?:\|[^"]*)?"/);
+    assert.match(result.stdout,/"nestedCalls"/);
+  });
   await check("auto permissions deny noninteractive MCP", async () => {
     plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued=false; toolOutputs=[];
     const result = await run("dscode",[...base,"--mode","json","-p","try MCP"]);

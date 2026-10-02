@@ -45,6 +45,27 @@ afterEach(() => {
 });
 
 describe("pruneSessionFile", () => {
+  it("keeps script-store writes before compaction and excludes abandoned branch state", () => {
+    const cwd = tempDir();
+    const sessionDir = tempDir();
+    const manager = SessionManager.create(cwd, sessionDir);
+    manager.appendMessage(userMessage("old", 1));
+    manager.appendMessage(assistantMessage("old answer", 2));
+    manager.appendCustomEntry("codemode-store", { set: { first: "saved" }, delete: [] });
+    const kept = manager.appendMessage(userMessage("kept", 3));
+    manager.appendMessage(assistantMessage("kept answer", 4));
+    manager.appendCompaction("summary", kept, 1000);
+    const leaf = manager.appendCustomEntry("codemode-store", { set: { next: 2 }, delete: ["first"] });
+    const expected = manager.getBranch().filter((entry) => entry.type === "custom");
+    manager.branch(kept);
+    manager.appendCustomEntry("codemode-store", { set: { abandoned: true }, delete: [] });
+    manager.branch(leaf);
+    const context = manager.buildSessionContext().messages;
+    expect(pruneSessionFile(manager)).toBe(true);
+    const reopened = SessionManager.open(manager.getSessionFile()!, sessionDir, cwd);
+    expect(reopened.getBranch().filter((entry) => entry.type === "custom").map((entry) => entry.id)).toEqual(expected.map((entry) => entry.id));
+    expect(reopened.buildSessionContext().messages).toEqual(context);
+  });
   it("drops compacted-out history and dead branches without changing context", () => {
     const cwd = tempDir();
     const sessionDir = tempDir();

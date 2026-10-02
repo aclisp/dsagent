@@ -120,29 +120,50 @@ sandbox     workspace-write
 network     blocked
 ```
 
-CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch`.
-CLI delegation can be enabled with `--tools ...,delegate`.
+CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
+CLI investigation can be enabled with `--tools ...,delegate`. `delegate({task: "..."})`
+launches one child at a time in the current workspace with a fresh conversation and
+no saved session. It uses the current model and thinking level and returns final
+findings. Children can only use `read`, `grep`, `find`, and `ls`; commands, edits, MCP,
+and nested delegation are unavailable. Children disable user extensions and command
+hooks. Calls time out after two minutes and are cancelled with the parent tool call. The parent handles all edits and verification.
 
-Configured, enabled MCP servers are discovered when a session initializes. Their tools
-are added automatically, including when `--tools` is explicit; `--tools` is no longer
-a strict allowlist of all tools. Use `--tools read --no-mcp` for only the `read` tool.
-`--no-mcp` skips MCP connections and registration. `--no-tools` disables every tool
-and skips MCP, regardless of argument order or permission changes.
+MCP uses Pi 1.0.0's native implementation and schema. Global configuration is
+`DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
+Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
+callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools
+without changing the model's active tool declarations. `tool_search` is optional:
+include it in `--tools` or use server `exposure: "deferred"`, which activates it
+automatically and loads matches for direct model calls. `exposure: "direct"` advertises
+every server tool. `--tools` selects the initial active set; `--no-mcp` skips MCP,
+and `--no-tools` disables all tools.
 
-CLI plan mode temporarily adds `update_plan` and hides MCP tools, then restores the
-previous selection on exit. `--no-tools` also prevents this temporary addition.
-MCP calls still require approval in `auto`/`ask`; plan forbids them and `full` permits
-them without confirmation. Without an interactive approval UI, calls requiring approval
-are rejected. One server's connection or discovery failure does not stop the session;
-`/mcp` shows errors, discovered tools, and whether each is active. Configuration changes
-take effect on session initialization, without hot reload or automatic reconnection.
+Pi supplies `/mcp` and `dscode mcp add|remove|list|login|logout`, including native OAuth
+and reconnection controls. CLI MCP management needs no model login. Use `-l` with
+`dscode mcp add` or `remove` for project `.pi/mcp.json`. For example:
 
-The TUI MCP confirmation defaults to **Allow once**. You can also allow that tool
-or all tools from its server for the current session, including future calls with
-different parameters. These permissions apply in `auto` and `ask`; plan mode still
-blocks MCP calls. `/mcp` shows session permissions; `/mcp revoke` clears them all.
-Permissions are kept only in memory and cleared on session creation, switching,
-resuming, or MCP reconnection. Non-TUI confirmations remain single-use.
+```bash
+dscode mcp add local -l -- node /path/to/server.mjs
+dscode mcp list --json
+```
+
+Server-defined MCP tools require approval in `auto`/`ask`; `full` permits
+them without confirmation. The dialog shows the server namespace, tool, description,
+arguments, and `readOnlyHint` as true, false, or not provided. This hint comes from
+the server and does not automatically grant approval. Choose **Allow once**,
+**Allow this tool for this session**, **Allow all tools from this server for this session**,
+or **Deny**. Tool and server grants cover future calls with any arguments, including
+calls nested in codemode. `/permissions` lists grants. Use
+`/permissions revoke-mcp <tool-or-server-namespace>` to revoke a listed grant, or
+`/permissions revoke-mcp all` to clear them all. Revoking a server namespace also
+clears individual grants for its tools. Grants reset when starting, resuming, or
+forking a session, and on reload or exit.
+The standard `list_mcp_resources`, `list_mcp_resource_templates`,
+and `read_mcp_resource` helpers are read-only and run without approval in every mode.
+Calls requiring approval are rejected without an interactive UI.
+Codemode's nested calls pass through the same permissions; `exec_command` keeps its
+sandbox and `apply_patch` keeps checkpoints and `/undo`. Codemode runs in normal
+`on` mode with direct model/classifier/image APIs (`models`) disabled.
 
 ## Everyday commands
 
@@ -171,8 +192,8 @@ Inside the TUI:
 
 | Command | Purpose |
 | --- | --- |
-| `/plan` | Enter or leave structured read-only planning |
-| `/permissions` | Show or change `plan`, `ask`, `auto`, or `full` access |
+| `/permissions` | Show or change `ask`, `auto`, or `full` access; list MCP session grants |
+| `/permissions revoke-mcp <tool-or-server-namespace\|all>` | Revoke MCP session grants |
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
 | `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
@@ -180,7 +201,7 @@ Inside the TUI:
 | `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
 | `/compact` | Compact older context while preserving current work |
 | `/jobs` | Inspect reconnectable background commands |
-| `/mcp` / `/agents` / `/doctor` | Inspect integrations, agents, and runtime health |
+| `/mcp` / `/doctor` | Inspect integrations and runtime health |
 | `/login [provider]` | Choose and authenticate a supported model provider |
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
@@ -202,7 +223,6 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 
 | Mode | Behavior |
 | --- | --- |
-| `plan` | Read-only exploration; write, delegation, and MCP tools are hidden |
 | `ask` | Commands, writes, delegation, and MCP require approval |
 | `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
 | `full` | Trusted mode with unrestricted host filesystem and network access |
@@ -229,12 +249,12 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
 - Sampling parameters are preserved: DeepSeek uses `top_p` in thinking mode and `temperature` otherwise.
   Thinking supports `low`, `high`, and `max` effort selection.
-- `apply_patch` uses a native free-form custom tool to avoid JSON escaping for large diffs.
+- `apply_patch` uses a schema-based function tool with an `input` string for every provider.
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
 
 These transformations run only when the active provider is `deepseek`; other providers use their
 native runtime implementations. Provider API keys are stripped from commands, hooks, and stdio MCP
-server environments.
+server environments. Explicit MCP server `env` values can supply credentials.
 
 ## Extensibility and automation
 

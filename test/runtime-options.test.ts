@@ -27,6 +27,13 @@ describe("parseRuntimeArgs", () => {
     restore("DSCODE_SANDBOX", original.sandbox);
   });
 
+  it("rejects the removed planning permission in flags and environment", () => {
+    delete process.env.DSCODE_PERMISSION;
+    expect(() => parseRuntimeArgs(["--permission", "plan"])).toThrow();
+    process.env.DSCODE_PERMISSION = "plan";
+    expect(() => parseRuntimeArgs([])).toThrow();
+  });
+
   it("injects the DeepSeek provider, max thinking, and selects minimal agent tools", () => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
@@ -42,7 +49,7 @@ describe("parseRuntimeArgs", () => {
       promptContract: "engineering",
       permission: "auto",
       sandbox: "workspace-write",
-      activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
       toolsExplicit: false,
     });
     expect(parsed.piArgs).toContain("deepseek");
@@ -124,7 +131,7 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.options).toMatchObject({
       permission: "ask",
       sandbox: "read-only",
-      activeTools: ["read", "exec_command", "write_stdin", "apply_patch"],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining(["--thinking", "high", "--mode", "json", "--continue"]),
@@ -152,7 +159,7 @@ describe("parseRuntimeArgs", () => {
 
   it("makes --no-tools dominant regardless of argument order", () => {
     for (const args of [
-      ["--no-tools", "--tools", "read,update_plan,mcp__fixture__echo"],
+      ["--no-tools", "--tools", "read,delegate,mcp__fixture__echo"],
       ["--tools", "read", "--no-tools"],
     ]) {
       expect(parseRuntimeArgs(args).options).toMatchObject({ noTools: true, activeTools: [] });

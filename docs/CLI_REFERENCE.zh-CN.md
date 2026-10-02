@@ -107,13 +107,36 @@ sandbox     workspace-write
 network     blocked
 ```
 
-CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch`。
-可通过 `--tools ...,delegate` 启用 CLI delegation。
+CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
+可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
+一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
+使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
+父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
 
-TUI 的 MCP 确认框默认选中 **Allow once**（仅本次）。也可以授权本次会话内的单个工具，
-或该 server 的所有工具，包含后续不同参数的调用。授权在 `auto` 和 `ask` 模式下生效，
-`plan` 模式仍禁止 MCP 调用。`/mcp` 展示当前授权，`/mcp revoke` 撤销全部 MCP 会话授权。
-授权仅保存在内存中，新建、切换、恢复会话或 MCP 重连时清除；非 TUI 确认仍只允许单次调用。
+MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+（默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
+`enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
+默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
+无需改变模型的活跃工具声明。`tool_search` 默认不启用，可通过 `--tools` 显式选择，
+或使用 server `exposure: "deferred"` 自动启用，将匹配工具加载到模型。
+`--tools` 选择初始工具集合；`--no-mcp` 不加载 MCP，`--no-tools` 禁用所有工具。
+
+`/mcp` 和 `dscode mcp add|remove|list|login|logout` 由 Pi 提供。CLI MCP 管理命令
+不需要模型登录；`dscode mcp add ... -l` 写入项目 `.pi/mcp.json`。
+server 定义的 MCP 工具在 `auto`/`ask` 下需要批准，`full` 下自动执行。
+批准对话框显示 server namespace、工具、描述、参数，以及 `readOnlyHint` 的
+true、false 或未提供状态。该提示由 server 声明，不会自动授予权限。
+可选择仅批准本次、在本会话中批准此工具、在本会话中批准此 server 的全部工具，或拒绝。
+会话授权覆盖后续任意参数的调用，也适用于 codemode 内部调用。
+`/permissions` 显示授权；`/permissions revoke-mcp <工具名或server namespace>`
+撤销对应授权，`/permissions revoke-mcp all` 清空全部 MCP 授权。
+撤销 server namespace 时也清除该 server 的单独工具授权。
+新建、恢复、fork 会话，以及 reload 或退出时会清空授权。
+标准资源工具 `list_mcp_resources`、`list_mcp_resource_templates` 和 `read_mcp_resource`
+只列出或读取上下文，在所有权限模式下都无需批准。
+没有交互 UI 时拒绝需要批准的调用。codemode 内部调用执行相同的权限检查，
+使用 `exec_command` 保留沙箱，使用 `apply_patch` 保留 checkpoint 和 `/undo`。
+codemode 使用普通 `on` 模式，禁用直接模型调用的 `models` API。
 
 ## 常用启动方式
 
@@ -142,8 +165,8 @@ TUI 常用命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `/plan` | 进入或退出结构化只读规划 |
-| `/permissions` | 查看或切换 `plan`、`ask`、`auto`、`full` 权限 |
+| `/permissions` | 查看或切换 `ask`、`auto`、`full` 权限，列出 MCP 会话授权 |
+| `/permissions revoke-mcp <工具名或server namespace\|all>` | 撤销 MCP 会话授权 |
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
 | `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |
@@ -151,7 +174,7 @@ TUI 常用命令：
 | `/resume` / `/fork` / `/tree` | 导航树形本地会话 |
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |
 | `/jobs` | 查看可重连的后台命令 |
-| `/mcp` / `/agents` / `/doctor` | 查看集成、agent 和运行状态 |
+| `/mcp` / `/doctor` | 查看集成和运行状态 |
 | `/login [provider]` | 选择并认证支持的模型供应商 |
 | `/model` | 选择已配置的模型，并保存选择 |
 | `/effort ...` | 调整当前模型的 reasoning effort |
@@ -164,7 +187,6 @@ TUI 常用命令：
 
 | 模式 | 行为 |
 | --- | --- |
-| `plan` | 只读调查；隐藏写入、delegate 和 MCP 工具 |
 | `ask` | 命令、写入、delegate 和 MCP 都需要批准 |
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |
@@ -189,11 +211,11 @@ dscode -C ./project --sandbox workspace-write
 - Adapter 会删除 DeepSeek 不支持的 OpenAI store、cache retention 和 include 字段。
 - 保留采样参数：DeepSeek 在 thinking 模式使用 `top_p`，其他模式使用 `temperature`。Thinking 支持
   `low`、`high`、`max` effort。
-- `apply_patch` 使用原生 freeform custom tool，避免大 diff 的 JSON 转义。
+- `apply_patch` 在所有 provider 下使用带有 `input` 字符串参数的 schema function tool。
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
 
 这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。
-Provider API key 不会传给命令、hooks 或 stdio MCP server。
+环境中的 Provider API key 不会传给命令、hooks 或 stdio MCP server；MCP server 的显式 `env` 配置仍可提供凭据。
 
 ## 扩展与自动化
 

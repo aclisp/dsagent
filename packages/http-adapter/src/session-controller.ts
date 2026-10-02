@@ -73,6 +73,7 @@ export type HttpAdapterEvent =
       turnId: string | null;
       phase: "started";
       toolCallId: string;
+      parentToolCallId?: string;
       name: string;
       args: unknown;
     }
@@ -81,6 +82,7 @@ export type HttpAdapterEvent =
       turnId: string | null;
       phase: "updated";
       toolCallId: string;
+      parentToolCallId?: string;
       name: string;
       args: unknown;
       partialResult: unknown;
@@ -90,6 +92,7 @@ export type HttpAdapterEvent =
       turnId: string | null;
       phase: "completed";
       toolCallId: string;
+      parentToolCallId?: string;
       name: string;
       result: unknown;
       isError: boolean;
@@ -404,6 +407,7 @@ export class SessionController {
         turnId,
         phase: "started",
         toolCallId: event.toolCallId,
+        ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         name: event.toolName,
         args: event.args,
       };
@@ -414,6 +418,7 @@ export class SessionController {
         turnId,
         phase: "updated",
         toolCallId: event.toolCallId,
+        ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         name: event.toolName,
         args: event.args,
         partialResult: event.partialResult,
@@ -425,6 +430,7 @@ export class SessionController {
         turnId,
         phase: "completed",
         toolCallId: event.toolCallId,
+        ...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
         name: event.toolName,
         result: event.result,
         isError: event.isError,

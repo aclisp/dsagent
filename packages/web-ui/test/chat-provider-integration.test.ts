@@ -350,10 +350,9 @@ async function waitForSessionIdle(server: FastifyInstance): Promise<void> {
 
 describe("Web UI Server Chat Provider composition", () => {
   it.each([
-    { runtimeArgs: ["--permission", "plan"], error: "Plan permission is not supported" },
-    { runtimeArgs: ["--tools", "read,update_plan"], error: "update_plan tool is not supported" },
+    { runtimeArgs: ["--tools", "read,delegate"], error: "delegate tool is not supported" },
   ])("rejects $runtimeArgs during startup before starting providers or sessions", async ({ runtimeArgs, error }) => {
-    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "dscode-web-plan-"));
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "dscode-web-unsupported-tool-"));
     temporaryDirectories.push(workspaceRoot);
     const createHost = vi.fn();
     const onChatProviderStarted = vi.fn();

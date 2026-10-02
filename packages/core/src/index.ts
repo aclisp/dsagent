@@ -93,3 +93,4 @@ export {
   type VisionRuntimeConfig,
 } from "./vision-cli.ts";
 export { DSCODE_VERSION } from "./version.ts";
+export { createDSCodePiBuiltins } from "./pi-builtins.ts";

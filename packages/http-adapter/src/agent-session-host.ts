@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   createDSCodeExtension,
+  createDSCodePiBuiltins,
   getDSCodeSessionsDir,
   initializeDSCodeHome,
   parseRuntimeArgs,
@@ -95,7 +96,7 @@ export async function createAgentSessionHost(
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
       resourceLoaderOptions: {
-        extensionFactories: [createDSCodeExtension(runtimeOptions, { planMode: false, planTool: false })],
+        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, { subagents: false })],
       },
     });
     const model = services.modelRuntime.getModel(
@@ -115,9 +116,9 @@ export async function createAgentSessionHost(
       model,
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       // SDK `tools` is a permanent registry allowlist, not just the active set.
-      // Core selects active tools after MCP discovery in session_start.
+      // Core selects the initial active set; Pi owns MCP discovery and restoration.
       ...(runtimeOptions.noTools ? { noTools: "all" as const } : {}),
-      excludeTools: ["update_plan"],
+      excludeTools: ["delegate"],
     });
 
     return {
@@ -252,9 +253,7 @@ function assistantText(message: Extract<AgentMessage, { role: "assistant" }>): s
 }
 
 const UNSUPPORTED_SESSION_COMMANDS = new Set([
-  "plan",
   "base-url",
-  "agents",
   "clear",
   "new",
   "resume",
@@ -267,27 +266,19 @@ const UNSUPPORTED_SESSION_COMMANDS = new Set([
 function assertPromptSupported(message: string): void {
   const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(message.trim());
   const command = match?.[1]?.toLowerCase();
-  if (command === "permissions" && match?.[2]?.trim().toLowerCase() === "plan") {
-    throw new Error(PLAN_PERMISSION_UNSUPPORTED);
-  }
   if (command && UNSUPPORTED_SESSION_COMMANDS.has(command)) {
     throw new Error(`Session command /${command} is not supported by this host`);
   }
 }
 
-const PLAN_PERMISSION_UNSUPPORTED =
-  "Plan permission is not supported by the Web/HTTP host. Use ask, auto, or full.";
-
-/** Validate at server startup as well as on direct host creation. Never downgrade plan. */
 export function parseHttpRuntimeArgs(args: readonly string[], cwd = process.cwd()) {
   validateRuntimeArgs(args);
   const parsed = parseRuntimeArgs(["-C", cwd, ...args]);
   if (parsed.help || parsed.version) {
     throw new Error("Help and version flags are not supported by the direct session host");
   }
-  if (parsed.options.permission === "plan") throw new Error(PLAN_PERMISSION_UNSUPPORTED);
-  if (parsed.options.activeTools.includes("update_plan")) {
-    throw new Error("The update_plan tool is not supported by the Web/HTTP host. Remove it from --tools.");
+  if (parsed.options.activeTools.includes("delegate")) {
+    throw new Error("The delegate tool is not supported by the Web/HTTP host. Remove it from --tools.");
   }
   return parsed;
 }

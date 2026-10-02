@@ -18,7 +18,7 @@ import {
 export interface ScrollableConfirmationOptions<T> {
   title: string;
   titleColor: "error" | "accent";
-  content: string;
+  content: string | ((theme: Theme) => string);
   summary: string;
   choices: readonly { label: string; value: T }[];
   cancelValue: T;
@@ -68,7 +68,7 @@ class ScrollableConfirmationDialog<T> implements Component {
     this.keybindings = keybindings;
     this.options = options;
     this.done = done;
-    const contentPreview = new ScrollablePreview(options.content);
+    const contentPreview = new ScrollablePreview(typeof options.content === "function" ? options.content(theme) : options.content);
     const choices = new Container();
     const spacers: [Spacer, Spacer, Spacer, Spacer] = [
       new Spacer(0),

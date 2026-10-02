@@ -21,8 +21,9 @@
   Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go while keeping your tools and sessions.
 - **Your AI operations companion, right on the server.** Install DSCode on the Linux server you manage.
   From its TUI, inspect services and workspaces, run and follow commands, and apply patch changes you
-  can review and undo. A focused four-tool workflow—`read`, `exec_command`, `write_stdin`, and
-  `apply_patch`—covers inspection, command execution, live process control, and reviewable changes.
+  can review and undo. `read`, `exec_command`, `write_stdin`, and `apply_patch` cover inspection, commands,
+  process control, and reviewable changes. Pi’s native `codemode` batches calls and
+  discovers MCP tools.
 - **One runtime, from terminal to integration.** Work in the CLI/TUI, embed the same Core through
   REST+SSE, or bring DSCode to a self-hosted Web UI. Live agent and tool activity, interactive requests,
   and persistent sessions let each interface take part in the same workflow.

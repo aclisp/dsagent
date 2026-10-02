@@ -69,9 +69,9 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       expect(host.session.sessionManager.isPersisted()).toBe(false);
       expect(host.session.extensionRunner.hasUI()).toBe(true);
       expect(host.session.getActiveToolNames()).toEqual(
-        ["read", "exec_command", "write_stdin", "apply_patch"],
+        ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
       );
-      expect(host.session.getAllTools().some((tool) => tool.name === "update_plan")).toBe(false);
+      expect(host.session.getAllTools().some((tool) => tool.name === "delegate")).toBe(false);
       expect(
         events.some(
           (event) => event.type === "ui_event" && event.event.method === "status",
@@ -82,24 +82,16 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
           (event) => event.type === "ui_event" && event.event.method === "title",
         ),
       ).toBe(true);
+      const activeTools = host.session.getActiveToolNames();
+      const entriesBefore = host.session.sessionManager.getEntries().length;
       for (const [prompt, command] of [
         ["/clear", "clear"],
-        ["/plan", "plan"],
-        ["/plan show", "plan"],
-        ["/plan clear", "plan"],
         ["/base-url", "base-url"],
         ["/base-url https://example.com", "base-url"],
-        ["/agents", "agents"],
-        ["  /AGENTS", "agents"],
       ] as const) {
         await expect(host.prompt(prompt)).rejects.toThrow(
           `Session command /${command} is not supported`,
         );
-      }
-      const activeTools = host.session.getActiveToolNames();
-      const entriesBefore = host.session.sessionManager.getEntries().length;
-      for (const prompt of ["/permissions plan", " /PERMISSIONS  PLAN ", "/permissions\tplan"]) {
-        await expect(host.prompt(prompt)).rejects.toThrow("Plan permission is not supported");
       }
       expect(host.session.getActiveToolNames()).toEqual(activeTools);
       expect(host.session.sessionManager.getEntries()).toHaveLength(entriesBefore);
@@ -112,7 +104,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
         }),
         expect.objectContaining({
           type: "ui_event",
-          event: expect.objectContaining({ message: "Expected /permissions ask|auto|full" }),
+          event: expect.objectContaining({ message: "Expected /permissions ask|auto|full or /permissions revoke-mcp <tool-or-server-namespace|all>" }),
         }),
       ]));
       await host.prompt("/permissions ask");
@@ -247,12 +239,6 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       expect(manager.isPersisted()).toBe(true);
       expect(manager.getSessionId()).toBe(sessionId);
       expect(manager.getSessionDir()).toBe(sessionsDir);
-      manager.appendCustomEntry("dscode-permission", { permission: "plan" });
-      manager.appendCustomEntry("dscode-plan-state", {
-        steps: [{ step: "Historical plan", status: "pending" }],
-        revision: 1,
-        updatedAt: "2026-09-07T00:00:00.000Z",
-      });
       manager.appendMessage({ role: "user", content: "Remember this", timestamp: 1 });
       manager.appendMessage({
         role: "assistant",
@@ -291,10 +277,6 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     try {
       expect(resumed.session.sessionManager.getSessionId()).toBe(sessionId);
       expect(resumed.session.getActiveToolNames()).toContain("apply_patch");
-      expect(resumed.session.sessionManager.getEntries()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ customType: "dscode-permission", data: { permission: "plan" } }),
-        expect.objectContaining({ customType: "dscode-plan-state" }),
-      ]));
       expect(
         resumed.session.sessionManager
           .getEntries()
@@ -342,43 +324,26 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     ).toThrow("Unsupported direct session argument");
   });
 
-  it("rejects final plan configuration before creating a host, without downgrading", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-plan-"));
-    temporaryRoots.push(root);
-    process.env.DSCODE_HOME = path.join(root, "home");
-    process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
-    for (const runtimeArgs of [["--permission", "plan"], ["--permission=plan"]]) {
-      await expect(createAgentSessionHost({ cwd: root, runtimeArgs }))
-        .rejects.toThrow("Plan permission is not supported");
-    }
-    expect(parseHttpRuntimeArgs(["--prompt-contract", "none"], root).options.promptContract)
-      .toBe("none");
-    process.env.DSCODE_PERMISSION = "plan";
-    await expect(createAgentSessionHost({ cwd: root }))
-      .rejects.toThrow("Plan permission is not supported");
-    await expect(fs.access(process.env.DSCODE_HOME)).rejects.toMatchObject({ code: "ENOENT" });
-    for (const permission of ["ask", "auto", "full"]) {
-      expect(parseHttpRuntimeArgs(["--permission", permission, "--sandbox", "read-only"], root).options)
-        .toMatchObject({ permission, sandbox: "read-only" });
-    }
-    expect(parseHttpRuntimeArgs(["--permission=plan", "--permission=auto"], root).options.permission)
-      .toBe("auto");
+  it.each(["ask", "auto", "full"])("supports %s with an explicit read-only sandbox", (permission) => {
+    expect(parseHttpRuntimeArgs(["--permission", permission, "--sandbox", "read-only"]).options)
+      .toMatchObject({ permission, sandbox: "read-only" });
   });
 
-  it("rejects update_plan tool selection but keeps --no-tools dominant", () => {
-    expect(() => parseHttpRuntimeArgs(["--tools", "read,update_plan"]))
-      .toThrow("update_plan tool is not supported");
-    expect(parseHttpRuntimeArgs(["--no-tools", "--tools", "update_plan"]).options.activeTools).toEqual([]);
+  it("rejects delegate tool selection but keeps --no-tools dominant", () => {
+    expect(() => parseHttpRuntimeArgs(["--tools", "read,delegate"]))
+      .toThrow("delegate tool is not supported");
+    expect(parseHttpRuntimeArgs(["--no-tools", "--tools", "delegate"]).options.activeTools).toEqual([]);
     expect(parseHttpRuntimeArgs(["--no-mcp"]).options.noMcp).toBe(true);
   });
 
-  it.each([
-    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
+  it.each<{ runtimeArgs: string[]; expected: string[]; exposure?: string }>([
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"] },
+    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"] },
     { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
     { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
   ])(
-    "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected }) => {
+    "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected, exposure = "direct" }) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-mcp-"));
       temporaryRoots.push(root);
       const home = path.join(root, "home");
@@ -386,18 +351,20 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
       await fs.mkdir(home);
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: {
-        fixture: { command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
+        fixture: { exposure, command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
       } }));
       const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full", ...runtimeArgs] });
       try {
         const events: HttpUiBrokerEvent[] = [];
         host.subscribe((event) => events.push(event));
-        await host.prompt("/mcp");
+        if (!runtimeArgs.includes("--no-mcp") && !runtimeArgs.includes("--no-tools")) await host.prompt("/mcp");
         expect(host.session.getActiveToolNames(), JSON.stringify(events)).toEqual(expected);
         if (expected.includes("mcp__fixture__echo")) {
           const tool = host.session.agent.state.tools.find((tool) => tool.name === "mcp__fixture__echo")!;
           const result = await tool.execute("test-mcp", { text: "http" });
           expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("http|") });
+        } else if (expected.includes("tool_search")) {
+          expect(host.session.getCallableToolNames()).toContain("mcp__fixture__echo");
         } else {
           expect(host.session.getAllTools().some((tool) => tool.name.startsWith("mcp__"))).toBe(false);
         }

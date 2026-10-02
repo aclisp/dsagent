@@ -16,11 +16,15 @@ const credentialEnvironmentKeys = [
 const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZBv8AAAAASUVORK5CYII=";
 
 const server = new McpServer({ name: "dscode-test", version: "1.0.0" });
+if (process.env.FIXTURE_RESOURCES === "1") server.registerResource("note", "fixture://note", {}, async (uri) => ({
+  contents: [{ uri: uri.href, text: "RESOURCE_OK" }],
+}));
 server.registerTool(
   "echo",
   {
     description: "Echo text and report whether the model key leaked",
     inputSchema: { text: z.string(), includeImage: z.boolean().optional() },
+    ...(process.env.FIXTURE_READ_ONLY === "1" ? { annotations: { readOnlyHint: true } } : {}),
   },
   async ({ text, includeImage }) => ({
     content: [

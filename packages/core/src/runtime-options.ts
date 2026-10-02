@@ -6,6 +6,7 @@ import {
   type ModelTransport,
   type PermissionMode,
 } from "./config.ts";
+import { isMcpTool } from "./pi-builtins.ts";
 import { DSCODE_VERSION } from "./version.ts";
 import { isStandalone } from "./distribution.ts";
 import {
@@ -167,8 +168,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (!hasFlag(forwarded, "--thinking")) forwarded.unshift("--thinking", effort);
-  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch"])];
-  if (noMcp) activeTools = activeTools.filter((tool) => !tool.startsWith("mcp__"));
+  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode"])];
+  if (noMcp) activeTools = activeTools.filter((tool) => !isMcpTool(tool));
 
   return {
     options: {
@@ -202,6 +203,7 @@ Usage:
   dscode --mode rpc                IDE/RPC server
   dscode --resume                  Pick a saved session
   dscode --continue                Continue the latest workspace session
+  dscode mcp <command>             Pi MCP configuration and authentication
 
 DSCode options:
   -C, --cwd <dir>                  Workspace directory
@@ -211,23 +213,23 @@ DSCode options:
   --effort <level>                 Alias for --thinking; defaults by provider
   --transport <responses|chat>     API transport (default: responses)
   --prompt-contract <mode>         engineering|none (default: engineering)
-  --tools <names>                  Select tools; configured MCP tools are added automatically
-                                   Default: read,exec_command,write_stdin,apply_patch
+  --tools <names>                  Select initially active tools
+                                   Default: read,exec_command,write_stdin,apply_patch,codemode
   --no-mcp                         Skip MCP connections and tools
   --no-tools                       Disable all tools and MCP, regardless of argument order
-  --permission <mode>              plan|ask|auto|full (full grants host + network)
+  --permission <mode>              ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
   --network                        Pre-authorize command network access for this run
   -y, --yes                        YOLO: trust project, skip approvals, allow host + network
 
 Session and editor features:
-  /help /settings /new /clear /name /resume /tree /compact /reload /export
+  /help /settings /new /clear /name /resume /tree /compact /reload /export /mcp
   Ctrl+O tool folding, Ctrl+G external editor, Ctrl+P model cycle
   --name, --fork, --session, --session-dir, --skill, --no-skills${isStandalone ? "" : ", --extension"}
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
-  /plan /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /mcp /agents /doctor
+  /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /doctor
 
 Authentication:
   dscode login [provider]          Sign in to a supported model provider

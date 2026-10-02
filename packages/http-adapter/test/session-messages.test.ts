@@ -3,6 +3,14 @@ import type { AgentMessage } from "../src/session-messages.ts";
 import { toHttpSessionMessages } from "../src/session-messages.ts";
 
 describe("toHttpSessionMessages", () => {
+  it("retains bounded nested-call history for codemode", () => {
+    const nestedCalls = { calls: [{ id: "nested", name: "read", arguments: { path: "a.ts" }, status: "ok" as const }], complete: true };
+    const messages: AgentMessage[] = [{
+      role: "toolResult", toolCallId: "parent", toolName: "codemode", content: [{ type: "text", text: "done" }],
+      isError: false, timestamp: 1, nestedCalls,
+    }];
+    expect(toHttpSessionMessages(messages)[0]).toMatchObject({ toolCallId: "parent", nestedCalls });
+  });
   it("normalizes string user content and drops image blocks", () => {
     const messages: AgentMessage[] = [
       { role: "user", content: "plain string", timestamp: 1 },

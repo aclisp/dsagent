@@ -68,22 +68,24 @@ session — values: `--provider --base-url --transport --permission --sandbox --
 with `Unsupported direct session argument`. The agent's working directory is always the workspace
 path, never client-controlled.
 
-HTTP hosts support `ask`, `auto`, and `full` permissions. Final `plan` configuration,
-including an effective `DSCODE_PERMISSION=plan`, is rejected by `createHttpAdapter`
-before the server starts and by `createAgentSessionHost` before creating a session.
-Explicit permission arguments override the environment as in the CLI; there is no
-automatic downgrade. `/plan`, `/permissions plan`, `/base-url`, and `/agents` fail
-without invoking the model. CLI TUI, JSON, and RPC plan support is unchanged.
-History containing plans can still be resumed under the current runtime permission.
-`--sandbox read-only` remains supported. An effective tool selection containing
-`update_plan` is rejected at startup; this tool is not registered in HTTP hosts.
-`--no-tools` overrides explicit tool selection, including `update_plan`.
+CLI and HTTP hosts support `ask`, `auto`, and `full` permissions.
+`--sandbox read-only` remains available as a command sandbox boundary.
+`/base-url` and CLI session-navigation commands fail without invoking the model.
+HTTP does not register the CLI-only `delegate` tool, and explicitly selecting it
+is rejected at startup. `--no-tools` overrides explicit tool selection.
 
-The default tool selection is `read,exec_command,write_stdin,apply_patch`. Enabled MCP tools are added even with an explicit `--tools` list.
-`--no-mcp` skips MCP connections and registration; `--no-tools` skips MCP and disables
-all tools regardless of argument order. MCP discovery failures are nonfatal and
-reported through `/mcp`. Existing approval rules apply; discovery occurs on session
-initialization, without hot reload or automatic reconnection.
+The default tools are `read,exec_command,write_stdin,apply_patch,codemode`.
+Pi owns MCP discovery, schema, OAuth, and `/mcp`. Global config is `DSCODE_HOME/mcp.json`;
+trusted projects use `.pi/mcp.json`. Default MCP exposure is `codemode`, so tools are
+callable from scripts without advertising every schema. Codemode's `searchTools()` and
+`describeTool()` discover tools without changing the model's active tool declarations.
+`tool_search` is opt-in through `--tools` or server `exposure: "deferred"`, which
+activates it automatically; `exposure: "direct"` advertises tools immediately.
+`--tools` chooses the initial active set; `--no-mcp` skips MCP and `--no-tools` disables all tools.
+Nested codemode calls keep DSCode's permissions and checkpoints. Server-defined MCP
+tools require per-call approval in `ask`/`auto`; the three standard resource helpers
+list and read context without approval in every mode. SSE events retain `parentToolCallId`, and
+history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
 
 Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.
 

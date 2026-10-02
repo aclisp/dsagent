@@ -3,7 +3,7 @@ import path from "node:path";
 
 interface DSCodePiSettings {
   theme?: string;
-  quietStartup?: boolean;
+  quietStartup?: boolean | "header";
   collapseChangelog?: boolean;
   showHardwareCursor?: boolean;
   hideThinkingBlock?: boolean;

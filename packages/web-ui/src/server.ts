@@ -5,10 +5,8 @@ import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
 import { resolveChatAgentName } from "./chat-page.ts";
 import { resolveConfiguredTimezone } from "./task-scheduler.ts";
 import { createWebUiServer } from "./web-ui-server.ts";
-import { enforceWebUiSubagentDepth, resolveWebUiRuntimeArgs } from "./web-ui-runtime.ts";
+import { resolveWebUiRuntimeArgs } from "./web-ui-runtime.ts";
 import { parseWorkspaces, resolveWorkspacesConfig } from "./workspaces.ts";
-
-enforceWebUiSubagentDepth();
 
 const host = process.env.HOST ?? "127.0.0.1";
 const workspacesConfig = resolveWorkspacesConfig(

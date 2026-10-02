@@ -1,4 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+  getCurrentSystemMessage,
+  getSystemMessageText,
+} from "@earendil-works/pi-ai";
 import type {
   BashOperations,
   ExtensionAPI,
@@ -26,21 +30,14 @@ import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
 import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
-import { MCPManager } from "./mcp.ts";
+import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
+import { McpSessionPermissions } from "./mcp-permissions.ts";
+import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
-import {
-  formatPlanForExecution,
-  PLAN_STATE_ENTRY,
-  planWidgetLines,
-  registerPlanTool,
-  restorePlanState,
-  type PlanState,
-} from "./plan.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
 import { defaultModelForProvider } from "./providers.ts";
 import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
-import { confirmMcpTool } from "./mcp-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
@@ -50,7 +47,7 @@ import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
-import { registerSubagentTools } from "./subagents.ts";
+import { isSubagent, registerSubagentTools, SUBAGENT_TOOLS } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
@@ -74,15 +71,6 @@ interface DiffEntryData {
   files?: Array<{ path: string; status: string; diff: string }>;
 }
 
-const planAllowedTools = new Set([
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "exec_command",
-  "write_stdin",
-  "update_plan",
-]);
 const askWithoutPromptTools = new Set([
   "read",
   "grep",
@@ -138,27 +126,30 @@ const applyPatchParameters = Type.Object({
 
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
-  capabilities: { planMode?: boolean; planTool?: boolean } = {},
+  capabilities: { subagents?: boolean } = {},
 ): InlineExtension {
-  const permissionModes = capabilities.planMode === false ? "ask|auto|full" : "plan|ask|auto|full";
+  const permissionModes = "ask|auto|full";
   return {
     name: "dscode",
     factory(pi) {
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
-      const mcp = new MCPManager();
-      let mcpApprovalQueue = Promise.resolve();
+      let approvalQueue = Promise.resolve();
+      const mcpPermissions = new McpSessionPermissions();
+      let pendingRestoredTools: string[] = [];
+      const activateRestoredTools = () => {
+        if (pendingRestoredTools.length === 0) return;
+        const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+        const ready = pendingRestoredTools.filter((name) => registered.has(name));
+        if (ready.length) pi.setActiveTools([...new Set([...pi.getActiveTools(), ...ready])]);
+        pendingRestoredTools = pendingRestoredTools.filter((name) => !registered.has(name));
+      };
       let permission: PermissionMode = options.permission;
-      let permissionBeforePlan: Exclude<PermissionMode, "plan"> =
-        options.permission === "plan" ? "auto" : options.permission;
       const checkpoints: PatchCheckpoint[] = [];
       const undone = new Set<string>();
-      let toolsBeforePlan: string[] | undefined;
       let projectCommands: string[] = [];
       let lastAgentFailed = false;
       let sessionPartition = Promise.resolve();
-      let planState: PlanState | undefined;
-      let lastOfferedPlanRevision = 0;
       const access = new SessionAccessController(options.sandbox, options.network);
       const effectiveAccess = (): EffectiveAccess => access.effective(permission);
 
@@ -182,12 +173,9 @@ export function createDSCodeExtension(
         })}`;
         ctx.ui.setStatus(
           "dscode",
-          permission === "plan"
-            ? ctx.ui.theme.fg("warning", status)
-            : brandBlue(status, ctx.ui.theme),
+          brandBlue(status, ctx.ui.theme),
         );
         ctx.ui.setTitle(`DSCode — ${ctx.cwd}`);
-        ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
       };
 
       registerDeepSeekProvider(pi, options);
@@ -203,41 +191,9 @@ export function createDSCodeExtension(
         updateStatus,
       );
       registerPatchTool(pi, checkpoints);
-      registerSubagentTools(pi, options);
+      if (capabilities.subagents !== false) registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
-      if (capabilities.planTool !== false) {
-        registerPlanTool(
-          pi,
-          () => planState,
-          (nextPlan, ctx) => {
-            planState = nextPlan;
-            ctx.ui.setWidget("dscode-plan", planWidgetLines(planState, ctx));
-          },
-        );
-      }
       registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
-
-      const applyPermissionTools = (): void => {
-        if (options.noTools) {
-          toolsBeforePlan = undefined;
-          pi.setActiveTools([]);
-          return;
-        }
-        if (permission === "plan") {
-          const active = pi.getActiveTools();
-          if (toolsBeforePlan === undefined) {
-            toolsBeforePlan = active;
-          }
-          pi.setActiveTools(
-            [...new Set([...toolsBeforePlan.filter((tool) => planAllowedTools.has(tool)), "update_plan"])],
-          );
-          return;
-        }
-        if (toolsBeforePlan !== undefined) {
-          pi.setActiveTools(toolsBeforePlan);
-          toolsBeforePlan = undefined;
-        }
-      };
 
       pi.on("before_provider_request", (event, ctx) => {
         if (ctx.model?.provider !== "deepseek" || options.transport !== "responses") return;
@@ -245,44 +201,29 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
-        mcp.revokeApprovals();
+        mcpPermissions.clear();
         checkpoints.length = 0;
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
         restoreCheckpointState(ctx.sessionManager.getBranch(), checkpoints, undone);
-        planState = restorePlanState(ctx.sessionManager.getBranch());
-        lastOfferedPlanRevision = planState?.revision ?? 0;
         updateStatus(ctx);
         ctx.ui.setHiddenThinkingLabel(
           formatThinkingLabel(ctx.model?.name ?? ctx.model?.id ?? options.modelId),
         );
-        const staleMcpTools = new Set(mcp.toolNames());
-        if (staleMcpTools.size > 0) {
-          pi.setActiveTools(
-            pi.getActiveTools().filter((tool) => !staleMcpTools.has(tool)),
-          );
-          toolsBeforePlan = toolsBeforePlan?.filter((tool) => !staleMcpTools.has(tool));
+        // The SDK supplies an initial set even on resume. Restore Pi's transcript
+        // declaration, then activate missing MCP tools as native discovery finishes.
+        // /reload already preserves the live selection in Pi.
+        if (["startup", "new", "resume", "fork"].includes(_event.reason)) {
+          const restored = options.toolsExplicit ? undefined : getCurrentSystemMessage(
+            ctx.sessionManager.buildSessionProjection().messages,
+          )?.toolsAdded?.map((tool) => tool.name);
+          pendingRestoredTools = (restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
+          // Pi's MCP session_start runs first and activates discovery from server exposure.
+          const discoveryTools = pi.getActiveTools().filter((name) => name === "codemode" || name === "tool_search");
+          const selectedTools = restored ? pendingRestoredTools : options.activeTools;
+          pi.setActiveTools(options.noTools ? [] : [...new Set([...selectedTools, ...discoveryTools])]);
+          activateRestoredTools();
         }
-        await mcp.close();
-        try {
-          await mcp.connectConfigured(
-            pi,
-            ctx,
-            options.noTools ? "--no-tools" : options.noMcp ? "--no-mcp" : undefined,
-          );
-          if (mcp.initializationErrors().length > 0) {
-            ctx.ui.notify(`MCP initialization: ${mcp.initializationErrors().join("\n")}`, "warning");
-          }
-        } catch (error) {
-          ctx.ui.notify(`MCP initialization failed: ${(error as Error).message}`, "warning");
-        }
-        const intendedTools = options.noTools ? [] : [...new Set([
-          ...options.activeTools.filter((tool) => !tool.startsWith("mcp__")),
-          ...mcp.toolNames(),
-        ])];
-        pi.setActiveTools(intendedTools);
-        toolsBeforePlan = undefined;
-        applyPermissionTools();
         await queueSessionPartition(ctx);
       });
 
@@ -295,68 +236,49 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
-        mcp.revokeApprovals();
+        mcpPermissions.clear();
         try {
           await queueSessionPartition(ctx);
         } finally {
           await processes.dispose();
-          await mcp.close();
         }
       });
 
       pi.on("before_agent_start", async (event) => {
+        activateRestoredTools();
         lastAgentFailed = false;
         if (isStandalone) {
           event.systemPromptOptions.sections.docs = STANDALONE_DOCS;
         }
-        const currentAccess = effectiveAccess();
-        const systemPrompt = effectiveSystemPrompt(
-          event.systemPrompt,
-          projectCommands,
-          currentAccess,
-          options.promptContract,
-        );
-        if (permission !== "plan") return { systemPrompt };
-        return {
-          systemPrompt,
-          message: {
-            customType: "dscode-plan-context",
-            display: false,
-            content: [
-              "[PLAN MODE ACTIVE]",
-              "Explore and reason only. File mutation tools are unavailable.",
-              `Commands run in a read-only OS sandbox with network ${currentAccess.network ? "enabled" : "subject to scoped approval"}.`,
-              ...(options.noTools ? [] : ["Use update_plan to publish a concrete implementation plan after exploration."]),
-              "Include validation and important risks in the plan steps or explanation.",
-              "Do not claim to have changed or tested anything you could not actually run.",
-            ].join("\n"),
-          },
-        };
+        if (options.promptContract === "engineering") {
+          event.systemPromptOptions.sections.dscode = engineeringInstructions(projectCommands, effectiveAccess());
+        }
       });
 
       pi.on("tool_call", async (event, ctx) => {
+        activateRestoredTools();
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
+        if (isSubagent() && !(SUBAGENT_TOOLS as readonly string[]).includes(event.toolName)) {
+          return { block: true, reason: "Investigation-only children can only read and search files." };
+        }
         if (
           event.toolName === "bash" ||
-          event.toolName === "run_command" ||
           event.toolName === "edit" ||
           event.toolName === "write"
         ) {
           return {
             block: true,
             reason:
-              event.toolName === "bash" || event.toolName === "run_command"
+              event.toolName === "bash"
                 ? "This shell tool bypasses DSCode's managed OS sandbox. Use exec_command instead."
                 : "This write tool bypasses DSCode checkpoints. Use apply_patch instead.",
           };
         }
-        if (permission === "plan" && !planAllowedTools.has(event.toolName)) {
-          return {
-            block: true,
-            reason: `Plan mode does not allow ${event.toolName}. Run /plan to leave plan mode.`,
-          };
-        }
-        const externalMcp = event.toolName.startsWith("mcp__");
+        // Orchestration has no effects itself; nested calls pass through this hook.
+        if (event.toolName === "codemode" || event.toolName === "tool_search") return;
+        // Pi's three standard resource helpers only list or read context.
+        if (isMcpResourceTool(event.toolName)) return;
+        const externalMcp = isMcpTool(event.toolName);
         const command =
           event.toolName === "exec_command" &&
           isRecord(event.input) &&
@@ -365,12 +287,6 @@ export function createDSCodeExtension(
             : undefined;
         const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
         const dangerousCommand = commandAssessment?.dangerous === true;
-        if (permission === "plan" && dangerousCommand) {
-          return {
-            block: true,
-            reason: "Plan mode blocks destructive commands. Leave plan mode before running this command.",
-          };
-        }
         const needsApproval =
           permission === "ask" ||
           (permission === "auto" && (externalMcp || dangerousCommand));
@@ -394,70 +310,65 @@ export function createDSCodeExtension(
           // The scoped network selector in exec_command is the approval UI for this action.
           return;
         }
-        if (externalMcp) {
-          const epoch = mcp.approvalEpoch;
-          // Only one prompt at a time; queued calls recheck newly granted scopes.
-          const approval = mcpApprovalQueue.then(async () => {
-            const expired = () => epoch !== mcp.approvalEpoch;
-            const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
-            if (expired()) return stale;
-            if (permission === "plan") return { block: true, reason: "Plan mode blocks MCP tools." };
-            if (permission === "full" || mcp.isApproved(event.toolName)) return;
-            if (!ctx.hasUI) {
-              return {
-                block: true,
-                reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
-              };
-            }
-            const info = mcp.toolInfo(event.toolName);
-            const choice = ctx.mode === "tui" && info
-              ? await confirmMcpTool(ctx.ui, info.server, info.tool, JSON.stringify(event.input, null, 2))
-              : await ctx.ui.confirm(`Allow ${event.toolName}?`, approvalSummary(event.toolName, event.input))
-                ? "once" : "deny";
-            if (expired()) return stale;
-            if (choice !== "once" && choice !== "tool" && choice !== "server") {
-              return { block: true, reason: "Denied by user" };
-            }
-            if (choice === "tool" || choice === "server") mcp.approve(event.toolName, choice);
-          });
-          mcpApprovalQueue = approval.then(() => {}, () => {});
-          return approval;
-        }
-        if (!ctx.hasUI) {
-          return {
-            block: true,
-            reason:
-              "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
+        // Codemode can request several actions concurrently. Keep approval UI serial.
+        const mcpEpoch = mcpPermissions.epoch;
+        const approval = approvalQueue.then(async () => {
+          const staleMcpApproval = () => externalMcp && mcpEpoch !== mcpPermissions.epoch;
+          const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
+          if (staleMcpApproval()) return stale;
+          if (permission === "full") return;
+          const definition = externalMcp ? pi.getAllTools().find((tool) => tool.name === event.toolName) : undefined;
+          const mcpInfo: McpApprovalInfo = {
+            tool: event.toolName,
+            server: definition?.namespace?.name,
+            description: definition?.description,
+            readOnlyHint: definition?.annotations?.readOnlyHint,
           };
-        }
-        if (dangerousCommand) {
-          const assessment = commandAssessment!;
-          const details = [
-            command,
-            "",
-            assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
-            assessment.reason ?? "This command may affect files or system state",
-          ].join("\n");
-          const approved = ctx.mode === "tui"
-            ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
-            : await ctx.ui.confirm("Run destructive command?", details);
-          if (!approved) return { block: true, reason: "Destructive command denied by user" };
-        } else if (
-          event.toolName === "apply_patch" &&
-          isRecord(event.input) &&
-          typeof event.input.input === "string"
-        ) {
-          for (const section of patchApprovalSections(event.input.input)) {
-            const approved = await ctx.ui.confirm(`Apply ${section.file}?`, section.patch);
-            if (!approved) return { block: true, reason: `Denied ${section.file} by user` };
+          // Recheck after earlier queued calls may have granted a tool or server.
+          if (externalMcp && mcpPermissions.isApproved(mcpInfo)) return;
+          if (!ctx.hasUI) {
+            return {
+              block: true,
+              reason:
+                "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
+            };
           }
-        } else {
-          const approved = await ctx.ui.confirm(
-            `Allow ${event.toolName}?`,
-            approvalSummary(event.toolName, event.input),
-          );
-          if (!approved) return { block: true, reason: "Denied by user" };
-        }
+          if (externalMcp) {
+            const choice = await confirmMcpTool(ctx.ui, ctx.mode, mcpInfo, JSON.stringify(event.input, null, 2));
+            if (staleMcpApproval()) return stale;
+            if (choice === "deny") return { block: true, reason: "Denied by user" };
+            if (choice === "tool" || choice === "server") mcpPermissions.grant(mcpInfo, choice);
+          } else if (dangerousCommand) {
+            const assessment = commandAssessment!;
+            const details = [
+              command,
+              "",
+              assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+              assessment.reason ?? "This command may affect files or system state",
+            ].join("\n");
+            const approved = ctx.mode === "tui"
+              ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
+              : await ctx.ui.confirm("Run destructive command?", details);
+            if (!approved) return { block: true, reason: "Destructive command denied by user" };
+          } else if (
+            event.toolName === "apply_patch" &&
+            isRecord(event.input) &&
+            typeof event.input.input === "string"
+          ) {
+            for (const section of patchApprovalSections(event.input.input)) {
+              const approved = await ctx.ui.confirm(`Apply ${section.file}?`, section.patch);
+              if (!approved) return { block: true, reason: `Denied ${section.file} by user` };
+            }
+          } else {
+            const approved = await ctx.ui.confirm(
+              `Allow ${event.toolName}?`,
+              approvalSummary(event.toolName, event.input),
+            );
+            if (!approved) return { block: true, reason: "Denied by user" };
+          }
+        });
+        approvalQueue = approval.then(() => {}, () => {});
+        return approval;
       });
 
       pi.on("user_bash", (_event, ctx) => {
@@ -496,105 +407,36 @@ export function createDSCodeExtension(
           (event.message.stopReason === "error" || event.message.stopReason === "aborted");
       });
 
-      pi.on("agent_end", async (_event, ctx) => {
-        if (
-          permission !== "plan" ||
-          ctx.mode !== "tui" ||
-          !planState ||
-          planState.revision <= lastOfferedPlanRevision
-        ) {
-          return;
-        }
-        lastOfferedPlanRevision = planState.revision;
-        ctx.ui.setWorkingVisible(false);
-        let choice: string | undefined;
-        try {
-          choice = await ctx.ui.select("Plan ready — what next?", [
-            "Execute the plan",
-            "Stay in plan mode",
-            "Refine the plan",
-          ]);
-        } finally {
-          ctx.ui.setWorkingVisible(true);
-        }
-        if (choice === "Execute the plan") {
-          permission = permissionBeforePlan;
-          applyPermissionTools();
-          updateStatus(ctx);
-          pi.appendEntry("dscode-permission", { permission });
-          pi.sendUserMessage(
-            [
-              "Execute the approved plan below. Keep update_plan statuses current as you work.",
-              "Maintain at most one in_progress step and only mark completed after verification.",
-              "",
-              formatPlanForExecution(planState),
-            ].join("\n"),
-            { deliverAs: "followUp" },
-          );
-        } else if (choice === "Refine the plan") {
-          const refinement = await ctx.ui.editor("How should the plan change?", "");
-          if (refinement?.trim()) {
-            pi.sendUserMessage(
-              `Refine the current plan using update_plan. Requested changes:\n${refinement.trim()}`,
-              { deliverAs: "followUp" },
-            );
-          }
-        }
-      });
-
       pi.on("agent_settled", (_event, ctx) => {
         if (ctx.mode === "json" || ctx.mode === "print") {
           process.exitCode = lastAgentFailed ? 1 : 0;
         }
       });
 
-      pi.registerCommand("plan", {
-        description: "Toggle read-only planning; use /plan show or /plan clear",
+      pi.registerCommand("permissions", {
+        description: `Show or set ${permissionModes}, or revoke MCP session grants`,
         handler: async (args, ctx) => {
-          const action = args.trim();
-          if (action === "show") {
+          const value = args.trim();
+          const revoke = /^revoke-mcp\s+(\S+)$/.exec(value);
+          if (revoke) {
+            const name = revoke[1]!;
             ctx.ui.notify(
-              planState ? formatPlanForExecution(planState) : "No structured plan is available.",
+              mcpPermissions.revoke(name) ? `MCP session grants revoked: ${name}` : `No MCP session grant found: ${name}`,
               "info",
             );
             return;
           }
-          if (action === "clear") {
-            planState = undefined;
-            pi.appendEntry(PLAN_STATE_ENTRY, { cleared: true, updatedAt: new Date().toISOString() });
-            ctx.ui.setWidget("dscode-plan", undefined);
-            ctx.ui.notify("Structured plan cleared.", "info");
-            return;
-          }
-          if (action) {
-            ctx.ui.notify("Expected /plan, /plan show, or /plan clear", "warning");
-            return;
-          }
-          if (permission === "plan") {
-            permission = permissionBeforePlan;
-          } else {
-            permissionBeforePlan = permission;
-            permission = "plan";
-          }
-          applyPermissionTools();
-          updateStatus(ctx);
-          pi.appendEntry("dscode-permission", { permission });
-          ctx.ui.notify(`Permission mode: ${permission}`, "info");
-        },
-      });
-
-      pi.registerCommand("permissions", {
-        description: `Show or set ${permissionModes}`,
-        handler: async (args, ctx) => {
           if (!args.trim()) {
             const currentAccess = effectiveAccess();
             ctx.ui.notify(
               [
                 `permission: ${permission}`,
-                ...(capabilities.planMode === false ? [`available modes: ${permissionModes}`] : []),
+                `available modes: ${permissionModes}`,
                 `sandbox: ${currentAccess.sandbox}`,
                 `network: ${currentAccess.network ? "enabled" : "blocked"}`,
                 `session grants: ${access.describeGrants().join(", ") || "none"}`,
+                `MCP session grants: ${mcpPermissions.describe().join(", ") || "none"}`,
+                "Revoke MCP grants: /permissions revoke-mcp <tool-or-server-namespace|all>",
                 "Escalation: allow once / allow for session / deny",
               ].join("\n"),
               "info",
@@ -602,8 +444,8 @@ export function createDSCodeExtension(
             return;
           }
           const parsed = permissionSchema.safeParse(args.trim());
-          if (!parsed.success || (capabilities.planMode === false && parsed.data === "plan")) {
-            ctx.ui.notify(`Expected /permissions ${permissionModes}`, "warning");
+          if (!parsed.success) {
+            ctx.ui.notify(`Expected /permissions ${permissionModes} or /permissions revoke-mcp <tool-or-server-namespace|all>`, "warning");
             return;
           }
           if (parsed.data === "full" && permission !== "full" && ctx.hasUI) {
@@ -613,11 +455,7 @@ export function createDSCodeExtension(
             );
             if (!approved) return;
           }
-          if (parsed.data === "plan" && permission !== "plan") {
-            permissionBeforePlan = permission;
-          }
           permission = parsed.data;
-          applyPermissionTools();
           updateStatus(ctx);
           pi.appendEntry("dscode-permission", { permission });
           ctx.ui.notify(`Permission mode: ${permission}`, "info");
@@ -813,39 +651,21 @@ export function createDSCodeExtension(
         },
       });
 
-      pi.registerCommand("mcp", {
-        description: "Show MCP tools and session permissions; /mcp revoke clears permissions",
-        handler: async (args, ctx) => {
-          const action = args.trim();
-          if (action === "revoke") {
-            mcp.revokeApprovals();
-            ctx.ui.notify("MCP session permissions revoked. Future calls will require approval in auto/ask mode.", "info");
-            return;
-          }
-          if (action) {
-            ctx.ui.notify("Usage: /mcp or /mcp revoke", "info");
-            return;
-          }
-          const status = mcp.detailedStatus(pi.getActiveTools(), permission === "plan" ? "disabled in plan mode" : "inactive");
-          ctx.ui.notify(mcp.toolNames().length > 0 ? `${status}\n\n/mcp revoke — revoke all MCP session permissions` : status, "info");
-        },
-      });
-
       pi.registerCommand("x-7f3c9a", {
         description: "Show an internal runtime diagnostic snapshot",
         handler: async (_args, ctx) => {
-          let base = ctx.getSystemPrompt();
-          // Pi drops before_agent_start overrides when idle; preview the next run's docs.
-          if (isStandalone) base = base.replace(/<docs>[\s\S]*?<\/docs>/, `<docs>\n${STANDALONE_DOCS}\n</docs>`);
-          // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
-          const effective = base.includes("# DSCode engineering contract")
-            ? base
-            : effectiveSystemPrompt(
-                base,
-                projectCommands,
-                effectiveAccess(),
-                options.promptContract,
-              );
+          const current = getCurrentSystemMessage(
+            ctx.sessionManager.buildSessionProjection().messages,
+          );
+          let effective = current ? getSystemMessageText(current) : ctx.getSystemPrompt();
+          if (!current) {
+            const contractStart = effective.indexOf("# DSCode engineering contract");
+            if (contractStart >= 0) {
+              const before = effective.slice(0, contractStart).trimEnd();
+              const contract = effective.slice(contractStart).trimEnd();
+              effective = `${before}${before ? "\n\n" : ""}<dscode>\n${contract}\n</dscode>`;
+            }
+          }
           const tools = ctx.getSystemPromptOptions().selectedTools ?? [];
           const skills = ctx.getSystemPromptOptions().skills ?? [];
           ctx.ui.notify(
@@ -928,14 +748,13 @@ export function createDSCodeExtension(
                 ? `context: ${usage.tokens?.toLocaleString() ?? "?"}/${usage.contextWindow.toLocaleString()}`
                 : "context: unavailable",
               `checkpoints: ${checkpoints.length - undone.size} active`,
-              `mcp:\n${mcp.status()}`,
             ].join("\n"),
             "info",
           );
         },
       });
 
-      registerHooks(pi, effectiveAccess);
+      if (!isSubagent()) registerHooks(pi, effectiveAccess);
     },
   };
 }
@@ -1000,7 +819,7 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
               supportsDeveloperRole: true,
               supportsLongCacheRetention: false,
               supportsStrictMode: false,
-              supportsOpenAIGrammarTools: true,
+              supportsOpenAIGrammarTools: false,
               sessionAffinityFormat: "openai-nosession",
             }
           : {
@@ -1025,8 +844,11 @@ function registerCommandTools(
     label: "Execute command",
     description:
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
-    promptSnippet: "exec_command: run tests, builds, git, and other shell commands in an OS sandbox",
+    promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
+      ...(process.platform === "win32"
+        ? ["On Windows, execute commands using PowerShell syntax."]
+        : []),
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
       "When a process is still running, use write_stdin with its process_id.",
@@ -1057,7 +879,7 @@ function registerCommandTools(
       });
       let result = await run(commandAccess);
       const boundary = detectSandboxBoundary(params.cmd, result, commandAccess);
-      if (boundary && !(getPermission() === "plan" && boundary === "host")) {
+      if (boundary) {
         commandAccess = await requestCommandAccess(
           boundary,
           params.cmd,
@@ -1091,7 +913,7 @@ function registerCommandTools(
     label: "Write to process",
     description:
       "Write characters to, send EOF to, poll, or terminate a managed process returned by exec_command.",
-    promptSnippet: "write_stdin: interact with or poll a managed background process",
+    promptSnippet: "Interact with or poll a managed background process",
     parameters: writeStdinParameters,
     renderShell: "self",
     executionMode: "sequential",
@@ -1165,9 +987,6 @@ async function requestCommandAccess(
   onAccessChanged: (ctx: ExtensionContext) => void,
 ): Promise<EffectiveAccess> {
   if (permission === "full") return controller.effective(permission);
-  if (permission === "plan" && boundary === "host") {
-    throw new Error("Plan mode cannot grant write access outside the read-only sandbox.");
-  }
   const boundaryLabel =
     boundary === "network"
       ? "network access"
@@ -1206,7 +1025,7 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     label: "Apply patch",
     description:
       "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore. All Add File, Update File, Delete File, and Move to paths must be relative to the workspace root. Absolute paths are rejected. Use src/app.ts, not /workspace/project/src/app.ts.",
-    promptSnippet: "apply_patch: atomically add, update, move, or delete workspace files",
+    promptSnippet: "Atomically add, update, move, or delete workspace files",
     promptGuidelines: [
       "Use apply_patch for file changes; keep each patch focused and reviewable.",
       "All apply_patch file paths must be relative to the workspace root, regardless of any exec_command working directory or shell cd. Absolute paths are rejected.",
@@ -1406,16 +1225,6 @@ function formatManagedResult(result: ManagedProcessResult): string {
   ].join("\n");
 }
 
-function effectiveSystemPrompt(
-  base: string,
-  commands: string[],
-  access: EffectiveAccess,
-  promptContract: DSCodeRuntimeOptions["promptContract"],
-): string {
-  if (promptContract === "none") return base;
-  return `${base}\n\n${engineeringInstructions(commands, access)}`;
-}
-
 function engineeringInstructions(
   projectCommands: string[],
   access: EffectiveAccess,
@@ -1428,8 +1237,6 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    "- Use update_plan for complex multi-step work. Keep at most one step in_progress and update statuses as verified work advances.",
-    "- Use delegate only for genuinely independent work. The parent agent owns integration and final verification.",
     `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
     `- Command network access is ${access.network ? "enabled" : "disabled until the user grants scoped access"}; do not work around this boundary.`,
     ...(access.network

@@ -17,17 +17,29 @@ const manifest = process.argv[2] === "--manifest"
 const scratch = await mkdtemp(path.join(os.tmpdir(), "dscode-bundle-smoke-"));
 let failResponse = false;
 let payload;
+let plannedCode;
+let codeIssued = false;
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   payload = JSON.parse(Buffer.concat(chunks).toString());
+  if (payload.tools?.some(tool => tool.type === "custom" && tool.name !== "apply_patch") ||
+      payload.input?.some(item => item.type === "custom_tool_call" && item.name !== "apply_patch")) {
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "Only apply_patch supports custom tools" } }));
+    return;
+  }
   if (failResponse) {
     response.writeHead(401, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: { message: "bundle smoke rejected key" } }));
     return;
   }
   response.writeHead(200, { "content-type": "text/event-stream" });
-  const item = { id: "msg_bundle", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "bundle smoke ok", annotations: [], logprobs: [] }] };
+  const call = plannedCode && !codeIssued;
+  if (call) codeIssued = true;
+  const item = call
+    ? { id: "fc_bundle", call_id: "call_code", type: "function_call", status: "completed", name: "codemode", arguments: JSON.stringify({ code: plannedCode }) }
+    : { id: "msg_bundle", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "bundle smoke ok", annotations: [], logprobs: [] }] };
   const events = [
     { type: "response.created", response: { id: "resp_bundle", status: "in_progress", output: [] } },
     { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
@@ -35,7 +47,10 @@ const server = http.createServer(async (request, response) => {
     { type: "response.output_item.done", output_index: 0, item },
     { type: "response.completed", response: { id: "resp_bundle", status: "completed", output: [item], usage: { input_tokens: 10, input_tokens_details: { cached_tokens: 0 }, output_tokens: 3, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 13 } } },
   ];
-  for (const event of events) response.write(`data: ${JSON.stringify(event)}\n\n`);
+  for (const event of events) {
+    if (call && event.type === "response.output_text.delta") continue;
+    response.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
   response.end();
 });
 
@@ -56,7 +71,7 @@ try {
   for (const variant of ["baseline", "deep"]) {
     const home = path.join(scratch, variant);
     await mkdir(home);
-    await writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: { fixture: { command: process.execPath, args: [path.join(manifest.root, "test/fixtures/mcp-server.mjs")] } } }));
+    await writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: { fixture: { exposure: "direct", command: process.execPath, args: [path.join(manifest.root, "test/fixtures/mcp-server.mjs")] } } }));
     const extension = path.join(home, "extension.ts");
     await writeFile(extension, `import { ModelRuntime, InteractiveMode } from "@earendil-works/pi-coding-agent";
       import { Type } from "typebox";
@@ -77,7 +92,21 @@ try {
     assert.ok(success.stdout.includes("bundle smoke ok"), success.stdout);
     assert.ok(success.stderr.includes("EXTENSION_READY"), success.stderr);
     assert.equal(payload.model, "deepseek-flash");
-    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"].sort());
+    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"].sort());
+    assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type, "function");
+    assert.equal(payload.tools.find(tool => tool.name === "apply_patch").parameters.properties.input.type, "string");
+    plannedCode = 'console.log(await tools.mcp__fixture__echo({text:"CODEMODE_BUNDLE_OK"}));';
+    codeIssued = false;
+    const code = await capture(entry, [...args, "--permission", "full"], env, home);
+    assert.equal(code.code, 0, code.stderr);
+    assert.ok(code.stdout.includes("CODEMODE_BUNDLE_OK|DEEPSEEK_API_KEY=unset"), code.stdout);
+    assert.equal(payload.tools.find(tool => tool.name === "codemode").type, "function");
+    const replayedCode = payload.input.find(item => item.name === "codemode");
+    assert.equal(replayedCode.type, "function_call");
+    assert.deepEqual(JSON.parse(replayedCode.arguments), { code: plannedCode });
+    assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedCode.call_id));
+    assert.match(code.stdout, /"parentToolCallId":"call_code(?:\|[^"]*)?"/);
+    plannedCode = undefined;
     failResponse = true;
     const failure = await capture(entry, args, env, home);
     assert.notEqual(failure.code, 0);
@@ -85,7 +114,7 @@ try {
     const vision = await capture(path.join(manifest.baseline, "dist/vision-cli.js"), ["--help"], env, home);
     assert.equal(vision.code, 0, vision.stderr);
     assert.ok(vision.stdout.includes("dscode-vision --image"));
-    console.log(`${variant}: model streaming, DSCode tools, local MCP discovery, provider failure exit, vision launcher passed`);
+    console.log(`${variant}: model streaming, DSCode tools, native codemode/MCP execution, nested events, credential stripping, provider failure exit, vision launcher passed`);
   }
   // Pi's variable-specifier OAuth and Bedrock imports must also resolve after
   // relocation. Import definitions only; do not authenticate or call providers.
