@@ -1,5 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import {
+  getCurrentSystemMessage,
+  getSystemMessageText,
+} from "@earendil-works/pi-ai";
 import type {
   BashOperations,
   ExtensionAPI,
@@ -616,18 +619,18 @@ export function createDSCodeExtension(
       pi.registerCommand("x-7f3c9a", {
         description: "Show an internal runtime diagnostic snapshot",
         handler: async (_args, ctx) => {
-          let base = ctx.getSystemPrompt();
-          // Pi drops before_agent_start overrides when idle; preview the next run's docs.
-          if (isStandalone) base = base.replace(/<docs>[\s\S]*?<\/docs>/, `<docs>\n${STANDALONE_DOCS}\n</docs>`);
-          // Mid-turn the override (base + engineering contract) is already in state; avoid double-appending.
-          const effective = base.includes("# DSCode engineering contract")
-            ? base
-            : effectiveSystemPrompt(
-                base,
-                projectCommands,
-                effectiveAccess(),
-                options.promptContract,
-              );
+          const current = getCurrentSystemMessage(
+            ctx.sessionManager.buildSessionProjection().messages,
+          );
+          let effective = current ? getSystemMessageText(current) : ctx.getSystemPrompt();
+          if (!current) {
+            const contractStart = effective.indexOf("# DSCode engineering contract");
+            if (contractStart >= 0) {
+              const before = effective.slice(0, contractStart).trimEnd();
+              const contract = effective.slice(contractStart).trimEnd();
+              effective = `${before}${before ? "\n\n" : ""}<dscode>\n${contract}\n</dscode>`;
+            }
+          }
           const tools = ctx.getSystemPromptOptions().selectedTools ?? [];
           const skills = ctx.getSystemPromptOptions().skills ?? [];
           ctx.ui.notify(
@@ -1182,16 +1185,6 @@ function formatManagedResult(result: ManagedProcessResult): string {
     ...(result.timedOut ? ["timed_out: true"] : []),
     `sandbox: ${result.sandbox}`,
   ].join("\n");
-}
-
-function effectiveSystemPrompt(
-  base: string,
-  commands: string[],
-  access: EffectiveAccess,
-  promptContract: DSCodeRuntimeOptions["promptContract"],
-): string {
-  if (promptContract === "none") return base;
-  return `${base}\n\n${engineeringInstructions(commands, access)}`;
 }
 
 function engineeringInstructions(
