@@ -342,9 +342,11 @@ try {
     const result = await run("dscode",[...base,"--mode","rpc"],{
       start:[{id:"prompt",type:"prompt",message:"try MCP"}],
       onEvent(event,child) {
-        if(event.type === "extension_ui_request" && event.method === "confirm") {
+        // MCP approvals are a scoped select dialog in RPC mode; approve once.
+        const options = event.type === "extension_ui_request" && event.method === "select" ? event.options ?? [] : [];
+        if(options.includes("Allow once")) {
           confirmed=true;
-          child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,confirmed:true})+"\n");
+          child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,value:"Allow once"})+"\n");
         }
         if(event.type === "agent_end") child.stdin.end();
       },
