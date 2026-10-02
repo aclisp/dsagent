@@ -10,6 +10,14 @@ export interface McpApprovalInfo {
   readOnlyHint?: boolean | undefined;
 }
 
+const descriptionSentences = new Intl.Segmenter(undefined, { granularity: "sentence" });
+
+function summarizeDescription(description: string): string {
+  const firstSentence = descriptionSentences.segment(description.trim())[Symbol.iterator]().next().value?.segment ?? "";
+  const characters = Array.from(firstSentence.replace(/\s+/g, " ").trim());
+  return characters.length > 200 ? `${characters.slice(0, 199).join("")}…` : characters.join("");
+}
+
 /** The same decisions and metadata in the terminal and remote UI. */
 export async function confirmMcpTool(
   ui: ExtensionUIContext,
@@ -17,16 +25,18 @@ export async function confirmMcpTool(
   info: McpApprovalInfo,
   parameters: string,
 ): Promise<McpApprovalChoice> {
-  const hint = info.readOnlyHint === true
-    ? "true — Read-only, according to the server"
+  const hintValue = info.readOnlyHint === undefined ? "Not provided" : String(info.readOnlyHint);
+  const hintNote = info.readOnlyHint === true
+    ? "Read-only, according to the server"
     : info.readOnlyHint === false
-      ? "false — May change state, according to the server"
-      : "Not provided — read-only status unknown";
-  const content = [
+      ? "May change state, according to the server"
+      : "read-only status unknown";
+  const description = summarizeDescription(info.description ?? "");
+  const content = (highlight: (value: string) => string = (value) => value) => [
     `Server: ${info.server ?? "Unknown"}`,
     `Tool: ${info.tool}`,
-    `Read-only hint: ${hint}`,
-    ...(info.description ? [`Description: ${info.description}`] : []),
+    `Read-only hint: ${highlight(hintValue)} — ${hintNote}`,
+    ...(description ? [`Description: ${description}`] : []),
     "",
     parameters,
   ].join("\n");
@@ -41,13 +51,13 @@ export async function confirmMcpTool(
     return confirmScrollable(ui, {
       title: "Allow MCP tool?",
       titleColor: "accent",
-      content,
+      content: (theme) => content((value) => theme.bold(theme.fg("accent", value))),
       summary,
       choices,
       cancelValue: "deny",
       confirmLabel: "confirm",
     });
   }
-  const selected = await ui.select(`Allow MCP tool?\n${content}\n\n${summary}`, choices.map((choice) => choice.label));
+  const selected = await ui.select(`Allow MCP tool?\n${content()}\n\n${summary}`, choices.map((choice) => choice.label));
   return choices.find((choice) => choice.label === selected)?.value ?? "deny";
 }

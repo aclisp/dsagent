@@ -3,9 +3,12 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { confirmMcpTool } from "../packages/core/src/mcp-confirmation.ts";
 
-function dialogHarness(rows = 24) {
+function dialogHarness(rows = 24, colored = false) {
   let component!: Component;
-  const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+  const theme = {
+    fg: (color: string, text: string) => colored && color === "accent" ? `\x1b[36m${text}\x1b[39m` : text,
+    bold: (text: string) => colored ? `\x1b[1m${text}\x1b[22m` : text,
+  } as Theme;
   const tui = { mode: "fullscreen", terminal: { rows }, requestRender: vi.fn() } as unknown as TUI;
   const keys = { matches: (input: string, binding: string) => input === binding } as KeybindingsManager;
   const custom = vi.fn((factory: any) => new Promise((done) => { component = factory(tui, theme, keys, done); }));
@@ -44,6 +47,32 @@ describe("MCP confirmation", () => {
     for (let i = 0; i < steps; i++) h.key("down");
     h.key("confirm");
     expect(await pending).toBe(choice);
+  });
+
+  it.each([true, false, undefined])("highlights only the hint value %s", async (readOnlyHint) => {
+    const h = dialogHarness(40, true);
+    const pending = confirmMcpTool(h.ui, "tui", { tool: "tool", readOnlyHint }, "{}");
+    const value = readOnlyHint === undefined ? "Not provided" : String(readOnlyHint);
+    expect(h.render()).toContain(`Read-only hint: \x1b[1m\x1b[36m${value}\x1b[39m\x1b[22m — `);
+    h.key("cancel");
+    await pending;
+  });
+
+  it.each([
+    ["Retrieve Directus items. More details about filters.\nExamples follow.", "Retrieve Directus items."],
+    ["读取集合中的数据。后续说明与示例。", "读取集合中的数据。"],
+    ["a".repeat(300), `${"a".repeat(199)}…`],
+    ["😀".repeat(300), `${"😀".repeat(199)}…`],
+  ])("summarizes long descriptions in remote and terminal dialogs", async (description, expected) => {
+    const select = vi.fn().mockResolvedValue("Deny");
+    await confirmMcpTool({ select } as unknown as ExtensionUIContext, "rpc", { tool: "tool", description }, "{}");
+    expect(select.mock.calls[0]![0]).toContain(`Description: ${expected}\n\n{}`);
+    const h = dialogHarness(40);
+    const pending = confirmMcpTool(h.ui, "tui", { tool: "tool", description }, "{}");
+    const renderedContent = h.render().split("\n").map((line) => line.slice(1, -1).trim()).join("");
+    expect(renderedContent.replace(/\s/g, "")).toContain(`Description:${expected}`.replace(/\s/g, ""));
+    h.key("cancel");
+    await pending;
   });
 
   it.each([16, 24, 40])("keeps all choices visible while paging long arguments in %i rows", async (rows) => {

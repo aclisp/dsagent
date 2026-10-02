@@ -973,6 +973,11 @@ button {
   white-space: pre-wrap;
 }
 
+.mcp-hint-value {
+  color: #191919;
+  font-weight: 700;
+}
+
 .modal-message.is-diff,
 .modal-message.is-command {
   max-width: 100%;

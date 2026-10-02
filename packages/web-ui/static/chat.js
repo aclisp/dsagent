@@ -1167,7 +1167,7 @@ function friendlyRequest(request) {
 
   if (request.method === "select") {
     if (title.startsWith("Allow MCP tool?\n")) {
-      return { title: "确认 MCP 工具调用", message: title.slice("Allow MCP tool?\n".length) };
+      return { title: "确认 MCP 工具调用", message: title.slice("Allow MCP tool?\n".length), highlightReadOnlyHint: true };
     }
     const accessMatch = /^(Allow network access\?|Allow unrestricted host access\?)\n([\s\S]*)$/i.exec(title);
     if (accessMatch) {
@@ -1242,6 +1242,18 @@ function showUiRequest(request, turnId) {
 
   if (friendly.message) {
     modalMessage.textContent = friendly.message;
+    const hint = friendly.highlightReadOnlyHint && /^Read-only hint: (true|false|Not provided)(?= —)/m.exec(friendly.message);
+    if (hint) {
+      const start = hint.index + "Read-only hint: ".length;
+      const value = document.createElement("strong");
+      value.className = "mcp-hint-value";
+      value.textContent = hint[1];
+      modalMessage.replaceChildren(
+        document.createTextNode(friendly.message.slice(0, start)),
+        value,
+        document.createTextNode(friendly.message.slice(start + hint[1].length)),
+      );
+    }
     modalMessage.hidden = false;
   }
 
