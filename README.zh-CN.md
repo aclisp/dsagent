@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  部署在你自己的服务器上的 AI 编程与运维搭档。
+  基于 Pi 深度定制的编程智能体，也是 Linux 服务器运维助手。
 </p>
 
 <p align="center">
@@ -16,20 +16,13 @@
 
 ## 为什么选择 DSCode
 
-- **以 DeepSeek 为先，自由切换。** DSCode 为 DeepSeek Flash 配备专用 Responses adapter 和原生
-  freeform patch；也可切换到 Codex、OpenAI、Anthropic、OpenRouter、Z.AI、
-  Kimi、MiniMax、Grok 或 OpenCode Zen Go，同时沿用原有工具和会话。
-- **就在服务器上的 AI 运维搭档。** 将 DSCode 直接安装在你负责的 Linux 服务器上，通过 TUI 检查
-  服务与工作区、运行并跟进命令，还能应用可审阅、可撤销的 patch。精简的四工具工作流——`read`、
-  `exec_command`、`write_stdin` 和 `apply_patch`——覆盖检查、执行命令、管理运行中的进程和应用 patch。
-- **从终端到集成，一个运行时全部打通。** 可在 CLI/TUI 中工作，通过 REST+SSE 嵌入同一套 Core，
-  或使用自托管 Web UI。实时的 Agent 与工具动态、交互请求和持久会话，让不同入口都能融入同一套
-  工作流。
-- **内置企业微信接入，把对话变成实际工作。** 团队成员可以直接私聊，或在群聊中 @机器人交办任务，
-  发送图片和文件，接收回复与产出文件；也可以安排一次性或周期性定时任务，让结果回到原对话。
-
-DSCode 默认取舍鲜明、核心轻量，并在关键之处保持灵活：你可以选择适合任务的模型，并通过终端、
-REST+SSE API、自托管 Web UI 或企业微信使用同一套运行时。
+- **在自己掌控的基础设施上运行编程智能体。** 将 DSCode 部署在你的 Linux 服务器上，通过 SSH
+  管理项目：检查服务、运行命令并查看输出，还可审阅或撤销文件变更。
+- **一个运行时，多种使用方式。** 选择你习惯的入口：CLI/TUI、REST+SSE API 或 Web UI。三种入口
+  共用同一套 Core，均可查看 Agent 实时活动，也可按提示确认操作或选择选项。
+- **把团队聊天接入工作流。** 在企业微信中，团队成员可以直接私聊 DSCode，或在群聊中 @它来交办任务、
+  发送图片和文件，并接收回复和生成的文件。他们还可以让 DSCode 安排一次性或周期性任务；DSCode
+  会把每次结果发送回提出任务的会话。
 
 ## 快速开始
 
