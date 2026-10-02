@@ -82,8 +82,9 @@ callable from scripts without advertising every schema. Codemode's `searchTools(
 `tool_search` is opt-in through `--tools` or server `exposure: "deferred"`, which
 activates it automatically; `exposure: "direct"` advertises tools immediately.
 `--tools` chooses the initial active set; `--no-mcp` skips MCP and `--no-tools` disables all tools.
-Nested codemode calls keep DSCode's permissions and checkpoints. MCP tools and resources
-require per-call approval in `ask`/`auto`. SSE events retain `parentToolCallId`, and
+Nested codemode calls keep DSCode's permissions and checkpoints. Server-defined MCP
+tools require per-call approval in `ask`/`auto`; the three standard resource helpers
+list and read context without approval in every mode. SSE events retain `parentToolCallId`, and
 history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
 
 Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.

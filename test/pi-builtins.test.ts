@@ -144,14 +144,14 @@ describe("DSCode Pi built-ins", () => {
     } finally { await resumed.dispose(); }
   }, 15_000);
 
-  it("checks nested MCP and resource permissions and preserves explicitly configured credentials", async () => {
+  it.each(["auto", "ask"])("approves server tools but reads resources freely in %s and preserves configured credentials", async (permission) => {
     const { root, agentDir } = await setup();
     await fixtureConfig(agentDir, { DEEPSEEK_API_KEY: "explicit-server-key", FIXTURE_RESOURCES: "1" });
     const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"] });
     try {
       await host.prompt("/mcp");
       expect((await executeCode(host, 'console.log(await tools.mcp__fixture__echo({text:"explicit"}));')).text).toContain("DEEPSEEK_API_KEY=explicit-server-key");
-      await host.prompt("/permissions auto");
+      await host.prompt(`/permissions ${permission}`);
       const pending: string[] = [];
       const unsubscribe = host.subscribe((event) => {
         if (event.type === "ui_request" && event.request.method === "confirm") {
@@ -162,8 +162,12 @@ describe("DSCode Pi built-ins", () => {
       const { text } = await executeCode(host, 'await tools.mcp__fixture__echo({text:"deny"});');
       expect(text).toContain("Denied by user");
       expect(pending).toContain("Allow mcp__fixture__echo?");
-      await executeCode(host, 'await tools.list_mcp_resources({});');
-      expect(pending).toContain("Allow list_mcp_resources?");
+      const approvalsBeforeResources = pending.length;
+      const resourceResult = await executeCode(host, 'console.log(await tools.list_mcp_resources({})); console.log(await tools.list_mcp_resource_templates({})); console.log(await tools.read_mcp_resource({server:"fixture",uri:"fixture://note"}));');
+      expect(resourceResult.text).toContain("fixture://note");
+      expect(resourceResult.text).toContain("resourceTemplates");
+      expect(resourceResult.text).toContain("RESOURCE_OK");
+      expect(pending).toHaveLength(approvalsBeforeResources);
       unsubscribe();
     } finally { await host.dispose(); }
   }, 15_000);

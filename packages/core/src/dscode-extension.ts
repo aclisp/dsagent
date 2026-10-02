@@ -27,7 +27,7 @@ import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
 import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
-import { isMcpTool } from "./pi-builtins.ts";
+import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
@@ -268,6 +268,8 @@ export function createDSCodeExtension(
         }
         // Orchestration has no effects itself; nested calls pass through this hook.
         if (event.toolName === "codemode" || event.toolName === "tool_search") return;
+        // Pi's three standard resource helpers only list or read context.
+        if (isMcpResourceTool(event.toolName)) return;
         const externalMcp = isMcpTool(event.toolName);
         const command =
           event.toolName === "exec_command" &&

@@ -53,10 +53,14 @@ function guardTransport(Transport: typeof StdioTransport): void {
   };
 }
 
-export function isMcpTool(name: string): boolean {
-  return name.startsWith("mcp__") || [
+export function isMcpResourceTool(name: string): boolean {
+  return [
     "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
   ].includes(name);
+}
+
+export function isMcpTool(name: string): boolean {
+  return name.startsWith("mcp__") || isMcpResourceTool(name);
 }
 
 /** Named replacements work in both Pi's CLI and the SDK, including /reload. */

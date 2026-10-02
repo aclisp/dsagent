@@ -22,7 +22,9 @@ The native tool-search extension remains registered; `tool_search` is opt-in thr
 `--tools` or server `exposure: "deferred"`, which activates it automatically.
 Codemode runs in normal `on` mode with `models: false`. Nested tool
 calls retain general DSCode approvals, command sandboxing, and patch checkpoints.
-MCP resource tools also require per-call approval in `ask`/`auto`. Approval dialogs
+Server-defined MCP tools require per-call approval in `ask`/`auto`. The standard
+`list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` helpers
+are read-only and skip approval in every mode. Approval dialogs
 are serialized because scripts can launch concurrent calls. No-tools runs and
 investigation children suppress native extensions before loading; no-MCP runs
 suppress the MCP extension. Children remain limited to read/search tools.

@@ -123,7 +123,9 @@ MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOM
 
 `/mcp` 和 `dscode mcp add|remove|list|login|logout` 由 Pi 提供。CLI MCP 管理命令
 不需要模型登录；`dscode mcp add ... -l` 写入项目 `.pi/mcp.json`。
-MCP 工具和资源调用在 `auto`/`ask` 下逐次批准，`full` 下自动执行；
+server 定义的 MCP 工具在 `auto`/`ask` 下逐次批准，`full` 下自动执行。
+标准资源工具 `list_mcp_resources`、`list_mcp_resource_templates` 和 `read_mcp_resource`
+只列出或读取上下文，在所有权限模式下都无需批准。
 没有交互 UI 时拒绝需要批准的调用。codemode 内部调用执行相同的权限检查，
 使用 `exec_command` 保留沙箱，使用 `apply_patch` 保留 checkpoint 和 `/undo`。
 codemode 使用普通 `on` 模式，禁用直接模型调用的 `models` API。

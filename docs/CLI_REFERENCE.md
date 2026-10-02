@@ -147,8 +147,10 @@ dscode mcp add local -l -- node /path/to/server.mjs
 dscode mcp list --json
 ```
 
-MCP tool and resource calls require per-call approval in `auto`/`ask`; `full` permits
-them without confirmation. Calls requiring approval are rejected without an interactive UI.
+Server-defined MCP tools require per-call approval in `auto`/`ask`; `full` permits
+them without confirmation. The standard `list_mcp_resources`, `list_mcp_resource_templates`,
+and `read_mcp_resource` helpers are read-only and run without approval in every mode.
+Calls requiring approval are rejected without an interactive UI.
 Codemode's nested calls pass through the same permissions; `exec_command` keeps its
 sandbox and `apply_patch` keeps checkpoints and `/undo`. Codemode runs in normal
 `on` mode with direct model/classifier/image APIs (`models`) disabled.
