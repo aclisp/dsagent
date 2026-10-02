@@ -27,7 +27,7 @@ export function registerSubagentTools(pi: ExtensionAPI, runtime: DSCodeRuntimeOp
     label: "Delegate",
     description:
       "Run one investigation-only child agent in the current workspace and return its findings. The child can read and search files; it cannot run commands, edit files, use MCP, or delegate.",
-    promptSnippet: "delegate: obtain independent file investigation from one child agent",
+    promptSnippet: "Obtain independent file investigation from one child agent",
     promptGuidelines: [
       "Give the child a self-contained task and the context it needs; it does not receive this conversation.",
       "Use the parent agent for commands, edits, integration, and verification.",

@@ -806,7 +806,7 @@ function registerCommandTools(
     label: "Execute command",
     description:
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
-    promptSnippet: "exec_command: run tests, builds, git, and other shell commands in an OS sandbox",
+    promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
@@ -872,7 +872,7 @@ function registerCommandTools(
     label: "Write to process",
     description:
       "Write characters to, send EOF to, poll, or terminate a managed process returned by exec_command.",
-    promptSnippet: "write_stdin: interact with or poll a managed background process",
+    promptSnippet: "Interact with or poll a managed background process",
     parameters: writeStdinParameters,
     renderShell: "self",
     executionMode: "sequential",
@@ -984,7 +984,7 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     label: "Apply patch",
     description:
       "Apply an atomic, workspace-confined patch. Every successful patch creates a durable checkpoint that /undo can restore. All Add File, Update File, Delete File, and Move to paths must be relative to the workspace root. Absolute paths are rejected. Use src/app.ts, not /workspace/project/src/app.ts.",
-    promptSnippet: "apply_patch: atomically add, update, move, or delete workspace files",
+    promptSnippet: "Atomically add, update, move, or delete workspace files",
     promptGuidelines: [
       "Use apply_patch for file changes; keep each patch focused and reviewable.",
       "All apply_patch file paths must be relative to the workspace root, regardless of any exec_command working directory or shell cd. Absolute paths are rejected.",
