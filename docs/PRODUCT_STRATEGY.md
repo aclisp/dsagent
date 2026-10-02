@@ -18,9 +18,9 @@ DSCode 不应以“又一个 Claude Code 兼容壳”为目标。可成立的产
 DeepSeek 公布的 Code Agent 成绩使用 DeepSeek Harness 极简模式和 `max` effort。DSCode 默认只暴露：
 
 - `exec_command`：搜索、读取、构建、测试和 Git 检查；
-- `apply_patch`：唯一写入路径，采用 Responses 原生 freeform custom tool。
+- `apply_patch`：唯一写入路径，所有 provider 均使用带有 `input` 字符串参数的 function tool。
 
-这能减少模型在多个语义重叠工具之间选择的负担，也避免大 patch 被 JSON 转义。细粒度工具集作为
+这能减少模型在多个语义重叠工具之间选择的负担。细粒度工具集作为
 `safe` 回退保留，而不作为性能主路径。
 
 ### 2. Responses 是协议，不是托管会话
@@ -162,7 +162,7 @@ local repo · MCP · skills · language servers · test runners
 
 - Responses API 默认通道，Chat Completions 作为 fallback；
 - 统一的极简工具集；
-- `apply_patch` 原生 custom tool、多文件预校验与逐文件原子写入；
+- `apply_patch` 统一 function tool、多文件预校验与逐文件原子写入；
 - 默认 `max`，运行时支持 thinking selector 和 `Shift+Tab` 切换；
 - 始终启用 Pi 的并行 tool execution；
 - 清理 DeepSeek 不支持的 Responses 字段和思考模式下无效的采样参数；

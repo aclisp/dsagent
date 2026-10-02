@@ -52,6 +52,12 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   toolOutputs.push(...(payload.input ?? []).filter(item => item.type === "function_call_output" || item.type === "custom_tool_call_output"));
+  if (payload.tools?.some(tool => tool.type === "custom" && tool.name !== "apply_patch") ||
+      payload.input?.some(item => item.type === "custom_tool_call" && item.name !== "apply_patch")) {
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "Only apply_patch supports custom tools" } }));
+    return;
+  }
   if (fail) {
     response.writeHead(401, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: { message: "offline rejection" } }));
@@ -63,9 +69,7 @@ const server = http.createServer(async (request, response) => {
   if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
   const item = call
-    ? currentTool.name === "apply_patch" || currentTool.name === "codemode"
-      ? {id:"fc_probe",call_id:"call_probe",type:"custom_tool_call",status:"completed",name:currentTool.name,input:currentTool.args.input ?? currentTool.args.code}
-      : {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
+    ? {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
     : { id: "msg_probe", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "standalone ok", annotations: [], logprobs: [] }] };
   const events = [
     { type: "response.created", response: { id: "resp_probe", status: "in_progress", output: [] } },
@@ -256,7 +260,14 @@ try {
       if (tool.name === "read") assert.ok(finished.result.content.some(item => item.type === "image"),JSON.stringify(finished));
       else if (tool.name === "find") assert.match(JSON.stringify(toolOutputs), /image\.png/);
       else if (tool.name === "grep") assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
-      else if (tool.name === "apply_patch") assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
+      else if (tool.name === "apply_patch") {
+        assert.equal(await fs.readFile(path.join(scratch,"patched.txt"),"utf8"),"standalone patch\n");
+        assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type,"function");
+        const replayedPatch = payload.input.find(item => item.name === "apply_patch");
+        assert.equal(replayedPatch.type,"function_call");
+        assert.deepEqual(JSON.parse(replayedPatch.arguments),tool.args);
+        assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedPatch.call_id));
+      }
       else if (tool.name === "delegate") {
         assert.equal(finished.result.details.success, true, JSON.stringify(finished));
         assert.equal(finished.result.details.output, "standalone ok");
@@ -310,6 +321,11 @@ try {
     assert.equal(result.code,0,result.stderr);
     assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
     assert.match(JSON.stringify(toolOutputs),/undefined/);
+    assert.equal(payload.tools.find(tool => tool.name === "codemode").type,"function");
+    const replayedCode = payload.input.find(item => item.name === "codemode");
+    assert.equal(replayedCode.type,"function_call");
+    assert.deepEqual(JSON.parse(replayedCode.arguments),plannedTool.args);
+    assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedCode.call_id));
     assert.match(result.stdout,/"parentToolCallId":"call_probe(?:\|[^"]*)?"/);
     assert.match(result.stdout,/"nestedCalls"/);
   });

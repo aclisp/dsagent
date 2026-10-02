@@ -781,7 +781,7 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
               supportsDeveloperRole: true,
               supportsLongCacheRetention: false,
               supportsStrictMode: false,
-              supportsOpenAIGrammarTools: true,
+              supportsOpenAIGrammarTools: false,
               sessionAffinityFormat: "openai-nosession",
             }
           : {

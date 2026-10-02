@@ -43,6 +43,11 @@ describe("DSCode Pi integration", () => {
       const body: Buffer[] = [];
       for await (const chunk of request) body.push(Buffer.from(chunk));
       payload = JSON.parse(Buffer.concat(body).toString("utf8")) as Record<string, any>;
+      if (payload.tools?.some((tool: { type: string; name: string }) => tool.type === "custom" && tool.name !== "apply_patch")) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Only apply_patch supports custom tools" } }));
+        return;
+      }
       response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -140,6 +145,14 @@ describe("DSCode Pi integration", () => {
     expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
       noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode"]), "mcp__fixture__echo"].sort(),
     );
+    if (!noTools && !toolArgs.length) {
+      expect(payload?.tools.find((tool: { name: string }) => tool.name === "codemode"))
+        .toMatchObject({ type: "function", parameters: { properties: { code: { type: "string" } } } });
+    }
+    if (!noTools) {
+      expect(payload?.tools.find((tool: { name: string }) => tool.name === "apply_patch"))
+        .toMatchObject({ type: "function", parameters: { properties: { input: { type: "string" } } } });
+    }
   }, 15_000);
 
   it.each(["src/cli.ts", "dist/bundle/cli.js"])("launches a real investigation-only child from %s", async (entry) => {

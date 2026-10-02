@@ -238,7 +238,7 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
 - Sampling parameters are preserved: DeepSeek uses `top_p` in thinking mode and `temperature` otherwise.
   Thinking supports `low`, `high`, and `max` effort selection.
-- `apply_patch` uses a native free-form custom tool to avoid JSON escaping for large diffs.
+- `apply_patch` uses a schema-based function tool with an `input` string for every provider.
 - Prompt and tool ordering remain stable so DeepSeek's automatic prefix cache has useful prefixes.
 
 These transformations run only when the active provider is `deepseek`; other providers use their

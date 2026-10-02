@@ -23,6 +23,12 @@ const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   payload = JSON.parse(Buffer.concat(chunks).toString());
+  if (payload.tools?.some(tool => tool.type === "custom" && tool.name !== "apply_patch") ||
+      payload.input?.some(item => item.type === "custom_tool_call" && item.name !== "apply_patch")) {
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "Only apply_patch supports custom tools" } }));
+    return;
+  }
   if (failResponse) {
     response.writeHead(401, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: { message: "bundle smoke rejected key" } }));
@@ -32,7 +38,7 @@ const server = http.createServer(async (request, response) => {
   const call = plannedCode && !codeIssued;
   if (call) codeIssued = true;
   const item = call
-    ? { id: "fc_bundle", call_id: "call_code", type: "custom_tool_call", status: "completed", name: "codemode", input: plannedCode }
+    ? { id: "fc_bundle", call_id: "call_code", type: "function_call", status: "completed", name: "codemode", arguments: JSON.stringify({ code: plannedCode }) }
     : { id: "msg_bundle", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "bundle smoke ok", annotations: [], logprobs: [] }] };
   const events = [
     { type: "response.created", response: { id: "resp_bundle", status: "in_progress", output: [] } },
@@ -87,11 +93,18 @@ try {
     assert.ok(success.stderr.includes("EXTENSION_READY"), success.stderr);
     assert.equal(payload.model, "deepseek-flash");
     assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"].sort());
+    assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type, "function");
+    assert.equal(payload.tools.find(tool => tool.name === "apply_patch").parameters.properties.input.type, "string");
     plannedCode = 'console.log(await tools.mcp__fixture__echo({text:"CODEMODE_BUNDLE_OK"}));';
     codeIssued = false;
     const code = await capture(entry, [...args, "--permission", "full"], env, home);
     assert.equal(code.code, 0, code.stderr);
     assert.ok(code.stdout.includes("CODEMODE_BUNDLE_OK|DEEPSEEK_API_KEY=unset"), code.stdout);
+    assert.equal(payload.tools.find(tool => tool.name === "codemode").type, "function");
+    const replayedCode = payload.input.find(item => item.name === "codemode");
+    assert.equal(replayedCode.type, "function_call");
+    assert.deepEqual(JSON.parse(replayedCode.arguments), { code: plannedCode });
+    assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedCode.call_id));
     assert.match(code.stdout, /"parentToolCallId":"call_code(?:\|[^"]*)?"/);
     plannedCode = undefined;
     failResponse = true;

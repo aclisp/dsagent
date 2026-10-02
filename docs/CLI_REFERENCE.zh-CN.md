@@ -202,7 +202,7 @@ dscode -C ./project --sandbox workspace-write
 - Adapter 会删除 DeepSeek 不支持的 OpenAI store、cache retention 和 include 字段。
 - 保留采样参数：DeepSeek 在 thinking 模式使用 `top_p`，其他模式使用 `temperature`。Thinking 支持
   `low`、`high`、`max` effort。
-- `apply_patch` 使用原生 freeform custom tool，避免大 diff 的 JSON 转义。
+- `apply_patch` 在所有 provider 下使用带有 `input` 字符串参数的 schema function tool。
 - Prompt 和工具顺序保持稳定，为 DeepSeek 自动前缀缓存保留可复用前缀。
 
 这些转换只在当前 provider 为 `deepseek` 时执行；其他供应商使用运行时内置的原生实现。

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { optimizeDeepSeekResponsesPayload } from "../packages/core/src/deepseek.ts";
 
 describe("optimizeDeepSeekResponsesPayload", () => {
-  it.each(["apply_patch", "codemode"])("uses DeepSeek's stateless Responses subset and freeform %s tool", (name) => {
+  it("uses DeepSeek's stateless Responses subset and preserves function tools", () => {
     const result = optimizeDeepSeekResponsesPayload(
       {
         model: "deepseek-v4-flash",
@@ -12,10 +12,10 @@ describe("optimizeDeepSeekResponsesPayload", () => {
         reasoning: { effort: "max", summary: "auto" },
         tools: [
           {
-            type: "custom",
-            name,
+            type: "function",
+            name: "apply_patch",
             description: "patch",
-            format: { type: "grammar" },
+            parameters: { type: "object", properties: { input: { type: "string" } } },
           },
         ],
       },
@@ -26,7 +26,8 @@ describe("optimizeDeepSeekResponsesPayload", () => {
     expect(result).not.toHaveProperty("include");
     expect(result.reasoning).toEqual({ effort: "max" });
     expect(result.tools).toEqual([
-      { type: "custom", name, description: "patch" },
+      { type: "function", name: "apply_patch", description: "patch",
+        parameters: { type: "object", properties: { input: { type: "string" } } } },
     ]);
   });
 
@@ -38,11 +39,11 @@ describe("optimizeDeepSeekResponsesPayload", () => {
     },
   );
 
-  it("does not inject built-in tools or change function-tool protocols", () => {
+  it.each([["apply_patch", "input"], ["codemode", "code"]])("does not inject built-in tools or change function-tool %s protocols", (name, argument) => {
     const tool = {
       type: "function",
-      name: "apply_patch",
-      parameters: { type: "object", properties: { input: { type: "string" } } },
+      name,
+      parameters: { type: "object", properties: { [argument]: { type: "string" } } },
     };
     expect(optimizeDeepSeekResponsesPayload({ tools: [tool] })).toEqual({ tools: [tool] });
     expect(optimizeDeepSeekResponsesPayload({ model: "deepseek-flash" })).toEqual({
@@ -57,7 +58,7 @@ describe("optimizeDeepSeekResponsesPayload", () => {
       prompt_cache_options: {},
       include: ["reasoning.encrypted_content"],
       reasoning: { effort: "high", summary: "auto" },
-      tools: [{ type: "custom", name: "apply_patch", format: { type: "grammar" } }],
+      tools: [{ type: "function", name: "apply_patch", parameters: { type: "object", properties: { input: { type: "string" } } } }],
     };
     const original = structuredClone(payload);
     const result = optimizeDeepSeekResponsesPayload(payload) as Record<string, unknown>;

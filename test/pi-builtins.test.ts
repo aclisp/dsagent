@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { normalizeContext } from "@earendil-works/pi-ai";
+import { streamSimple } from "@earendil-works/pi-ai/api/openai-responses";
 import { DefaultResourceLoader, ProjectTrustStore, SettingsManager, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
@@ -118,6 +120,48 @@ describe("DSCode Pi built-ins", () => {
       await expect(fs.stat(path.join(root, "nested.txt"))).rejects.toThrow();
     } finally { await host.dispose(); }
   }, 15_000);
+
+  it("lets Pi select codemode's protocol and keeps apply_patch a function across model changes and reload", async () => {
+    const { root } = await setup();
+    vi.stubEnv("OPENAI_API_KEY", "switch-test-key");
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--no-mcp"] });
+    const captureTools = async () => {
+      let payload: unknown;
+      await streamSimple(host.session.model!, normalizeContext({ messages: [], tools: host.session.agent.state.tools }), {
+        apiKey: "test-only-key",
+        onPayload(value) {
+          payload = value;
+          throw new Error("Captured before network request");
+        },
+      }).result();
+      expect(payload).toBeDefined();
+      return (payload as { tools: { name: string; type: string }[] }).tools;
+    };
+    const expectProtocols = async (codemodeType: string) => {
+      const tools = await captureTools();
+      expect(tools.find((tool) => tool.name === "codemode")).toMatchObject({ type: codemodeType });
+      expect(tools.find((tool) => tool.name === "apply_patch"))
+        .toMatchObject({ type: "function", parameters: { properties: { input: { type: "string" } } } });
+      if (codemodeType === "function") {
+        expect(tools.find((tool) => tool.name === "codemode"))
+          .toMatchObject({ parameters: { properties: { code: { type: "string" } } } });
+      }
+    };
+    try {
+      const deepseek = host.session.model!;
+      expect(deepseek.compat).toMatchObject({ supportsOpenAIGrammarTools: false });
+      await expectProtocols("function");
+      await host.session.setModel({ ...deepseek, provider: "openai", id: "switch-fixture",
+        compat: { ...deepseek.compat, supportsOpenAIGrammarTools: true } });
+      await expectProtocols("custom");
+      await host.session.reload();
+      await expectProtocols("custom");
+      await host.session.setModel(deepseek);
+      await expectProtocols("function");
+      await host.session.reload();
+      await expectProtocols("function");
+    } finally { await host.dispose(); }
+  });
 
   it("restores Pi's saved tool loadout and script store when an HTTP session resumes", async () => {
     const { root, agentDir } = await setup();

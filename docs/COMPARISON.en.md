@@ -18,7 +18,7 @@ all of those. The difference is the design center:
 | Dimension | DSCode | Claude Code | Codex |
 | --- | --- | --- | --- |
 | Design center | Local repositories with DeepSeek defaults and provider choice | General-purpose Claude coding workflows | OpenAI coding workflows across CLI, IDE, app, and cloud |
-| DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, native free-form patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
+| DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, schema-based patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
 | Model access and images | DeepSeek API key, OpenAI API key, or eligible ChatGPT plan; image input on models that advertise vision support | Claude account/API access with multimodal support | ChatGPT plan or OpenAI API access with multimodal support |
 | Context and cost | 1M context; `/status` exposes DeepSeek cache hits, tokens, reasoning, and estimated cost | Product-specific context and usage reporting | Product-specific context and usage reporting |
 | Parallel work | One investigation-only child per call; the parent handles edits and validation | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
@@ -31,10 +31,10 @@ all of those. The difference is the design center:
 
 ### 1. A DeepSeek-specific Responses runtime
 
-`src/deepseek.ts` is not a generic `base_url` switch. It removes unsupported OpenAI fields, maps
-reasoning behavior, rewrites `apply_patch` as a native free-form custom tool, and optionally injects
-server-side Web Search. Local tree-shaped JSONL sessions own the replay of stateless messages, reasoning
-items, and tool results.
+`packages/core/src/deepseek.ts` removes unsupported OpenAI payload fields and preserves supported
+reasoning and sampling controls. Pi handles tool serialization, using ordinary function tools for
+DeepSeek. Local tree-shaped JSONL sessions own the replay of stateless messages, reasoning items,
+and tool results.
 
 ### 2. Cache and cost visibility
 

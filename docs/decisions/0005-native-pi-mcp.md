@@ -22,6 +22,10 @@ The native tool-search extension remains registered; `tool_search` is opt-in thr
 `--tools` or server `exposure: "deferred"`, which activates it automatically.
 Codemode runs in normal `on` mode with `models: false`. Nested tool
 calls retain general DSCode approvals, command sandboxing, and patch checkpoints.
+`apply_patch` uses its ordinary schema with an `input` string for every provider.
+DeepSeek declares `supportsOpenAIGrammarTools: false`, so Pi automatically uses
+function codemode with a `code` string. Other providers retain Pi's native sampling
+behavior. No tool rewriting or model-change hooks are needed.
 Server-defined MCP tools require per-call approval in `ask`/`auto`. The standard
 `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` helpers
 are read-only and skip approval in every mode. Approval dialogs
