@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "0.99.1";
+export const PI_VERSION = "1.0.0";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);

@@ -7,7 +7,7 @@ checkpoints, and RPC behavior used by the `@aclisp/dsagent` terminal client. Dee
 default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go are supported by the same
 runtime.
 
-The runtime uses Pi 0.99.1 with DSCode's own MCP integration. Pi's built-in MCP,
+The runtime uses Pi 1.0.0 with DSCode's own MCP integration. Pi's built-in MCP,
 Codemode, and tool search extensions are disabled; DSCode does not add virtual
 model routing or classifier calls. The upstream packages still include those APIs
 and transitive dependencies.
