@@ -93,6 +93,8 @@ describe("DSCode Pi built-ins", () => {
         }
       });
       await host.prompt("/mcp");
+      const activeTools = host.session.getActiveToolNames();
+      expect(activeTools).not.toContain("tool_search");
       expect(host.session.getActiveToolNames()).not.toContain("mcp__fixture__echo");
       expect(host.session.getCallableToolNames()).toContain("mcp__fixture__echo");
       expect(host.session.getAllTools().some((tool) => tool.name.startsWith("mcp__disabled__"))).toBe(false);
@@ -100,17 +102,16 @@ describe("DSCode Pi built-ins", () => {
       const unsubscribe = host.session.subscribe((event) => {
         if (event.type === "tool_execution_start" && event.parentToolCallId) nested.push(event.parentToolCallId);
       });
-      const { text } = await executeCode(host, 'console.log(await tools.mcp__fixture__echo({text:"NATIVE_OK"})); console.log(typeof models);');
+      const { text } = await executeCode(host, 'console.log(await searchTools("echo")); console.log(await describeTool("mcp__fixture__echo")); console.log(await tools.mcp__fixture__echo({text:"NATIVE_OK"})); console.log(typeof models);');
       unsubscribe();
+      expect(text).toContain("mcp__fixture__echo");
       expect(text).toContain("NATIVE_OK|DEEPSEEK_API_KEY=unset");
       expect(text).toContain("undefined");
       expect(nested).toContain("code-parent");
-      const search = host.session.agent.state.tools.find((tool) => tool.name === "tool_search")!;
-      await search.execute("search", { query: "echo" });
-      expect(host.session.getActiveToolNames()).toContain("mcp__fixture__echo");
+      expect(host.session.getActiveToolNames()).toEqual(activeTools);
       await host.session.reload();
       await host.prompt("/mcp");
-      expect(host.session.getActiveToolNames()).toContain("mcp__fixture__echo");
+      expect(host.session.getActiveToolNames()).toEqual(activeTools);
       await executeCode(host, 'console.log(await tools.apply_patch({input:"*** Begin Patch\\n*** Add File: nested.txt\\n+checkpoint\\n*** End Patch"}));');
       expect(await fs.readFile(path.join(root, "nested.txt"), "utf8")).toContain("checkpoint");
       await host.prompt("/undo");
@@ -121,7 +122,7 @@ describe("DSCode Pi built-ins", () => {
   it("restores Pi's saved tool loadout and script store when an HTTP session resumes", async () => {
     const { root, agentDir } = await setup();
     await fixtureConfig(agentDir);
-    const first = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full"], session: { type: "persistent" } });
+    const first = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full", "--tools", "read,exec_command,write_stdin,apply_patch,codemode,tool_search"], session: { type: "persistent" } });
     const id = first.session.sessionManager.getSessionId();
     try {
       await first.prompt("/mcp");

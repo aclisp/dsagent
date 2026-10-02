@@ -120,7 +120,7 @@ sandbox     workspace-write
 network     blocked
 ```
 
-CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode,tool_search`.
+CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
 CLI investigation can be enabled with `--tools ...,delegate`. `delegate({task: "..."})`
 launches one child at a time in the current workspace with a fresh conversation and
 no saved session. It uses the current model and thinking level and returns final
@@ -131,9 +131,12 @@ hooks. Calls time out after two minutes and are cancelled with the parent tool c
 MCP uses Pi 1.0.0's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
-callable from scripts; `tool-search` loads matches for direct model calls, and `direct`
-advertises every server tool. `--tools` selects the initial active set; MCP exposure
-can activate discovery tools. `--no-mcp` skips MCP, and `--no-tools` disables all tools.
+callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools
+without changing the model's active tool declarations. `tool_search` is optional:
+include it in `--tools` or use server `exposure: "deferred"`, which activates it
+automatically and loads matches for direct model calls. `exposure: "direct"` advertises
+every server tool. `--tools` selects the initial active set; `--no-mcp` skips MCP,
+and `--no-tools` disables all tools.
 
 Pi supplies `/mcp` and `dscode mcp add|remove|list|login|logout`, including native OAuth
 and reconnection controls. CLI MCP management needs no model login. Use `-l` with

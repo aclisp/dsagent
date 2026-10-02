@@ -22,8 +22,8 @@
 - **Your AI operations companion, right on the server.** Install DSCode on the Linux server you manage.
   From its TUI, inspect services and workspaces, run and follow commands, and apply patch changes you
   can review and undo. `read`, `exec_command`, `write_stdin`, and `apply_patch` cover inspection, commands,
-  process control, and reviewable changes. Pi’s native `codemode` and `tool_search`
-  batch calls and discover MCP tools.
+  process control, and reviewable changes. Pi’s native `codemode` batches calls and
+  discovers MCP tools.
 - **One runtime, from terminal to integration.** Work in the CLI/TUI, embed the same Core through
   REST+SSE, or bring DSCode to a self-hosted Web UI. Live agent and tool activity, interactive requests,
   and persistent sessions let each interface take part in the same workflow.

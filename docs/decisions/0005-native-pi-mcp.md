@@ -12,11 +12,15 @@ There is no compatibility layer or migration.
 
 Global MCP config is `DSCODE_HOME/mcp.json`. Trusted projects use `.pi/mcp.json`.
 Pi exposes no public project MCP directory setting; DSCode does not override it.
-Native configuration uses `enabled: false` and `exposure: codemode|tool-search|direct`.
+Native configuration uses `enabled: false` and `exposure: codemode|deferred|direct|hidden`.
 The default exposure is codemode.
 
-Defaults are `read`, `exec_command`, `write_stdin`, `apply_patch`, `codemode`, and
-`tool_search`. Codemode runs in normal `on` mode with `models: false`. Nested tool
+Defaults are `read`, `exec_command`, `write_stdin`, `apply_patch`, and `codemode`.
+Codemode's `searchTools()` and `describeTool()` discover tools without activating
+additional model-facing declarations, preserving the request prefix during discovery.
+The native tool-search extension remains registered; `tool_search` is opt-in through
+`--tools` or server `exposure: "deferred"`, which activates it automatically.
+Codemode runs in normal `on` mode with `models: false`. Nested tool
 calls retain general DSCode approvals, command sandboxing, and patch checkpoints.
 MCP resource tools also require per-call approval in `ask`/`auto`. Approval dialogs
 are serialized because scripts can launch concurrent calls. No-tools runs and

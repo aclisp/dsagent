@@ -74,12 +74,14 @@ CLI and HTTP hosts support `ask`, `auto`, and `full` permissions.
 HTTP does not register the CLI-only `delegate` tool, and explicitly selecting it
 is rejected at startup. `--no-tools` overrides explicit tool selection.
 
-The default tools are `read,exec_command,write_stdin,apply_patch,codemode,tool_search`.
+The default tools are `read,exec_command,write_stdin,apply_patch,codemode`.
 Pi owns MCP discovery, schema, OAuth, and `/mcp`. Global config is `DSCODE_HOME/mcp.json`;
 trusted projects use `.pi/mcp.json`. Default MCP exposure is `codemode`, so tools are
-callable from scripts without advertising every schema. `tool_search` loads matching
-tools; `exposure: "direct"` advertises tools immediately. `--tools` chooses the initial
-active set; `--no-mcp` skips MCP and `--no-tools` disables all tools.
+callable from scripts without advertising every schema. Codemode's `searchTools()` and
+`describeTool()` discover tools without changing the model's active tool declarations.
+`tool_search` is opt-in through `--tools` or server `exposure: "deferred"`, which
+activates it automatically; `exposure: "direct"` advertises tools immediately.
+`--tools` chooses the initial active set; `--no-mcp` skips MCP and `--no-tools` disables all tools.
 Nested codemode calls keep DSCode's permissions and checkpoints. MCP tools and resources
 require per-call approval in `ask`/`auto`. SSE events retain `parentToolCallId`, and
 history includes the parent's `nestedCalls` records. Pi's script store survives pruning.

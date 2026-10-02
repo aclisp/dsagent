@@ -8,8 +8,11 @@ default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and Ope
 runtime.
 
 The runtime uses Pi 1.0.0's native MCP, codemode, and tool-search extensions.
-Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, `codemode`,
-and `tool_search`. Codemode runs in normal `on` mode with `models` disabled;
+Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, and `codemode`.
+Codemode's `searchTools()` and `describeTool()` discover MCP tools without changing
+the model's active tool declarations. `tool_search` remains available through
+`--tools` or server `exposure: "deferred"`, which activates it automatically.
+Codemode runs in normal `on` mode with `models` disabled;
 its nested tool calls retain DSCode permissions, sandboxing, and checkpoints.
 Pi owns the MCP schema, discovery, OAuth, `/mcp`, and `dscode mcp` commands.
 Global configuration is `DSCODE_HOME/mcp.json`; trusted projects use `.pi/mcp.json`.

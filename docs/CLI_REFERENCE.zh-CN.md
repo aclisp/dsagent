@@ -107,7 +107,7 @@ sandbox     workspace-write
 network     blocked
 ```
 
-CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode,tool_search`。
+CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
 可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
 一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
 使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
@@ -115,8 +115,10 @@ CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode,too
 
 MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
-`enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `tool-search` 或 `direct`。
-默认工具通过 codemode 调用，`tool_search` 可将匹配工具加载到模型。
+`enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
+默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
+无需改变模型的活跃工具声明。`tool_search` 默认不启用，可通过 `--tools` 显式选择，
+或使用 server `exposure: "deferred"` 自动启用，将匹配工具加载到模型。
 `--tools` 选择初始工具集合；`--no-mcp` 不加载 MCP，`--no-tools` 禁用所有工具。
 
 `/mcp` 和 `dscode mcp add|remove|list|login|logout` 由 Pi 提供。CLI MCP 管理命令

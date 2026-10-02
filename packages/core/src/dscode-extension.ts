@@ -211,7 +211,10 @@ export function createDSCodeExtension(
             ctx.sessionManager.buildSessionProjection().messages,
           )?.toolsAdded?.map((tool) => tool.name);
           pendingRestoredTools = (restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
-          pi.setActiveTools(options.noTools ? [] : restored ? pendingRestoredTools : options.activeTools);
+          // Pi's MCP session_start runs first and activates discovery from server exposure.
+          const discoveryTools = pi.getActiveTools().filter((name) => name === "codemode" || name === "tool_search");
+          const selectedTools = restored ? pendingRestoredTools : options.activeTools;
+          pi.setActiveTools(options.noTools ? [] : [...new Set([...selectedTools, ...discoveryTools])]);
           activateRestoredTools();
         }
         await queueSessionPartition(ctx);

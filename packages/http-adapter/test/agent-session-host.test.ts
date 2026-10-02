@@ -69,7 +69,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       expect(host.session.sessionManager.isPersisted()).toBe(false);
       expect(host.session.extensionRunner.hasUI()).toBe(true);
       expect(host.session.getActiveToolNames()).toEqual(
-        ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"],
+        ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
       );
       expect(host.session.getAllTools().some((tool) => tool.name === "delegate")).toBe(false);
       expect(
@@ -336,13 +336,14 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     expect(parseHttpRuntimeArgs(["--no-mcp"]).options.noMcp).toBe(true);
   });
 
-  it.each([
-    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search", "mcp__fixture__echo"] },
+  it.each<{ runtimeArgs: string[]; expected: string[]; exposure?: string }>([
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"] },
+    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"] },
     { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
     { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
   ])(
-    "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected }) => {
+    "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected, exposure = "direct" }) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-mcp-"));
       temporaryRoots.push(root);
       const home = path.join(root, "home");
@@ -350,7 +351,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
       await fs.mkdir(home);
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: {
-        fixture: { exposure: "direct", command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
+        fixture: { exposure, command: process.execPath, args: [path.resolve(import.meta.dirname, "../../../test/fixtures/mcp-server.mjs")] },
       } }));
       const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "full", ...runtimeArgs] });
       try {
@@ -362,6 +363,8 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
           const tool = host.session.agent.state.tools.find((tool) => tool.name === "mcp__fixture__echo")!;
           const result = await tool.execute("test-mcp", { text: "http" });
           expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("http|") });
+        } else if (expected.includes("tool_search")) {
+          expect(host.session.getCallableToolNames()).toContain("mcp__fixture__echo");
         } else {
           expect(host.session.getAllTools().some((tool) => tool.name.startsWith("mcp__"))).toBe(false);
         }

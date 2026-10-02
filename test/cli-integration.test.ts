@@ -138,7 +138,7 @@ describe("DSCode Pi integration", () => {
     expect(payload).not.toHaveProperty("include");
     expect(payload?.reasoning).toEqual({ effort: "max" });
     expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
-      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"]), "mcp__fixture__echo"].sort(),
+      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode"]), "mcp__fixture__echo"].sort(),
     );
   }, 15_000);
 
