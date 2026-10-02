@@ -667,13 +667,27 @@ function streamAssistantDelta(event) {
 }
 
 function toolLabel(name) {
-  if (["read_file", "read", "view_image"].includes(name)) return name === "view_image" ? "查看图片" : "读取文件";
-  if (["list_files", "search_files", "find", "glob"].includes(name)) return "查找文件";
-  if (["apply_patch", "write_file", "edit_file", "edit", "write"].includes(name)) return "修改文件";
-  if (["exec_command", "bash", "write_stdin"].includes(name)) return "执行命令";
-  if (name === "codemode") return "运行脚本";
-  if (name === "tool_search") return "查找工具";
-  if (name.includes("web") || name.includes("search")) return "搜索资料";
+  const labels = {
+    read: "读取文件",
+    grep: "搜索内容",
+    find: "查找文件",
+    ls: "浏览目录",
+    apply_patch: "修改文件",
+    edit: "修改文件",
+    write: "写入文件",
+    exec_command: "执行命令",
+    write_stdin: "跟进命令",
+    bash: "执行命令",
+    powershell: "执行命令",
+    delegate: "委派调查",
+    codemode: "运行脚本",
+    tool_search: "查找工具",
+    list_mcp_resources: "浏览资源",
+    list_mcp_resource_templates: "浏览模板",
+    read_mcp_resource: "读取资源",
+  };
+  if (Object.hasOwn(labels, name)) return labels[name];
+  if (name.startsWith("mcp__")) return "调用工具";
   return "执行操作";
 }
 
