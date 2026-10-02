@@ -846,6 +846,9 @@ function registerCommandTools(
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
     promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
+      ...(process.platform === "win32"
+        ? ["On Windows, execute commands using PowerShell syntax."]
+        : []),
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
       "When a process is still running, use write_stdin with its process_id.",

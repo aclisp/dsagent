@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const WINDOWS_POWERSHELL_UTF8_OUTPUT_PREFIX =
+  "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
+
 export interface ShellInvocation {
   command: string;
   args: string[];
@@ -13,7 +16,14 @@ export function hostShellCommand(shellCommand: string): ShellInvocation {
     const shell = resolveWindowsPowerShell();
     return {
       command: shell,
-      args: ["-NoProfile", "-NonInteractive", "-Command", shellCommand],
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `${WINDOWS_POWERSHELL_UTF8_OUTPUT_PREFIX}${shellCommand}`,
+      ],
       description: `Windows host (${path.basename(shell)})`,
     };
   }
