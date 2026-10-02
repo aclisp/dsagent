@@ -147,8 +147,18 @@ dscode mcp add local -l -- node /path/to/server.mjs
 dscode mcp list --json
 ```
 
-Server-defined MCP tools require per-call approval in `auto`/`ask`; `full` permits
-them without confirmation. The standard `list_mcp_resources`, `list_mcp_resource_templates`,
+Server-defined MCP tools require approval in `auto`/`ask`; `full` permits
+them without confirmation. The dialog shows the server namespace, tool, description,
+arguments, and `readOnlyHint` as true, false, or not provided. This hint comes from
+the server and does not automatically grant approval. Choose **Allow once**,
+**Allow this tool for this session**, **Allow all tools from this server for this session**,
+or **Deny**. Tool and server grants cover future calls with any arguments, including
+calls nested in codemode. `/permissions` lists grants. Use
+`/permissions revoke-mcp <tool-or-server-namespace>` to revoke a listed grant, or
+`/permissions revoke-mcp all` to clear them all. Revoking a server namespace also
+clears individual grants for its tools. Grants reset when starting, resuming, or
+forking a session, and on reload or exit.
+The standard `list_mcp_resources`, `list_mcp_resource_templates`,
 and `read_mcp_resource` helpers are read-only and run without approval in every mode.
 Calls requiring approval are rejected without an interactive UI.
 Codemode's nested calls pass through the same permissions; `exec_command` keeps its
@@ -182,7 +192,8 @@ Inside the TUI:
 
 | Command | Purpose |
 | --- | --- |
-| `/permissions` | Show or change `ask`, `auto`, or `full` access |
+| `/permissions` | Show or change `ask`, `auto`, or `full` access; list MCP session grants |
+| `/permissions revoke-mcp <tool-or-server-namespace\|all>` | Revoke MCP session grants |
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
 | `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |

@@ -123,7 +123,15 @@ MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOM
 
 `/mcp` 和 `dscode mcp add|remove|list|login|logout` 由 Pi 提供。CLI MCP 管理命令
 不需要模型登录；`dscode mcp add ... -l` 写入项目 `.pi/mcp.json`。
-server 定义的 MCP 工具在 `auto`/`ask` 下逐次批准，`full` 下自动执行。
+server 定义的 MCP 工具在 `auto`/`ask` 下需要批准，`full` 下自动执行。
+批准对话框显示 server namespace、工具、描述、参数，以及 `readOnlyHint` 的
+true、false 或未提供状态。该提示由 server 声明，不会自动授予权限。
+可选择仅批准本次、在本会话中批准此工具、在本会话中批准此 server 的全部工具，或拒绝。
+会话授权覆盖后续任意参数的调用，也适用于 codemode 内部调用。
+`/permissions` 显示授权；`/permissions revoke-mcp <工具名或server namespace>`
+撤销对应授权，`/permissions revoke-mcp all` 清空全部 MCP 授权。
+撤销 server namespace 时也清除该 server 的单独工具授权。
+新建、恢复、fork 会话，以及 reload 或退出时会清空授权。
 标准资源工具 `list_mcp_resources`、`list_mcp_resource_templates` 和 `read_mcp_resource`
 只列出或读取上下文，在所有权限模式下都无需批准。
 没有交互 UI 时拒绝需要批准的调用。codemode 内部调用执行相同的权限检查，
@@ -157,7 +165,8 @@ TUI 常用命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `/permissions` | 查看或切换 `ask`、`auto`、`full` 权限 |
+| `/permissions` | 查看或切换 `ask`、`auto`、`full` 权限，列出 MCP 会话授权 |
+| `/permissions revoke-mcp <工具名或server namespace\|all>` | 撤销 MCP 会话授权 |
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
 | `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |

@@ -198,14 +198,16 @@ describe("DSCode Pi built-ins", () => {
       await host.prompt(`/permissions ${permission}`);
       const pending: string[] = [];
       const unsubscribe = host.subscribe((event) => {
-        if (event.type === "ui_request" && event.request.method === "confirm") {
+        if (event.type === "ui_request" && event.request.method === "select") {
           pending.push(event.request.title);
-          host.uiBroker.respond({ requestId: event.request.id, confirmed: false });
+          host.uiBroker.respond({ requestId: event.request.id, value: "Deny" });
         }
       });
       const { text } = await executeCode(host, 'await tools.mcp__fixture__echo({text:"deny"});');
       expect(text).toContain("Denied by user");
-      expect(pending).toContain("Allow mcp__fixture__echo?");
+      expect(pending).toEqual([expect.stringContaining("Tool: mcp__fixture__echo")]);
+      expect(pending[0]).toContain("Server: mcp__fixture");
+      expect(pending[0]).toContain("Read-only hint: Not provided");
       const approvalsBeforeResources = pending.length;
       const resourceResult = await executeCode(host, 'console.log(await tools.list_mcp_resources({})); console.log(await tools.list_mcp_resource_templates({})); console.log(await tools.read_mcp_resource({server:"fixture",uri:"fixture://note"}));');
       expect(resourceResult.text).toContain("fixture://note");
@@ -213,6 +215,32 @@ describe("DSCode Pi built-ins", () => {
       expect(resourceResult.text).toContain("RESOURCE_OK");
       expect(pending).toHaveLength(approvalsBeforeResources);
       unsubscribe();
+    } finally { await host.dispose(); }
+  }, 15_000);
+
+  it("shares a native MCP grant across concurrent codemode calls and revokes it through /permissions", async () => {
+    const { root, agentDir } = await setup();
+    await fixtureConfig(agentDir, { FIXTURE_READ_ONLY: "1" });
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--permission", "auto"] });
+    try {
+      await host.prompt("/mcp");
+      const pending: string[] = [];
+      let choice = "Allow all tools from this server for this session";
+      host.subscribe((event) => {
+        if (event.type === "ui_request" && event.request.method === "select") {
+          pending.push(event.request.title);
+          host.uiBroker.respond({ requestId: event.request.id, value: choice });
+        }
+      });
+      const { text } = await executeCode(host, 'console.log(await Promise.all([tools.mcp__fixture__echo({text:"FIRST"}), tools.mcp__fixture__echo({text:"SECOND"})]));');
+      expect(text).toContain("FIRST");
+      expect(text).toContain("SECOND");
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toContain("Read-only hint: true");
+      await host.prompt("/permissions revoke-mcp mcp__fixture");
+      choice = "Deny";
+      expect((await executeCode(host, 'await tools.mcp__fixture__echo({text:"DENIED"});')).text).toContain("Denied by user");
+      expect(pending).toHaveLength(2);
     } finally { await host.dispose(); }
   }, 15_000);
 });

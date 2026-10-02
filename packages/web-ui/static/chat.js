@@ -1166,6 +1166,9 @@ function friendlyRequest(request) {
   }
 
   if (request.method === "select") {
+    if (title.startsWith("Allow MCP tool?\n")) {
+      return { title: "确认 MCP 工具调用", message: title.slice("Allow MCP tool?\n".length) };
+    }
     const accessMatch = /^(Allow network access\?|Allow unrestricted host access\?)\n([\s\S]*)$/i.exec(title);
     if (accessMatch) {
       const network = /^Allow network/i.test(accessMatch[1]);

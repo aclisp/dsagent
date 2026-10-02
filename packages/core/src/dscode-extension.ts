@@ -30,6 +30,8 @@ import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
 import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
+import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
+import { McpSessionPermissions } from "./mcp-permissions.ts";
 import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
@@ -133,6 +135,7 @@ export function createDSCodeExtension(
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       let approvalQueue = Promise.resolve();
+      const mcpPermissions = new McpSessionPermissions();
       let pendingRestoredTools: string[] = [];
       const activateRestoredTools = () => {
         if (pendingRestoredTools.length === 0) return;
@@ -198,6 +201,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
+        mcpPermissions.clear();
         checkpoints.length = 0;
         undone.clear();
         projectCommands = await discoverProjectCommands(ctx.cwd);
@@ -232,6 +236,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
+        mcpPermissions.clear();
         try {
           await queueSessionPartition(ctx);
         } finally {
@@ -306,8 +311,21 @@ export function createDSCodeExtension(
           return;
         }
         // Codemode can request several actions concurrently. Keep approval UI serial.
+        const mcpEpoch = mcpPermissions.epoch;
         const approval = approvalQueue.then(async () => {
+          const staleMcpApproval = () => externalMcp && mcpEpoch !== mcpPermissions.epoch;
+          const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
+          if (staleMcpApproval()) return stale;
           if (permission === "full") return;
+          const definition = externalMcp ? pi.getAllTools().find((tool) => tool.name === event.toolName) : undefined;
+          const mcpInfo: McpApprovalInfo = {
+            tool: event.toolName,
+            server: definition?.namespace?.name,
+            description: definition?.description,
+            readOnlyHint: definition?.annotations?.readOnlyHint,
+          };
+          // Recheck after earlier queued calls may have granted a tool or server.
+          if (externalMcp && mcpPermissions.isApproved(mcpInfo)) return;
           if (!ctx.hasUI) {
             return {
               block: true,
@@ -315,7 +333,12 @@ export function createDSCodeExtension(
                 "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run.",
             };
           }
-          if (dangerousCommand) {
+          if (externalMcp) {
+            const choice = await confirmMcpTool(ctx.ui, ctx.mode, mcpInfo, JSON.stringify(event.input, null, 2));
+            if (staleMcpApproval()) return stale;
+            if (choice === "deny") return { block: true, reason: "Denied by user" };
+            if (choice === "tool" || choice === "server") mcpPermissions.grant(mcpInfo, choice);
+          } else if (dangerousCommand) {
             const assessment = commandAssessment!;
             const details = [
               command,
@@ -391,8 +414,18 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("permissions", {
-        description: `Show or set ${permissionModes}`,
+        description: `Show or set ${permissionModes}, or revoke MCP session grants`,
         handler: async (args, ctx) => {
+          const value = args.trim();
+          const revoke = /^revoke-mcp\s+(\S+)$/.exec(value);
+          if (revoke) {
+            const name = revoke[1]!;
+            ctx.ui.notify(
+              mcpPermissions.revoke(name) ? `MCP session grants revoked: ${name}` : `No MCP session grant found: ${name}`,
+              "info",
+            );
+            return;
+          }
           if (!args.trim()) {
             const currentAccess = effectiveAccess();
             ctx.ui.notify(
@@ -402,6 +435,8 @@ export function createDSCodeExtension(
                 `sandbox: ${currentAccess.sandbox}`,
                 `network: ${currentAccess.network ? "enabled" : "blocked"}`,
                 `session grants: ${access.describeGrants().join(", ") || "none"}`,
+                `MCP session grants: ${mcpPermissions.describe().join(", ") || "none"}`,
+                "Revoke MCP grants: /permissions revoke-mcp <tool-or-server-namespace|all>",
                 "Escalation: allow once / allow for session / deny",
               ].join("\n"),
               "info",
@@ -410,7 +445,7 @@ export function createDSCodeExtension(
           }
           const parsed = permissionSchema.safeParse(args.trim());
           if (!parsed.success) {
-            ctx.ui.notify(`Expected /permissions ${permissionModes}`, "warning");
+            ctx.ui.notify(`Expected /permissions ${permissionModes} or /permissions revoke-mcp <tool-or-server-namespace|all>`, "warning");
             return;
           }
           if (parsed.data === "full" && permission !== "full" && ctx.hasUI) {

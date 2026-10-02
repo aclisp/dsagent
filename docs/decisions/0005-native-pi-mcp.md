@@ -7,7 +7,8 @@
 DSCode uses Pi 1.0.0's public extension factories in CLI and HTTP sessions.
 Pi owns MCP configuration, validation, discovery, server management, OAuth,
 reconnection, tool naming, `/mcp`, and the `dscode mcp` CLI. DSCode's MCP manager,
-configuration schema, special confirmation UI, and session/server grants are removed.
+configuration schema are removed. DSCode owns approval UI and session grants through
+its existing tool-call hook, using Pi's public tool metadata.
 There is no compatibility layer or migration.
 
 Global MCP config is `DSCODE_HOME/mcp.json`. Trusted projects use `.pi/mcp.json`.
@@ -26,7 +27,17 @@ calls retain general DSCode approvals, command sandboxing, and patch checkpoints
 DeepSeek declares `supportsOpenAIGrammarTools: false`, so Pi automatically uses
 function codemode with a `code` string. Other providers retain Pi's native sampling
 behavior. No tool rewriting or model-change hooks are needed.
-Server-defined MCP tools require per-call approval in `ask`/`auto`. The standard
+Server-defined MCP tools require approval in `ask`/`auto`. The dialog displays the
+server namespace, tool, description, arguments, and the server's `readOnlyHint`
+(true, false, or not provided). This unverified hint informs the decision; it never
+grants permission automatically. Users may allow once, allow one tool for this
+session, allow every tool from that server for this session, or deny. Session grants
+cover future arguments and are keyed by Pi's tool names and namespace metadata,
+including calls nested in codemode. Queued calls recheck newly granted scopes.
+`/permissions` lists grants; `/permissions revoke-mcp <tool-or-server-namespace|all>`
+revokes them. Revoking a server namespace also clears individual grants for its tools.
+Grants are held in memory and reset on new/resumed/forked sessions, reload, and shutdown;
+pending approvals cannot grant access after a reset or revocation. The standard
 `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` helpers
 are read-only and skip approval in every mode. Approval dialogs
 are serialized because scripts can launch concurrent calls. No-tools runs and

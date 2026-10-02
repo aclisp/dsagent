@@ -104,7 +104,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
         }),
         expect.objectContaining({
           type: "ui_event",
-          event: expect.objectContaining({ message: "Expected /permissions ask|auto|full" }),
+          event: expect.objectContaining({ message: "Expected /permissions ask|auto|full or /permissions revoke-mcp <tool-or-server-namespace|all>" }),
         }),
       ]));
       await host.prompt("/permissions ask");
