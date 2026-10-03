@@ -16,8 +16,8 @@ dscode -C /path/to/project
 | 供应商 | ID | 认证方式 |
 | --- | --- | --- |
 | DeepSeek | `deepseek` | API key |
-| OpenAI Codex | `openai-codex` | 符合条件的 ChatGPT 套餐 |
-| OpenAI | `openai` | API key |
+| OpenAI Codex | `openai-codex` | 符合条件的 ChatGPT 套餐（旧版） |
+| OpenAI | `openai` | ChatGPT 账号或 API key |
 | Anthropic | `anthropic` | Claude 账号或 API key |
 | OpenRouter | `openrouter` | OpenRouter 账号或 API key |
 | Z.AI Coding Plan | `zai` | API key |
@@ -44,8 +44,8 @@ dscode -C /path/to/project
 
 ```bash
 dscode login deepseek      # DeepSeek API key
-dscode login openai-codex  # 浏览器 OAuth，使用 ChatGPT 套餐限额
-dscode login openai        # 安全输入 OpenAI API key
+dscode login openai-codex  # 浏览器 OAuth，ChatGPT 套餐限额（旧版）
+dscode login openai        # ChatGPT 账号（浏览器 OAuth）或 OpenAI API key
 dscode login anthropic     # Claude 账号或 Anthropic API key
 dscode login openrouter    # OpenRouter 账号或 API key
 dscode login opencode-go   # OpenCode Zen Go API key

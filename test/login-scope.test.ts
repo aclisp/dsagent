@@ -78,8 +78,8 @@ describe("DSCode provider login", () => {
     expect(scopeLoginSuggestions("/login ", items)).toEqual([
       { ...items[0], description: "Claude account or API key" },
       items[1],
-      { ...items[2], description: "ChatGPT plan" },
-      items[3],
+      { ...items[2], description: "ChatGPT plan (legacy)" },
+      { ...items[3], description: "ChatGPT account or API key" },
       { ...items[4], description: "Account or API key" },
     ]);
   });

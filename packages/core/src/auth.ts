@@ -9,6 +9,7 @@ import type {
   AuthType,
   Provider,
 } from "@earendil-works/pi-ai";
+import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import pc from "picocolors";
 import { createDSCodeCredentialStore } from "./credential-store.ts";
 import { getDSCodeHome } from "./home.ts";
@@ -271,11 +272,22 @@ export async function authenticateProvider(
   });
   const provider = runtime.getProvider(providerId);
   if (!provider) throw new Error(`Provider ${providerId} is unavailable in this DSCode build`);
+  const settings = await createDSCodeSettingsManager();
   const authType = await selectProviderAuthType(provider, interaction);
-  await runtime.login(providerId, authType, interaction);
+  // ChatGPT-plan OAuth requires a stable installation UUID; pi-ai rejects the login without it.
+  // The shared settings instance persists the ID together with the default-model selection.
+  await runtime.login(providerId, authType, interaction, {
+    getDeviceId: () => settings.getOrCreateDeviceId(),
+  });
   const modelId = defaultModelForProvider(providerId);
-  await saveDefaultModelSelection(providerId, modelId);
+  await saveDefaultModelSelection(providerId, modelId, settings);
   return { providerId, modelId };
+}
+
+/** Settings manager scoped to DSCode's agent home; one flush persists device ID and model choice. */
+async function createDSCodeSettingsManager(): Promise<SettingsManager> {
+  const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+  return SettingsManager.create(process.cwd(), getDSCodeAgentDir());
 }
 
 async function selectProviderAuthType(
@@ -318,11 +330,11 @@ async function selectProviderAuthType(
 async function saveDefaultModelSelection(
   providerId: SupportedProviderId,
   modelId: string,
+  settings?: SettingsManager,
 ): Promise<void> {
-  const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
-  const settings = SettingsManager.create(process.cwd(), getDSCodeAgentDir());
-  settings.setDefaultModelAndProvider(providerId, modelId);
-  await settings.flush();
+  const manager = settings ?? (await createDSCodeSettingsManager());
+  manager.setDefaultModelAndProvider(providerId, modelId);
+  await manager.flush();
 }
 
 function terminalAuthInteraction(): AuthInteraction {
