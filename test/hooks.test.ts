@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionHandler, InputEvent, InputEventResult, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionHandler, InputEvent, InputEventResult, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHooks } from "../packages/core/src/hooks.ts";
 import * as processes from "../packages/core/src/process.ts";
@@ -38,67 +38,117 @@ describe("DSCode hooks", () => {
     return (event: InputEvent) => input(event, ctx);
   }
 
-  async function promptSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true) {
-    const { on, ctx } = await hookSetup({ uiPromptStart: globalHooks }, { uiPromptStart: projectHooks }, trusted);
-    const prompt = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1] as ExtensionHandler<UIPromptStartEvent>;
-    return (kind: UIPromptStartEvent["kind"], title?: string, mode: ExtensionContext["mode"] = "tui") =>
-      prompt({ type: "ui_prompt_start", reason: "ui_prompt", kind, ...(title !== undefined ? { title } : {}) }, { ...ctx, mode });
-  }
+  describe.each([
+    ["uiPromptStart", "ui_prompt_start"],
+    ["uiPromptEnd", "ui_prompt_end"],
+  ] as const)("%s", (hookName, eventType) => {
+    async function promptSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true) {
+      const { on, ctx } = await hookSetup({ [hookName]: globalHooks }, { [hookName]: projectHooks }, trusted);
+      const prompt = on.mock.calls.find(([name]) => name === eventType)![1] as ExtensionHandler<UIPromptStartEvent | UIPromptEndEvent>;
+      return (kind: UIPromptStartEvent["kind"], title?: string, mode: ExtensionContext["mode"] = "tui") =>
+        prompt({ type: eventType, reason: "ui_prompt", kind, ...(title !== undefined ? { title } : {}) }, { ...ctx, mode });
+    }
 
-  it.each(["confirm", "select", "input", "editor", "custom"] as const)("notifies for %s prompts with metadata", async (kind) => {
-    const prompt = await promptSetup([{
-      command: process.execPath,
-      args: ["-e", "require('fs').writeFileSync('prompt.json', process.argv[1])", "{payload}"],
-    }]);
-    await prompt(kind, kind === "custom" ? undefined : "Allow action?", "rpc");
-    const payload = JSON.parse(await fs.readFile(path.join(root!, "prompt.json"), "utf8"));
-    expect(payload).toEqual({
-      event: "uiPromptStart",
-      kind,
-      ...(kind !== "custom" ? { title: "Allow action?" } : {}),
-      mode: "rpc",
+    it.each(["confirm", "select", "input", "editor", "custom"] as const)("notifies for %s prompts with metadata", async (kind) => {
+      const prompt = await promptSetup([{
+        command: process.execPath,
+        args: ["-e", "require('fs').writeFileSync('prompt.json', process.argv[1])", "{payload}"],
+      }]);
+      await prompt(kind, kind === "custom" ? undefined : "Allow action?", "rpc");
+      const payload = JSON.parse(await fs.readFile(path.join(root!, "prompt.json"), "utf8"));
+      expect(payload).toEqual({
+        event: hookName,
+        kind,
+        ...(kind !== "custom" ? { title: "Allow action?" } : {}),
+        mode: "rpc",
+      });
+    });
+
+    it("runs global prompt hooks before trusted project prompt hooks", async () => {
+      const prompt = await promptSetup([{ command: "global" }], [{ command: "project" }]);
+      const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "ignored", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+      await expect(prompt("confirm", "Approve?")).resolves.toBeUndefined();
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(run.mock.calls[0])).toContain("global");
+      expect(JSON.stringify(run.mock.calls[1])).toContain("project");
+    });
+
+    it("ignores untrusted project prompt hooks but still runs global hooks", async () => {
+      const prompt = await promptSetup([{ command: "global" }], [{ command: "must-not-run" }], false);
+      const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+      await prompt("custom");
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(run.mock.calls)).not.toContain("must-not-run");
+    });
+
+    it("defaults to no prompt hooks for existing configuration", async () => {
+      const { on, ctx } = await hookSetup({ input: [] });
+      const run = vi.spyOn(processes, "runProcess");
+      await on.mock.calls.find(([name]) => name === eventType)![1]({ type: eventType, kind: "confirm" }, ctx);
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("does not load or run prompt hooks before session_start", async () => {
+      const on = vi.fn();
+      registerHooks({ on } as unknown as ExtensionAPI, () => ({ sandbox: "danger-full-access", network: false }));
+      const run = vi.spyOn(processes, "runProcess");
+      await on.mock.calls.find(([name]) => name === eventType)![1]({ type: eventType, kind: "select" }, { mode: "tui" });
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { exitCode: 7, stderr: "sound failed", expected: "sound failed" },
+      { timedOut: true, expected: "timed out" },
+    ])("reports prompt hook failure without returning an approval decision: $expected", async ({ expected, ...result }) => {
+      const prompt = await promptSetup([{ command: "hook" }]);
+      vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false, ...result });
+      await expect(prompt("confirm")).rejects.toThrow(expected);
     });
   });
 
-  it("runs global prompt hooks before trusted project prompt hooks", async () => {
-    const prompt = await promptSetup([{ command: "global" }], [{ command: "project" }]);
-    const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "ignored", stderr: "", exitCode: 0, timedOut: false, truncated: false });
-    await expect(prompt("confirm", "Approve?")).resolves.toBeUndefined();
+  it("finishes start hooks before running end hooks", async () => {
+    const { on, ctx } = await hookSetup({
+      uiPromptStart: [{ command: "create-reminder" }],
+      uiPromptEnd: [{ command: "clear-reminder" }],
+    });
+    const success = { stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false };
+    let finishStart!: (result: typeof success) => void;
+    const run = vi.spyOn(processes, "runProcess")
+      .mockImplementationOnce(() => new Promise(resolve => { finishStart = resolve; }))
+      .mockResolvedValueOnce(success);
+    const started = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind: "confirm" }, ctx);
+    const ended = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1]({ type: "ui_prompt_end", kind: "confirm" }, ctx);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(JSON.stringify(run.mock.calls[0])).toContain("create-reminder");
+    finishStart(success);
+    await Promise.all([started, ended]);
     expect(run).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(run.mock.calls[0])).toContain("global");
-    expect(JSON.stringify(run.mock.calls[1])).toContain("project");
+    expect(JSON.stringify(run.mock.calls[1])).toContain("clear-reminder");
   });
 
-  it("ignores untrusted project prompt hooks but still runs global hooks", async () => {
-    const prompt = await promptSetup([{ command: "global" }], [{ command: "must-not-run" }], false);
-    const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
-    await prompt("custom");
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(run.mock.calls)).not.toContain("must-not-run");
+  it("still runs cleanup after a start hook fails", async () => {
+    const { on, ctx } = await hookSetup({ uiPromptStart: [{ command: "create" }], uiPromptEnd: [{ command: "clear" }] });
+    const run = vi.spyOn(processes, "runProcess")
+      .mockRejectedValueOnce(new Error("creation failed"))
+      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const started = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind: "confirm" }, ctx);
+    const ended = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1]({ type: "ui_prompt_end", kind: "confirm" }, ctx);
+    await expect(started).rejects.toThrow("creation failed");
+    await expect(ended).resolves.toBeUndefined();
+    expect(run).toHaveBeenCalledTimes(2);
   });
 
-  it("defaults to no prompt hooks for existing configuration", async () => {
-    const { on, ctx } = await hookSetup({ input: [] });
-    const run = vi.spyOn(processes, "runProcess");
-    await on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ kind: "confirm" }, ctx);
-    expect(run).not.toHaveBeenCalled();
-  });
-
-  it("does not load or run prompt hooks before session_start", async () => {
-    const on = vi.fn();
-    registerHooks({ on } as unknown as ExtensionAPI, () => ({ sandbox: "danger-full-access", network: false }));
-    const run = vi.spyOn(processes, "runProcess");
-    await on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ kind: "select" }, { mode: "tui" });
-    expect(run).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { exitCode: 7, stderr: "sound failed", expected: "sound failed" },
-    { timedOut: true, expected: "timed out" },
-  ])("reports prompt hook failure without returning an approval decision: $expected", async ({ expected, ...result }) => {
-    const prompt = await promptSetup([{ command: "hook" }]);
-    vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false, ...result });
-    await expect(prompt("confirm")).rejects.toThrow(expected);
+  it("runs end hooks even when the turn signal has been aborted", async () => {
+    const { on, ctx } = await hookSetup({ uiPromptEnd: [{
+      command: process.execPath,
+      args: ["-e", "require('fs').writeFileSync('cleared.txt', process.argv[1])", "{cwd}"],
+    }] });
+    const controller = new AbortController();
+    controller.abort();
+    await on.mock.calls.find(([name]) => name === "ui_prompt_end")![1](
+      { type: "ui_prompt_end", kind: "confirm" }, { ...ctx, signal: controller.signal },
+    );
+    await expect(fs.readFile(path.join(root!, "cleared.txt"), "utf8")).resolves.toBe(root);
   });
 
   it.each(["interactive", "rpc"] as const)("allows only text customization for %s input", async (source) => {
