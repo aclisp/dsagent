@@ -400,6 +400,7 @@ try {
     assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
     const notification = JSON.parse(await fs.readFile(promptRecord,"utf8"));
     assert.equal(notification.event,"uiPromptStart");
+    assert.match(notification.promptId,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(notification.kind,"select");
     assert.equal(notification.mode,"rpc");
     assert.match(notification.title,/Allow MCP tool/);

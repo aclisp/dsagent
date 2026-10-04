@@ -329,7 +329,7 @@ Use `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`. This wor
 standalone CLI without user extensions. Configuration loads at `session_start`; earlier
 project-trust dialogs are not covered. Restart the session after changing the configuration.
 
-`{payload}` contains `event: "uiPromptStart"` or `"uiPromptEnd"`, `kind` (`confirm`, `select`, `input`, `editor`,
+`{payload}` contains `event: "uiPromptStart"` or `"uiPromptEnd"`, `promptId`, `kind` (`confirm`, `select`, `input`, `editor`,
 or `custom`), `mode` (`tui`, `rpc`, `json`, or `print`), and an optional `title`. Custom dialogs
 have no title metadata. Pi groups overlapping prompts into one waiting period. Commands
 run on the agent host, including for RPC/HTTP clients, using current sandbox/network access;
@@ -338,8 +338,13 @@ to the terminal UI. Global hooks run before trusted-project hooks. Hook output d
 the dialog; failures are reported as extension errors and do not block or deny it. Subprocess
 stdin waits and other waits outside Pi's UI prompt API do not trigger these hooks.
 
-For persistent reminders, use one reminder keyed by workspace (`{cwd}`), rather than by prompt
-ID: Pi supplies no unique prompt ID. For example, connect your own reminder script to both hooks:
+For persistent reminders, key each reminder by `promptId` from `{payload}`. DSCode generates a
+UUID for each waiting period and includes the same ID in its start/end payloads. Different
+sessions in the same workspace and later prompts with the same title receive different IDs.
+All configured commands for that waiting period share the ID. Pi groups overlapping dialogs
+within one session, so those dialogs share a single waiting period rather than separate IDs.
+Unmatched or duplicate end events are ignored. Use `{cwd}` to display the project, not as the
+reminder identity. For example, connect your own reminder script to both hooks:
 
 ```json
 {

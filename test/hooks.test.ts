@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHooks } from "../packages/core/src/hooks.ts";
 import * as processes from "../packages/core/src/process.ts";
 
+const promptIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 describe("DSCode hooks", () => {
   let root: string | undefined;
 
@@ -45,8 +47,12 @@ describe("DSCode hooks", () => {
     async function promptSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true) {
       const { on, ctx } = await hookSetup({ [hookName]: globalHooks }, { [hookName]: projectHooks }, trusted);
       const prompt = on.mock.calls.find(([name]) => name === eventType)![1] as ExtensionHandler<UIPromptStartEvent | UIPromptEndEvent>;
-      return (kind: UIPromptStartEvent["kind"], title?: string, mode: ExtensionContext["mode"] = "tui") =>
-        prompt({ type: eventType, reason: "ui_prompt", kind, ...(title !== undefined ? { title } : {}) }, { ...ctx, mode });
+      return async (kind: UIPromptStartEvent["kind"], title?: string, mode: ExtensionContext["mode"] = "tui") => {
+        if (eventType === "ui_prompt_end") {
+          await on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind, title }, { ...ctx, mode });
+        }
+        return prompt({ type: eventType, reason: "ui_prompt", kind, ...(title !== undefined ? { title } : {}) }, { ...ctx, mode });
+      };
     }
 
     it.each(["confirm", "select", "input", "editor", "custom"] as const)("notifies for %s prompts with metadata", async (kind) => {
@@ -58,6 +64,7 @@ describe("DSCode hooks", () => {
       const payload = JSON.parse(await fs.readFile(path.join(root!, "prompt.json"), "utf8"));
       expect(payload).toEqual({
         event: hookName,
+        promptId: expect.stringMatching(promptIdPattern),
         kind,
         ...(kind !== "custom" ? { title: "Allow action?" } : {}),
         mode: "rpc",
@@ -106,6 +113,55 @@ describe("DSCode hooks", () => {
     });
   });
 
+  it("pairs unique IDs across two sessions in the same workspace and repeated prompts", async () => {
+    const record = {
+      command: process.execPath,
+      args: ["-e", "require('fs').appendFileSync('prompts.jsonl', process.argv[1] + '\\n')", "{payload}"],
+    };
+    const { on, ctx } = await hookSetup({ uiPromptStart: [record], uiPromptEnd: [record] });
+    const secondOn = vi.fn();
+    registerHooks({ on: secondOn } as unknown as ExtensionAPI, () => ({ sandbox: "danger-full-access", network: false }));
+    await secondOn.mock.calls.find(([name]) => name === "session_start")![1]({ type: "session_start" }, ctx);
+    const start = { type: "ui_prompt_start", kind: "confirm", title: "Same title" };
+    const end = { ...start, type: "ui_prompt_end" };
+    const firstStart = on.mock.calls.find(([name]) => name === start.type)![1];
+    const firstEnd = on.mock.calls.find(([name]) => name === end.type)![1];
+    const secondStart = secondOn.mock.calls.find(([name]) => name === start.type)![1];
+    const secondEnd = secondOn.mock.calls.find(([name]) => name === end.type)![1];
+    await firstStart(start, ctx);
+    await secondStart(start, ctx);
+    await firstEnd(end, ctx);
+    await secondEnd(end, ctx);
+    // Capture IDs before queued commands execute, even for a rapid next prompt.
+    await Promise.all([firstStart(start, ctx), firstEnd(end, ctx), firstStart(start, ctx), firstEnd(end, ctx)]);
+    const payloads = (await fs.readFile(path.join(root!, "prompts.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    expect(payloads).toHaveLength(8);
+    const ids = payloads.map(payload => payload.promptId);
+    expect(ids.every(id => promptIdPattern.test(id))).toBe(true);
+    expect(ids[0]).toBe(ids[2]);
+    expect(ids[1]).toBe(ids[3]);
+    expect(ids[4]).toBe(ids[5]);
+    expect(ids[6]).toBe(ids[7]);
+    expect(new Set([ids[0], ids[1], ids[4], ids[6]]).size).toBe(4);
+    expect(payloads.map(payload => payload.event)).toEqual([
+      "uiPromptStart", "uiPromptStart", "uiPromptEnd", "uiPromptEnd",
+      "uiPromptStart", "uiPromptEnd", "uiPromptStart", "uiPromptEnd",
+    ]);
+  });
+
+  it("ignores unmatched and duplicate end events", async () => {
+    const { on, ctx } = await hookSetup({ uiPromptEnd: [{ command: "clear" }] });
+    const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const start = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1];
+    const end = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1];
+    await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
+    expect(run).not.toHaveBeenCalled();
+    await start({ type: "ui_prompt_start", kind: "confirm" }, ctx);
+    await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
+    await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it("finishes start hooks before running end hooks", async () => {
     const { on, ctx } = await hookSetup({
       uiPromptStart: [{ command: "create-reminder" }],
@@ -145,6 +201,9 @@ describe("DSCode hooks", () => {
     }] });
     const controller = new AbortController();
     controller.abort();
+    await on.mock.calls.find(([name]) => name === "ui_prompt_start")![1](
+      { type: "ui_prompt_start", kind: "confirm" }, { ...ctx, signal: controller.signal },
+    );
     await on.mock.calls.find(([name]) => name === "ui_prompt_end")![1](
       { type: "ui_prompt_end", kind: "confirm" }, { ...ctx, signal: controller.signal },
     );

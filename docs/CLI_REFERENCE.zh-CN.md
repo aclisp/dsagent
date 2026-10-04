@@ -275,15 +275,18 @@ DSCode/Pi 控制，hooks 只能替换文本。命令失败、超时或输出截�
 可配置在 `~/.dscode/hooks.json` 或可信项目的 `.dscode/hooks.json` 中；standalone CLI 无需用户
 extension 即可使用。配置在 `session_start` 加载，不覆盖此前的项目信任对话框。修改后需重启会话。
 
-`{payload}` 包含 `event: "uiPromptStart"` 或 `"uiPromptEnd"`、`kind`（`confirm`、`select`、`input`、`editor` 或 `custom`）、
+`{payload}` 包含 `event: "uiPromptStart"` 或 `"uiPromptEnd"`、`promptId`、`kind`（`confirm`、`select`、`input`、`editor` 或 `custom`）、
 `mode`（`tui`、`rpc`、`json` 或 `print`），以及可选的 `title`。自定义对话框没有标题元数据。
 Pi 将重叠的提示合并为一次等待。命令使用当前 sandbox/network 权限，在 agent 所在主机执行，包括
 RPC/HTTP 模式，不会在远程客户端播放声音。脚本可根据 `mode` 限制为仅在终端 UI 通知。全局 hooks
 先于可信项目 hooks 执行。输出不会回答对话框；失败会报告 extension error，但不会阻止或拒绝对话框。
 子进程等待 stdin 等不经过 Pi UI 提示 API 的等待不会触发此 hook。
 
-持久提醒建议按工作区（`{cwd}`）维护一个提醒，而不是按提示 ID：Pi 不提供唯一提示 ID。
-例如将自己的提醒脚本接入两个 hooks：
+持久提醒应使用 `{payload}` 中的 `promptId` 作为标识。DSCode 为每次等待生成一个 UUID，
+start/end 的 payload 包含同一个 ID。同一工作区的不同会话，以及标题相同的后续提示，都有不同 ID。
+同一次等待的所有已配置命令共享该 ID。Pi 会将同一会话中重叠的对话框合并为一次等待，所以它们
+共享一个 ID，而不是各有一个。未匹配或重复的 end 事件会被忽略。`{cwd}` 用于显示项目，
+不再作为提醒标识。例如将自己的提醒脚本接入两个 hooks：
 
 ```json
 {

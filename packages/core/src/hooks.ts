@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
@@ -50,6 +51,7 @@ export function registerHooks(
     uiPromptEnd: [],
   };
   let promptHooksQueue = Promise.resolve();
+  let activePromptId: string | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
     config = await loadHookConfig(ctx.cwd, ctx.isProjectTrusted());
@@ -102,11 +104,17 @@ export function registerHooks(
   // Pi dispatches these notifications independently of the dialog. Preserve
   // command order so reminder cleanup cannot overtake reminder creation.
   const notifyPrompt = (event: UIPromptStartEvent | UIPromptEndEvent, ctx: ExtensionContext): Promise<void> => {
+    // Pi groups overlapping dialogs into a single start/end waiting period.
+    if (event.type === "ui_prompt_start") activePromptId = randomUUID();
+    const promptId = activePromptId;
+    if (promptId === undefined) return Promise.resolve();
+    if (event.type === "ui_prompt_end") activePromptId = undefined;
     const name = event.type === "ui_prompt_start" ? "uiPromptStart" : "uiPromptEnd";
     const hooks = config[name];
     const access = getAccess();
     const payload = {
       event: name,
+      promptId,
       kind: event.kind,
       ...(event.title !== undefined ? { title: event.title } : {}),
       mode: ctx.mode,
