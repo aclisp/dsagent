@@ -20,6 +20,7 @@ const hooksConfigSchema = z.object({
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
       agentEnd: z.array(hookSchema).default([]),
+      uiPromptStart: z.array(hookSchema).default([]),
     })
     .default({
       sessionStart: [],
@@ -27,6 +28,7 @@ const hooksConfigSchema = z.object({
       beforeTool: [],
       afterTool: [],
       agentEnd: [],
+      uiPromptStart: [],
     }),
 });
 type Hook = z.infer<typeof hookSchema>;
@@ -42,6 +44,7 @@ export function registerHooks(
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
+    uiPromptStart: [],
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -91,6 +94,18 @@ export function registerHooks(
   pi.on("agent_end", async (_event, ctx) => {
     await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, getAccess());
   });
+
+  // Pi dispatches this notification independently of the pending dialog.
+  // Hook failures are reported as extension errors, never approval decisions.
+  pi.on("ui_prompt_start", async (event, ctx) => {
+    const failure = await runHooks(config.uiPromptStart, ctx, {
+      event: "uiPromptStart",
+      kind: event.kind,
+      ...(event.title !== undefined ? { title: event.title } : {}),
+      mode: ctx.mode,
+    }, getAccess());
+    if (failure) throw new Error(failure);
+  });
 }
 
 async function loadHookConfig(cwd: string, includeProject: boolean): Promise<HookConfig> {
@@ -100,6 +115,7 @@ async function loadHookConfig(cwd: string, includeProject: boolean): Promise<Hoo
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
+    uiPromptStart: [],
   };
   const files = [path.join(getDSCodeHome(), "hooks.json")];
   if (includeProject) files.push(path.join(cwd, ".dscode", "hooks.json"));

@@ -349,6 +349,14 @@ try {
   await check("RPC approval allows MCP once", async () => {
     plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued=false; toolOutputs=[];
     let confirmed = false;
+    let notificationError;
+    let approvalWork;
+    const promptRecord = path.join(scratch, "ui-prompt-hook.json");
+    const hooksPath = path.join(home, "hooks.json");
+    await fs.writeFile(hooksPath, JSON.stringify({hooks:{uiPromptStart:[{
+      command:"/bin/sh",
+      args:["-c", 'printf "%s" "$1" > "$2"', "ui-prompt-hook", "{payload}", promptRecord],
+    }]}}));
     const result = await run("dscode",[...base,"--mode","rpc"],{
       start:[{id:"prompt",type:"prompt",message:"try MCP"}],
       onEvent(event,child) {
@@ -356,15 +364,32 @@ try {
         const options = event.type === "extension_ui_request" && event.method === "select" ? event.options ?? [] : [];
         if(options.includes("Allow once")) {
           confirmed=true;
-          child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,value:"Allow once"})+"\n");
+          // Leave the dialog pending until the independent notification has run.
+          approvalWork = (async () => {
+            for (let attempt = 0; attempt < 100; attempt++) {
+              try { await fs.access(promptRecord); return; }
+              catch (error) { if (error.code !== "ENOENT") throw error; }
+              await new Promise(resolve => setTimeout(resolve,20));
+            }
+            throw new Error("UI prompt hook did not run while awaiting approval");
+          })().catch(error => { notificationError = error; }).finally(() => {
+            child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,value:"Allow once"})+"\n");
+          });
         }
         if(event.type === "agent_end") child.stdin.end();
       },
-    });
+    }).finally(() => fs.unlink(hooksPath));
     assert.equal(result.timedOut,false,result.stderr);
     assert.equal(result.code,0,result.stderr);
     assert.ok(confirmed,result.stdout);
+    await approvalWork;
+    assert.ifError(notificationError);
     assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
+    const notification = JSON.parse(await fs.readFile(promptRecord,"utf8"));
+    assert.equal(notification.event,"uiPromptStart");
+    assert.equal(notification.kind,"select");
+    assert.equal(notification.mode,"rpc");
+    assert.match(notification.title,/Allow MCP tool/);
   });
   plannedTool = undefined;
   await check("provider error exit", async () => {

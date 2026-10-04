@@ -254,6 +254,33 @@ DSCode/Pi 控制，hooks 只能替换文本。命令失败、超时或输出截�
 该 handler 时的输入继续处理，不应用已经完成的部分替换。Hooks 使用当前 sandbox/network 权限；standalone 版本也需要系统
 提供相应的外部可执行程序。修改 hook 配置后需重启会话。
 
+### UI 提示 hooks
+
+配置 `hooks.uiPromptStart`，可在会话开始等待阻塞式 UI 提示时执行通知命令。例如在 macOS 播放声音：
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      {
+        "command": "/usr/bin/afplay",
+        "args": ["/System/Library/Sounds/Glass.aiff"]
+      }
+    ]
+  }
+}
+```
+
+可配置在 `~/.dscode/hooks.json` 或可信项目的 `.dscode/hooks.json` 中；standalone CLI 无需用户
+extension 即可使用。配置在 `session_start` 加载，不覆盖此前的项目信任对话框。修改后需重启会话。
+
+`{payload}` 包含 `event: "uiPromptStart"`、`kind`（`confirm`、`select`、`input`、`editor` 或 `custom`）、
+`mode`（`tui`、`rpc`、`json` 或 `print`），以及可选的 `title`。自定义对话框没有标题元数据。
+Pi 将重叠的提示合并为一次等待。命令使用当前 sandbox/network 权限，在 agent 所在主机执行，包括
+RPC/HTTP 模式，不会在远程客户端播放声音。脚本可根据 `mode` 限制为仅在终端 UI 通知。全局 hooks
+先于可信项目 hooks 执行。输出不会回答对话框；失败会报告 extension error，但不会阻止或拒绝对话框。
+子进程等待 stdin 等不经过 Pi UI 提示 API 的等待不会触发此 hook。
+
 ### 扩展能力
 
 - 分层读取 `AGENTS.md` 和 `CLAUDE.md`

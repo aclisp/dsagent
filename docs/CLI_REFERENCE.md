@@ -306,6 +306,37 @@ with the input received by this handler, without applying partial replacements.
 Hooks use the current sandbox/network access and require an external executable even in standalone
 builds. Restart the session after editing hook configuration.
 
+### UI prompt hooks
+
+Configure `hooks.uiPromptStart` to run a notification command when the session starts waiting
+for a blocking UI prompt. For example, play a sound on macOS:
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      {
+        "command": "/usr/bin/afplay",
+        "args": ["/System/Library/Sounds/Glass.aiff"]
+      }
+    ]
+  }
+}
+```
+
+Use `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`. This works in the
+standalone CLI without user extensions. Configuration loads at `session_start`; earlier
+project-trust dialogs are not covered. Restart the session after changing the configuration.
+
+`{payload}` contains `event: "uiPromptStart"`, `kind` (`confirm`, `select`, `input`, `editor`,
+or `custom`), `mode` (`tui`, `rpc`, `json`, or `print`), and an optional `title`. Custom dialogs
+have no title metadata. Pi groups overlapping prompts into one waiting period. Commands
+run on the agent host, including for RPC/HTTP clients, using current sandbox/network access;
+they do not play sound on a remote client. A script can inspect `mode` to restrict notifications
+to the terminal UI. Global hooks run before trusted-project hooks. Hook output does not answer
+the dialog; failures are reported as extension errors and do not block or deny it. Subprocess
+stdin waits and other waits outside Pi's UI prompt API do not trigger this hook.
+
 Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
 after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC
 client backed by the exact same Agent, tools, permissions, and local session format as the terminal client:
