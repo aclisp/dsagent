@@ -7,6 +7,7 @@ import http from "node:http";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { build as bundle } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", `${process.platform}-${process.arch}`)));
@@ -24,7 +25,16 @@ const forbidden = path.join(home, "forbidden.js");
 await fs.writeFile(forbidden, 'throw new Error("USER_EXTENSION_EXECUTED");');
 await fs.writeFile(path.join(home, "config.json"), '{"cli_auth_credentials_store":"keyring"}');
 await fs.writeFile(path.join(home, "settings.json"), JSON.stringify({extensions:[forbidden],packages:["npm:must-not-install-standalone-fixture"],cacheWarming:"off"}));
-await fs.copyFile(path.join(root, "standalone/test/mcp.py"), path.join(scratch, "mcp.py"));
+// Bundle the shared SDK fixture so the sandboxed server never reads the checkout.
+await bundle({
+  entryPoints: [path.join(root, "test/fixtures/mcp-server.mjs")],
+  outfile: path.join(scratch, "mcp-server.mjs"),
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: "node22",
+  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
+});
 const fixture = await fs.readFile(path.join(root, "scripts/cli-bundle-smoke.mjs"), "utf8");
 const png = fixture.match(/inputBytes: Buffer.from\("([^"]+)"/)[1];
 await fs.writeFile(path.join(scratch, "image.png"), Buffer.from(png,"base64"));
@@ -305,12 +315,12 @@ try {
   for (const transport of ["stdio", "http"]) {
     await check(`MCP ${transport} discovery and call`, async () => {
       await fs.writeFile(path.join(home, "mcp.json"), JSON.stringify({mcpServers:{fixture:transport === "stdio"
-        ? {exposure:"direct",command:"/usr/bin/python3",args:["-B",path.join(scratch,"mcp.py")]}
+        ? {exposure:"direct",command:process.execPath,args:[path.join(scratch,"mcp-server.mjs")]}
         : {exposure:"direct",url:`http://127.0.0.1:${server.address().port}/mcp`}}}));
-      plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued = false; toolOutputs = [];
+      plannedTool = {name:"mcp__fixture__echo",args:transport === "stdio" ? {text:"MCP_OK"} : {}}; toolIssued = false; toolOutputs = [];
       const result = await run("dscode", [...base, "--permission", "full", "-p", "run MCP once"]);
       assert.equal(result.code, 0, result.stderr);
-      assert.match(JSON.stringify(toolOutputs), transport === "stdio" ? /MCP_OK:key=unset/ : /HTTP_MCP_OK/);
+      assert.match(JSON.stringify(toolOutputs), transport === "stdio" ? /MCP_OK\|DEEPSEEK_API_KEY=unset/ : /HTTP_MCP_OK/);
     });
   }
   plannedTool = undefined;
