@@ -79,7 +79,7 @@ Core differences are limited to version metadata, file credentials, skipping leg
 Investigation-only subagents relaunch the executable with only `read`, `grep`, `find`, and `ls`. They cannot run commands, edit files, use MCP, or delegate; user extensions and command hooks are disabled.
 Explicit sandbox selections still follow the existing rules.
 
-The pi adapter is currently pinned to **1.0.0**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
+The pi adapter is currently pinned to **1.0.2**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
 When upgrading pi/Bun, review the adapter points and rerun `pnpm check` and `pnpm check:standalone`.
 The `experiments/standalone/` directory preserves historical feasibility records and is not used for production builds.
 

@@ -7,7 +7,7 @@ checkpoints, and RPC behavior used by the `@aclisp/dsagent` terminal client. Dee
 default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go are supported by the same
 runtime.
 
-The runtime uses Pi 1.0.0's native MCP, codemode, and tool-search extensions.
+The runtime uses Pi 1.0.2's native MCP, codemode, and tool-search extensions.
 Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, and `codemode`.
 Codemode's `searchTools()` and `describeTool()` discover MCP tools without changing
 the model's active tool declarations. `tool_search` remains available through

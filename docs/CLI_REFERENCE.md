@@ -128,7 +128,7 @@ findings. Children can only use `read`, `grep`, `find`, and `ls`; commands, edit
 and nested delegation are unavailable. Children disable user extensions and command
 hooks. Calls time out after two minutes and are cancelled with the parent tool call. The parent handles all edits and verification.
 
-MCP uses Pi 1.0.0's native implementation and schema. Global configuration is
+MCP uses Pi 1.0.2's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools
