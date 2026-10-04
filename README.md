@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  Your self-hosted AI coding and operations companion, right on your server.
+  A heavily customized Pi coding agent and Linux server operations companion.
 </p>
 
 <p align="center">
@@ -16,23 +16,16 @@
 
 ## Why DSCode
 
-- **DeepSeek-first, with the freedom to choose.** DSCode pairs DeepSeek Flash with a dedicated Responses
-  integration and native free-form patching. Switch to Codex, OpenAI,
-  Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, Grok, or OpenCode Zen Go while keeping your tools and sessions.
-- **Your AI operations companion, right on the server.** Install DSCode on the Linux server you manage.
-  From its TUI, inspect services and workspaces, run and follow commands, and apply patch changes you
-  can review and undo. `read`, `exec_command`, `write_stdin`, and `apply_patch` cover inspection, commands,
-  process control, and reviewable changes. Pi’s native `codemode` batches calls and
-  discovers MCP tools.
-- **One runtime, from terminal to integration.** Work in the CLI/TUI, embed the same Core through
-  REST+SSE, or bring DSCode to a self-hosted Web UI. Live agent and tool activity, interactive requests,
-  and persistent sessions let each interface take part in the same workflow.
-- **Built-in WeCom turns chats into operational work.** Teammates can message DSCode directly or
-  mention it in a group chat to assign tasks, send images and files, and receive replies and generated
-  files. Schedule one-time or recurring tasks and have the results delivered to the originating conversation.
-
-DSCode is opinionated by default, lightweight at its core, and flexible where it matters: choose your
-model, then use the same runtime from the terminal, REST+SSE API, self-hosted Web UI, or WeCom.
+- **A coding agent on infrastructure you control.** Run DSCode on your Linux server and work with
+  your projects over SSH, where you can inspect services, run commands, track their output, and
+  review or undo file changes.
+- **One runtime, multiple ways to work.** Choose an interface: the CLI/TUI, REST+SSE API, or Web UI.
+  All three use the same Core, show live agent activity, and let you
+  respond to prompts for confirmation or choices.
+- **Bring your team’s chat into the workflow.** In WeCom, teammates can message DSCode directly or
+  mention it in a group to delegate tasks, share images and files, and receive replies and generated
+  files. They can also ask DSCode to schedule one-time or recurring tasks. DSCode sends each result to
+  the conversation where the task was requested.
 
 ## Quick start
 

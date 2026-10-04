@@ -4,7 +4,7 @@
 - Date: 2026-10-02
 - Supersedes: ADR-0002 section 2
 
-DSCode uses Pi 1.0.0's public extension factories in CLI and HTTP sessions.
+DSCode uses Pi 1.0.2's public extension factories in CLI and HTTP sessions.
 Pi owns MCP configuration, validation, discovery, server management, OAuth,
 reconnection, tool naming, `/mcp`, and the `dscode mcp` CLI. DSCode's MCP manager,
 configuration schema are removed. DSCode owns approval UI and session grants through

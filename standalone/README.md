@@ -79,7 +79,7 @@ Core differences are limited to version metadata, file credentials, skipping leg
 Investigation-only subagents relaunch the executable with only `read`, `grep`, `find`, and `ls`. They cannot run commands, edit files, use MCP, or delegate; user extensions and command hooks are disabled.
 Explicit sandbox selections still follow the existing rules.
 
-The pi adapter is currently pinned to **1.0.0**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
+The pi adapter is currently pinned to **1.0.2**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
 When upgrading pi/Bun, review the adapter points and rerun `pnpm check` and `pnpm check:standalone`.
 The `experiments/standalone/` directory preserves historical feasibility records and is not used for production builds.
 
@@ -102,6 +102,8 @@ The `experiments/standalone/` directory preserves historical feasibility records
 
 Offline acceptance copies **only one executable** to a temporary directory and uses an isolated HOME and a PATH without Node/Bun. On macOS, Seatbelt additionally denies reads from the source/build directories and restricts writes to the temporary directory; Linux runs the same checks without that OS-level isolation.
 Tests do not use real credentials or call paid models.
+
+The acceptance runner uses Node.js and installed repository test dependencies. Its stdio MCP server reuses `test/fixtures/mcp-server.mjs`, built with `@modelcontextprotocol/sdk` and bundled into the temporary directory so it can run without reading the checkout. The server is launched with the runner's absolute Node.js executable path; DSCode's PATH still excludes Node/Bun. Python 3 remains a test requirement for the real PTY/TUI probes only.
 
 Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an investigation-only subagent relaunching itself and reading a file, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
 

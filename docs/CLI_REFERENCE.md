@@ -17,8 +17,8 @@ non-interactive commands and explicit provider-free configuration.
 | Provider | ID | Authentication |
 | --- | --- | --- |
 | DeepSeek | `deepseek` | API key |
-| OpenAI Codex | `openai-codex` | Eligible ChatGPT plan |
-| OpenAI | `openai` | API key |
+| OpenAI Codex | `openai-codex` | Eligible ChatGPT plan (legacy provider) |
+| OpenAI | `openai` | ChatGPT account or API key |
 | Anthropic | `anthropic` | Claude account or API key |
 | OpenRouter | `openrouter` | OpenRouter account or API key |
 | Z.AI Coding Plan | `zai` | API key |
@@ -46,8 +46,8 @@ You can also authenticate before opening the TUI:
 
 ```bash
 dscode login deepseek      # DeepSeek API key
-dscode login openai-codex  # browser OAuth; uses ChatGPT plan limits
-dscode login openai        # securely prompts for an OpenAI API key
+dscode login openai-codex  # browser OAuth; ChatGPT plan limits (legacy provider)
+dscode login openai        # ChatGPT account (browser OAuth) or OpenAI API key
 dscode login anthropic     # Claude account or Anthropic API key
 dscode login openrouter    # OpenRouter account or API key
 dscode login opencode-go   # OpenCode Zen Go API key
@@ -128,7 +128,7 @@ findings. Children can only use `read`, `grep`, `find`, and `ls`; commands, edit
 and nested delegation are unavailable. Children disable user extensions and command
 hooks. Calls time out after two minutes and are cancelled with the parent tool call. The parent handles all edits and verification.
 
-MCP uses Pi 1.0.0's native implementation and schema. Global configuration is
+MCP uses Pi 1.0.2's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools

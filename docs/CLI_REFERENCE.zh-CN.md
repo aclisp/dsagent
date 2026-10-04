@@ -16,8 +16,8 @@ dscode -C /path/to/project
 | 供应商 | ID | 认证方式 |
 | --- | --- | --- |
 | DeepSeek | `deepseek` | API key |
-| OpenAI Codex | `openai-codex` | 符合条件的 ChatGPT 套餐 |
-| OpenAI | `openai` | API key |
+| OpenAI Codex | `openai-codex` | 符合条件的 ChatGPT 套餐（旧版） |
+| OpenAI | `openai` | ChatGPT 账号或 API key |
 | Anthropic | `anthropic` | Claude 账号或 API key |
 | OpenRouter | `openrouter` | OpenRouter 账号或 API key |
 | Z.AI Coding Plan | `zai` | API key |
@@ -44,8 +44,8 @@ dscode -C /path/to/project
 
 ```bash
 dscode login deepseek      # DeepSeek API key
-dscode login openai-codex  # 浏览器 OAuth，使用 ChatGPT 套餐限额
-dscode login openai        # 安全输入 OpenAI API key
+dscode login openai-codex  # 浏览器 OAuth，ChatGPT 套餐限额（旧版）
+dscode login openai        # ChatGPT 账号（浏览器 OAuth）或 OpenAI API key
 dscode login anthropic     # Claude 账号或 Anthropic API key
 dscode login openrouter    # OpenRouter 账号或 API key
 dscode login opencode-go   # OpenCode Zen Go API key
@@ -113,7 +113,7 @@ CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
 使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
 父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
 
-MCP 使用 Pi 1.0.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+MCP 使用 Pi 1.0.2 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
