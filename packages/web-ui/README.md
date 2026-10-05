@@ -303,13 +303,17 @@ root process inside the same container.
 
 ### Default skills
 
-The image ships four skills — `dscode-vision`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
+The image ships five skills — `dscode-vision`, `dscode-delegate`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
 bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.
 They're auto-discovered by pi (the user skills dir is not trust-gated) and listed in the system
 prompt now that the `read` tool is active. Add user skills by dropping directories into the
 volume's `/root/.dscode/skills/`.
+
+`dscode-delegate` loads child-launch guidance on demand. It uses the same discovery and
+seeding mechanism as `dscode-vision`; ordinary CLI and standalone users install its
+directory manually into their skills directory.
 
 ### Prompt profiles and protected prompt files
 

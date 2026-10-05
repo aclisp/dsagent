@@ -135,6 +135,12 @@ version invocations are exempt.
 
 ### Background CLI children
 
+The [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) provides
+on-demand delegation guidance. Docker seeds it alongside `dscode-vision`. For ordinary
+CLI and standalone installations, manually copy the entire `dscode-delegate` directory
+from `deploy/default-skills/` into `~/.dscode/skills/` (or `$DSCODE_HOME/skills/`). The skill
+is discoverable automatically; launch instructions are not included in the core prompts.
+
 Give each child a self-contained task: it starts a fresh conversation unless you select
 an existing session. Children can edit, run commands and tests, and use MCP/extensions.
 The managed DSCode child depth limit is one, matching the original `delegate`: a parent

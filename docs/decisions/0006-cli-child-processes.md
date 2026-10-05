@@ -11,6 +11,15 @@ DSCode CLI processes through `exec_command`, using the trusted literal-command a
 fixed-executable handling shared with `dscode-vision`. Preserve model credentials for
 the fixed CLI executable; ordinary shell commands retain credential stripping.
 
+Keep delegation instructions in the discoverable `dscode-delegate` skill, following the
+`dscode-vision` skill pattern. Core tool prompts and the engineering contract retain their
+original guidance. This feature must not add or change core system-prompt content,
+including `promptSnippet`, `promptGuidelines`, and `engineeringInstructions`. Delegation
+guidance belongs solely in the skill; Pi's existing skill-discovery behavior is unchanged.
+Docker seeds the skill through the existing default-skills mechanism;
+ordinary CLI and standalone users install the skill directory manually. RPC guidance is
+loaded from a skill reference only when needed.
+
 Children use their own CLI model, thinking, permission, sandbox, and network settings
 and ordinary defaults. There is no parent permission ceiling or additional approval
 flow. Model requests work independently of the parent's shell-network setting. The

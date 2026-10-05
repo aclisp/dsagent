@@ -118,6 +118,11 @@ CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI �
 
 ### 后台 CLI 子进程
 
+[dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) 按需提供委派指导。
+Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 standalone 安装需手动将
+`deploy/default-skills/dscode-delegate` 整个目录复制到 `~/.dscode/skills/`
+（或 `$DSCODE_HOME/skills/`）。Skill 可自动发现，核心提示词不再包含子 agent 启动指导。
+
 为子进程提供完整任务和上下文，默认使用独立对话和父进程的当前工作目录。
 子进程可以修改文件、运行普通命令和测试、使用 MCP/扩展。
 受管理的 DSCode 子 agent 深度上限为 1，与原来的 `delegate` 一致：父 agent 可以启动多个
