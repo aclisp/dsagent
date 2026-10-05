@@ -70,7 +70,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
         }
         if (file === path.join(tui, "native-platform.js")) {
           audit.adapted.add(path.relative(root, file));
-          // Headless subagents do not need native UI support. Loading on demand
+          // Headless CLI children do not need native UI support. Loading on demand
           // also avoids concurrent extraction of the embedded addon by Bun.
           return { contents: macClipboard
             ? `let helper;\nexport function getNativePlatformHelper() { return helper ??= require(${JSON.stringify(macClipboard)}); }\nexport function getNativeClipboard() { return getNativePlatformHelper(); }`

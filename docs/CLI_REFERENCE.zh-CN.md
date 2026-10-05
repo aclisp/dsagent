@@ -108,10 +108,62 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
-可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
-一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
-使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
-父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
+CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI 子进程，
+再通过 `write_stdin` 获取结果。直接调用 `dscode ...` 使用固定的安装入口并保留模型凭据，
+不通过 PATH 查找，也不受父 agent 的命令沙箱限制。子进程根据自己的 CLI 参数和普通默认值
+选择模型、thinking level、权限、命令沙箱和命令网络访问，没有父权限上限或额外审批流程。
+父命令网络被禁用时，子进程仍可请求模型；容器及其他外部 OS 限制继续生效。
+启动 `dscode` 被归类为危险命令，使用父 agent 已有的命令审批流程：`auto` 需要审批，
+`full` 直接允许。仅查看帮助或版本的独立调用不需要审批。
+
+### 后台 CLI 子进程
+
+为子进程提供完整任务和上下文，默认使用独立对话和父进程的当前工作目录。
+子进程可以修改文件、运行普通命令和测试、使用 MCP/扩展。
+受管理的 DSCode 子 agent 深度上限为 1，与原来的 `delegate` 一致：父 agent 可以启动多个
+子 agent，但子 agent 不能通过 `exec_command` 再启动 DSCode 子 agent，即使拥有完整权限。
+父 agent 应协调共享文件的修改；重叠任务可先显式创建 Git worktree。
+通过 `--provider`、`--model`、`--effort` 选择模型和思考级别，需要可复现行为时显式指定权限
+和沙箱参数。临时任务建议使用 `--no-session`。
+
+```json
+{"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p '实现并验证指定任务'","yield_time_ms":0,"timeout_ms":0}
+```
+
+工具返回 `process_id`。**Print 模式会等待 stdin EOF**，应立即使用返回的 ID 开始任务：
+
+```json
+{"process_id":"1","eof":true,"yield_time_ms":0}
+```
+
+可在 EOF 前通过 `chars` 补充上下文。随后父 agent 可以继续其他工作，通过不带 `chars` 的
+`write_stdin` 轮询输出；结束前应收集所有结果并检查修改。Print 模式会拒绝需要交互批准的
+操作，子进程应报告被阻塞的操作和未完成的工作。
+
+所有托管命令均支持 `timeout_ms: 0`，表示不设置进程截止时间。省略时仍默认 120000 ms，
+正值范围为 1000–600000 ms。`yield_time_ms` 仅控制单次工具调用的等待时间，最多 30000 ms。
+通过 `write_stdin` 的 `terminate: true` 停止进程；会话关闭会清理剩余托管进程。
+
+### RPC 子进程与审批
+
+需要后续交互或审批时，使用 `dscode --mode rpc --no-session` 并保持 stdin 打开。
+通过 `write_stdin` 发送 JSONL `prompt` 记录，每条记录后追加真实换行符：
+
+```json
+{"type":"prompt","message":"实现并验证指定任务"}
+```
+
+轮询 `extension_ui_request` 事件，取得用户决定后发送相同 ID 的响应：
+
+```json
+{"type":"extension_ui_response","id":"request-id","confirmed":true}
+```
+
+`select` 请求使用 `value` 返回选项，取消使用 `cancelled: true`。不要自动批准。
+`prompt` 成功响应只表示接收任务，应收集最终回答并等待 `agent_settled`，随后发送 EOF 关闭
+RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求由父 agent 显式处理，不会自动
+转发为 Web UI 的原生审批对话框。
+
 
 MCP 使用 Pi 1.0.2 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
@@ -187,7 +239,7 @@ TUI 常用命令：
 
 | 模式 | 行为 |
 | --- | --- |
-| `ask` | 命令、写入、delegate 和 MCP 都需要批准 |
+| `ask` | 命令、写入和 MCP 都需要批准 |
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |
 

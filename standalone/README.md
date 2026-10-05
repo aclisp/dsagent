@@ -76,7 +76,7 @@ The ordinary Node distribution continues to use `pnpm build`; the npm package ex
 
 The build does not modify node_modules or maintain a separate copy of Core. Ordinary Node builds leave these constants undefined and retain their existing defaults.
 Core differences are limited to version metadata, file credentials, skipping legacy migration, host sandbox defaults, help, and subagents launching the executable itself.
-Investigation-only subagents relaunch the executable with only `read`, `grep`, `find`, and `ls`. They cannot run commands, edit files, use MCP, or delegate; user extensions and command hooks are disabled.
+Direct `dscode` commands through `exec_command` relaunch the standalone executable itself with ordinary CLI arguments and independent permissions. Children can edit, run ordinary commands, and use MCP; managed DSCode child depth is limited to one level, matching the original `delegate`. Children cannot launch another DSCode child through `exec_command`. Standalone user-extension limitations still apply. Print children wait for stdin EOF; RPC children use JSONL stdin/stdout. `timeout_ms: 0` disables managed-process deadlines. See [CLI children](../docs/CLI_REFERENCE.md#background-cli-children).
 Explicit sandbox selections still follow the existing rules.
 
 The pi adapter is currently pinned to **1.0.2**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
@@ -105,7 +105,7 @@ Tests do not use real credentials or call paid models.
 
 The acceptance runner uses Node.js and installed repository test dependencies. Its stdio MCP server reuses `test/fixtures/mcp-server.mjs`, built with `@modelcontextprotocol/sdk` and bundled into the temporary directory so it can run without reading the checkout. The server is launched with the runner's absolute Node.js executable path; DSCode's PATH still excludes Node/Bun. Python 3 remains a test requirement for the real PTY/TUI probes only.
 
-Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, an investigation-only subagent relaunching itself and reading a file, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
+Coverage includes version output, Bun configuration isolation, a local Skill, extension/package disabling, image input through the WASM worker, JSONL, TUI initialization and model replies under a PTY, RPC/EOF, actual read/exec/apply_patch operations, a managed CLI child relaunching itself and reading a file, session resume and HTML export, stdio/HTTP MCP calls, noninteractive approval rejection, RPC approval, model error exits, and preservation of existing credential configuration.
 
 To verify macOS TUI image paste, first copy an image to the host clipboard, then run `DSCODE_TEST_CLIPBOARD_IMAGE=1 node standalone/test/verify.mjs dist/standalone/darwin-arm64`. This opt-in check sends `Ctrl+V` in a PTY and verifies that the local mock model receives an image. It does not replace the clipboard contents and removes the pasted temporary image afterward.
 

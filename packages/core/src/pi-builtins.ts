@@ -10,7 +10,6 @@ import { StdioTransport } from "@earendil-works/pi-mcp";
 import { isStandalone } from "./distribution.ts";
 import { stripModelCredentialEnvironment } from "./providers.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
-import { isSubagent } from "./subagents.ts";
 
 let credentialGuard: Promise<void> | undefined;
 const guardedTransports = new WeakSet<typeof StdioTransport>();
@@ -66,7 +65,7 @@ export function isMcpTool(name: string): boolean {
 /** Named replacements work in both Pi's CLI and the SDK, including /reload. */
 export async function createDSCodePiBuiltins(options: DSCodeRuntimeOptions): Promise<InlineExtension[]> {
   await installMcpCredentialGuard();
-  const disabled = options.noTools || isSubagent();
+  const disabled = options.noTools;
   return [
     { name: "codemode", builtin: true, factory: disabled ? () => {} : createCodemodeExtension({ mode: "on", models: false }) },
     { name: "tool-search", builtin: true, factory: disabled ? () => {} : createToolSearchExtension() },

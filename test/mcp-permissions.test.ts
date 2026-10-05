@@ -21,7 +21,7 @@ async function harness(permission = "auto") {
     getAllTools: () => definitions,
     getActiveTools: () => [],
   }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
-  const extension = createDSCodeExtension(parseRuntimeArgs(["--permission", permission]).options, { subagents: false });
+  const extension = createDSCodeExtension(parseRuntimeArgs(["--permission", permission]).options);
   await (typeof extension === "function" ? extension : extension.factory)(pi);
   const select = vi.fn<(...args: any[]) => Promise<string | undefined>>().mockResolvedValue("Deny");
   const notify = vi.fn();

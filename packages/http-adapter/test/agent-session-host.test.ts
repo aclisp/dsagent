@@ -329,10 +329,8 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       .toMatchObject({ permission, sandbox: "read-only" });
   });
 
-  it("rejects delegate tool selection but keeps --no-tools dominant", () => {
-    expect(() => parseHttpRuntimeArgs(["--tools", "read,delegate"]))
-      .toThrow("delegate tool is not supported");
-    expect(parseHttpRuntimeArgs(["--no-tools", "--tools", "delegate"]).options.activeTools).toEqual([]);
+  it("keeps --no-tools dominant over tool selection", () => {
+    expect(parseHttpRuntimeArgs(["--no-tools", "--tools", "exec_command"]).options.activeTools).toEqual([]);
     expect(parseHttpRuntimeArgs(["--no-mcp"]).options.noMcp).toBe(true);
   });
 

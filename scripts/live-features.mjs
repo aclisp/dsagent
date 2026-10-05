@@ -155,18 +155,15 @@ async function verifyMcpToolUse() {
 async function verifyInvestigation() {
   const execution = await runCli([
     "-C", fixture, "--mode", "json", "--print", "--no-session", "--approve",
-    "--permission", "auto", "--no-mcp", "--tools", "read,delegate", "--effort", "low",
-    'Call delegate exactly once with task "Read package.json and report its package name with file evidence." Then summarize the findings.',
+    "--permission", "full", "--no-mcp", "--tools", "read,exec_command,write_stdin", "--effort", "low",
+    "Launch dscode --no-session --no-mcp --tools read --effort low -p 'Read package.json and report its package name with file evidence' through exec_command with yield_time_ms 0 and timeout_ms 0. Immediately send EOF through write_stdin with yield_time_ms 0. Collect the child result through write_stdin before summarizing it.",
   ]);
-  assertCliOk(execution, "child investigation");
+  assertCliOk(execution, "managed CLI child");
   const events = jsonEvents(execution.stdout);
-  assert.equal(events.filter(event => event.type === "tool_execution_start" && event.toolName === "delegate").length, 1);
-  const completed = events.find(event => event.type === "tool_execution_end" && event.toolName === "delegate");
-  assert.ok(completed, "delegate did not complete");
-  assert.notEqual(completed.isError, true, JSON.stringify(completed.result));
-  assert.equal(completed.result.details.success, true);
-  assert.match(completed.result.details.output, /dscode-live-features/);
-  process.stdout.write("✓ live investigation-only child agent returned file evidence\n");
+  assert.ok(events.some(event => event.type === "tool_execution_start" && event.toolName === "exec_command"));
+  assert.ok(events.some(event => event.type === "tool_execution_end" && event.toolName === "write_stdin"));
+  assert.match(execution.stdout, /dscode-live-features/);
+  process.stdout.write("✓ live managed CLI child returned file evidence\n");
 }
 
 async function runCli(args) {

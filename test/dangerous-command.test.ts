@@ -3,6 +3,36 @@ import { detectDangerousCommand } from "../packages/core/src/dangerous-command.t
 
 describe("dangerous command rules", () => {
   it.each([
+    "dscode", "dscode -p 'inspect the project'", "dscode --permission full --network --mode rpc",
+    "dscode --permission ask --sandbox read-only -p 'read files'",
+    "/usr/local/bin/dscode -p task", "./dscode -p task",
+    "DSCODE_PERMISSION=full env -u HOME command -p dscode -p task",
+    "nohup dscode -p task", "timeout 10 dscode -p task", "nice -n 10 dscode -p task",
+    "bash -lc 'dscode -p task'", "true && dscode -p task",
+    "dscode --help -p task", "dscode -- --help", "dscode -p \"$(cat task)\"",
+  ])("classifies agent launches as dangerous: %s", (command) => {
+    expect(detectDangerousCommand(command)).toEqual({
+      dangerous: true,
+      reason: "dscode starts an agent with independent permissions that can modify files or run commands",
+      intent: "Launch a DSCode agent with independent permissions",
+    });
+  });
+
+  it("preserves elevated privilege information for DSCode launches", () => {
+    expect(detectDangerousCommand("sudo dscode -p task")).toMatchObject({
+      dangerous: true, intent: "Launch a DSCode agent with independent permissions (with elevated privileges)",
+    });
+  });
+
+  it.each([
+    "dscode --help", "dscode -h", "dscode --version", "dscode -V", "dscode version",
+    "/usr/local/bin/dscode --help", "env command dscode --version", "echo dscode",
+    "command -v dscode", "rg dscode src", "dscode-vision --image screenshot.png",
+  ])("does not classify informational commands or mentions as agent launches: %s", (command) => {
+    expect(detectDangerousCommand(command)).toEqual({ dangerous: false });
+  });
+
+  it.each([
     "/bin/rm -rf build", "true;rm -rf build", "true&&rm -rf build",
     "false||rm -rf build", "echo x|rm -rf build", "pwd\nrm -rf build",
     "FOO=bar env -u HOME command -p /bin/rm -rf build",

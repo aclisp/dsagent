@@ -2,6 +2,7 @@ import type { PermissionMode } from "./config.ts";
 import type { ManagedProcessResult } from "./managed-process.ts";
 import type { SandboxMode } from "./runtime-options.ts";
 import { parseTrustedVisionCommand } from "./vision-command.ts";
+import { classifyDSCodeCommand } from "./dscode-command.ts";
 
 export type AccessBoundary = "network" | "host";
 
@@ -73,6 +74,8 @@ function grantCount(count: number): string {
 export function commandNeedsNetwork(command: string): boolean {
   const normalized = command.replace(/\\\n/g, " ").trim();
   if (!normalized) return false;
+  // Provider calls and child command-network settings belong to the child CLI.
+  if (classifyDSCodeCommand(normalized).kind === "trusted") return false;
   if (parseTrustedVisionCommand(normalized)) return true;
   return (
     /(^|[;&|]\s*)(curl|wget|ssh|scp|sftp|ftp|telnet|nc|ncat|gh)\b/i.test(normalized) ||
@@ -89,6 +92,7 @@ export function detectSandboxBoundary(
   result: ManagedProcessResult,
   access: EffectiveAccess,
 ): AccessBoundary | undefined {
+  if (classifyDSCodeCommand(command).kind === "trusted") return undefined;
   if (result.running || result.exitCode === 0 || access.sandbox === "danger-full-access") {
     return undefined;
   }

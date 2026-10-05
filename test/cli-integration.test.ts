@@ -155,63 +155,69 @@ describe("DSCode Pi integration", () => {
     }
   }, 15_000);
 
-  it.each(["src/cli.ts", "dist/bundle/cli.js"])("launches a real investigation-only child from %s", async (entry) => {
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("launches a writable background CLI child from %s", async (entry) => {
     await fs.writeFile(path.join(root, "evidence.txt"), "FILE_EVIDENCE_SENTINEL");
-    const extension = path.join(root, "unexpected-extension.mjs");
-    await fs.writeFile(extension, 'import fs from "node:fs"; fs.writeFileSync("extension-ran", "yes"); export default () => {};');
-    await fs.writeFile(path.join(root, "settings.json"), JSON.stringify({ extensions: [extension], cacheWarming: "off" }));
-    await fs.writeFile(path.join(root, "hooks.json"), JSON.stringify({ hooks: { sessionStart: [{
-      command: process.execPath,
-      args: ["-e", "if (process.env.DSCODE_SUBAGENT_DEPTH === '1') require('node:fs').writeFileSync('child-hook-ran', 'yes')"],
-    }] } }));
+    await fs.writeFile(path.join(root, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file" }));
     const payloads: Array<Record<string, any>> = [];
-    let delegated = false;
-    let childRead = false;
+    let parentStep = 0;
+    let childStep = 0;
+    let port = 0;
+    let sequence = 0;
     server = http.createServer(async (request, response) => {
-      const body: Buffer[] = [];
-      for await (const chunk of request) body.push(Buffer.from(chunk));
-      const payload = JSON.parse(Buffer.concat(body).toString("utf8"));
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       payloads.push(payload);
-      const parent = payload.tools.some((tool: { name: string }) => tool.name === "delegate");
-      let tool: { name: string; args: Record<string, string> } | undefined;
-      if (parent && !delegated) {
-        delegated = true;
-        tool = { name: "delegate", args: { task: "Read evidence.txt and report its contents." } };
-      } else if (!parent && !childRead) {
-        childRead = true;
-        tool = { name: "read", args: { path: "evidence.txt" } };
+      const parent = payload.model === "deepseek-flash";
+      let tool: { name: string; args: Record<string, unknown> } | undefined;
+      if (parent) {
+        const history = JSON.stringify(payload.input);
+        if (parentStep++ === 0) {
+          tool = { name: "exec_command", args: {
+            cmd: `dscode --base-url http://127.0.0.1:${port} --model deepseek-v4-pro --effort low --permission full --sandbox danger-full-access --network --tools read,apply_patch,exec_command,write_stdin --no-mcp --no-extensions --no-session --no-approve -p 'Create child.txt and verify the change'`,
+            yield_time_ms: 0, timeout_ms: 0,
+          } };
+        } else if (parentStep === 2) {
+          tool = { name: "write_stdin", args: { process_id: /process_id: (\d+)/.exec(history)?.[1], eof: true, yield_time_ms: 0 } };
+        } else if (parentStep === 3) {
+          tool = { name: "read", args: { path: "evidence.txt" } };
+        } else if (!history.includes("CHILD_DONE")) {
+          const processId = /process_id: (\d+)/.exec(history)?.[1];
+          tool = { name: "write_stdin", args: { process_id: processId, yield_time_ms: 2_000 } };
+        }
+      } else {
+        // Keep the child busy while the parent's launch yields and its next tool runs.
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (childStep++ === 0) tool = { name: "apply_patch", args: { input: "*** Begin Patch\n*** Add File: child.txt\n+CHILD_EDIT_OK\n*** End Patch" } };
+        else if (childStep === 2) tool = { name: "exec_command", args: { cmd: "printf CHILD_COMMAND_OK" } };
       }
       respondOnce(response, tool
-        ? { id: "fc_child", call_id: "call_child", type: "function_call", status: "completed", name: tool.name, arguments: JSON.stringify(tool.args) }
-        : { id: "msg_child", type: "message", status: "completed", role: "assistant", content: [
-          { type: "output_text", text: parent ? "Done" : "Independent finding", annotations: [], logprobs: [] },
+        ? { id: `fc_${++sequence}`, call_id: `call_${sequence}`, type: "function_call", status: "completed", name: tool.name, arguments: JSON.stringify(tool.args) }
+        : { id: `msg_${++sequence}`, type: "message", status: "completed", role: "assistant", content: [
+          { type: "output_text", text: parent ? "Parent collected child findings" : "CHILD_DONE", annotations: [], logprobs: [] },
         ] });
     });
-    const address = await listen(server);
+    port = (await listen(server)).port;
     const execution = await spawnCapture(process.execPath, [
-      entry, "-C", root, "--base-url", `http://127.0.0.1:${address.port}`,
-      "--tools", "read,delegate", "--no-mcp", "--no-extensions", "--permission", "auto",
-      "--effort", "high", "--mode", "json", "--print", "--no-session", "--no-approve", "Investigate evidence.txt",
-    ], {
-      ...process.env, DSCODE_HOME: root, DSCODE_PROVIDER: "deepseek", DSCODE_MODEL: "deepseek-v4-flash",
-      DSCODE_SUBAGENT_DEPTH: "0", DEEPSEEK_API_KEY: "test-only-key", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
-    });
+      entry, "-C", root, "--base-url", `http://127.0.0.1:${port}`,
+      "--model", "deepseek-flash", "--tools", "read,exec_command,write_stdin", "--no-mcp", "--no-extensions",
+      "--permission", "full", "--sandbox", "read-only", "--effort", "high",
+      "--mode", "json", "--print", "--no-session", "--no-approve", "Delegate and collect the result",
+    ], { ...process.env, DSCODE_HOME: root, DSCODE_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "test-only-key",
+      PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" });
     expect(execution.exitCode, execution.stderr).toBe(0);
     const events = execution.stdout.trim().split("\n").map(line => JSON.parse(line));
-    const completed = events.find(event => event.type === "tool_execution_end" && event.toolName === "delegate");
-    expect(completed.result.details).toEqual({ success: true, output: "Independent finding" });
-    const children = payloads.filter(payload => !payload.tools.some((tool: { name: string }) => tool.name === "delegate"));
-    expect(children).toHaveLength(2);
-    for (const payload of children) {
-      expect(payload.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(["find", "grep", "ls", "read"]);
-      expect(payload.reasoning.effort).toBe("high");
-      expect(payload.model).toBe("deepseek-v4-flash");
-    }
-    expect(JSON.stringify(children[1]!.input)).toContain("FILE_EVIDENCE_SENTINEL");
-    await expect(fs.access(path.join(root, "child-hook-ran"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(fs.access(path.join(root, "extension-ran"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await fs.readFile(path.join(root, "evidence.txt"), "utf8")).toBe("FILE_EVIDENCE_SENTINEL");
-  }, 15_000);
+    const launched = events.find(event => event.type === "tool_execution_end" && event.toolName === "exec_command");
+    expect(launched.result.details).toMatchObject({ running: true, sandbox: "trusted dscode (child CLI permissions)" });
+    expect(events.some(event => event.type === "tool_execution_end" && event.toolName === "read")).toBe(true);
+    expect(execution.stdout).toContain("CHILD_DONE");
+    expect(await fs.readFile(path.join(root, "child.txt"), "utf8")).toBe("CHILD_EDIT_OK\n");
+    const children = payloads.filter(payload => payload.model === "deepseek-v4-pro");
+    expect(children).toHaveLength(3);
+    expect(children[0]!.reasoning.effort).toBe("low");
+    expect(children[0]!.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(["apply_patch", "exec_command", "read", "write_stdin"]);
+    expect(JSON.stringify(children[2]!.input)).toContain("CHILD_COMMAND_OK");
+  }, 20_000);
 
   it("returns a non-zero CI exit code on provider failure", async () => {
     server = http.createServer(async (_request, response) => {

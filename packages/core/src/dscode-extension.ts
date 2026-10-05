@@ -25,6 +25,7 @@ import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from 
 import { permissionSchema, type PermissionMode } from "./config.ts";
 import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
 import { isStandalone } from "./distribution.ts";
+import { isDSCodeChild } from "./dscode-command.ts";
 import { registerNaturalExit } from "./exit.ts";
 import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
@@ -47,7 +48,6 @@ import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
-import { isSubagent, registerSubagentTools, SUBAGENT_TOOLS } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
@@ -91,11 +91,10 @@ const execCommandParameters = Type.Object({
     }),
   ),
   timeout_ms: Type.Optional(
-    Type.Integer({
-      minimum: 1_000,
-      maximum: 600_000,
-      description: "Terminate the process after this many milliseconds",
-    }),
+    Type.Union([
+      Type.Literal(0),
+      Type.Integer({ minimum: 1_000, maximum: 600_000 }),
+    ], { description: "Process deadline in milliseconds (default 120000); 0 disables the deadline" }),
   ),
 });
 
@@ -126,7 +125,6 @@ const applyPatchParameters = Type.Object({
 
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
-  capabilities: { subagents?: boolean } = {},
 ): InlineExtension {
   const permissionModes = "ask|auto|full";
   return {
@@ -191,7 +189,6 @@ export function createDSCodeExtension(
         updateStatus,
       );
       registerPatchTool(pi, checkpoints);
-      if (capabilities.subagents !== false) registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
       registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
 
@@ -258,9 +255,6 @@ export function createDSCodeExtension(
       pi.on("tool_call", async (event, ctx) => {
         activateRestoredTools();
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
-        if (isSubagent() && !(SUBAGENT_TOOLS as readonly string[]).includes(event.toolName)) {
-          return { block: true, reason: "Investigation-only children can only read and search files." };
-        }
         if (
           event.toolName === "bash" ||
           event.toolName === "edit" ||
@@ -754,7 +748,7 @@ export function createDSCodeExtension(
         },
       });
 
-      if (!isSubagent()) registerHooks(pi, effectiveAccess);
+      registerHooks(pi, effectiveAccess);
     },
   };
 }
@@ -844,7 +838,7 @@ function registerCommandTools(
     label: "Execute command",
     description:
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
-    promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
+    promptSnippet: "Run shell commands or launch a DSCode CLI child with its own permissions",
     promptGuidelines: [
       ...(process.platform === "win32"
         ? ["On Windows, execute commands using PowerShell syntax."]
@@ -852,6 +846,11 @@ function registerCommandTools(
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
       "When a process is still running, use write_stdin with its process_id.",
+      isDSCodeChild()
+        ? "This session is already a DSCode child at depth 1. Do not launch another DSCode agent or work around the depth limit; ordinary commands remain available."
+        : "To delegate work, invoke dscode directly with a self-contained task and explicit model, effort, and permission flags as needed. Its permissions are independent of this session. Children cannot delegate further (maximum depth: 1).",
+      "Use yield_time_ms: 0 and timeout_ms: 0 for background children; collect their findings before concluding. Shared workspace edits need coordination; create a worktree explicitly for overlapping work.",
+      "Use -p with --no-session for disposable tasks, then immediately send EOF with write_stdin (eof: true, yield_time_ms: 0) to start processing. Print mode reads stdin until EOF. Use --mode rpc with stdin left open for approval dialogs and follow-up interaction through JSONL stdin/stdout.",
     ],
     parameters: execCommandParameters,
     renderShell: "self",
@@ -1237,7 +1236,11 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
+    `- Shell commands execute locally in ${commandSandbox}; direct dscode invocations launch a trusted CLI process with independently selected permissions.`,
+    "- DSCode children can read, edit, run tests, and run ordinary processes. Child depth is limited to one level: a parent can launch multiple children, but a child must not launch another DSCode agent. Supply self-contained tasks; model, effort, permission, sandbox, and network settings follow their CLI flags and ordinary defaults, without parent inheritance or a permission ceiling.",
+    ...(isDSCodeChild() ? ["- This session is already a child at depth 1. Complete the task yourself; do not launch another DSCode agent or work around the depth limit."] : []),
+    "- Launch disposable children with dscode --no-session -p 'task' using exec_command with yield_time_ms: 0 and timeout_ms: 0, then immediately use write_stdin with eof: true and yield_time_ms: 0 (print mode waits for EOF). Continue independent work, then collect all results with write_stdin before concluding; coordinate shared-file edits or explicitly create worktrees.",
+    "- Print-mode children reject operations requiring approval. For interactive decisions, launch dscode --mode rpc --no-session, send JSONL prompt records through write_stdin, read extension_ui_request events, obtain the user's decision, and return matching extension_ui_response records. Collect final output after agent_settled, then close stdin. Never automatically approve a request.",
     `- Command network access is ${access.network ? "enabled" : "disabled until the user grants scoped access"}; do not work around this boundary.`,
     ...(access.network
       ? []
