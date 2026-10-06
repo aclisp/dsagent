@@ -53,7 +53,7 @@ describe("DSCode Codex-style input presentation", () => {
       }),
     ).toEqual([
       "deepseek-v4-flash  max",
-      "danger full access",
+      "full access",
       "ctx 91%",
       "/work/dscode",
     ]);
@@ -67,7 +67,7 @@ describe("DSCode Codex-style input presentation", () => {
         cwd: "/work/dscode",
         contextPercent: 12,
       }),
-    ).toContain("danger full access");
+    ).toContain("full access");
   });
 
   it("fills a panel row without bringing back a border", () => {
@@ -114,7 +114,7 @@ describe("DSCode Codex-style input presentation", () => {
     for (const width of [72, 100, 140]) {
       const rendered = renderMinimalStatus(width, details, theme);
       expect(visibleWidth(rendered)).toBe(width);
-      expect(rendered).toContain("danger full access");
+      expect(rendered).toContain("full access");
       expect(rendered).toMatch(/cache 92\.4% · \$0\.038  $/);
       expect(rendered).not.toContain("\n");
     }
