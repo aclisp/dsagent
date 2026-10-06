@@ -49,7 +49,8 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
          *[!0-9]*) echo 'DSCODE_APT_PIPELINE_DEPTH must be a non-negative integer.' >&2; exit 1 ;; \
          *) printf 'Acquire::http::Pipeline-Depth "%s";\n' "$DSCODE_APT_PIPELINE_DEPTH" > /etc/apt/apt.conf.d/99dscode-pipeline-depth ;; \
        esac \
-    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep fd-find procps \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
 # The runtime contains only the bundled server, DSCode CLI, and vision CLI,
