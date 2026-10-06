@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "1.0.2";
+export const PI_VERSION = "1.0.4";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);
@@ -115,8 +115,8 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
           // User extensions stay disabled; native built-ins are factory-backed
           // and need no module loader or package installation.
           source = replace(source,
-            "? cliEnabledExtensions\n            : this.mergePaths(cliEnabledExtensions, enabledExtensions)",
-            '? this.mergePaths(cliEnabledExtensions, enabledExtensions.filter(path => path.startsWith("builtin:")))\n            : this.mergePaths(cliEnabledExtensions, enabledExtensions)');
+            "this.noExtensions ? cliEnabledExtensions : this.mergePaths(cliEnabledExtensions, enabledExtensions)",
+            'this.noExtensions ? this.mergePaths(cliEnabledExtensions, enabledExtensions.filter(path => path.startsWith("builtin:"))) : this.mergePaths(cliEnabledExtensions, enabledExtensions)');
         }
         if (file === path.join(pi, "core/package-manager.js")) {
           // Retain upstream local skill/prompt/theme discovery and trust semantics.

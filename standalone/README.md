@@ -79,7 +79,7 @@ Core differences are limited to version metadata, file credentials, skipping leg
 Direct `dscode` commands through `exec_command` relaunch the standalone executable itself with ordinary CLI arguments and independent permissions. Children can edit, run ordinary commands, and use MCP; managed DSCode child depth is limited to one level, matching the original `delegate`. Children cannot launch another DSCode child through `exec_command`. Standalone user-extension limitations still apply. Print children wait for stdin EOF; RPC children use JSONL stdin/stdout. `timeout_ms: 0` disables managed-process deadlines. See [CLI children](../docs/CLI_REFERENCE.md#background-cli-children).
 Explicit sandbox selections still follow the existing rules.
 
-The pi adapter is currently pinned to **1.0.2**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
+The pi adapter is currently pinned to **1.0.4**. The build fails if required source patterns no longer match or if a native `.node` module, Core SQLite, or the vision CLI unexpectedly enters the build graph.
 When upgrading pi/Bun, review the adapter points and rerun `pnpm check` and `pnpm check:standalone`.
 The `experiments/standalone/` directory preserves historical feasibility records and is not used for production builds.
 
