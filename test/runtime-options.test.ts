@@ -159,7 +159,7 @@ describe("parseRuntimeArgs", () => {
 
   it("makes --no-tools dominant regardless of argument order", () => {
     for (const args of [
-      ["--no-tools", "--tools", "read,delegate,mcp__fixture__echo"],
+      ["--no-tools", "--tools", "read,exec_command,mcp__fixture__echo"],
       ["--tools", "read", "--no-tools"],
     ]) {
       expect(parseRuntimeArgs(args).options).toMatchObject({ noTools: true, activeTools: [] });

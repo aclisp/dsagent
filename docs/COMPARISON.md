@@ -21,7 +21,7 @@ DSCode 的价值并不是“竞品没有 agent、worktree、sandbox 或扩展”
 | DeepSeek 接入 | 专用 Responses adapter、无状态回放、effort 映射、payload 清理、schema patch tool | DeepSeek 提供 Anthropic 兼容接口，并公开了 Claude Code 集成方式 | 通用 runtime；DSCode 不对第三方 provider 下的功能对齐做未经验证的断言 |
 | 模型接入与图片 | DeepSeek API key、OpenAI API key 或符合条件的 ChatGPT 套餐；支持视觉的模型可接收图片 | Claude 账号/API 接入与多模态能力 | ChatGPT 套餐或 OpenAI API 接入与多模态能力 |
 | Context 与成本 | 1M context；`/status` 展示 DeepSeek 缓存命中、token、reasoning 和预估费用 | 产品自己的 context 与用量统计 | 产品自己的 context 与用量统计 |
-| 并行工作 | 单任务、只读调查子进程；主 agent 负责修改和验证 | subagent、后台 agent、agent team 和 worktree 隔离 | subagent，以及部分产品界面的 worktree |
+| 并行工作 | 进程工具启动后台 CLI 子进程；显式协调 worktree | subagent、后台 agent、agent team 和 worktree 隔离 | subagent，以及部分产品界面的 worktree |
 | 安全 | 默认工作区 sandbox、命令禁网、按命令批准网络/宿主机访问、持久 patch checkpoint | 可配置的权限与 sandbox，支持文件系统和网络控制 | OS sandbox、审批，以及本地命令默认禁网 |
 | Runtime 所有权 | MIT runtime，DeepSeek adapter 集中且可修改 | 完整产品 runtime 非开源；sandbox runtime 单独开源 | 开源 CLI，以及更广泛的 OpenAI 产品界面 |
 | 扩展 | `AGENTS.md`、`CLAUDE.md`、Skills、hooks、MCP、JSONL、RPC | 项目指令、skills、hooks、MCP、plugins | `AGENTS.md`、skills、hooks、MCP、plugins、SDK、app server |
@@ -43,9 +43,11 @@ cache-read 价格，通过 `/status` 展示当前缓存、token、reasoning 和�
 
 ### 3. 简单的独立调查
 
-显式启用 `delegate` 后，每次调用启动一个只读子 agent，使用独立 context 调查文件并返回证据。
-它仅可读取和搜索文件，不执行命令、不修改文件，也不调用 MCP。主 agent 负责修改和最终验证。
-没有内置角色路由、并行任务队列或自动 worktree 管理。
+父 agent 通过 `exec_command` 启动普通 DSCode 子进程，通过 `write_stdin` 获取结果。
+子进程独立选择模型、思考级别和权限，可以修改、测试和运行普通命令。
+受管理的子 agent 深度上限为 1，与原来的 `delegate` 一致，子 agent 不能再启动 DSCode 子 agent。
+Print 模式适合临时任务，RPC 模式支持后续交互和显式审批响应。
+父 agent 显式选择 worktree 隔离；不提供内置角色或 agent 任务队列。
 
 ### 4. 本地、可检查的控制
 

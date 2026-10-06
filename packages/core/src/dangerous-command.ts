@@ -107,6 +107,14 @@ function dangerousMatch(
         true,
       );
     }
+    if (name === "dscode") {
+      if (complete && args.length === 1 && ["-h", "-V", "version"].includes(args[0]!)) return;
+      return makeDangerousMatch(
+        "dscode starts an agent with independent permissions that can modify files or run commands",
+        "Launch a DSCode agent with independent permissions",
+        elevated,
+      );
+    }
     const intent = name === "mkfs" || name.startsWith("mkfs.")
       ? "Format the target device or filesystem"
       : Object.hasOwn(commandIntents, name) ? commandIntents[name] : undefined;

@@ -256,10 +256,6 @@ function turnUrl(sessionId: string): string {
 }
 
 describe("createHttpAdapter", () => {
-  it("rejects delegate before opening the HTTP server", () => {
-    expect(() => createHttpAdapter({ workspaces: WORKSPACES, runtimeArgs: ["--tools", "read,delegate"] }))
-      .toThrow("delegate tool is not supported");
-  });
   it.each([
     [["*"], "wildcard"],
     [["https://app.example.com/"], "exact HTTP(S) origin"],

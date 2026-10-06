@@ -96,7 +96,7 @@ export async function createAgentSessionHost(
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
       resourceLoaderOptions: {
-        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, { subagents: false })],
+        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions)],
       },
     });
     const model = services.modelRuntime.getModel(
@@ -118,7 +118,6 @@ export async function createAgentSessionHost(
       // SDK `tools` is a permanent registry allowlist, not just the active set.
       // Core selects the initial active set; Pi owns MCP discovery and restoration.
       ...(runtimeOptions.noTools ? { noTools: "all" as const } : {}),
-      excludeTools: ["delegate"],
     });
 
     return {
@@ -276,9 +275,6 @@ export function parseHttpRuntimeArgs(args: readonly string[], cwd = process.cwd(
   const parsed = parseRuntimeArgs(["-C", cwd, ...args]);
   if (parsed.help || parsed.version) {
     throw new Error("Help and version flags are not supported by the direct session host");
-  }
-  if (parsed.options.activeTools.includes("delegate")) {
-    throw new Error("The delegate tool is not supported by the Web/HTTP host. Remove it from --tools.");
   }
   return parsed;
 }

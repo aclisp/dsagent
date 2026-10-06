@@ -18,11 +18,6 @@
     "Machine Learning",
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:dscode.open",
-    "onCommand:dscode.askSelection",
-    "onCommand:dscode.fixDiagnostics"
-  ],
   "main": "./extension.cjs",
   "contributes": {
     "commands": [

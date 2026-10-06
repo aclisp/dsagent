@@ -47,7 +47,6 @@ import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
-import { isSubagent, registerSubagentTools, SUBAGENT_TOOLS } from "./subagents.ts";
 import {
   oneLine,
   renderCollapsibleToolResult,
@@ -91,11 +90,10 @@ const execCommandParameters = Type.Object({
     }),
   ),
   timeout_ms: Type.Optional(
-    Type.Integer({
-      minimum: 1_000,
-      maximum: 600_000,
-      description: "Terminate the process after this many milliseconds",
-    }),
+    Type.Union([
+      Type.Literal(0),
+      Type.Integer({ minimum: 1_000, maximum: 600_000 }),
+    ], { description: "Process deadline in milliseconds (default 120000); 0 disables the deadline" }),
   ),
 });
 
@@ -126,7 +124,6 @@ const applyPatchParameters = Type.Object({
 
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
-  capabilities: { subagents?: boolean } = {},
 ): InlineExtension {
   const permissionModes = "ask|auto|full";
   return {
@@ -191,7 +188,6 @@ export function createDSCodeExtension(
         updateStatus,
       );
       registerPatchTool(pi, checkpoints);
-      if (capabilities.subagents !== false) registerSubagentTools(pi, options);
       registerEntryRenderers(pi);
       registerCodingTui(pi, options, () => ({ permission, ...effectiveAccess() }));
 
@@ -258,9 +254,6 @@ export function createDSCodeExtension(
       pi.on("tool_call", async (event, ctx) => {
         activateRestoredTools();
         if (options.noTools) return { block: true, reason: "All tools are disabled by --no-tools." };
-        if (isSubagent() && !(SUBAGENT_TOOLS as readonly string[]).includes(event.toolName)) {
-          return { block: true, reason: "Investigation-only children can only read and search files." };
-        }
         if (
           event.toolName === "bash" ||
           event.toolName === "edit" ||
@@ -754,7 +747,7 @@ export function createDSCodeExtension(
         },
       });
 
-      if (!isSubagent()) registerHooks(pi, effectiveAccess);
+      registerHooks(pi, effectiveAccess);
     },
   };
 }

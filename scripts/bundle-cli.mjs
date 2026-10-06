@@ -118,14 +118,30 @@ export async function buildCliBundle({
       ...Object.fromEntries(["anthropic", "github-copilot", "kimi-coding", "meta", "openai-chatgpt", "openai-codex", "openrouter", "radius", "xai"].map(name => [name, path.join(aiDist, `auth/oauth/${name}.js`)])),
       "bedrock-converse-stream": path.join(aiDist, "api/bedrock-converse-stream.js"),
       "image-resize-worker": path.join(piDist, "utils/image-resize-worker.js"),
-      "codemode-worker": path.join(piDist, "extensions/codemode/worker.js"),
     },
     outdir,
     splitting: false,
   });
+  // Pi loads this worker from a data: URL so it survives updates. It cannot
+  // resolve import.meta.url, require(), or imports outside Node's builtins.
+  const codemodeWorker = await build({
+    ...options,
+    banner: undefined,
+    entryPoints: { "codemode-worker": path.join(piDist, "extensions/codemode/worker.js") },
+    outdir,
+    splitting: false,
+  });
+  for (const [file, output] of Object.entries(codemodeWorker.metafile.outputs)) {
+    if (output.imports.some(item => item.kind !== "import-statement" || !isBuiltin(item.path))) {
+      throw new Error("Codemode worker must only import Node builtins");
+    }
+    if (readFileSync(path.resolve(root, file), "utf8").includes("import.meta")) {
+      throw new Error("Codemode worker must not use import.meta");
+    }
+  }
   const outputs = new Set();
   let bytes = 0;
-  for (const meta of [main.metafile, lazy.metafile]) {
+  for (const meta of [main.metafile, lazy.metafile, codemodeWorker.metafile]) {
     for (const input of Object.values(meta.inputs)) {
       for (const item of input.imports) {
         if (item.external && !isBuiltin(item.path) && !externalPackages.has(item.path)) throw new Error(`Unexpected external import: ${item.path}`);

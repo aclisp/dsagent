@@ -679,7 +679,6 @@ function toolLabel(name) {
     write_stdin: "跟进命令",
     bash: "执行命令",
     powershell: "执行命令",
-    delegate: "委派调查",
     codemode: "运行脚本",
     tool_search: "查找工具",
     list_mcp_resources: "浏览资源",

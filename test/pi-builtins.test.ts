@@ -55,13 +55,11 @@ async function executeCode(host: Awaited<ReturnType<typeof createAgentSessionHos
 
 describe("DSCode Pi built-ins", () => {
   it.each([
-    { args: [], depth: "0", tools: ["codemode", "tool_search"], mcp: true },
-    { args: ["--no-mcp"], depth: "0", tools: ["codemode", "tool_search"], mcp: false },
-    { args: ["--no-tools"], depth: "0", tools: [], mcp: false },
-    { args: [], depth: "1", tools: [], mcp: false },
-  ])("loads native factories or suppresses them before startup and reload ($args, child $depth)", async ({ args, depth, tools, mcp }) => {
+    { args: [], tools: ["codemode", "tool_search"], mcp: true },
+    { args: ["--no-mcp"], tools: ["codemode", "tool_search"], mcp: false },
+    { args: ["--no-tools"], tools: [], mcp: false },
+  ])("loads native factories or suppresses them before startup and reload ($args)", async ({ args, tools, mcp }) => {
     const { root, agentDir } = await setup();
-    vi.stubEnv("DSCODE_SUBAGENT_DEPTH", depth);
     const options = parseRuntimeArgs(["-C", root, ...args]).options;
     const upstreamFactory = vi.fn(() => { throw new Error("Default must be replaced"); });
     const upstream: InlineExtension[] = ["mcp", "codemode", "tool-search"].map((name) => ({ name, builtin: true, factory: upstreamFactory }));

@@ -9,6 +9,8 @@ if (images.length === 0) {
 const executableFiles = [
   "/usr/local/bin/dscode-entrypoint.sh",
   "/usr/local/bin/dscode-vision",
+  "/usr/local/bin/dscode",
+  "/app/dist/bundle/cli.js",
   "/app/dist/vision-cli.js",
 ];
 const requiredFiles = [

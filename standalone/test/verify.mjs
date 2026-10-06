@@ -45,6 +45,7 @@ let toolIssued = false;
 let toolOutputs = [];
 let childReadIssued = false;
 let childTools = [];
+let childEofSent = false;
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -73,9 +74,16 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ error: { message: "offline rejection" } }));
     return;
   }
-  const childCall = plannedTool?.name === "delegate" && toolIssued && !childReadIssued && !payload.tools.some(tool=>tool.name === "delegate");
-  const call = plannedTool && !toolIssued || childCall;
-  const currentTool = childCall ? {name:"read",args:{path:"home/forbidden.js"}} : plannedTool;
+  const childProcess = payload.model === "standalone-child";
+  const childCall = plannedTool?.child && toolIssued && !childReadIssued && childProcess;
+  let currentTool = childCall ? {name:"read",args:{path:"home/forbidden.js"}} : plannedTool;
+  let call = plannedTool && !toolIssued || childCall;
+  if (plannedTool?.child && toolIssued && !childProcess && !JSON.stringify(payload.input).includes("exit_code: 0")) {
+    const processId = /process_id: (\d+)/.exec(JSON.stringify(payload.input))?.[1];
+    currentTool = {name:"write_stdin",args:{process_id:processId,...(!childEofSent ? {eof:true} : {}),yield_time_ms:30000}};
+    childEofSent = true;
+    call = true;
+  }
   if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
   const item = call
@@ -256,12 +264,12 @@ try {
     {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
     {name:"exec_command",args:{cmd:"pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
-    {name:"delegate",args:{task:"Read home/forbidden.js and return file evidence."}},
+    {name:"exec_command",child:true,args:{cmd:`dscode --base-url ${base[1]} --model standalone-child --effort low --permission auto --tools read,find,grep,exec_command,write_stdin,apply_patch --no-mcp --no-session -p 'Read home/forbidden.js and return file evidence'`,yield_time_ms:0,timeout_ms:0}},
   ]) {
-    await check(`real tool execution: ${tool.name}`, async () => {
-      plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false;
+    await check(`real tool execution: ${tool.child ? "CLI child" : tool.name}`, async () => {
+      plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false; childEofSent = false;
       // JSON parent and child must work without extracting a native UI addon.
-      const result = await run("dscode", [...base, "--tools", "read,find,grep,exec_command,write_stdin,apply_patch,delegate", "--mode", "json", "-p", "run tool once"], false, false, tool.name === "delegate");
+      const result = await run("dscode", [...base, ...(tool.child ? ["--permission", "full"] : []), "--tools", "read,find,grep,exec_command,write_stdin,apply_patch", "--mode", "json", "-p", "run tool once"], false, false, tool.child === true);
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
       const finished = events.find(event => event.type === "tool_execution_end" && event.toolName === tool.name);
@@ -278,11 +286,12 @@ try {
         assert.deepEqual(JSON.parse(replayedPatch.arguments),tool.args);
         assert.ok(payload.input.some(item => item.type === "function_call_output" && item.call_id === replayedPatch.call_id));
       }
-      else if (tool.name === "delegate") {
-        assert.equal(finished.result.details.success, true, JSON.stringify(finished));
-        assert.equal(finished.result.details.output, "standalone ok");
+      else if (tool.child === true) {
+        assert.equal(finished.result.details.running, true, JSON.stringify(finished));
+        assert.ok(events.some(event => event.type === "tool_execution_end" && event.toolName === "write_stdin" && event.result.details.exitCode === 0));
+        assert.ok(JSON.stringify(toolOutputs).includes("standalone ok"));
         assert.ok(childReadIssued);
-        assert.deepEqual(childTools, ["find", "grep", "ls", "read"]);
+        assert.deepEqual(childTools, ["apply_patch", "exec_command", "find", "grep", "read", "write_stdin"]);
         assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       }
       else {
@@ -349,6 +358,27 @@ try {
   await check("RPC approval allows MCP once", async () => {
     plannedTool = {name:"mcp__fixture__echo",args:{}}; toolIssued=false; toolOutputs=[];
     let confirmed = false;
+    let notificationError;
+    let approvalWork;
+    let cleanupWork;
+    const promptRecord = path.join(scratch, "ui-prompt-hook.json");
+    const endRecord = path.join(scratch, "ui-prompt-end-hook.json");
+    const hooksPath = path.join(home, "hooks.json");
+    await fs.writeFile(hooksPath, JSON.stringify({hooks:{uiPromptStart:[{
+      command:"/bin/sh",
+      args:["-c", 'printf "%s" "$1" > "$2"', "ui-prompt-hook", "{payload}", promptRecord],
+    }],uiPromptEnd:[{
+      command:"/bin/sh",
+      args:["-c", 'printf "%s" "$1" > "$2"', "ui-prompt-hook", "{payload}", endRecord],
+    }]}}));
+    async function waitForNotification(file) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try { await fs.access(file); return; }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+        await new Promise(resolve => setTimeout(resolve,20));
+      }
+      throw new Error(`UI prompt hook did not write ${file}`);
+    }
     const result = await run("dscode",[...base,"--mode","rpc"],{
       start:[{id:"prompt",type:"prompt",message:"try MCP"}],
       onEvent(event,child) {
@@ -356,15 +386,35 @@ try {
         const options = event.type === "extension_ui_request" && event.method === "select" ? event.options ?? [] : [];
         if(options.includes("Allow once")) {
           confirmed=true;
-          child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,value:"Allow once"})+"\n");
+          // Leave the dialog pending until the independent notification has run.
+          approvalWork = (async () => {
+            await waitForNotification(promptRecord);
+            await assert.rejects(fs.access(endRecord), {code:"ENOENT"});
+          })().catch(error => { notificationError = error; }).finally(() => {
+            child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,value:"Allow once"})+"\n");
+          });
         }
-        if(event.type === "agent_end") child.stdin.end();
+        if(event.type === "agent_end") {
+          cleanupWork = waitForNotification(endRecord)
+            .catch(error => { notificationError = error; })
+            .finally(() => child.stdin.end());
+        }
       },
-    });
+    }).finally(() => fs.unlink(hooksPath));
     assert.equal(result.timedOut,false,result.stderr);
     assert.equal(result.code,0,result.stderr);
     assert.ok(confirmed,result.stdout);
+    await Promise.all([approvalWork, cleanupWork]);
+    assert.ifError(notificationError);
     assert.match(JSON.stringify(toolOutputs),/HTTP_MCP_OK/);
+    const notification = JSON.parse(await fs.readFile(promptRecord,"utf8"));
+    assert.equal(notification.event,"uiPromptStart");
+    assert.match(notification.promptId,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(notification.kind,"select");
+    assert.equal(notification.mode,"rpc");
+    assert.match(notification.title,/Allow MCP tool/);
+    const cleanup = JSON.parse(await fs.readFile(endRecord,"utf8"));
+    assert.deepEqual(cleanup,{...notification,event:"uiPromptEnd"});
   });
   plannedTool = undefined;
   await check("provider error exit", async () => {

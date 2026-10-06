@@ -471,7 +471,7 @@ export interface MinimalStatusDetails {
 export function minimalStatusParts(details: MinimalStatusDetails): string[] {
   const parts = [`${details.model}  ${details.effort}`];
   if (details.sandbox === "danger-full-access") {
-    parts.push("danger full access");
+    parts.push("full access");
   } else if (details.permission === "full") {
     parts.push("full permission");
   }
@@ -494,7 +494,7 @@ export function renderMinimalStatus(
     if (index === 0) return brandBlue(part, theme);
     if (index === parts.length - 1) return theme.fg("text", part);
     if (
-      part === "danger full access" ||
+      part === "full access" ||
       (part.startsWith("ctx ") && (details.contextPercent ?? 0) >= 90)
     ) {
       return theme.fg("error", part);

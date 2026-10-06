@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import type { EffectiveAccess } from "./access.ts";
 import { runProcess, type ProcessResult } from "./process.ts";
@@ -20,6 +21,8 @@ const hooksConfigSchema = z.object({
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
       agentEnd: z.array(hookSchema).default([]),
+      uiPromptStart: z.array(hookSchema).default([]),
+      uiPromptEnd: z.array(hookSchema).default([]),
     })
     .default({
       sessionStart: [],
@@ -27,6 +30,8 @@ const hooksConfigSchema = z.object({
       beforeTool: [],
       afterTool: [],
       agentEnd: [],
+      uiPromptStart: [],
+      uiPromptEnd: [],
     }),
 });
 type Hook = z.infer<typeof hookSchema>;
@@ -42,7 +47,11 @@ export function registerHooks(
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
+    uiPromptStart: [],
+    uiPromptEnd: [],
   };
+  let promptHooksQueue = Promise.resolve();
+  let activePromptId: string | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
     config = await loadHookConfig(ctx.cwd, ctx.isProjectTrusted());
@@ -91,6 +100,36 @@ export function registerHooks(
   pi.on("agent_end", async (_event, ctx) => {
     await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, getAccess());
   });
+
+  // Pi dispatches these notifications independently of the dialog. Preserve
+  // command order so reminder cleanup cannot overtake reminder creation.
+  const notifyPrompt = (event: UIPromptStartEvent | UIPromptEndEvent, ctx: ExtensionContext): Promise<void> => {
+    // Pi groups overlapping dialogs into a single start/end waiting period.
+    if (event.type === "ui_prompt_start") activePromptId = randomUUID();
+    const promptId = activePromptId;
+    if (promptId === undefined) return Promise.resolve();
+    if (event.type === "ui_prompt_end") activePromptId = undefined;
+    const name = event.type === "ui_prompt_start" ? "uiPromptStart" : "uiPromptEnd";
+    const hooks = config[name];
+    const access = getAccess();
+    const payload = {
+      event: name,
+      promptId,
+      kind: event.kind,
+      ...(event.title !== undefined ? { title: event.title } : {}),
+      mode: ctx.mode,
+    };
+    const notification = promptHooksQueue.then(async () => {
+      // Cleanup must still run when answering/cancelling aborts the turn.
+      const failure = await runHooks(hooks, ctx, payload, access, false);
+      if (failure) throw new Error(failure);
+    });
+    // Report failures through Pi, but let subsequent notifications proceed.
+    promptHooksQueue = notification.catch(() => {});
+    return notification;
+  };
+  pi.on("ui_prompt_start", notifyPrompt);
+  pi.on("ui_prompt_end", notifyPrompt);
 }
 
 async function loadHookConfig(cwd: string, includeProject: boolean): Promise<HookConfig> {
@@ -100,6 +139,8 @@ async function loadHookConfig(cwd: string, includeProject: boolean): Promise<Hoo
     beforeTool: [],
     afterTool: [],
     agentEnd: [],
+    uiPromptStart: [],
+    uiPromptEnd: [],
   };
   const files = [path.join(getDSCodeHome(), "hooks.json")];
   if (includeProject) files.push(path.join(cwd, ".dscode", "hooks.json"));
@@ -122,9 +163,10 @@ async function runHooks(
   ctx: ExtensionContext,
   payload: Record<string, unknown>,
   access: EffectiveAccess,
+  cancelWithTurn = true,
 ): Promise<string | undefined> {
   for (const hook of hooks) {
-    const result = await runHook(hook, ctx, payload, access);
+    const result = await runHook(hook, ctx, payload, access, cancelWithTurn);
     const failure = hookFailure(hook, result);
     if (failure) return failure;
   }
@@ -136,6 +178,7 @@ async function runHook(
   ctx: ExtensionContext,
   payload: Record<string, unknown>,
   access: EffectiveAccess,
+  cancelWithTurn = true,
 ): Promise<ProcessResult> {
   const args = hook.args.map((argument) =>
     argument
@@ -153,7 +196,7 @@ async function runHook(
   });
   return runProcess(invocation.command, invocation.args, {
     cwd: ctx.cwd,
-    signal: ctx.signal,
+    signal: cancelWithTurn ? ctx.signal : undefined,
     timeoutMs: hook.timeoutMs,
     maxOutputBytes: 20_000,
   });

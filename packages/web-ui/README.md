@@ -226,8 +226,7 @@ no machine-specific paths; its prompt mounts resolve through the repository-rela
 CLI and Web/HTTP hosts support `ask`, `auto`, and `full` permissions.
 `--sandbox read-only` remains available as a command sandbox boundary.
 HTTP rejects `/base-url` and session-navigation commands without invoking the model.
-The CLI-only `delegate` tool is not registered by HTTP hosts; explicitly selecting it
-fails at startup. `--no-tools` takes precedence over tool selection.
+`--no-tools` takes precedence over tool selection.
 
 The default tools are `read,exec_command,write_stdin,apply_patch,codemode`.
 Pi owns MCP discovery, schema, OAuth, and `/mcp`. Global config is `DSCODE_HOME/mcp.json`;
@@ -242,7 +241,7 @@ tools require per-call approval in `ask`/`auto`; the three standard resource hel
 list and read context without approval in every mode. SSE events retain `parentToolCallId`, and
 history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
 
-The web-ui also permanently disables `delegate`. `read` is pi's built-in file reader — it's included because pi
+`read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
 `read`.
@@ -259,11 +258,20 @@ The command output is not replayed automatically after a refresh, so run the com
 query the persisted checkpoint state. Edits made through `exec_command` or other tools do not
 create checkpoints.
 
-The other DSCode tools are TUI-first and don't fit this deployment:
+### CLI child processes
 
-- `delegate` is excluded: children re-invoke the CLI entrypoint, whereas the HTTP host
-  runs inside the server process. HTTP disables registration directly, without
-  changing the process-wide subagent depth.
+Web agents can start ordinary DSCode CLI children using the existing `exec_command`
+and `write_stdin` tools. The image includes `/usr/local/bin/dscode`; trusted direct calls
+resolve the fixed installation entrypoint, preserve model credentials, and use the
+child's own CLI permissions. Children share the parent's working directory by default.
+Managed child depth is limited to one level: parents can launch multiple children,
+but children cannot launch another DSCode child through `exec_command`.
+
+Launch with `yield_time_ms: 0` and `timeout_ms: 0`, then immediately send EOF through
+`write_stdin` to start a print-mode task. Collect results before the parent concludes.
+For approvals and follow-up interaction, use RPC mode and keep stdin open. The parent
+handles JSONL requests and responses; child dialogs are not automatically forwarded to
+the Web UI. See [the CLI reference](../../docs/CLI_REFERENCE.md#background-cli-children).
 
 ### Vision analysis CLI
 
@@ -295,13 +303,17 @@ root process inside the same container.
 
 ### Default skills
 
-The image ships four skills — `dscode-vision`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
+The image ships five skills — `dscode-vision`, `dscode-delegate`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
 bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.
 They're auto-discovered by pi (the user skills dir is not trust-gated) and listed in the system
 prompt now that the `read` tool is active. Add user skills by dropping directories into the
 volume's `/root/.dscode/skills/`.
+
+`dscode-delegate` loads child-launch guidance on demand. It uses the same discovery and
+seeding mechanism as `dscode-vision`; ordinary CLI and standalone users install its
+directory manually into their skills directory.
 
 ### Prompt profiles and protected prompt files
 

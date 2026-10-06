@@ -93,7 +93,7 @@ CLI / TUI / IDE
        │
 session · approvals · diff review · undo
        │
-current model / effort · single investigation child
+CLI-selected model / effort · background CLI children
        │
 Pi agent loop
        │

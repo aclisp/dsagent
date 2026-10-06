@@ -5,6 +5,66 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
 
 describe("ManagedProcessRegistry", () => {
+  it.each(["terminate", "dispose"])("keeps a zero-deadline process alive until %s", async (action) => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(longBackgroundCommand(), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "low",
+      });
+      expect(started.running).toBe(true);
+      expect(await registry.interact(started.processId, { yieldTimeMs: 100 })).toMatchObject({ running: true });
+      const completed = action === "terminate"
+        ? await registry.interact(started.processId, { terminate: true, yieldTimeMs: 2_000 })
+        : await (async () => {
+          const pending = registry.interact(started.processId, { yieldTimeMs: 2_000 });
+          await registry.dispose();
+          return pending;
+        })();
+      expect(completed.running).toBe(false);
+      expect(completed.timedOut).toBeUndefined();
+    } finally { await registry.dispose(); }
+  });
+
+  it("launches fixed dscode with credentials and independent flags under a restricted parent", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-child-process-"));
+    const fixed = path.join(root, "cli.mjs");
+    await fs.writeFile(fixed, `console.log(JSON.stringify({args:process.argv.slice(2),key:process.env.DEEPSEEK_API_KEY,custom:process.env.CUSTOM_SECRET??null,depth:process.env.DSCODE_SUBAGENT_DEPTH}));`);
+    await fs.writeFile(path.join(root, "dscode"), '#!/bin/sh\necho PATH_SHADOW\n');
+    await fs.chmod(path.join(root, "dscode"), 0o755);
+    const saved = saveEnvironment(["PATH", "DEEPSEEK_API_KEY", "CUSTOM_SECRET"]);
+    process.env.PATH = `${root}${path.delimiter}${process.env.PATH ?? ""}`;
+    process.env.DEEPSEEK_API_KEY = "child-test-key";
+    process.env.CUSTOM_SECRET = "not-forwarded";
+    const registry = new ManagedProcessRegistry({ dscodeExecutable: fixed });
+    try {
+      const result = await registry.start("dscode --permission full --network --model child --effort low -p 'run task'", {
+        cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 2_000, timeoutMs: 0, thinkingLevel: "max",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "trusted dscode (child CLI permissions)" });
+      expect(JSON.parse(result.output)).toEqual({ args: ["--permission", "full", "--network", "--model", "child", "--effort", "low", "-p", "run task"], key: "child-test-key", custom: null, depth: "1" });
+    } finally {
+      await registry.dispose(); restoreEnvironment(saved); await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks grandchildren even with full permissions while allowing ordinary child commands", async () => {
+    const saved = saveEnvironment(["DSCODE_SUBAGENT_DEPTH"]);
+    process.env.DSCODE_SUBAGENT_DEPTH = "1";
+    const registry = new ManagedProcessRegistry();
+    const options = {
+      cwd: os.tmpdir(), sandbox: { mode: "danger-full-access" as const, network: true },
+      yieldTimeMs: 2_000, timeoutMs: 0, thinkingLevel: "low" as const,
+    };
+    try {
+      await expect(registry.start("dscode --permission full --network -p 'grandchild'", options))
+        .rejects.toThrow("DSCode child depth limit reached (maximum depth: 1)");
+      expect(registry.list()).toEqual([]);
+      const result = await registry.start(nodeCommand("process.stdout.write('ORDINARY_CHILD_COMMAND');"), options);
+      expect(result).toMatchObject({ running: false, exitCode: 0, output: "ORDINARY_CHILD_COMMAND" });
+    } finally { await registry.dispose(); restoreEnvironment(saved); }
+  });
+
   it("cancels an active start without killing processes already yielded by the same run", async () => {
     const registry = new ManagedProcessRegistry();
     const controller = new AbortController();

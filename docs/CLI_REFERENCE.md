@@ -121,14 +121,87 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
-CLI investigation can be enabled with `--tools ...,delegate`. `delegate({task: "..."})`
-launches one child at a time in the current workspace with a fresh conversation and
-no saved session. It uses the current model and thinking level and returns final
-findings. Children can only use `read`, `grep`, `find`, and `ls`; commands, edits, MCP,
-and nested delegation are unavailable. Children disable user extensions and command
-hooks. Calls time out after two minutes and are cancelled with the parent tool call. The parent handles all edits and verification.
+CLI and Web/HTTP agents can start ordinary DSCode CLI children through `exec_command`
+and collect their output with `write_stdin`. Direct `dscode ...` invocations use a fixed
+installed CLI entrypoint with model credentials preserved; they do not use PATH lookup
+or the parent's command sandbox. The child controls its own model, thinking level,
+permissions, command sandbox, and command-network access through normal CLI flags and
+defaults. No parent permission ceiling or extra approval flow is added. Provider calls
+work even when the parent's shell-command network access is blocked. Container and
+other external OS restrictions still apply.
+Launching `dscode` is classified as a dangerous command and uses the parent's existing
+command approval flow (`auto` requires approval; `full` allows it). Standalone help and
+version invocations are exempt.
 
-MCP uses Pi 1.0.2's native implementation and schema. Global configuration is
+### Background CLI children
+
+The [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) provides
+on-demand delegation guidance. Docker seeds it alongside `dscode-vision`. For ordinary
+CLI and standalone installations, manually copy the entire `dscode-delegate` directory
+from `deploy/default-skills/` into `~/.dscode/skills/` (or `$DSCODE_HOME/skills/`). The skill
+is discoverable automatically; launch instructions are not included in the core prompts.
+
+Give each child a self-contained task: it starts a fresh conversation unless you select
+an existing session. Children can edit, run commands and tests, and use MCP/extensions.
+The managed DSCode child depth limit is one, matching the original `delegate`: a parent
+can launch multiple children, but children cannot launch another DSCode child through
+`exec_command`, even with full permissions. The default working directory is shared with the parent;
+coordinate edits or explicitly create a Git worktree for overlapping work. Model and
+thinking choices use `--provider`, `--model`, and `--effort`. Specify permission and
+sandbox flags explicitly when reproducibility matters. `--no-session` is recommended
+for disposable children.
+
+Launch through the existing tool:
+
+```json
+{"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p 'Implement and verify the assigned task'","yield_time_ms":0,"timeout_ms":0}
+```
+
+The tool returns a `process_id`. **Print mode reads piped stdin until EOF**, so immediately
+start the task with the returned ID:
+
+```json
+{"process_id":"1","eof":true,"yield_time_ms":0}
+```
+
+Optional `chars` can supply additional task context before EOF. The parent can then do
+independent work and call `write_stdin` without `chars` to collect new output. Collect
+all child results and inspect their changes before concluding. Print mode rejects
+operations requiring an interactive approval UI; a child should report unfinished work
+and the blocked operation rather than silently treating it as complete.
+
+`timeout_ms: 0` disables the process deadline for any managed command. Omission keeps
+the 120000 ms default; positive deadlines are 1000–600000 ms. `yield_time_ms` only controls
+how long a tool call waits (up to 30000 ms), independently of the process lifetime.
+Use `write_stdin` with `terminate: true` to stop a child. Session shutdown terminates
+remaining managed processes; print-mode parents must collect results before exiting.
+
+### RPC children and approvals
+
+Use `dscode --mode rpc --no-session` for follow-up interaction and approval dialogs.
+Leave stdin open and send one JSON record per line through `write_stdin`:
+
+```json
+{"type":"prompt","message":"Implement and verify the assigned task"}
+```
+
+Append an actual newline to each stdin record. Poll output for `extension_ui_request`
+records. Obtain the user's decision, then reply with the matching request ID:
+
+```json
+{"type":"extension_ui_response","id":"request-id","confirmed":true}
+```
+
+For `select` requests, send `value` with the selected option; cancellation uses
+`cancelled: true`. Do not automatically approve requests. A successful `prompt` response
+only acknowledges acceptance: consume the final assistant result and wait for
+`agent_settled` before concluding, then send EOF to close the RPC child. RPC processes
+remain alive between tasks, and output is bounded, so poll regularly. The parent handles
+protocol requests explicitly; child dialogs are not automatically forwarded into the
+Web UI's native approval dialogs.
+
+
+MCP uses Pi 1.0.4's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools
@@ -305,6 +378,66 @@ replace text. Failed, timed-out, or truncated responses raise an extension error
 with the input received by this handler, without applying partial replacements.
 Hooks use the current sandbox/network access and require an external executable even in standalone
 builds. Restart the session after editing hook configuration.
+
+### UI prompt hooks
+
+Configure `hooks.uiPromptStart` to run a notification command when the session starts waiting
+for a blocking UI prompt, and `hooks.uiPromptEnd` to clean up when it stops waiting.
+For example, play a sound on macOS:
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      {
+        "command": "/usr/bin/afplay",
+        "args": ["/System/Library/Sounds/Glass.aiff"]
+      }
+    ]
+  }
+}
+```
+
+Use `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`. This works in the
+standalone CLI without user extensions. Configuration loads at `session_start`; earlier
+project-trust dialogs are not covered. Restart the session after changing the configuration.
+
+`{payload}` contains `event: "uiPromptStart"` or `"uiPromptEnd"`, `promptId`, `kind` (`confirm`, `select`, `input`, `editor`,
+or `custom`), `mode` (`tui`, `rpc`, `json`, or `print`), and an optional `title`. Custom dialogs
+have no title metadata. Pi groups overlapping prompts into one waiting period. Commands
+run on the agent host, including for RPC/HTTP clients, using current sandbox/network access;
+they do not play sound on a remote client. A script can inspect `mode` to restrict notifications
+to the terminal UI. Global hooks run before trusted-project hooks. Hook output does not answer
+the dialog; failures are reported as extension errors and do not block or deny it. Subprocess
+stdin waits and other waits outside Pi's UI prompt API do not trigger these hooks.
+
+For persistent reminders, key each reminder by `promptId` from `{payload}`. DSCode generates a
+UUID for each waiting period and includes the same ID in its start/end payloads. Different
+sessions in the same workspace and later prompts with the same title receive different IDs.
+All configured commands for that waiting period share the ID. Pi groups overlapping dialogs
+within one session, so those dialogs share a single waiting period rather than separate IDs.
+Unmatched or duplicate end events are ignored. Use `{cwd}` to display the project, not as the
+reminder identity. For example, connect your own reminder script to both hooks:
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      { "command": "/path/to/reminder", "args": ["show", "{cwd}", "{payload}"] }
+    ],
+    "uiPromptEnd": [
+      { "command": "/path/to/reminder", "args": ["clear", "{cwd}", "{payload}"] }
+    ]
+  }
+}
+```
+
+End means the waiting period ended (answered, cancelled, timed out, or rejected), not that the
+user approved the action. Start/end commands are serialized within each session, even if a hook
+fails, so cleanup cannot overtake creation. They remain subject to hook timeouts but are not
+cancelled with the agent turn, allowing cleanup after a cancelled prompt. They are not guaranteed
+to finish if the process exits or crashes. Make reminder operations idempotent; this is a
+notification lifecycle, not an approval-result API.
 
 Graphical clients and IDE integrations can use the private workspace package `@aclisp/dsagent-core`
 after completing the developer setup above. It exposes credential and settings APIs plus a typed RPC

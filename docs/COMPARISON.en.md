@@ -21,7 +21,7 @@ all of those. The difference is the design center:
 | DeepSeek integration | Dedicated Responses adapter, stateless replay, effort mapping, payload cleanup, schema-based patch tool | DeepSeek exposes an Anthropic-compatible endpoint and documents Claude Code integration | General-purpose runtime; DSCode does not claim feature parity when using third-party providers |
 | Model access and images | DeepSeek API key, OpenAI API key, or eligible ChatGPT plan; image input on models that advertise vision support | Claude account/API access with multimodal support | ChatGPT plan or OpenAI API access with multimodal support |
 | Context and cost | 1M context; `/status` exposes DeepSeek cache hits, tokens, reasoning, and estimated cost | Product-specific context and usage reporting | Product-specific context and usage reporting |
-| Parallel work | One investigation-only child per call; the parent handles edits and validation | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
+| Parallel work | Background CLI children via process tools; explicit worktree coordination | Subagents, background agents, agent teams, and worktree isolation | Subagents plus worktrees in supported surfaces |
 | Safety | Workspace sandbox and no command network by default; scoped per-command network/host approvals; durable patch checkpoints | Configurable permission and sandbox system with filesystem and network controls | OS sandbox, approvals, and no network by default for local commands |
 | Runtime ownership | MIT-licensed runtime with a focused DeepSeek adapter | Full product runtime is proprietary; Anthropic publishes its sandbox runtime separately | Open-source CLI plus broader OpenAI product surfaces |
 | Extensibility | `AGENTS.md`, `CLAUDE.md`, Skills, hooks, MCP, JSONL, RPC | Project instructions, skills, hooks, MCP, plugins | `AGENTS.md`, skills, hooks, MCP, plugins, SDK, app server |
@@ -43,12 +43,15 @@ the cache-read price directly and exposes current cache, token, reasoning, and c
 `/status`. We avoid hard-coding price claims here because provider pricing changes; use the official
 [DeepSeek pricing page](https://api-docs.deepseek.com/quick_start/pricing/).
 
-### 3. Independent investigation
+### 3. Background CLI children
 
-Opt-in `delegate` starts one child with a fresh context to inspect files and return evidence.
-The child can only read and search files; it cannot execute commands, edit files, use MCP,
-or delegate. The parent owns changes and verification. There are no built-in roles,
-parallel task queues, or automatic worktrees.
+The parent launches ordinary DSCode children through `exec_command` and collects results
+with `write_stdin`. Children have independent model, effort, and permission settings and
+can edit, test, and run ordinary commands. Managed child depth is limited to one level,
+matching the original `delegate`; children cannot launch further DSCode children.
+Print mode supports disposable tasks;
+RPC supports follow-up interaction and explicit approval responses. Worktree isolation
+is chosen explicitly by the parent; there are no built-in roles or agent task queues.
 
 ### 4. Local, inspectable control
 

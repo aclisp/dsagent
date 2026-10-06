@@ -108,12 +108,69 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
-可通过 `--tools ...,delegate` 启用只读子 agent 调查。`delegate({task: "..."})` 每次只启动
-一个子进程，使用当前工作区、模型和 thinking level，独立 context，不保存会话。子 agent 仅可
-使用 `read`、`grep`、`find`、`ls`，不能执行命令、编辑文件、调用 MCP 或继续委派。
-父 agent 等待结果，负责修改和验证；两分钟后超时，取消调用会终止子进程。
+CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI 子进程，
+再通过 `write_stdin` 获取结果。直接调用 `dscode ...` 使用固定的安装入口并保留模型凭据，
+不通过 PATH 查找，也不受父 agent 的命令沙箱限制。子进程根据自己的 CLI 参数和普通默认值
+选择模型、thinking level、权限、命令沙箱和命令网络访问，没有父权限上限或额外审批流程。
+父命令网络被禁用时，子进程仍可请求模型；容器及其他外部 OS 限制继续生效。
+启动 `dscode` 被归类为危险命令，使用父 agent 已有的命令审批流程：`auto` 需要审批，
+`full` 直接允许。仅查看帮助或版本的独立调用不需要审批。
 
-MCP 使用 Pi 1.0.2 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+### 后台 CLI 子进程
+
+[dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) 按需提供委派指导。
+Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 standalone 安装需手动将
+`deploy/default-skills/dscode-delegate` 整个目录复制到 `~/.dscode/skills/`
+（或 `$DSCODE_HOME/skills/`）。Skill 可自动发现，核心提示词不再包含子 agent 启动指导。
+
+为子进程提供完整任务和上下文，默认使用独立对话和父进程的当前工作目录。
+子进程可以修改文件、运行普通命令和测试、使用 MCP/扩展。
+受管理的 DSCode 子 agent 深度上限为 1，与原来的 `delegate` 一致：父 agent 可以启动多个
+子 agent，但子 agent 不能通过 `exec_command` 再启动 DSCode 子 agent，即使拥有完整权限。
+父 agent 应协调共享文件的修改；重叠任务可先显式创建 Git worktree。
+通过 `--provider`、`--model`、`--effort` 选择模型和思考级别，需要可复现行为时显式指定权限
+和沙箱参数。临时任务建议使用 `--no-session`。
+
+```json
+{"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p '实现并验证指定任务'","yield_time_ms":0,"timeout_ms":0}
+```
+
+工具返回 `process_id`。**Print 模式会等待 stdin EOF**，应立即使用返回的 ID 开始任务：
+
+```json
+{"process_id":"1","eof":true,"yield_time_ms":0}
+```
+
+可在 EOF 前通过 `chars` 补充上下文。随后父 agent 可以继续其他工作，通过不带 `chars` 的
+`write_stdin` 轮询输出；结束前应收集所有结果并检查修改。Print 模式会拒绝需要交互批准的
+操作，子进程应报告被阻塞的操作和未完成的工作。
+
+所有托管命令均支持 `timeout_ms: 0`，表示不设置进程截止时间。省略时仍默认 120000 ms，
+正值范围为 1000–600000 ms。`yield_time_ms` 仅控制单次工具调用的等待时间，最多 30000 ms。
+通过 `write_stdin` 的 `terminate: true` 停止进程；会话关闭会清理剩余托管进程。
+
+### RPC 子进程与审批
+
+需要后续交互或审批时，使用 `dscode --mode rpc --no-session` 并保持 stdin 打开。
+通过 `write_stdin` 发送 JSONL `prompt` 记录，每条记录后追加真实换行符：
+
+```json
+{"type":"prompt","message":"实现并验证指定任务"}
+```
+
+轮询 `extension_ui_request` 事件，取得用户决定后发送相同 ID 的响应：
+
+```json
+{"type":"extension_ui_response","id":"request-id","confirmed":true}
+```
+
+`select` 请求使用 `value` 返回选项，取消使用 `cancelled: true`。不要自动批准。
+`prompt` 成功响应只表示接收任务，应收集最终回答并等待 `agent_settled`，随后发送 EOF 关闭
+RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求由父 agent 显式处理，不会自动
+转发为 Web UI 的原生审批对话框。
+
+
+MCP 使用 Pi 1.0.4 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
@@ -187,7 +244,7 @@ TUI 常用命令：
 
 | 模式 | 行为 |
 | --- | --- |
-| `ask` | 命令、写入、delegate 和 MCP 都需要批准 |
+| `ask` | 命令、写入和 MCP 都需要批准 |
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |
 
@@ -253,6 +310,58 @@ Extensions 生成的输入和由 extensions 直接处理的命令不会触发它
 DSCode/Pi 控制，hooks 只能替换文本。命令失败、超时或输出截断时会产生 extension error；Pi 使用进入
 该 handler 时的输入继续处理，不应用已经完成的部分替换。Hooks 使用当前 sandbox/network 权限；standalone 版本也需要系统
 提供相应的外部可执行程序。修改 hook 配置后需重启会话。
+
+### UI 提示 hooks
+
+配置 `hooks.uiPromptStart`，可在会话开始等待阻塞式 UI 提示时执行通知命令；配置 `hooks.uiPromptEnd`
+可在结束等待时清理通知。例如在 macOS 播放声音：
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      {
+        "command": "/usr/bin/afplay",
+        "args": ["/System/Library/Sounds/Glass.aiff"]
+      }
+    ]
+  }
+}
+```
+
+可配置在 `~/.dscode/hooks.json` 或可信项目的 `.dscode/hooks.json` 中；standalone CLI 无需用户
+extension 即可使用。配置在 `session_start` 加载，不覆盖此前的项目信任对话框。修改后需重启会话。
+
+`{payload}` 包含 `event: "uiPromptStart"` 或 `"uiPromptEnd"`、`promptId`、`kind`（`confirm`、`select`、`input`、`editor` 或 `custom`）、
+`mode`（`tui`、`rpc`、`json` 或 `print`），以及可选的 `title`。自定义对话框没有标题元数据。
+Pi 将重叠的提示合并为一次等待。命令使用当前 sandbox/network 权限，在 agent 所在主机执行，包括
+RPC/HTTP 模式，不会在远程客户端播放声音。脚本可根据 `mode` 限制为仅在终端 UI 通知。全局 hooks
+先于可信项目 hooks 执行。输出不会回答对话框；失败会报告 extension error，但不会阻止或拒绝对话框。
+子进程等待 stdin 等不经过 Pi UI 提示 API 的等待不会触发此 hook。
+
+持久提醒应使用 `{payload}` 中的 `promptId` 作为标识。DSCode 为每次等待生成一个 UUID，
+start/end 的 payload 包含同一个 ID。同一工作区的不同会话，以及标题相同的后续提示，都有不同 ID。
+同一次等待的所有已配置命令共享该 ID。Pi 会将同一会话中重叠的对话框合并为一次等待，所以它们
+共享一个 ID，而不是各有一个。未匹配或重复的 end 事件会被忽略。`{cwd}` 用于显示项目，
+不再作为提醒标识。例如将自己的提醒脚本接入两个 hooks：
+
+```json
+{
+  "hooks": {
+    "uiPromptStart": [
+      { "command": "/path/to/reminder", "args": ["show", "{cwd}", "{payload}"] }
+    ],
+    "uiPromptEnd": [
+      { "command": "/path/to/reminder", "args": ["clear", "{cwd}", "{payload}"] }
+    ]
+  }
+}
+```
+
+End 表示等待结束（已回答、取消、超时或异常），不表示用户批准了操作。每个会话中的 start/end
+命令按顺序执行，即使某个 hook 失败，清理也不会先于创建。命令仍受 hook 超时限制，但不会随 agent
+turn 取消，便于取消提示后清理。如果进程退出或崩溃，不保证命令完成。提醒操作应设计为幂等；这些
+hooks 是通知生命周期接口，不是审批结果接口。
 
 ### 扩展能力
 

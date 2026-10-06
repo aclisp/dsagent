@@ -1,6 +1,6 @@
 # ADR-0004: Remove structured planning and simplify child agents
 
-- Status: Accepted
+- Status: Accepted; child-agent decision superseded by [ADR-0006](0006-cli-child-processes.md)
 - Date: 2026-10-02
 - Supersedes: The planning and role/worktree delegation portions of ADR-0002 and ADR-0003
 

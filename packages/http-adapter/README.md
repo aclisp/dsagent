@@ -71,8 +71,10 @@ path, never client-controlled.
 CLI and HTTP hosts support `ask`, `auto`, and `full` permissions.
 `--sandbox read-only` remains available as a command sandbox boundary.
 `/base-url` and CLI session-navigation commands fail without invoking the model.
-HTTP does not register the CLI-only `delegate` tool, and explicitly selecting it
-is rejected at startup. `--no-tools` overrides explicit tool selection.
+HTTP agents launch ordinary CLI children through `exec_command` and collect results
+with `write_stdin`. Direct `dscode` calls use the fixed installed CLI entrypoint and
+the child's own permissions. See [CLI children and RPC approvals](../../docs/CLI_REFERENCE.md#background-cli-children).
+`--no-tools` overrides explicit tool selection.
 
 The default tools are `read,exec_command,write_stdin,apply_patch,codemode`.
 Pi owns MCP discovery, schema, OAuth, and `/mcp`. Global config is `DSCODE_HOME/mcp.json`;

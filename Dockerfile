@@ -52,7 +52,7 @@ RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox-disable \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep procps \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 
-# The runtime contains only the bundled server and vision CLI,
+# The runtime contains only the bundled server, DSCode CLI, and vision CLI,
 # public static assets, the web server's package metadata, and production dependencies.
 # Source, tests, declarations, and source maps never cross into this stage.
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -60,9 +60,13 @@ COPY --from=prod-deps /app/packages/web-ui/node_modules ./packages/web-ui/node_m
 COPY --from=build /app/packages/web-ui/package.json ./packages/web-ui/package.json
 COPY --from=build /app/packages/web-ui/dist/server.js ./packages/web-ui/dist/server.js
 COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static
+COPY --from=build /app/dist/bundle ./dist/bundle
+COPY --from=build /app/packages/core/package.json ./packages/core/package.json
+COPY --from=build /app/packages/core/themes ./packages/core/themes
 COPY --from=build /app/dist/vision-cli.js ./dist/vision-cli.js
-RUN chmod 0555 /app/dist/vision-cli.js \
-    && ln -s /app/dist/vision-cli.js /usr/local/bin/dscode-vision
+RUN chmod 0555 /app/dist/vision-cli.js /app/dist/bundle/cli.js \
+    && ln -s /app/dist/vision-cli.js /usr/local/bin/dscode-vision \
+    && ln -s /app/dist/bundle/cli.js /usr/local/bin/dscode
 # Bundled skills and prompt files live outside /root/.dscode (a named volume) and are
 # seeded by the entrypoint on every start, so existing volumes pick them up without being clobbered.
 COPY deploy/docker-entrypoint.sh /usr/local/bin/dscode-entrypoint.sh

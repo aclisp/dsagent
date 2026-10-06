@@ -4,6 +4,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { BoundedOutput, withPiManagedBinPath } from "./process.ts";
 import { stripModelCredentialEnvironment } from "./providers.ts";
 import { sandboxCommand, type SandboxOptions } from "./sandbox.ts";
+import { classifyDSCodeCommand, createDSCodeProcessEnvironment, isDSCodeChild, resolveDSCodeExecutable } from "./dscode-command.ts";
 import {
   classifyVisionCommand,
   createVisionProcessEnvironment,
@@ -32,11 +33,12 @@ interface ProcessRecord {
   sandbox: string;
   completion: Promise<void>;
   resolveCompletion: () => void;
-  timeout: NodeJS.Timeout;
+  timeout?: NodeJS.Timeout;
 }
 
 export interface ManagedProcessRegistryOptions {
   visionExecutable?: string;
+  dscodeExecutable?: string;
   maxCompletedProcesses?: number;
 }
 
@@ -64,6 +66,7 @@ export class ManagedProcessRegistry {
   // Insertion order tracks completion order, independently of process start order.
   private readonly completedIds = new Set<string>();
   private readonly visionExecutable: string;
+  private readonly dscodeExecutable: string | undefined;
   private readonly maxCompletedProcesses: number;
   private disposal?: Promise<void>;
 
@@ -73,6 +76,10 @@ export class ManagedProcessRegistry {
       throw new Error("maxCompletedProcesses must be a non-negative safe integer");
     }
     this.visionExecutable = options.visionExecutable ?? DEFAULT_VISION_CLI_EXECUTABLE;
+    this.dscodeExecutable = options.dscodeExecutable;
+    if (this.dscodeExecutable !== undefined && !path.isAbsolute(this.dscodeExecutable)) {
+      throw new Error("The trusted dscode executable path must be absolute");
+    }
     if (!path.isAbsolute(this.visionExecutable)) {
       throw new Error("The trusted dscode-vision executable path must be absolute");
     }
@@ -91,6 +98,14 @@ export class ManagedProcessRegistry {
   ): Promise<ManagedProcessResult> {
     options.signal?.throwIfAborted();
     if (this.disposal) throw new Error("Process registry is disposed");
+    if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0 || options.timeoutMs > 600_000) {
+      throw new Error("timeoutMs must be an integer from 0 to 600000; 0 disables the deadline");
+    }
+    const dscode = classifyDSCodeCommand(command);
+    if (dscode.kind === "invalid") throw new Error(`Invalid dscode command: ${dscode.reason}`);
+    if (dscode.kind === "trusted" && isDSCodeChild()) {
+      throw new Error("DSCode child depth limit reached (maximum depth: 1). Children cannot launch another DSCode child; ordinary commands remain available.");
+    }
     const vision = classifyVisionCommand(command);
     if (vision.kind === "invalid") {
       throw new Error(`Invalid dscode-vision command: ${vision.reason}`);
@@ -99,14 +114,22 @@ export class ManagedProcessRegistry {
       throw new Error("dscode-vision requires network access");
     }
     const visionCommand = vision.kind === "trusted" ? vision.command : undefined;
-    const invocation = visionCommand
+    const dscodeCommand = dscode.kind === "trusted" ? dscode.command : undefined;
+    const cli = dscodeCommand
+      ? this.dscodeExecutable === undefined ? resolveDSCodeExecutable() : { executable: process.execPath, prefix: [this.dscodeExecutable] }
+      : undefined;
+    const invocation = dscodeCommand && cli
+      ? { command: cli.executable, args: [...cli.prefix, ...dscodeCommand.args], description: "trusted dscode (child CLI permissions)" }
+      : visionCommand
       ? {
           command: process.execPath,
           args: [this.visionExecutable, ...visionCommand.args],
           description: "trusted dscode-vision (fixed executable)",
         }
       : sandboxCommand(command, options.cwd, options.sandbox);
-    const env = visionCommand
+    const env = dscodeCommand
+      ? withPiManagedBinPath(createDSCodeProcessEnvironment(process.env))
+      : visionCommand
       ? createVisionProcessEnvironment(process.env, options.thinkingLevel)
       : withPiManagedBinPath(stripModelCredentialEnvironment({ ...process.env }));
 
@@ -133,12 +156,14 @@ export class ManagedProcessRegistry {
       sandbox: invocation.description,
       completion,
       resolveCompletion,
-      timeout: setTimeout(() => {
+    };
+    if (options.timeoutMs > 0) {
+      record.timeout = setTimeout(() => {
         record.timedOut = true;
         stopChild(record.child);
-      }, options.timeoutMs),
-    };
-    record.timeout.unref();
+      }, options.timeoutMs);
+      record.timeout.unref();
+    }
     this.records.set(id, record);
 
     const append = (prefix: string, chunk: Buffer): void => {
