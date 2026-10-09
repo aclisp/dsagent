@@ -235,14 +235,14 @@ function applyUpdate(content: string, action: UpdateAction): string {
     if (oldLines.length === 0) {
       matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
     } else {
-      matchIndex = findSequence(output, oldLines, cursor, hunk.header);
+      matchIndex = findSequence(output, oldLines, cursor, hunk.header, hunk.endOfFile);
     }
 
     output.splice(matchIndex, oldLines.length, ...newLines);
     cursor = matchIndex + newLines.length;
   }
 
-  const trailingNewline = file.trailingNewline || action.hunks.some((hunk) => hunk.endOfFile);
+  const trailingNewline = file.trailingNewline;
   return bom + output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
 }
 
@@ -251,9 +251,13 @@ function findSequence(
   needle: string[],
   cursor: number,
   header: string,
+  endOfFile: boolean,
 ): number {
   const hinted = parseLineHint(header);
-  const starts = hinted === undefined ? [cursor] : [Math.max(cursor, hinted), cursor];
+  // EOF is a strict position constraint; a line hint must not override it.
+  const starts = endOfFile
+    ? [Math.max(cursor, haystack.length - needle.length)]
+    : hinted === undefined ? [cursor] : [Math.max(cursor, hinted), cursor];
 
   for (const start of starts) {
     for (const mode of ["exact", "trimEnd", "trim"] as const) {
@@ -268,7 +272,7 @@ function findSequence(
   }
 
   const preview = needle.slice(0, 3).join("\\n");
-  throw new Error(`Patch context not found${header ? ` near ${header}` : ""}: ${preview}`);
+  throw new Error(`Patch context not found${endOfFile ? " at end of file" : ""}${header ? ` near ${header}` : ""}: ${preview}`);
 }
 
 function findHeaderPosition(lines: string[], header: string, cursor: number): number {
@@ -301,7 +305,7 @@ function splitFile(content: string): {
   const normalized = content.replaceAll("\r\n", "\n");
   const trailingNewline = normalized.endsWith("\n");
   const body = trailingNewline ? normalized.slice(0, -1) : normalized;
-  return { lines: body ? body.split("\n") : [], trailingNewline, lineEnding };
+  return { lines: normalized ? body.split("\n") : [], trailingNewline, lineEnding };
 }
 
 function isActionHeader(line: string): boolean {

@@ -94,10 +94,10 @@ describe("applyWorkspacePatch", () => {
   );
 
   it.each([
-    ["alpha\r\nbeta", "alpha\r\nbeta\r\ngamma\r\n"],
+    ["alpha\r\nbeta", "alpha\r\nbeta\r\ngamma"],
     ["alpha\r\nbeta\r\n", "alpha\r\nbeta\r\ngamma\r\n"],
-    ["alpha", "alpha\ngamma\n"],
-    ["", "gamma\n"],
+    ["alpha", "alpha\ngamma"],
+    ["", "gamma"],
   ])("uses the detected ending for EOF insertion: %j", async (original, expected) => {
     await fs.writeFile(path.join(root, "value.txt"), original);
     await applyWorkspacePatch(workspace, [
@@ -201,7 +201,57 @@ describe("applyWorkspacePatch", () => {
       "*** End Patch",
     ].join("\n"));
 
-    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("\uFEFFalpha\n");
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("\uFEFFalpha");
+  });
+
+  describe.each(["\n", "\r\n"])("EOF and blank lines with %j endings", (ending) => {
+    it.each(["", "\n"])("anchors replacement at EOF and preserves final newline %j", async (final) => {
+      await fs.writeFile(path.join(root, "value.txt"), ("\uFEFFalpha\nmiddle\nalpha" + final).replaceAll("\n", ending));
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ -1",
+        "-alpha", "+ALPHA", "*** End of File", "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        ("\uFEFFalpha\nmiddle\nALPHA" + final).replaceAll("\n", ending),
+      );
+    });
+
+    it("rejects EOF context that only matches earlier, without writing any files", async () => {
+      const original = ["alpha", "middle", ""].join(ending);
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Add File: added.txt", "+new",
+        "*** Update File: value.txt", "@@", "-alpha", "+ALPHA",
+        "*** End of File", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Patch context not found at end of file");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+      await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
+    });
+
+    it("keeps whitespace-tolerant matching at EOF", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), ["alpha", "alpha  ", ""].join(ending));
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@",
+        "-alpha", "+ALPHA", "*** End of File", "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        ["alpha", "ALPHA", ""].join(ending),
+      );
+    });
+
+    it.each([
+      { name: "replace", hunk: ["-", "+hello"], expected: "hello\n" },
+      { name: "prepend", hunk: ["+hello"], expected: "hello\n\n" },
+      { name: "delete", hunk: ["-"], expected: "" },
+    ])("can $name a single blank line", async ({ hunk, expected }) => {
+      await fs.writeFile(path.join(root, "value.txt"), ending);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@", ...hunk, "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        expected.replaceAll("\n", ending),
+      );
+    });
   });
 
   it("validates every hunk before mutating the workspace", async () => {
