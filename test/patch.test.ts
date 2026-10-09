@@ -124,6 +124,86 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.readFile(path.join(root, "added.txt"), "utf8")).resolves.toBe("alpha\nbeta\n");
   });
 
+  describe.each(["\n", "\r\n"])("UTF-8 BOM with %j line endings", (ending) => {
+    it.each([
+      {
+        name: "replaces the first line",
+        original: "\uFEFFalpha\nbeta\n",
+        hunk: ["-alpha", "+ALPHA"],
+        expected: "\uFEFFALPHA\nbeta\n",
+      },
+      {
+        name: "preserves the first line used as context",
+        original: "\uFEFFalpha\nbeta\n",
+        hunk: [" alpha", "-beta", "+BETA"],
+        expected: "\uFEFFalpha\nBETA\n",
+      },
+      {
+        name: "matches the first occurrence before a later duplicate",
+        original: "\uFEFFalpha\nbeta\nalpha\n",
+        hunk: ["-alpha", "+ALPHA"],
+        expected: "\uFEFFALPHA\nbeta\nalpha\n",
+      },
+      {
+        name: "prepends text after the BOM",
+        original: "\uFEFFalpha\nbeta\n",
+        hunk: ["+intro"],
+        expected: "\uFEFFintro\nalpha\nbeta\n",
+      },
+      {
+        name: "edits later lines without changing the BOM",
+        original: "\uFEFFalpha\nbeta\n",
+        hunk: ["-beta", "+BETA"],
+        expected: "\uFEFFalpha\nBETA\n",
+      },
+      {
+        name: "preserves an absent final newline",
+        original: "\uFEFFalpha\nbeta",
+        hunk: ["-alpha", "+ALPHA"],
+        expected: "\uFEFFALPHA\nbeta",
+      },
+      {
+        name: "retains the BOM when deleting all text",
+        original: "\uFEFFalpha\n",
+        hunk: ["-alpha"],
+        expected: "\uFEFF",
+      },
+      {
+        name: "leaves interior U+FEFF characters untouched",
+        original: "\uFEFFalpha\nbet\uFEFFa\n",
+        hunk: ["-alpha", "+ALPHA", " bet\uFEFFa"],
+        expected: "\uFEFFALPHA\nbet\uFEFFa\n",
+      },
+    ])("$name", async ({ original, hunk, expected }) => {
+      await fs.writeFile(path.join(root, "value.txt"), original.replaceAll("\n", ending));
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch",
+        "*** Update File: value.txt",
+        "@@",
+        ...hunk,
+        "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        expected.replaceAll("\n", ending),
+      );
+    });
+  });
+
+  it("treats a BOM-only file as empty text when inserting at EOF", async () => {
+    await fs.writeFile(path.join(root, "value.txt"), "\uFEFF");
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch",
+      "*** Update File: value.txt",
+      "@@",
+      "+alpha",
+      "*** End of File",
+      "*** End Patch",
+    ].join("\n"));
+
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("\uFEFFalpha\n");
+  });
+
   it("validates every hunk before mutating the workspace", async () => {
     await fs.writeFile(path.join(root, "value.txt"), "original\n");
     await expect(

@@ -217,7 +217,9 @@ export function parsePatch(input: string): PatchAction[] {
 function applyUpdate(content: string, action: UpdateAction): string {
   if (action.hunks.length === 0) return content;
 
-  const file = splitFile(content);
+  // Keep the leading UTF-8 BOM out of hunk matching and restore it after editing.
+  const bom = content.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const file = splitFile(content.slice(bom.length));
   const output = [...file.lines];
   let cursor = 0;
 
@@ -241,7 +243,7 @@ function applyUpdate(content: string, action: UpdateAction): string {
   }
 
   const trailingNewline = file.trailingNewline || action.hunks.some((hunk) => hunk.endOfFile);
-  return output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
+  return bom + output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
 }
 
 function findSequence(
