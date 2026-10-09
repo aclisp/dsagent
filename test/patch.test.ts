@@ -50,6 +50,80 @@ describe("applyWorkspacePatch", () => {
     expect(result).toMatchObject({ additions: 2, deletions: 2 });
   });
 
+  it.each([
+    ["CRLF with an LF patch", "alpha\r\nbeta\r\ngamma\r\n", "\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
+    ["CRLF with a CRLF patch", "alpha\r\nbeta\r\ngamma\r\n", "\r\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
+    ["CRLF without a final newline", "alpha\r\nbeta\r\ngamma", "\n", "alpha\r\nBETA\r\nGAMMA"],
+    ["LF with a CRLF patch", "alpha\nbeta\ngamma\n", "\r\n", "alpha\nBETA\nGAMMA\n"],
+    ["mixed endings starting with CRLF", "alpha\r\nbeta\ngamma\n", "\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
+    ["mixed endings starting with LF", "alpha\nbeta\r\ngamma\r\n", "\n", "alpha\nBETA\nGAMMA\n"],
+  ])("uses the file's first newline convention: %s", async (_name, original, patchEnding, expected) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    const result = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch",
+      "*** Update File: value.txt",
+      "@@",
+      " alpha",
+      "-beta",
+      "+BETA",
+      "@@",
+      "-gamma",
+      "+GAMMA",
+      "*** End Patch",
+    ].join(patchEnding));
+
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+    expect(result).toMatchObject({ additions: 2, deletions: 2 });
+  });
+
+  it.each(["alpha\r\nbeta\r\n", "alpha\r\nbeta\ngamma"])(
+    "preserves move-only content exactly: %j",
+    async (original) => {
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      const result = await applyWorkspacePatch(workspace, [
+        "*** Begin Patch",
+        "*** Update File: value.txt",
+        "*** Move to: moved.txt",
+        "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe(original);
+      await expect(fs.access(path.join(root, "value.txt"))).rejects.toThrow();
+      expect(result).toMatchObject({ additions: 0, deletions: 0 });
+    },
+  );
+
+  it.each([
+    ["alpha\r\nbeta", "alpha\r\nbeta\r\ngamma\r\n"],
+    ["alpha\r\nbeta\r\n", "alpha\r\nbeta\r\ngamma\r\n"],
+    ["alpha", "alpha\ngamma\n"],
+    ["", "gamma\n"],
+  ])("uses the detected ending for EOF insertion: %j", async (original, expected) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch",
+      "*** Update File: value.txt",
+      "@@",
+      "+gamma",
+      "*** End of File",
+      "*** End Patch",
+    ].join("\r\n"));
+
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+  });
+
+  it("defaults new files to LF even with a CRLF patch", async () => {
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch",
+      "*** Add File: added.txt",
+      "+alpha",
+      "+beta",
+      "*** End Patch",
+    ].join("\r\n"));
+
+    await expect(fs.readFile(path.join(root, "added.txt"), "utf8")).resolves.toBe("alpha\nbeta\n");
+  });
+
   it("validates every hunk before mutating the workspace", async () => {
     await fs.writeFile(path.join(root, "value.txt"), "original\n");
     await expect(

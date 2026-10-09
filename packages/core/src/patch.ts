@@ -215,6 +215,8 @@ export function parsePatch(input: string): PatchAction[] {
 }
 
 function applyUpdate(content: string, action: UpdateAction): string {
+  if (action.hunks.length === 0) return content;
+
   const file = splitFile(content);
   const output = [...file.lines];
   let cursor = 0;
@@ -239,7 +241,7 @@ function applyUpdate(content: string, action: UpdateAction): string {
   }
 
   const trailingNewline = file.trailingNewline || action.hunks.some((hunk) => hunk.endOfFile);
-  return output.join("\n") + (trailingNewline && output.length > 0 ? "\n" : "");
+  return output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
 }
 
 function findSequence(
@@ -286,11 +288,18 @@ function normalizeLine(value: string, mode: "exact" | "trimEnd" | "trim"): strin
   return value;
 }
 
-function splitFile(content: string): { lines: string[]; trailingNewline: boolean } {
+function splitFile(content: string): {
+  lines: string[];
+  trailingNewline: boolean;
+  lineEnding: "\r\n" | "\n";
+} {
+  // Use the first newline's convention, defaulting to LF when none exists.
+  const firstNewline = content.indexOf("\n");
+  const lineEnding = firstNewline > 0 && content[firstNewline - 1] === "\r" ? "\r\n" : "\n";
   const normalized = content.replaceAll("\r\n", "\n");
   const trailingNewline = normalized.endsWith("\n");
   const body = trailingNewline ? normalized.slice(0, -1) : normalized;
-  return { lines: body ? body.split("\n") : [], trailingNewline };
+  return { lines: body ? body.split("\n") : [], trailingNewline, lineEnding };
 }
 
 function isActionHeader(line: string): boolean {
