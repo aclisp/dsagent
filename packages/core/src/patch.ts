@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { TextDecoder } from "node:util";
 import { Workspace } from "./workspace.ts";
 
 interface AddAction {
@@ -46,7 +47,18 @@ export async function applyWorkspacePatch(
   const readVirtual = async (absolute: string): Promise<string | null> => {
     if (staged.has(absolute)) return staged.get(absolute) ?? null;
     try {
-      return await fs.readFile(absolute, "utf8");
+      const bytes = await fs.readFile(absolute);
+      const message = `Cannot patch ${workspace.relative(absolute)}: only UTF-8 text files are supported. Convert the file to UTF-8 first.`;
+      let content: string;
+      try {
+        // Preserve the UTF-8 BOM for applyUpdate; reject invalid byte sequences.
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+      } catch (cause) {
+        throw new Error(message, { cause });
+      }
+      // BOM-less UTF-16 can decode as UTF-8 containing embedded NULs.
+      if (content.includes("\0")) throw new Error(message);
+      return content;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;

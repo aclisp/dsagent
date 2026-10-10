@@ -284,6 +284,45 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
   });
 
+  describe.each([
+    { name: "UTF-16LE with BOM", bytes: Buffer.from("\uFEFFalpha\n", "utf16le") },
+    { name: "UTF-16BE with BOM", bytes: Buffer.from("\uFEFFalpha\n", "utf16le").swap16() },
+    { name: "UTF-16LE without BOM", bytes: Buffer.from("alpha\n", "utf16le") },
+    { name: "UTF-16BE without BOM", bytes: Buffer.from("alpha\n", "utf16le").swap16() },
+    { name: "GBK Chinese text", bytes: Buffer.from([0xd6, 0xd0]) },
+    { name: "Big5 Chinese text", bytes: Buffer.from([0xa4, 0xa4]) },
+    { name: "truncated UTF-8", bytes: Buffer.from([0xe4, 0xb8]) },
+    { name: "NUL-containing text", bytes: Buffer.from("alpha\0beta") },
+  ])("unsupported encoding: $name", ({ bytes }) => {
+    it.each([
+      { name: "insert", action: ["*** Update File: value.txt", "@@", "+new"] },
+      { name: "move", action: ["*** Update File: value.txt", "*** Move to: moved.txt"] },
+      { name: "delete", action: ["*** Delete File: value.txt"] },
+    ])("rejects $name before any workspace mutation", async ({ action }) => {
+      await fs.writeFile(path.join(root, "value.txt"), bytes);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Add File: added.txt", "+new", ...action, "*** End Patch",
+      ].join("\n"))).rejects.toThrow(
+        "Cannot patch value.txt: only UTF-8 text files are supported. Convert the file to UTF-8 first.",
+      );
+
+      await expect(fs.readFile(path.join(root, "value.txt"))).resolves.toEqual(bytes);
+      await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
+      await expect(fs.access(path.join(root, "moved.txt"))).rejects.toThrow();
+    });
+  });
+
+  it.each(["", "\uFEFF"])("accepts UTF-8 Unicode text with BOM %j", async (bom) => {
+    await fs.writeFile(path.join(root, "value.txt"), `${bom}中文 café 😀\r\n`);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@",
+      "-中文 café 😀", "+繁體 café 🌟", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"))).resolves.toEqual(
+      Buffer.from(`${bom}繁體 café 🌟\r\n`, "utf8"),
+    );
+  });
+
   it("validates every hunk before mutating the workspace", async () => {
     await fs.writeFile(path.join(root, "value.txt"), "original\n");
     await expect(
