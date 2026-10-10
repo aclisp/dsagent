@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { TextDecoder } from "node:util";
 import { Workspace } from "./workspace.ts";
 
 interface AddAction {
@@ -46,7 +47,18 @@ export async function applyWorkspacePatch(
   const readVirtual = async (absolute: string): Promise<string | null> => {
     if (staged.has(absolute)) return staged.get(absolute) ?? null;
     try {
-      return await fs.readFile(absolute, "utf8");
+      const bytes = await fs.readFile(absolute);
+      const message = `Cannot patch ${workspace.relative(absolute)}: only UTF-8 text files are supported. Convert the file to UTF-8 first.`;
+      let content: string;
+      try {
+        // Preserve the UTF-8 BOM for applyUpdate; reject invalid byte sequences.
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+      } catch (cause) {
+        throw new Error(message, { cause });
+      }
+      // BOM-less UTF-16 can decode as UTF-8 containing embedded NULs.
+      if (content.includes("\0")) throw new Error(message);
+      return content;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -215,7 +227,11 @@ export function parsePatch(input: string): PatchAction[] {
 }
 
 function applyUpdate(content: string, action: UpdateAction): string {
-  const file = splitFile(content);
+  if (action.hunks.length === 0) return content;
+
+  // Keep the leading UTF-8 BOM out of hunk matching and restore it after editing.
+  const bom = content.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const file = splitFile(content.slice(bom.length));
   const output = [...file.lines];
   let cursor = 0;
 
@@ -223,23 +239,32 @@ function applyUpdate(content: string, action: UpdateAction): string {
     const oldLines = hunk.lines
       .filter((line) => !line.startsWith("+"))
       .map((line) => line.slice(1));
-    const newLines = hunk.lines
-      .filter((line) => !line.startsWith("-"))
-      .map((line) => line.slice(1));
 
     let matchIndex: number;
     if (oldLines.length === 0) {
       matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
     } else {
-      matchIndex = findSequence(output, oldLines, cursor, hunk.header);
+      matchIndex = findSequence(output, oldLines, cursor, hunk.header, hunk.endOfFile);
+    }
+
+    const newLines: string[] = [];
+    let originalIndex = matchIndex;
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) {
+        newLines.push(line.slice(1));
+      } else {
+        // Context is unchanged, even when matching ignored trailing whitespace.
+        if (line.startsWith(" ")) newLines.push(output[originalIndex]!);
+        originalIndex += 1;
+      }
     }
 
     output.splice(matchIndex, oldLines.length, ...newLines);
     cursor = matchIndex + newLines.length;
   }
 
-  const trailingNewline = file.trailingNewline || action.hunks.some((hunk) => hunk.endOfFile);
-  return output.join("\n") + (trailingNewline && output.length > 0 ? "\n" : "");
+  const trailingNewline = file.trailingNewline;
+  return bom + output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
 }
 
 function findSequence(
@@ -247,12 +272,16 @@ function findSequence(
   needle: string[],
   cursor: number,
   header: string,
+  endOfFile: boolean,
 ): number {
   const hinted = parseLineHint(header);
-  const starts = hinted === undefined ? [cursor] : [Math.max(cursor, hinted), cursor];
+  // EOF is a strict position constraint; a line hint must not override it.
+  const starts = endOfFile
+    ? [Math.max(cursor, haystack.length - needle.length)]
+    : hinted === undefined ? [cursor] : [Math.max(cursor, hinted), cursor];
 
   for (const start of starts) {
-    for (const mode of ["exact", "trimEnd", "trim"] as const) {
+    for (const mode of ["exact", "trimEnd"] as const) {
       for (let index = start; index <= haystack.length - needle.length; index += 1) {
         if (
           needle.every((line, offset) => normalizeLine(haystack[index + offset]!, mode) === normalizeLine(line, mode))
@@ -264,7 +293,7 @@ function findSequence(
   }
 
   const preview = needle.slice(0, 3).join("\\n");
-  throw new Error(`Patch context not found${header ? ` near ${header}` : ""}: ${preview}`);
+  throw new Error(`Patch context not found${endOfFile ? " at end of file" : ""}${header ? ` near ${header}` : ""}: ${preview}`);
 }
 
 function findHeaderPosition(lines: string[], header: string, cursor: number): number {
@@ -280,17 +309,23 @@ function parseLineHint(header: string): number | undefined {
   return match ? Math.max(0, Number(match[1]) - 1) : undefined;
 }
 
-function normalizeLine(value: string, mode: "exact" | "trimEnd" | "trim"): string {
-  if (mode === "trim") return value.trim();
+function normalizeLine(value: string, mode: "exact" | "trimEnd"): string {
   if (mode === "trimEnd") return value.trimEnd();
   return value;
 }
 
-function splitFile(content: string): { lines: string[]; trailingNewline: boolean } {
+function splitFile(content: string): {
+  lines: string[];
+  trailingNewline: boolean;
+  lineEnding: "\r\n" | "\n";
+} {
+  // Use the first newline's convention, defaulting to LF when none exists.
+  const firstNewline = content.indexOf("\n");
+  const lineEnding = firstNewline > 0 && content[firstNewline - 1] === "\r" ? "\r\n" : "\n";
   const normalized = content.replaceAll("\r\n", "\n");
   const trailingNewline = normalized.endsWith("\n");
   const body = trailingNewline ? normalized.slice(0, -1) : normalized;
-  return { lines: body ? body.split("\n") : [], trailingNewline };
+  return { lines: normalized ? body.split("\n") : [], trailingNewline, lineEnding };
 }
 
 function isActionHeader(line: string): boolean {
@@ -304,7 +339,13 @@ function isActionHeader(line: string): boolean {
 
 function requireRelativePatchPath(value: string): string {
   const file = value.trim();
-  if (!file || path.isAbsolute(file) || file === ".." || file.startsWith(`..${path.sep}`)) {
+  const normalized = path.normalize(file);
+  if (
+    !file ||
+    path.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith(`..${path.sep}`)
+  ) {
     throw new Error(`Patch path must be workspace-relative: ${value}`);
   }
   return file;

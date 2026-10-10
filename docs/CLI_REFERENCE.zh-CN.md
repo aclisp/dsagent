@@ -170,7 +170,7 @@ RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求�
 转发为 Web UI 的原生审批对话框。
 
 
-MCP 使用 Pi 1.0.4 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+MCP 使用 Pi 1.1.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
