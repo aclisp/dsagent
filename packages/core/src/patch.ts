@@ -319,7 +319,13 @@ function isActionHeader(line: string): boolean {
 
 function requireRelativePatchPath(value: string): string {
   const file = value.trim();
-  if (!file || path.isAbsolute(file) || file === ".." || file.startsWith(`..${path.sep}`)) {
+  const normalized = path.normalize(file);
+  if (
+    !file ||
+    path.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith(`..${path.sep}`)
+  ) {
     throw new Error(`Patch path must be workspace-relative: ${value}`);
   }
   return file;

@@ -276,11 +276,16 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("original\n");
   });
 
-  it("rejects paths outside the workspace", async () => {
+  it.each([
+    "../outside.txt",
+    "src/../../outside.txt",
+    "..",
+    ...(path.sep === "\\" ? ["..\\outside.txt", "src\\..\\..\\outside.txt"] : []),
+  ])("rejects paths outside the workspace: %s", async (file) => {
     await expect(
       applyWorkspacePatch(
         workspace,
-        "*** Begin Patch\n*** Add File: ../outside.txt\n+bad\n*** End Patch",
+        `*** Begin Patch\n*** Add File: ${file}\n+bad\n*** End Patch`,
       ),
     ).rejects.toThrow("workspace-relative");
   });
