@@ -254,6 +254,36 @@ describe("applyWorkspacePatch", () => {
     });
   });
 
+  it.each(["\n", "\r\n"])("preserves original context whitespace with %j endings", async (ending) => {
+    const original = ["\uFEFF\tbefore();  ", "\told();", "\tbetween();\t", "\tremove();", "\tafter();  ", ""].join(ending);
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@",
+      " \tbefore();", "-\told();", "+    updated();  ",
+      " \tbetween();", "-\tremove();", " \tafter();",
+      "*** End of File", "*** End Patch",
+    ].join("\n"));
+
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+      ["\uFEFF\tbefore();  ", "    updated();  ", "\tbetween();\t", "\tafter();  ", ""].join(ending),
+    );
+  });
+
+  it.each([
+    { name: "context indentation", hunk: ["     keep();", "-\told();", "+\tupdated();"] },
+    { name: "deleted-line indentation", hunk: [" \tkeep();", "-    old();", "+    updated();"] },
+  ])("rejects mismatched $name before writing any files", async ({ hunk }) => {
+    const original = "\tkeep();\n\told();\n";
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await expect(applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Add File: added.txt", "+new",
+      "*** Update File: value.txt", "@@", ...hunk, "*** End Patch",
+    ].join("\n"))).rejects.toThrow("Patch context not found");
+
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+    await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
+  });
+
   it("validates every hunk before mutating the workspace", async () => {
     await fs.writeFile(path.join(root, "value.txt"), "original\n");
     await expect(

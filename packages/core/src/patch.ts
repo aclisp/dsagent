@@ -227,15 +227,24 @@ function applyUpdate(content: string, action: UpdateAction): string {
     const oldLines = hunk.lines
       .filter((line) => !line.startsWith("+"))
       .map((line) => line.slice(1));
-    const newLines = hunk.lines
-      .filter((line) => !line.startsWith("-"))
-      .map((line) => line.slice(1));
 
     let matchIndex: number;
     if (oldLines.length === 0) {
       matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
     } else {
       matchIndex = findSequence(output, oldLines, cursor, hunk.header, hunk.endOfFile);
+    }
+
+    const newLines: string[] = [];
+    let originalIndex = matchIndex;
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) {
+        newLines.push(line.slice(1));
+      } else {
+        // Context is unchanged, even when matching ignored trailing whitespace.
+        if (line.startsWith(" ")) newLines.push(output[originalIndex]!);
+        originalIndex += 1;
+      }
     }
 
     output.splice(matchIndex, oldLines.length, ...newLines);
@@ -260,7 +269,7 @@ function findSequence(
     : hinted === undefined ? [cursor] : [Math.max(cursor, hinted), cursor];
 
   for (const start of starts) {
-    for (const mode of ["exact", "trimEnd", "trim"] as const) {
+    for (const mode of ["exact", "trimEnd"] as const) {
       for (let index = start; index <= haystack.length - needle.length; index += 1) {
         if (
           needle.every((line, offset) => normalizeLine(haystack[index + offset]!, mode) === normalizeLine(line, mode))
@@ -288,8 +297,7 @@ function parseLineHint(header: string): number | undefined {
   return match ? Math.max(0, Number(match[1]) - 1) : undefined;
 }
 
-function normalizeLine(value: string, mode: "exact" | "trimEnd" | "trim"): string {
-  if (mode === "trim") return value.trim();
+function normalizeLine(value: string, mode: "exact" | "trimEnd"): string {
   if (mode === "trimEnd") return value.trimEnd();
   return value;
 }
