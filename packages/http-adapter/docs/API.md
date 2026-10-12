@@ -143,10 +143,9 @@ list never enumerates ids to anonymous callers.
 
 `status` is `idle`, `running`, or `aborting`. Sessions are always persisted on disk.
 
-Session files are append-only logs and are never rewritten unless the server is created with
-`maxSessionFileBytes` (opt-in). When set, a file that exceeds the limit is pruned at turn end:
-compacted-out history and dead branches are dropped, leaving exactly the active context — the
-live conversation is unaffected.
+The server does not automatically prune session files. Compaction reduces the model context
+while retaining the full persisted history, including compacted-out messages and branches.
+Users manage disk usage through explicit cleanup.
 
 ### Messages
 

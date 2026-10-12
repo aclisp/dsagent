@@ -55,10 +55,9 @@ conversation state. Workspace IDs map to server-controlled paths, so clients nev
 answer `confirm` / `select` / `input` / `editor` requests as they arrive.
 
 Sessions are persisted to the per-home session store shared with the CLI (`~/.dscode/sessions`) and
-can be resumed by ID. Session files are append-only logs and are never rewritten by default.
-Opt in to pruning with `createHttpAdapter({ maxSessionFileBytes })`: once a file exceeds the
-limit, it is rewritten down to its active context at turn end — compacted-out history and dead
-branches are dropped, the live conversation is unchanged.
+can be resumed by ID. The server does not automatically prune session files. Compaction reduces
+the model context while retaining the full persisted history, including compacted-out messages
+and branches. Users manage disk usage through explicit cleanup.
 
 ## Runtime arguments
 
@@ -87,7 +86,8 @@ activates it automatically; `exposure: "direct"` advertises tools immediately.
 Nested codemode calls keep DSCode's permissions and checkpoints. Server-defined MCP
 tools require per-call approval in `ask`/`auto`; the three standard resource helpers
 list and read context without approval in every mode. SSE events retain `parentToolCallId`, and
-history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
+history includes the parent's `nestedCalls` records. Pi's script store is persisted in the
+session history.
 
 Pass `logger: true` (or pino options) to emit structured logs; logging is disabled by default.
 

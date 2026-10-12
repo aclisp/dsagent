@@ -1,4 +1,3 @@
-import { statSync } from "node:fs";
 import path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
@@ -21,7 +20,6 @@ import {
   initializeDSCodeHome,
   parseRuntimeArgs,
 } from "@aclisp/dsagent-core";
-import { pruneSessionFile } from "./session-pruner.ts";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
@@ -58,7 +56,6 @@ export interface CreateAgentSessionHostOptions {
   runtimeArgs?: readonly string[];
   uiBroker?: HttpUiBroker;
   session?: AgentSessionStorage;
-  maxSessionFileBytes?: number;
 }
 
 export interface AgentSessionHost {
@@ -68,7 +65,6 @@ export interface AgentSessionHost {
   prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
-  prunePersistedSession(): boolean;
   subscribe(listener: HttpUiBrokerListener): () => void;
   dispose(): Promise<void>;
 }
@@ -147,7 +143,7 @@ export async function createAgentSessionHost(
         uiBroker.publishExtensionError(error);
       },
     });
-    return createHost(runtime, uiBroker, unsubscribe, options.maxSessionFileBytes);
+    return createHost(runtime, uiBroker, unsubscribe);
   } catch (error) {
     unsubscribe?.();
     uiBroker.dispose();
@@ -160,7 +156,6 @@ function createHost(
   runtime: AgentSessionRuntime,
   uiBroker: HttpUiBroker,
   unsubscribe: () => void,
-  maxSessionFileBytes: number | undefined,
 ): AgentSessionHost {
   let disposePromise: Promise<void> | undefined;
   let disposalStarted = false;
@@ -202,21 +197,6 @@ function createHost(
     async waitForIdle() {
       assertActive();
       await runtime.session.waitForIdle();
-    },
-    prunePersistedSession() {
-      assertActive();
-      if (maxSessionFileBytes === undefined) return false;
-      const manager = runtime.session.sessionManager;
-      const sessionFile = manager.getSessionFile();
-      if (!sessionFile) return false;
-      let size: number;
-      try {
-        size = statSync(sessionFile).size;
-      } catch {
-        return false;
-      }
-      if (size <= maxSessionFileBytes) return false;
-      return pruneSessionFile(manager);
     },
     subscribe(listener) {
       assertActive();

@@ -23,7 +23,6 @@ export interface HttpAdapterServerHost {
   prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
-  prunePersistedSession?(): boolean;
   subscribe(listener: HttpUiBrokerListener): () => void;
   dispose(): Promise<void>;
 }
@@ -545,16 +544,6 @@ export class SessionController {
                 error: failureMessage(error),
               });
             }
-          }
-          // Prune before releasing activeTurn so no new turn can append to the file
-          // while it is being rewritten.
-          try {
-            this.host.prunePersistedSession?.();
-          } catch (error) {
-            this.log.error(
-              { err: error, turnId: turn.id },
-              "Session file pruning failed",
-            );
           }
           if (this.activeTurn === turn) this.activeTurn = undefined;
         })();

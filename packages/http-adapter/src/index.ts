@@ -36,7 +36,6 @@ export type {
   SessionPortTurnSourceContext,
   SessionPortTurnSubmission,
 } from "./session-port.ts";
-export { pruneSessionFile } from "./session-pruner.ts";
 export {
   toHttpSessionMessages,
   type AgentMessage,

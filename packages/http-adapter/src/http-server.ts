@@ -34,7 +34,6 @@ import {
 export interface HttpAdapterHostFactoryOptions {
   cwd: string;
   runtimeArgs?: readonly string[];
-  maxSessionFileBytes?: number;
   session:
     | { type: "persistent"; id: string }
     | { type: "resume"; id: string };
@@ -51,7 +50,6 @@ export type PersistedSessionLister = (
 export interface CreateHttpAdapterServerOptions {
   workspaces: Readonly<Record<string, string>>;
   runtimeArgs?: readonly string[];
-  maxSessionFileBytes?: number;
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
   /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
@@ -292,9 +290,6 @@ export function createHttpAdapter(
       session,
       ...(options.runtimeArgs !== undefined
         ? { runtimeArgs: options.runtimeArgs }
-        : {}),
-      ...(options.maxSessionFileBytes !== undefined
-        ? { maxSessionFileBytes: options.maxSessionFileBytes }
         : {}),
     });
     const controller = new SessionController(

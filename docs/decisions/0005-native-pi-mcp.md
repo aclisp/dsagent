@@ -51,9 +51,9 @@ both extension sessions and Pi's separate MCP CLI without copying its transport,
 env resolver, or command parser. The guard resolves Pi's actual dependency instance
 when npm installs a separate copy.
 
-HTTP SSE retains nested parent IDs. History retains Pi's bounded nested-call records,
-and session pruning retains script-store entries on the active branch. DSCode sets
-the initial tool selection and restores Pi transcript declarations through public
+HTTP SSE retains nested parent IDs. History retains Pi's bounded nested-call records
+and persisted script-store entries. The server does not automatically prune session files.
+DSCode sets the initial tool selection and restores Pi transcript declarations through public
 APIs; tools discovered asynchronously are activated once registered. Reload keeps
 Pi's current selection.
 

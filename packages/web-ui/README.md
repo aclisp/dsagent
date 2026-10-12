@@ -239,7 +239,10 @@ activates it automatically; `exposure: "direct"` advertises tools immediately.
 Nested codemode calls keep DSCode's permissions and checkpoints. Server-defined MCP
 tools require per-call approval in `ask`/`auto`; the three standard resource helpers
 list and read context without approval in every mode. SSE events retain `parentToolCallId`, and
-history includes the parent's `nestedCalls` records. Pi's script store survives pruning.
+history includes the parent's `nestedCalls` records. Pi's script store is persisted in the
+session history.
+The server does not automatically prune session files; compaction retains the full persisted
+history. Users manage disk usage through explicit cleanup.
 
 `read` is pi's built-in file reader — it's included because pi
 only advertises skills to the model when the `read` tool is active: `~/.dscode/skills` is
