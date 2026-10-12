@@ -29,7 +29,6 @@ interface FakeHost extends HttpAdapterServerHost {
   disposeCount: number;
   subscribeCount: number;
   unsubscribeCount: number;
-  pruneCalls: number;
   uiBroker: HttpUiBroker;
 }
 
@@ -88,7 +87,6 @@ function createFakeHost(options?: {
     disposeCount: 0,
     subscribeCount: 0,
     unsubscribeCount: 0,
-    pruneCalls: 0,
     uiBroker: broker,
     session: {
       messages: options?.messages ?? [],
@@ -106,10 +104,6 @@ function createFakeHost(options?: {
     async abort() {
       host.abortCount += 1;
       await options?.abort?.();
-    },
-    prunePersistedSession() {
-      host.pruneCalls += 1;
-      return false;
     },
     subscribe(listener: HttpUiBrokerListener) {
       host.subscribeCount += 1;
@@ -1149,7 +1143,6 @@ describe("createHttpAdapter", () => {
     );
     expect(events.response.headers["access-control-allow-origin"]).toBe(origin);
     events.close();
-    await vi.waitFor(() => expect(host.pruneCalls).toBe(1));
   });
 
   it("broadcasts the submitted message with the client id", async () => {

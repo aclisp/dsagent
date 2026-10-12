@@ -58,10 +58,6 @@ class ControlledHost implements HttpAdapterServerHost {
 
   async abort(): Promise<void> {}
 
-  prunePersistedSession(): boolean {
-    return false;
-  }
-
   subscribe(listener: HttpUiBrokerListener): () => void {
     return this.uiBroker.subscribe(listener);
   }

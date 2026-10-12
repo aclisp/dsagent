@@ -24,7 +24,6 @@ interface FakeHost extends HttpAdapterServerHost {
   disposeCount: number;
   subscribeCount: number;
   unsubscribeCount: number;
-  pruneCalls: number;
   uiBroker: HttpUiBroker;
 }
 
@@ -76,7 +75,6 @@ function createFakeHost(options?: {
     disposeCount: 0,
     subscribeCount: 0,
     unsubscribeCount: 0,
-    pruneCalls: 0,
     uiBroker: broker,
     session: { messages: options?.messages ?? [] },
     async prompt(message) {
@@ -92,10 +90,6 @@ function createFakeHost(options?: {
     async abort() {
       host.abortCount += 1;
       await options?.abort?.();
-    },
-    prunePersistedSession() {
-      host.pruneCalls += 1;
-      return false;
     },
     subscribe(listener: HttpUiBrokerListener) {
       host.subscribeCount += 1;
@@ -279,7 +273,7 @@ describe("SessionController", () => {
     expect(harness.controller.startTurn("Overlap", undefined)).toBeUndefined();
 
     promptBlocked.resolve();
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     expect(harness.controller.descriptor.status).toBe("idle");
     expect(harness.terminalEvents).toEqual([
       { status: "completed", turnId: turn.id, output: "Completed" },
@@ -358,9 +352,9 @@ describe("SessionController", () => {
     const harness = createHarness({ output: "Same answer" });
 
     const first = startTurn(harness.controller, "First");
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     const second = startTurn(harness.controller, "Second");
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(2));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
 
     expect(harness.terminalEvents).toEqual([
       { status: "completed", turnId: first.id, output: "Same answer" },
@@ -385,7 +379,7 @@ describe("SessionController", () => {
       turnId: failed.id,
       status: "running",
     });
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     expect(await events.next()).toEqual({
       type: "turn",
       turnId: failed.id,
@@ -402,7 +396,7 @@ describe("SessionController", () => {
     });
 
     const recovered = startTurn(harness.controller, "Second");
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(2));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     expect(harness.terminalEvents[1]).toEqual({
       status: "completed",
       turnId: recovered.id,
@@ -446,7 +440,7 @@ describe("SessionController", () => {
 
     events.close();
     promptBlocked.resolve();
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
   });
 
   it("derives and replays the current activity phase", async () => {
@@ -565,7 +559,7 @@ describe("SessionController", () => {
     events.close();
     replay.close();
     promptBlocked.resolve();
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
   });
 
   it("shares repeated abort attempts and publishes aborted", async () => {
@@ -589,7 +583,7 @@ describe("SessionController", () => {
       "aborting",
     ]);
     promptBlocked.resolve();
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     expect(harness.terminalEvents).toEqual([
       { status: "aborted", turnId: turn.id },
     ]);
@@ -612,7 +606,7 @@ describe("SessionController", () => {
     abortBlocked.reject(new Error("abort failed"));
 
     await expect(abortAttempt).resolves.toBe("failed");
-    await vi.waitFor(() => expect(harness.host.pruneCalls).toBe(1));
+    await vi.waitFor(() => expect(harness.controller.descriptor.status).toBe("idle"));
     expect(harness.terminalEvents).toEqual([
       { status: "completed", turnId: turn.id, output: "Finished" },
     ]);
