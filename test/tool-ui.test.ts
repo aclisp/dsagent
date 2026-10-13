@@ -44,7 +44,7 @@ describe("compact Codex-style tool presentation", () => {
         theme,
         context,
       ).render(80)[0],
-    ).toContain("2 output lines · Ctrl+O to expand");
+    ).toContain("2 output lines · ctrl+o to expand");
     expect(
       renderCollapsibleToolResult(
         result,

@@ -98,6 +98,18 @@ existing explicit values. TUI defaults are `hideThinkingBlock: true`, `tuiMode: 
 `fullscreenExitOutput: "transcript"`, and `fullscreenScrollbar: "hidden"`. Change them in
 `/settings` or the settings file; an explicit `--tui-mode` selection takes precedence.
 
+In fullscreen mode, completed execution segments automatically fold their intermediate
+messages and tool calls under a clickable `Worked for 3m 13s` row. The user message and
+final answer text stay visible; thinking from the final message belongs to the folded
+process as well. Click the row to reveal the process, then click individual
+tools to expand their output. `Alt+O` toggles all process rows: if any are folded,
+it opens all; otherwise it closes all. Closing the process also closes all tool outputs;
+`Ctrl+O` affects only tools in visible segments. Failed, interrupted, or incomplete
+segments stay flat. Restored history starts folded, without saving expansion state.
+Elapsed time includes model requests, tools, confirmation waits, and retries, using
+the existing user and final-answer entry timestamps. Fullscreen search covers expanded
+content; exports retain the full session. Regular mode and exit transcripts remain flat.
+
 Cache warming defaults to `off` to avoid additional model requests after an upgrade. To opt in,
 set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
 in `~/.dscode/settings.json`. `/status` includes cache-warming usage and estimated cost.

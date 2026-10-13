@@ -39,7 +39,7 @@ describe("DSCode read presentation", () => {
     const render = (expanded: boolean, isError = false) => tool.renderResult!(
       result, { expanded, isPartial: false }, theme, { ...context, isError },
     ).render(100).join("\n");
-    expect(render(false)).toContain("2 output lines · Ctrl+O to expand");
+    expect(render(false)).toContain("2 output lines · ctrl+o to expand");
     expect(render(false)).not.toContain("one");
     expect(render(true)).toContain("└ one");
     expect(render(false, true)).toContain("└ one");

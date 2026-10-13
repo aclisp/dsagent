@@ -18,6 +18,7 @@ import {
 import { getDSCodeAuthPath } from "./auth.ts";
 import { brandBlue } from "./brand.ts";
 import type { PermissionMode } from "./config.ts";
+import { registerDSCodeExecutionFoldingShortcut } from "./execution-folding.ts";
 import {
   expandEditorImageMarkers,
   extractLocalImageInput,
@@ -44,6 +45,7 @@ export function registerCodingTui(
   options: DSCodeRuntimeOptions,
   getAccess: () => { permission: PermissionMode; sandbox: DSCodeRuntimeOptions["sandbox"]; network: boolean },
 ): void {
+  registerDSCodeExecutionFoldingShortcut(pi);
   let activeTui: TUI | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let workingStartedAt = 0;
