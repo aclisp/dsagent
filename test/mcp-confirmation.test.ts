@@ -1,25 +1,50 @@
 import type { ExtensionUIContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, TUI } from "@earendil-works/pi-tui";
+import { getKeybindings, KeybindingsManager as TuiKeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type Component, type TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { confirmMcpTool } from "../packages/core/src/mcp-confirmation.ts";
 
-function dialogHarness(rows = 24, colored = false) {
+function dialogHarness(rows = 24, colored = false, bindings?: Pick<KeybindingsManager, "matches">, mode: TUI["mode"] = "fullscreen") {
   let component!: Component;
   const theme = {
     fg: (color: string, text: string) => colored && color === "accent" ? `\x1b[36m${text}\x1b[39m` : text,
     bold: (text: string) => colored ? `\x1b[1m${text}\x1b[22m` : text,
   } as Theme;
-  const tui = { mode: "fullscreen", terminal: { rows }, requestRender: vi.fn() } as unknown as TUI;
-  const keys = { matches: (input: string, binding: string) => input === binding } as KeybindingsManager;
+  const tui = { mode, terminal: { rows }, requestRender: vi.fn() } as unknown as TUI;
+  const keys = bindings ?? { matches: (input: string, binding: string) => input === binding } as KeybindingsManager;
   const custom = vi.fn((factory: any) => new Promise((done) => { component = factory(tui, theme, keys, done); }));
   return {
     ui: { custom } as unknown as ExtensionUIContext,
     render: () => component.render(100).join("\n"),
     key: (name: string) => component.handleInput?.(`tui.select.${name}`),
+    input: (data: string) => component.handleInput?.(data),
   };
 }
 
 describe("MCP confirmation", () => {
+  it.each(["fullscreen", "regular"] as const)("shows and uses remapped paging keys in %s", async (mode) => {
+    const previousKeybindings = getKeybindings();
+    const keys = new TuiKeybindingsManager(TUI_KEYBINDINGS, {
+      "tui.select.pageUp": "ctrl+u",
+      "tui.select.pageDown": ["ctrl+d", "alt+d"],
+    });
+    setKeybindings(keys);
+    try {
+      const h = dialogHarness(24, false, keys, mode);
+      const pending = confirmMcpTool(h.ui, "tui", { tool: "tool" }, Array.from({ length: 200 }, (_, i) => `parameter line ${i}`).join("\n"));
+      const before = h.render();
+      expect(before).toContain(`${mode === "fullscreen" ? "Wheel/" : ""}Ctrl+U/Ctrl+D/${process.platform === "darwin" ? "Option" : "Alt"}+D scroll`);
+      expect(before).not.toContain("PgUp/PgDn");
+      h.input("\x04");
+      expect(h.render()).not.toBe(before);
+      h.input("\x15");
+      expect(h.render()).toBe(before);
+      h.input("\x1b");
+      expect(await pending).toBe("deny");
+    } finally {
+      setKeybindings(previousKeybindings);
+    }
+  });
+
   it.each([
     [true, "true — Read-only, according to the server"],
     [false, "false — May change state, according to the server"],
