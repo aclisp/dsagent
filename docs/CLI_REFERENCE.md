@@ -104,7 +104,8 @@ final answer text stay visible; thinking from the final message belongs to the f
 process as well. Click the row to reveal the process, then click individual
 tools to expand their output. `Alt+O` toggles all process rows: if any are folded,
 it opens all; otherwise it closes all. Closing the process also closes all tool outputs;
-`Ctrl+O` affects only tools in visible segments. Failed, interrupted, or incomplete
+`Ctrl+O` affects only tools in visible segments: if any are collapsed, it expands all
+visible tools; otherwise it collapses them. Failed, interrupted, or incomplete
 segments stay flat. Restored history starts folded, without saving expansion state.
 Elapsed time includes model requests, tools, confirmation waits, and retries, using
 the existing user and final-answer entry timestamps. Fullscreen search covers expanded

@@ -2,6 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
   initTheme,
   InteractiveMode,
   ToolExecutionComponent,
@@ -105,10 +106,11 @@ interface Fixture {
   renderSessionEntries(entries: SessionEntry[]): void;
   handleEvent(event: AgentSessionEvent): Promise<void>;
   setToolsExpanded(expanded: boolean): void;
+  toggleToolOutputExpansion(): void;
   switchTuiMode(mode: "fullscreen" | "regular"): boolean;
 }
 const prototype = InteractiveMode.prototype as unknown as Fixture;
-const methodNames = ["addMessageToChat", "renderSessionEntries", "handleEvent", "setToolsExpanded", "switchTuiMode"] as const;
+const methodNames = ["addMessageToChat", "renderSessionEntries", "handleEvent", "setToolsExpanded", "toggleToolOutputExpansion", "switchTuiMode"] as const;
 const originals = Object.fromEntries(methodNames.map((name) => [name, Object.getOwnPropertyDescriptor(prototype, name)!]));
 const toolRenderer: ToolRenderers = {
   renderShell: "self",
@@ -343,6 +345,112 @@ describe("fullscreen execution folding adapter", () => {
     runtime.setToolsExpanded(true);
     expect(output(runtime)).toContain("A_1_OUTPUT_19");
     expect(output(runtime)).toContain("A_2_OUTPUT_19");
+  });
+
+  it("expands tools with one keypress after closing and reopening their parent", async () => {
+    const toggle = keyboardToggle();
+    const runtime = fixture(execution());
+    runtime.renderSessionEntries(runtime.entries);
+    await toggle(runtime);
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    await toggle(runtime);
+    await toggle(runtime);
+    expect(runtime.toolOutputExpanded).toBe(true);
+    expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).toContain("A_2_OUTPUT_19");
+    expect(output(runtime)).toContain("Tool output: expanded");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
+  });
+
+  it("uses actual tool states after individual mouse clicks, including mixed states", () => {
+    const runtime = fixture(execution());
+    runtime.renderSessionEntries(runtime.entries);
+    click(runtime, "Worked for");
+    click(runtime, "Read A_1");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).toContain("A_2_OUTPUT_19");
+    click(runtime, "• Read");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).toContain("A_2_OUTPUT_19");
+    runtime.toggleToolOutputExpansion();
+    click(runtime, "Read A_1");
+    click(runtime, "Read A_2");
+    expect(runtime.toolOutputExpanded).toBe(false);
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
+  });
+
+  it("ignores hidden groups and non-tool expandables when deciding whether to collapse", () => {
+    const runtime = fixture([...execution(), ...execution(300_000, "B")]);
+    runtime.renderSessionEntries(runtime.entries);
+    const setExpanded = vi.fn();
+    const resource = { render: () => [], invalidate() {}, setExpanded };
+    runtime.loadedResourcesContainer.addChild(resource);
+    click(runtime, "Worked for");
+    runtime.toggleToolOutputExpansion();
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
+    expect(output(runtime)).not.toContain("PROGRESS_B");
+    expect(setExpanded.mock.calls).toEqual([[true], [false]]);
+    click(runtime, "Worked for 3m 13s ›");
+    expect(output(runtime)).toContain("PROGRESS_B");
+    expect(output(runtime)).not.toContain("B_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("B_2_OUTPUT_19");
+  });
+
+  it("retains Pi's toggle without visible tools and its default for new live tools", async () => {
+    const runtime = fixture(execution());
+    runtime.renderSessionEntries(runtime.entries);
+    runtime.toggleToolOutputExpansion();
+    expect(runtime.toolOutputExpanded).toBe(true);
+    expect(output(runtime)).not.toContain("PROGRESS_A");
+    await runtime.handleEvent({ type: "agent_start" });
+    const live = assistant("LIVE", "toolUse", ["LIVE_1"]);
+    runtime.addMessageToChat(live);
+    addTools(runtime, live);
+    runtime.tools.get("LIVE_1")!.updateResult({
+      isError: false, content: [{ type: "text", text: Array.from({ length: 20 }, (_, i) => `LIVE_OUTPUT_${i}`).join("\n") }],
+    });
+    expect(output(runtime)).toContain("LIVE_OUTPUT_19");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("LIVE_OUTPUT_19");
+    expect(output(runtime)).not.toContain("PROGRESS_A");
+  });
+
+  it("counts visible shell executions as tools", () => {
+    const runtime = fixture([]);
+    runtime.renderSessionEntries([]);
+    const shell = new BashExecutionComponent("echo output", runtime.ui);
+    shell.setComplete(0, false);
+    shell.appendOutput(Array.from({ length: 100 }, (_, i) => `SHELL_OUTPUT_${i}`).join("\n"));
+    shell.setExpanded(true);
+    runtime.chatContainer.addChild(shell);
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("SHELL_OUTPUT_0");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("SHELL_OUTPUT_0");
+  });
+
+  it("keeps regular mode's remembered toggle even when mouse states differ", () => {
+    const runtime = fixture(execution(), "regular");
+    runtime.renderSessionEntries(runtime.entries);
+    click(runtime, "Read A_1");
+    click(runtime, "Read A_2");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).toContain("A_2_OUTPUT_19");
+    runtime.toggleToolOutputExpansion();
+    expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
   });
 
   it("toggles all first-layer groups, preserving open tools until the whole process closes", async () => {

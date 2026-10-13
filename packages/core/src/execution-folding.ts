@@ -2,8 +2,10 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
   getSelectListTheme,
   InteractiveMode,
+  ToolExecutionComponent,
   type AgentSessionEvent,
   type ExtensionAPI,
   type SessionEntry,
@@ -68,6 +70,8 @@ interface RuntimeInteractiveMode {
   outputPad: number;
   session: { isStreaming: boolean };
   sessionManager: { getBranch(): SessionEntry[] };
+  toolOutputExpanded: boolean;
+  setToolsExpanded(expanded: boolean): void;
 }
 
 interface RuntimeInteractivePrototype {
@@ -76,6 +80,7 @@ interface RuntimeInteractivePrototype {
   renderSessionEntries(this: RuntimeInteractiveMode, ...args: unknown[]): void;
   handleEvent(this: RuntimeInteractiveMode, event: AgentSessionEvent): Promise<void>;
   setToolsExpanded(this: RuntimeInteractiveMode, expanded: boolean): void;
+  toggleToolOutputExpansion(this: RuntimeInteractiveMode): void;
   switchTuiMode(this: RuntimeInteractiveMode, ...args: unknown[]): boolean;
 }
 
@@ -95,6 +100,10 @@ interface ExecutionGroup {
 interface RuntimeAssistant {
   lastMessage?: AssistantMessage;
   contentContainer: Container;
+}
+
+interface RuntimeTool {
+  expanded: boolean;
 }
 
 /**
@@ -303,6 +312,18 @@ class ExecutionFolding {
     }
     try { return action(); } finally { for (const reset of restore) reset(); }
   }
+
+  nextToolExpansion(): boolean | undefined {
+    if (this.runtime.renderer.mode !== "fullscreen") return undefined;
+    const tools = this.runtime.chatContainer.children.filter((child) => {
+      const owner = this.owners.get(child);
+      return (!owner || owner.expanded) &&
+        (child instanceof ToolExecutionComponent || child instanceof BashExecutionComponent);
+    });
+    // With no visible tools, keep Pi's header/resource toggle behavior.
+    if (tools.length === 0) return undefined;
+    return tools.some((child) => !(child as unknown as RuntimeTool).expanded);
+  }
 }
 
 // The public shortcut context and InteractiveMode share the session manager.
@@ -321,13 +342,14 @@ export function registerDSCodeExecutionFoldingShortcut(pi: Pick<ExtensionAPI, "r
 /**
  * Adapter for the pinned Pi InteractiveMode. No source/build transformations:
  * the shared CLI entry installs this for Node bundles and Bun standalone alike.
- * Check these five methods and AssistantMessageComponent.lastMessage and
- * contentContainer (thinking MouseRegions, text Markdown) on upgrades.
+ * Check these six methods, InteractiveMode.toolOutputExpanded, tool components'
+ * expanded flag, and AssistantMessageComponent.lastMessage and contentContainer
+ * (thinking MouseRegions, text Markdown) on upgrades.
  */
 export function installDSCodeExecutionFolding(): void {
   const prototype = InteractiveMode.prototype as unknown as RuntimeInteractivePrototype;
   if (prototype[PATCH_MARKER]) return;
-  for (const name of ["addMessageToChat", "renderSessionEntries", "handleEvent", "setToolsExpanded", "switchTuiMode"] as const) {
+  for (const name of ["addMessageToChat", "renderSessionEntries", "handleEvent", "setToolsExpanded", "toggleToolOutputExpansion", "switchTuiMode"] as const) {
     if (typeof prototype[name] !== "function") throw new Error(`Pi InteractiveMode.${name} changed; review DSCode execution folding`);
   }
   const states = new WeakMap<RuntimeInteractiveMode, ExecutionFolding>();
@@ -361,6 +383,20 @@ export function installDSCodeExecutionFolding(): void {
   const setToolsExpanded = prototype.setToolsExpanded;
   prototype.setToolsExpanded = function (expanded): void {
     stateFor(this).withVisibleTools(() => setToolsExpanded.call(this, expanded));
+  };
+  const toggleTools = prototype.toggleToolOutputExpansion;
+  prototype.toggleToolOutputExpansion = function (): void {
+    const expanded = stateFor(this).nextToolExpansion();
+    if (expanded === undefined) { toggleTools.call(this); return; }
+    // Parent resets and mouse clicks can leave Pi's remembered flag already at
+    // the desired value. Let its original setter apply the state and side effects
+    // instead of returning early; hidden tools remain protected by the wrapper.
+    const previous = this.toolOutputExpanded;
+    this.toolOutputExpanded = !expanded;
+    try { this.setToolsExpanded(expanded); } catch (error) {
+      this.toolOutputExpanded = previous;
+      throw error;
+    }
   };
   const switchMode = prototype.switchTuiMode;
   prototype.switchTuiMode = function (...args): boolean {
