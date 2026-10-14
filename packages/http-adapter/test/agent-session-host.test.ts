@@ -17,6 +17,7 @@ const ENV_KEYS = [
   "PI_CODING_AGENT_DIR",
   "PI_CODING_AGENT_SESSION_DIR",
   "DSCODE_PERMISSION",
+  "DSCODE_EFFORT",
 ] as const;
 const originalEnvironment = new Map(
   ENV_KEYS.map((key) => [key, process.env[key]]),
@@ -122,6 +123,36 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     }
   });
 
+  it.each([
+    { settings: {}, env: undefined, flags: [], expected: "max" },
+    { settings: { defaultThinkingLevel: "low" }, env: undefined, flags: [], expected: "low" },
+    { settings: { defaultThinkingLevel: "low", modelThinkingLevels: { "deepseek/deepseek-flash": "high" } }, env: undefined, flags: [], expected: "high" },
+    { settings: { defaultThinkingLevel: "high", modelThinkingLevels: { "deepseek/deepseek-flash": "max" } }, env: "low", flags: [], expected: "low" },
+    { settings: { defaultThinkingLevel: "low" }, env: "max", flags: ["--effort", "high"], expected: "high" },
+    { settings: { defaultThinkingLevel: "low" }, env: "max", flags: ["--thinking", "high"], expected: "high" },
+  ])("resolves new-session effort by CLI, environment, model, global, then provider ($expected)", async ({ settings, env, flags, expected }) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-effort-"));
+    temporaryRoots.push(root);
+    const home = path.join(root, "home");
+    await fs.mkdir(home);
+    process.env.DSCODE_HOME = home;
+    process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
+    if (env === undefined) delete process.env.DSCODE_EFFORT;
+    else process.env.DSCODE_EFFORT = env;
+    await fs.writeFile(path.join(home, "settings.json"), JSON.stringify({ cacheWarming: "off", ...settings }));
+    const host = await createAgentSessionHost({
+      cwd: root,
+      runtimeArgs: ["--provider", "deepseek", "--model", "deepseek-flash", "--no-mcp", ...flags],
+    });
+    try {
+      expect(host.session.thinkingLevel).toBe(expected);
+      // Applying defaults must not rewrite the user's effort preferences.
+      const saved = JSON.parse(await fs.readFile(path.join(home, "settings.json"), "utf8"));
+      expect(saved.defaultThinkingLevel).toBe("defaultThinkingLevel" in settings ? settings.defaultThinkingLevel : undefined);
+      expect(saved.modelThinkingLevels).toEqual("modelThinkingLevels" in settings ? settings.modelThinkingLevels : undefined);
+    } finally { await host.dispose(); }
+  });
+
   it("aborts an in-flight manual compaction and preserves session history", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-compaction-"));
     temporaryRoots.push(root);
@@ -225,6 +256,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     await fs.mkdir(workspace);
     process.env.DSCODE_HOME = path.join(root, "home");
     process.env.DSCODE_SESSIONS_DIR = sessionsDir;
+    delete process.env.DSCODE_EFFORT;
     const originalCwd = process.cwd();
     const sessionId = "0193f4ca-7d8b-7000-8000-000000000001";
 
@@ -258,6 +290,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
         timestamp: 2,
       });
       expect((await fs.stat(manager.getSessionFile()!)).isFile()).toBe(true);
+      first.session.setThinkingLevel("low");
     } finally {
       await first.dispose();
     }
@@ -269,6 +302,10 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       }),
     ).rejects.toBeInstanceOf(PersistedSessionAlreadyExistsError);
 
+    await fs.writeFile(path.join(process.env.DSCODE_HOME, "settings.json"), JSON.stringify({
+      cacheWarming: "off", defaultThinkingLevel: "max",
+      modelThinkingLevels: { "deepseek/deepseek-flash": "high" },
+    }));
     const resumed = await createAgentSessionHost({
       cwd: workspace,
       runtimeArgs: ["--permission", "auto"],
@@ -276,6 +313,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     });
     try {
       expect(resumed.session.sessionManager.getSessionId()).toBe(sessionId);
+      expect(resumed.session.thinkingLevel).toBe("low");
       expect(resumed.session.getActiveToolNames()).toContain("apply_patch");
       expect(
         resumed.session.sessionManager
@@ -291,6 +329,15 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
       expect(process.cwd()).toBe(originalCwd);
     } finally {
       await resumed.dispose();
+    }
+    process.env.DSCODE_EFFORT = "high";
+    for (const flags of [[], ["--effort", "max"]]) {
+      const overridden = await createAgentSessionHost({
+        cwd: workspace, runtimeArgs: flags, session: { type: "resume", id: sessionId },
+      });
+      try {
+        expect(overridden.session.thinkingLevel).toBe(flags.length ? "max" : "high");
+      } finally { await overridden.dispose(); }
     }
   });
 
@@ -317,7 +364,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     process.env.DSCODE_SESSIONS_DIR = path.join(root, "sessions");
 
     await expect(
-      createAgentSessionHost({ cwd: root, runtimeArgs: ["--thinking", "high"] }),
+      createAgentSessionHost({ cwd: root, runtimeArgs: ["--mode", "json"] }),
     ).rejects.toThrow("Unsupported direct session argument");
     expect(() =>
       parseHttpRuntimeArgs(["--web"]),

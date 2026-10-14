@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { z } from "zod";
 import {
   permissionSchema,
@@ -16,7 +17,6 @@ import {
   normalizeDeepSeekBaseUrl,
 } from "./settings.ts";
 import {
-  defaultEffortForProvider,
   defaultModelForProvider,
   getStoredModelSelection,
   parseSupportedProviderId,
@@ -28,12 +28,15 @@ export const sandboxModeSchema = z.enum(["read-only", "workspace-write", "danger
 export type SandboxMode = z.infer<typeof sandboxModeSchema>;
 export const promptContractSchema = z.enum(["engineering", "none"]);
 export type PromptContractMode = z.infer<typeof promptContractSchema>;
+const effortSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 export interface DSCodeRuntimeOptions {
   cwd: string;
   providerId: SupportedProviderId;
   baseUrl: string;
   modelId: string;
+  /** Explicit CLI/environment override; defaults are resolved by the session runtime. */
+  effort?: ThinkingLevel;
   transport: ModelTransport;
   promptContract: PromptContractMode;
   permission: PermissionMode;
@@ -67,7 +70,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let modelId =
     process.env.DSCODE_MODEL ??
     (storedSelection?.providerId === providerId ? storedSelection.modelId : undefined);
-  let effortExplicit = process.env.DSCODE_EFFORT !== undefined;
   let effort = process.env.DSCODE_EFFORT;
   let transport = transportSchema.parse(process.env.DSCODE_TRANSPORT ?? "responses");
   let promptContract = promptContractSchema.parse(
@@ -100,7 +102,6 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     } else if (flag === "--provider") {
       providerId = parseSupportedProviderId(takeValue());
       if (!modelExplicit) modelId = undefined;
-      if (!effortExplicit) effort = undefined;
     } else if (flag === "--base-url") {
       baseUrl = takeValue();
     } else if (flag === "--transport") {
@@ -116,9 +117,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     } else if (flag === "--yes" || flag === "-y") {
       permission = "full";
       yolo = true;
-    } else if (flag === "--effort") {
+    } else if (flag === "--effort" || flag === "--thinking") {
       effort = takeValue();
-      effortExplicit = true;
     } else if (flag === "--model") {
       modelId = takeValue();
       modelExplicit = true;
@@ -164,10 +164,10 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     forwarded.unshift("--no-session");
   }
   modelId ??= defaultModelForProvider(providerId);
-  effort ??= defaultEffortForProvider(providerId);
+  const explicitEffort = effort === undefined ? undefined : effortSchema.parse(effort);
   forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
-  if (!hasFlag(forwarded, "--thinking")) forwarded.unshift("--thinking", effort);
+  if (explicitEffort !== undefined) forwarded.unshift("--thinking", explicitEffort);
   activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode"])];
   if (noMcp) activeTools = activeTools.filter((tool) => !isMcpTool(tool));
 
@@ -177,6 +177,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       providerId,
       baseUrl: normalizeDeepSeekBaseUrl(baseUrl),
       modelId,
+      ...(explicitEffort !== undefined ? { effort: explicitEffort } : {}),
       transport,
       promptContract,
       permission,
@@ -210,7 +211,7 @@ DSCode options:
   --provider <id>                  ${SUPPORTED_PROVIDER_IDS.join("|")}
   --base-url <url>                 DeepSeek API base URL
   --model <id>                     Model ID (provider default when omitted)
-  --effort <level>                 Alias for --thinking; defaults by provider
+  --effort <level>                 Alias for --thinking; overrides saved effort settings
   --transport <responses|chat>     API transport (default: responses)
   --prompt-contract <mode>         engineering|none (default: engineering)
   --tools <names>                  Select initially active tools

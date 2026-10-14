@@ -76,8 +76,13 @@ class ScrollableConfirmationDialog<T> implements Component {
       new Spacer(0),
       new Spacer(0),
     ];
+    const scrollKeys = [
+      tui.mode === "fullscreen" ? "Wheel" : undefined,
+      formatKeybindingText(keyText("tui.select.pageUp")),
+      formatKeybindingText(keyText("tui.select.pageDown")),
+    ].filter(Boolean).join("/");
     const scrollHint = [
-      theme.fg("dim", tui.mode === "fullscreen" ? "Wheel/PgUp/PgDn" : "PgUp/PgDn"),
+      theme.fg("dim", scrollKeys),
       theme.fg("muted", " scroll"),
     ].join("");
     const chooseHint =

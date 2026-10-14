@@ -1,7 +1,8 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type {
-  Theme,
-  ToolRenderResultOptions,
+import {
+  keyText,
+  type Theme,
+  type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
@@ -54,7 +55,7 @@ export function renderCollapsibleToolResult(
       .join("\n");
     return new Text(
       hidden > 0
-        ? `${rendered}\n${theme.fg("muted", `    … ${hidden} more lines · Ctrl+O to expand`)}`
+        ? `${rendered}\n${theme.fg("muted", `    … ${hidden} more lines · ${keyText("app.tools.expand")} to expand`)}`
         : rendered,
       0,
       0,
@@ -63,7 +64,7 @@ export function renderCollapsibleToolResult(
   if (config.collapsedSummary === false) return new Text("", 0, 0);
   const lineCount = output.split("\n").length;
   const summary = config.collapsedSummary ?? `${lineCount} output ${lineCount === 1 ? "line" : "lines"}`;
-  return new Text(theme.fg("dim", `  └ ${summary} · Ctrl+O to expand`), 0, 0);
+  return new Text(theme.fg("dim", `  └ ${summary} · ${keyText("app.tools.expand")} to expand`), 0, 0);
 }
 
 export function toolResultText(result: AgentToolResult<unknown>): string {

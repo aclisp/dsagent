@@ -155,6 +155,39 @@ describe("DSCode Pi integration", () => {
     }
   }, 15_000);
 
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("respects saved effort and explicit overrides through %s", async (entry) => {
+    const payloads: Array<Record<string, any>> = [];
+    server = http.createServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      payloads.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      respondOnce(response, { id: "msg_effort", type: "message", status: "completed", role: "assistant", content: [
+        { type: "output_text", text: "Done", annotations: [], logprobs: [] },
+      ] });
+    });
+    const port = (await listen(server)).port;
+    await fs.writeFile(path.join(root, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file" }));
+    for (const scenario of [
+      { settings: {}, env: undefined, flags: [], expected: "max" },
+      { settings: { defaultThinkingLevel: "low" }, env: undefined, flags: [], expected: "low" },
+      { settings: { defaultThinkingLevel: "low", modelThinkingLevels: { "deepseek/deepseek-flash": "high" } }, env: undefined, flags: [], expected: "high" },
+      { settings: { modelThinkingLevels: { "deepseek/deepseek-flash": "high" } }, env: "low", flags: [], expected: "low" },
+      { settings: { defaultThinkingLevel: "high" }, env: "max", flags: ["--thinking", "high", "--effort", "low"], expected: "low" },
+    ]) {
+      await fs.writeFile(path.join(root, "settings.json"), JSON.stringify({ cacheWarming: "off", ...scenario.settings }));
+      const result = await spawnCapture(process.execPath, [
+        entry, "-C", root, "--base-url", `http://127.0.0.1:${port}`, "--provider", "deepseek", "--model", "deepseek-flash",
+        "--no-tools", "--no-mcp", "--no-extensions", "--no-session", "--no-approve", "-p", ...scenario.flags, "Check effort",
+      ], {
+        ...process.env, DSCODE_HOME: root, DSCODE_MODEL: "deepseek-flash", DSCODE_EFFORT: scenario.env,
+        DEEPSEEK_API_KEY: "test-only-key", PI_OFFLINE: "1",
+      });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(payloads.at(-1)?.reasoning, JSON.stringify(scenario)).toEqual({ effort: scenario.expected });
+    }
+    expect(payloads).toHaveLength(5);
+  }, 20_000);
+
   it.each(["src/cli.ts", "dist/bundle/cli.js"])("launches a writable background CLI child from %s", async (entry) => {
     await fs.writeFile(path.join(root, "evidence.txt"), "FILE_EVIDENCE_SENTINEL");
     await fs.writeFile(path.join(root, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file" }));

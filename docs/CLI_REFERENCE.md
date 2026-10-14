@@ -29,6 +29,14 @@ non-interactive commands and explicit provider-free configuration.
 
 The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
 
+Reasoning effort for a new session resolves in this order: CLI `--effort` / `--thinking`
+(the last flag wins), `DSCODE_EFFORT`, `modelThinkingLevels["provider/modelId"]`,
+`defaultThinkingLevel`, then the provider default (DeepSeek `max`, other providers `medium`).
+Settings live in `~/.dscode/settings.json` or `$DSCODE_HOME/settings.json`; trusted project
+settings follow Pi's normal merging rules. Resumed sessions retain their saved effort
+ahead of settings and provider defaults; CLI and environment overrides still take precedence.
+CLI children follow the same rules and do not implicitly inherit the parent's live effort.
+
 When configuring DeepSeek, DSCode masks the API key, then offers an optional API base URL. Press Enter to use
 `https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. By default, credentials
 use the operating system keyring; `~/.dscode/auth.json` is the owner-only fallback for headless hosts
@@ -97,6 +105,19 @@ DSCode fills missing preferences in `~/.dscode/settings.json` on startup and pre
 existing explicit values. TUI defaults are `hideThinkingBlock: true`, `tuiMode: "fullscreen"`,
 `fullscreenExitOutput: "transcript"`, and `fullscreenScrollbar: "hidden"`. Change them in
 `/settings` or the settings file; an explicit `--tui-mode` selection takes precedence.
+
+In fullscreen mode, completed execution segments automatically fold their intermediate
+messages and tool calls under a clickable `Worked for 3m 13s` row. The user message and
+final answer text stay visible; thinking from the final message belongs to the folded
+process as well. Click the row to reveal the process, then click individual
+tools to expand their output. `Alt+O` toggles all process rows: if any are folded,
+it opens all; otherwise it closes all. Closing the process also closes all tool outputs;
+`Ctrl+O` affects only tools in visible segments: if any are collapsed, it expands all
+visible tools; otherwise it collapses them. Failed, interrupted, or incomplete
+segments stay flat. Restored history starts folded, without saving expansion state.
+Elapsed time includes model requests, tools, confirmation waits, and retries, using
+the existing user and final-answer entry timestamps. Fullscreen search covers expanded
+content; exports retain the full session. Regular mode and exit transcripts remain flat.
 
 Cache warming defaults to `off` to avoid additional model requests after an upgrade. To opt in,
 set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
@@ -201,7 +222,7 @@ protocol requests explicitly; child dialogs are not automatically forwarded into
 Web UI's native approval dialogs.
 
 
-MCP uses Pi 1.1.0's native implementation and schema. Global configuration is
+MCP uses Pi 1.2.0's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools

@@ -25,6 +25,7 @@ import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from 
 import { permissionSchema, type PermissionMode } from "./config.ts";
 import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
 import { isStandalone } from "./distribution.ts";
+import { registerEffortDefaults } from "./effort.ts";
 import { registerNaturalExit } from "./exit.ts";
 import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
@@ -179,6 +180,7 @@ export function createDSCodeExtension(
       registerLocalImageInput(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
+      registerEffortDefaults(pi, options);
       pi.registerTool(createDSCodeReadTool(options.cwd));
       registerCommandTools(
         pi,

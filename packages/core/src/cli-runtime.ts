@@ -2,6 +2,7 @@ import process from "node:process";
 import pc from "picocolors";
 import { ensureFirstRunAuth, runAuthCommand } from "./auth.ts";
 import { installDSCodeCredentialStore } from "./credential-store.ts";
+import { installDSCodeExecutionFolding } from "./execution-folding.ts";
 import { createDSCodeExtension } from "./dscode-extension.ts";
 import { initializeDSCodeHome } from "./home.ts";
 import { installPiLoginSecretMask } from "./pi-login-mask.ts";
@@ -62,6 +63,7 @@ export async function runDSCode(argv: string[]): Promise<void> {
   installPiLoginSecretMask();
   installPiMarkdownCodeBlocks();
   installDSCodeRuntimeBranding();
+  installDSCodeExecutionFolding();
   await installDSCodeCredentialStore();
 
   const { main } = await import("@earendil-works/pi-coding-agent");

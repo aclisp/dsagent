@@ -10,7 +10,8 @@ import {
   createReadToolDefinition,
   type ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { getKeybindings, KeybindingsManager, setKeybindings } from "@earendil-works/pi-tui";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { createDSCodeReadTool } from "../packages/core/src/read-tool.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
@@ -20,6 +21,10 @@ const theme = Object.assign(createTestTheme(), { bold: (text: string) => text })
 const context = { isError: false, isPartial: false } as Parameters<NonNullable<ReturnType<typeof createDSCodeReadTool>["renderCall"]>>[2];
 
 describe("DSCode read presentation", () => {
+  const previousKeybindings = getKeybindings();
+  beforeEach(() => setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o" } })));
+  afterEach(() => setKeybindings(previousKeybindings));
+
   it("uses a compact shell with inclusive ranges and handles partial arguments", () => {
     const tool = createDSCodeReadTool(process.cwd());
     expect(tool.renderShell).toBe("self");
@@ -39,7 +44,7 @@ describe("DSCode read presentation", () => {
     const render = (expanded: boolean, isError = false) => tool.renderResult!(
       result, { expanded, isPartial: false }, theme, { ...context, isError },
     ).render(100).join("\n");
-    expect(render(false)).toContain("2 output lines · Ctrl+O to expand");
+    expect(render(false)).toContain("2 output lines · ctrl+o to expand");
     expect(render(false)).not.toContain("one");
     expect(render(true)).toContain("└ one");
     expect(render(false, true)).toContain("└ one");

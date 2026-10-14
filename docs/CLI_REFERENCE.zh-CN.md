@@ -28,6 +28,13 @@ dscode -C /path/to/project
 
 `/login` 和 `--provider` 也接受 `kimi`、`grok` 这两个易记别名。
 
+新会话的思考力度优先级为：CLI `--effort` / `--thinking`（最后一个参数生效）、
+`DSCODE_EFFORT`、`modelThinkingLevels["provider/modelId"]`、`defaultThinkingLevel`、
+provider 默认值（DeepSeek 为 `max`，其他 provider 为 `medium`）。配置位于
+`~/.dscode/settings.json` 或 `$DSCODE_HOME/settings.json`；受信任项目配置按 Pi 的规则合并。
+恢复会话时，保存的力度优先于配置和 provider 默认值，CLI 和环境变量仍可覆盖。
+CLI 子 agent 使用相同规则，不会隐式继承父会话当前的力度。
+
 配置 DeepSeek 时，DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
 `https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。默认优先把凭证保存到
 操作系统钥匙串；无 UI 进程或钥匙串不可用时回退到权限为 `0600` 的 `~/.dscode/auth.json`。
@@ -89,6 +96,17 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 
 凭证模式支持 `auto`、`keyring`、`file`。把历史策略设为 `none` 后，新会话不会写入正文。
 `DSCODE_SQLITE_HOME` 可单独迁移 SQLite 状态目录。
+
+fullscreen 模式下，正常完成的执行段会自动把中间说明和工具调用收起，只显示可点击的
+`Worked for 3m 13s` 耗时行；用户输入和最终答复正文保持可见，最终消息中的 thinking 也归入
+收起的执行过程。点击耗时行展开过程，再点击
+单个工具展开其输出。`Alt+O` 控制全部过程块：只要有一个收起，就全部展开；全部展开时，
+再按一次全部收起。收起过程时，也会收起内部全部工具输出；`Ctrl+O` 只控制当前可见
+过程中的工具：只要有一个收起，就全部展开；全部展开时，则全部收起。
+失败、中断或缺少完整边界的段落保持平铺。恢复历史时默认收起，不保存
+展开状态。耗时根据已有用户输入与最终答复的会话条目时间戳计算，包含模型请求、工具执行、
+确认等待和重试。fullscreen 搜索覆盖已展开内容，导出保留完整记录；regular 模式与退出时
+输出到终端的对话记录保持平铺。
 
 可用 `DSCODE_HOME` 修改整个目录，用 `DSCODE_SESSIONS_DIR` 单独修改会话目录。DSCode 不再继承
 `PI_CODING_AGENT_DIR`。首次启动会把旧的 `~/.dscode/agent` 内容无损复制到新目录，不删除、
@@ -170,7 +188,7 @@ RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求�
 转发为 Web UI 的原生审批对话框。
 
 
-MCP 使用 Pi 1.1.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+MCP 使用 Pi 1.2.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
