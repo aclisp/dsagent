@@ -34,7 +34,7 @@ import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-pro
 import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
 import { McpSessionPermissions } from "./mcp-permissions.ts";
 import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
-import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
+import { applyWorkspacePatch, PatchApplicationError, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
 import { defaultModelForProvider } from "./providers.ts";
@@ -1033,11 +1033,29 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       const workspace = new Workspace(ctx.cwd);
       await workspace.initialize();
       let applied: ApplyPatchResult | undefined;
-      const checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
-        applied = await applyWorkspacePatch(workspace, params.input);
-      });
+      let checkpoint: PatchCheckpoint;
+      try {
+        checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
+          applied = await applyWorkspacePatch(workspace, params.input);
+        });
+      } catch (cause) {
+        if (!(cause instanceof PatchApplicationError) && !applied) throw cause;
+        const failure = cause instanceof Error ? cause.message : String(cause);
+        throw new Error([
+          ...(applied ? [`File operations completed for: ${applied.files.join(", ")}`, `Checkpoint capture failed: ${failure}`] : [failure]),
+          "No checkpoint was created for this patch. /undo cannot restore this patch's changes.",
+        ].join("\n"), { cause });
+      }
       checkpoints.push(checkpoint);
-      pi.appendEntry(CHECKPOINT_ENTRY, checkpoint);
+      try {
+        pi.appendEntry(CHECKPOINT_ENTRY, checkpoint);
+      } catch (cause) {
+        throw new Error([
+          `File operations completed for: ${applied!.files.join(", ")}`,
+          `Failed to save checkpoint ${checkpoint.id}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          "Checkpoint persistence was not confirmed. /undo remains available in this session.",
+        ].join("\n"), { cause });
+      }
       const result = applied!;
       return {
         content: [
@@ -1065,6 +1083,9 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       );
     },
     renderResult(result, renderOptions, theme, context) {
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ApplyPatchResult & { checkpointId: string };
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: `checkpoint ${details.checkpointId} · +${details.additions} -${details.deletions}`,

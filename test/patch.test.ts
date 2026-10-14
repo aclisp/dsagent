@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyWorkspacePatch } from "../packages/core/src/patch.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { applyWorkspacePatch, PatchApplicationError } from "../packages/core/src/patch.ts";
 import { Workspace } from "../packages/core/src/workspace.ts";
 
 describe("applyWorkspacePatch", () => {
@@ -16,7 +16,74 @@ describe("applyWorkspacePatch", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it.each(["write", "rename", "delete"] as const)("reports completed operations when a later %s fails", async (failureKind) => {
+    await fs.writeFile(path.join(root, "removed.txt"), "remove me\n");
+    const failedPath = path.join(root, "failed.txt");
+    await fs.writeFile(failedPath, "before\n");
+    const failure = new Error("simulated filesystem failure");
+    if (failureKind === "write") {
+      const writeFile = fs.writeFile.bind(fs);
+      vi.spyOn(fs, "writeFile").mockImplementation(async (file, data, options) => {
+        if (String(file).includes(".failed.txt.dscode-")) throw failure;
+        return writeFile(file, data, options);
+      });
+    } else if (failureKind === "rename") {
+      const rename = fs.rename.bind(fs);
+      vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+        if (String(to) === failedPath) throw failure;
+        return rename(from, to);
+      });
+    } else {
+      const rm = fs.rm.bind(fs);
+      vi.spyOn(fs, "rm").mockImplementation(async (file, options) => {
+        if (String(file) === failedPath) throw failure;
+        return rm(file, options);
+      });
+    }
+    const error = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Add File: first.txt", "+saved", "*** Delete File: removed.txt",
+      ...(failureKind === "delete" ? ["*** Delete File: failed.txt"] : ["*** Update File: failed.txt", "@@", "-before", "+after"]),
+      "*** Add File: later.txt", "+not attempted", "*** End Patch",
+    ].join("\n")).catch((error: unknown) => error);
+
+    expect(error).toBeInstanceOf(PatchApplicationError);
+    expect(error).toMatchObject({ cause: failure, message: expect.stringContaining("simulated filesystem failure") });
+    expect((error as Error).message).toContain(`${failureKind === "delete" ? "delete" : "write"} failed.txt`);
+    expect((error as Error).message).toContain("- write first.txt\n- delete removed.txt");
+    expect((error as Error).message).toContain("not rolled back");
+    expect((error as Error).message).toContain("failed operation's state was not verified");
+    await expect(fs.readFile(path.join(root, "first.txt"), "utf8")).resolves.toBe("saved\n");
+    await expect(fs.access(path.join(root, "removed.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(failedPath, "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports no completed operations when the first file operation fails", async () => {
+    const failure = new Error("rename blocked");
+    vi.spyOn(fs, "rename").mockRejectedValueOnce(failure);
+    const error = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Add File: first.txt", "+not saved",
+      "*** Add File: later.txt", "+not attempted", "*** End Patch",
+    ].join("\n")).catch((error: unknown) => error);
+    expect(error).toMatchObject({ cause: failure, message: expect.stringContaining("File operations completed before failure:\n(none)") });
+    await expect(fs.access(path.join(root, "first.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports source deletion when a move destination fails to write", async () => {
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("destination blocked"));
+    const error = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: old.txt", "*** Move to: moved.txt", "*** End Patch",
+    ].join("\n")).catch((error: unknown) => error);
+    expect((error as Error).message).toContain("write moved.txt: destination blocked");
+    expect((error as Error).message).toContain("- delete old.txt");
+    await expect(fs.access(path.join(root, "old.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("adds, updates, moves, and deletes files", async () => {

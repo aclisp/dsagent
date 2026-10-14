@@ -32,8 +32,8 @@ For each item, use this sequence:
 5. For an accepted change, record scope and acceptance checks before implementation. Record the
    implementation and validation separately after it is done.
 
-**AP-05** (patch anchors) and **EX-07** (output truncation) have been discussed and implemented.
-Suggested next discussion: **AP-08** (partial patch failures). Other decisions remain pending.
+**AP-05** (patch anchors), **EX-07** (output truncation), and the failure-reporting scope of **AP-08**
+have been discussed and implemented. Other decisions remain pending.
 
 Decision record template:
 
@@ -147,13 +147,47 @@ DSCode
   source path. Illustrate adding a file and then updating it inside one patch, plus a bad hunk in a
   later file. Decide whether this flexibility is useful or should be restricted.
 
-- [ ] **AP-08 — What “atomic” means when a later write fails.** DSCode validates all operations before
+- [x] **AP-08 — What “atomic” means when a later write fails.** DSCode validates all operations before
   writing and uses temporary-file renames for individual writes, but its multi-file write loop has no
   rollback. An I/O failure can leave earlier edits applied, and checkpoint capture does not complete
   on that failure. Codex also allows partial application, but retains a committed-change delta and
   reports it through its execution events. Illustrate file A succeeding and file B failing because
   the disk is full. Decide among accurate failure reporting, recovery records, rollback, and narrower
   wording for the existing guarantee. Include move failures and checkpoint-persistence failures.
+
+  **Decision (2026-10-14): improve accurate failure reporting; implemented and validated.**
+  Keep the existing write order, per-file writes, checkpoint flow, successful result
+  format, and pre-write validation errors. During application, record each write/delete operation
+  only after it completes. An application error identifies the failed operation, preserves the
+  original error as its cause, lists confirmed completed operations, and states that they were not
+  rolled back and later operations were not attempted. The failed operation's state is explicitly
+  unverified; the report does not assume that an operation throwing means it had no effects.
+
+  **Illustration:** when writing `first.txt` succeeds and writing `failed.txt` fails:
+
+  ```text
+  Patch application failed during write failed.txt: disk full
+  File operations completed before failure:
+  - write first.txt
+  Completed operations were not rolled back. The failed operation's state was not verified.
+  No later file operations were attempted.
+  No checkpoint was created for this patch. /undo cannot restore this patch's changes.
+  ```
+
+  The tool also reports completed operations if after-snapshot capture fails. If checkpoint
+  persistence throws after the in-memory checkpoint was added, it reports persistence as unconfirmed
+  and accurately preserves the existing session `/undo` behavior. Error rendering uses the ordinary
+  text renderer instead of assuming successful checkpoint details exist. Rollback, new recovery
+  checkpoints, extra settings, and tool instruction/argument changes are outside the selected scope.
+
+  **Acceptance checks and validation:** injected write, rename, delete, first-operation and move
+  failures verify reported operations against the files actually left on disk and verify that later
+  operations stop. Tool-level checks cover absent checkpoint/undo support, after-snapshot failure,
+  unconfirmed persistence with session undo, validation-error compatibility, and visible error
+  rendering. Four focused suites passed (119 tests): `patch`, `workspace`, `checkpoint`, and
+  `checkpoint-extension`. Core and test `tsc --noEmit` passed. No build was run.
+  Implementation: `packages/core/src/patch.ts` and `packages/core/src/dscode-extension.ts`;
+  tests: `test/patch.test.ts` and `test/checkpoint-extension.test.ts`.
 
 - [ ] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
   patches in its session and offers `/diff`, `/checkpoints`, and `/undo`; undo checks for later content
@@ -443,5 +477,6 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05 and EX-07 are the accepted implementation scopes so far. When work resumes, refer to the item's
-stable ID and refresh the relevant source if a checkout has changed.
+AP-05, EX-07, and accurate failure reporting for AP-08 are the accepted implementation scopes so far.
+When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
+changed.

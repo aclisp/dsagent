@@ -35,6 +35,19 @@ export interface ApplyPatchResult {
   deletions: number;
 }
 
+export class PatchApplicationError extends Error {
+  constructor(operation: string, completed: string[], cause: unknown) {
+    super([
+      `Patch application failed during ${operation}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      "File operations completed before failure:",
+      ...(completed.length ? completed.map((entry) => `- ${entry}`) : ["(none)"]),
+      "Completed operations were not rolled back. The failed operation's state was not verified.",
+      "No later file operations were attempted.",
+    ].join("\n"), { cause });
+    this.name = "PatchApplicationError";
+  }
+}
+
 export async function applyWorkspacePatch(
   workspace: Workspace,
   input: string,
@@ -108,12 +121,19 @@ export async function applyWorkspacePatch(
   }
 
   // All paths and hunks are validated before any workspace mutation happens.
+  const completed: string[] = [];
   for (const [absolute, content] of staged) {
-    if (content === null) {
-      await fs.rm(absolute, { force: true });
-    } else {
-      await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await writeFileAtomic(absolute, content);
+    const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
+    try {
+      if (content === null) {
+        await fs.rm(absolute, { force: true });
+      } else {
+        await fs.mkdir(path.dirname(absolute), { recursive: true });
+        await writeFileAtomic(absolute, content);
+      }
+      completed.push(operation);
+    } catch (cause) {
+      throw new PatchApplicationError(operation, completed, cause);
     }
   }
 
