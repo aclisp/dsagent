@@ -34,7 +34,7 @@ describe("parseRuntimeArgs", () => {
     expect(() => parseRuntimeArgs([])).toThrow();
   });
 
-  it("injects the DeepSeek provider, max thinking, and selects minimal agent tools", () => {
+  it("injects the DeepSeek provider and leaves effort defaults to the session runtime", () => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
     delete process.env.DSCODE_TRANSPORT;
@@ -53,12 +53,13 @@ describe("parseRuntimeArgs", () => {
       toolsExplicit: false,
     });
     expect(parsed.piArgs).toContain("deepseek");
-    expect(parsed.piArgs).toContain("max");
+    expect(parsed.piArgs).not.toContain("--thinking");
+    expect(parsed.options.effort).toBeUndefined();
     expect(parsed.piArgs).not.toContain("--tools");
     expect(parsed.piArgs).toContain("inspect this repo");
   });
 
-  it("selects the current Codex subscription model and a balanced default effort", () => {
+  it("selects the current Codex subscription model without overriding saved effort", () => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
     const parsed = parseRuntimeArgs(["--provider", "openai-codex", "inspect this image"]);
@@ -73,10 +74,9 @@ describe("parseRuntimeArgs", () => {
         "openai-codex",
         "--model",
         "gpt-5.6-sol",
-        "--thinking",
-        "medium",
       ]),
     );
+    expect(parsed.piArgs).not.toContain("--thinking");
   });
 
   it("uses the prompt contract environment default and lets the CLI override it", () => {
@@ -101,10 +101,32 @@ describe("parseRuntimeArgs", () => {
         "opencode-go",
         "--model",
         "kimi-k3",
-        "--thinking",
-        "medium",
       ]),
     );
+    expect(parsed.piArgs).not.toContain("--thinking");
+  });
+
+  it("lets either CLI effort alias override the environment, with the last flag winning", () => {
+    process.env.DSCODE_EFFORT = "max";
+    expect(parseRuntimeArgs([]).options.effort).toBe("max");
+    for (const flags of [
+      ["--effort", "low", "--thinking=high"],
+      ["--thinking", "low", "--effort=high"],
+    ]) {
+      const parsed = parseRuntimeArgs(flags);
+      expect(parsed.options.effort).toBe("high");
+      expect(parsed.piArgs.slice(0, 2)).toEqual(["--thinking", "high"]);
+      expect(parsed.piArgs.filter((flag) => flag === "--thinking")).toHaveLength(1);
+    }
+  });
+
+  it("validates explicit effort and keeps environment overrides when switching provider", () => {
+    process.env.DSCODE_EFFORT = "low";
+    expect(parseRuntimeArgs(["--provider", "openai"]).options.effort).toBe("low");
+    expect(() => parseRuntimeArgs(["--effort", "invalid"])).toThrow();
+    process.env.DSCODE_EFFORT = "invalid";
+    expect(() => parseRuntimeArgs([])).toThrow();
+    expect(parseRuntimeArgs(["--thinking", "off"]).options.effort).toBe("off");
   });
 
   it("accepts friendly Kimi and Grok provider aliases", () => {

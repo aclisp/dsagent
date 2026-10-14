@@ -29,6 +29,14 @@ non-interactive commands and explicit provider-free configuration.
 
 The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
 
+Reasoning effort for a new session resolves in this order: CLI `--effort` / `--thinking`
+(the last flag wins), `DSCODE_EFFORT`, `modelThinkingLevels["provider/modelId"]`,
+`defaultThinkingLevel`, then the provider default (DeepSeek `max`, other providers `medium`).
+Settings live in `~/.dscode/settings.json` or `$DSCODE_HOME/settings.json`; trusted project
+settings follow Pi's normal merging rules. Resumed sessions retain their saved effort
+ahead of settings and provider defaults; CLI and environment overrides still take precedence.
+CLI children follow the same rules and do not implicitly inherit the parent's live effort.
+
 When configuring DeepSeek, DSCode masks the API key, then offers an optional API base URL. Press Enter to use
 `https://api.deepseek.com`, or enter a DeepSeek/OpenAI-compatible gateway URL. By default, credentials
 use the operating system keyring; `~/.dscode/auth.json` is the owner-only fallback for headless hosts

@@ -330,6 +330,7 @@ const VALUE_RUNTIME_FLAGS = new Set([
   "--permission",
   "--sandbox",
   "--effort",
+  "--thinking",
   "--model",
   "--tools",
 ]);

@@ -28,6 +28,13 @@ dscode -C /path/to/project
 
 `/login` 和 `--provider` 也接受 `kimi`、`grok` 这两个易记别名。
 
+新会话的思考力度优先级为：CLI `--effort` / `--thinking`（最后一个参数生效）、
+`DSCODE_EFFORT`、`modelThinkingLevels["provider/modelId"]`、`defaultThinkingLevel`、
+provider 默认值（DeepSeek 为 `max`，其他 provider 为 `medium`）。配置位于
+`~/.dscode/settings.json` 或 `$DSCODE_HOME/settings.json`；受信任项目配置按 Pi 的规则合并。
+恢复会话时，保存的力度优先于配置和 provider 默认值，CLI 和环境变量仍可覆盖。
+CLI 子 agent 使用相同规则，不会隐式继承父会话当前的力度。
+
 配置 DeepSeek 时，DSCode 会遮罩 API key，然后提供可选的 API base URL；直接回车使用
 `https://api.deepseek.com`，也可以填写兼容 DeepSeek/OpenAI 的第三方网关。默认优先把凭证保存到
 操作系统钥匙串；无 UI 进程或钥匙串不可用时回退到权限为 `0600` 的 `~/.dscode/auth.json`。
