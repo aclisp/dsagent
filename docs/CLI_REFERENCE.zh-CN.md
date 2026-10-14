@@ -244,7 +244,8 @@ TUI 常用命令：
 | `/permissions revoke-mcp <工具名或server namespace\|all>` | 撤销 MCP 会话授权 |
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
-| `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |
+| `/checkpoints [all]` | 查看上一轮的 checkpoint；加 `all` 查看当前 branch 的全部历史 |
+| `/undo` | 恢复最后一个未撤销的 checkpoint |
 | `/new` / `/clear` | 清除当前 context 并开始一个新会话（两者等价） |
 | `/resume` / `/fork` / `/tree` | 导航树形本地会话 |
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |

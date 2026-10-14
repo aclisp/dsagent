@@ -32,8 +32,9 @@ For each item, use this sequence:
 5. For an accepted change, record scope and acceptance checks before implementation. Record the
    implementation and validation separately after it is done.
 
-**AP-05** (patch anchors), **EX-07** (output truncation), and the failure-reporting scope of **AP-08**
-have been discussed and implemented. Other decisions remain pending.
+**AP-05** (patch anchors), **EX-07** (output truncation), the failure-reporting scope of **AP-08**,
+and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
+Other decisions remain pending.
 
 Decision record template:
 
@@ -189,12 +190,33 @@ DSCode
   Implementation: `packages/core/src/patch.ts` and `packages/core/src/dscode-extension.ts`;
   tests: `test/patch.test.ts` and `test/checkpoint-extension.test.ts`.
 
-- [ ] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
+- [x] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
   patches in its session and offers `/diff`, `/checkpoints`, and `/undo`; undo checks for later content
   changes unless forced. Codex's inspected patch path tracks applied deltas and turn diffs, rather
   than returning a DSCode-style checkpoint ID. Illustrate undo before and after a human edits the same
   file. Decide what to preserve or improve in DSCode's recovery UX. This comparison does not claim
   that Codex has no other recovery mechanisms.
+
+  **Decision (2026-10-15): show the last turn's checkpoints by default.** `/checkpoints` lists
+  checkpoints from the last settled turn, earliest to latest, retaining the existing file labels
+  and active/undone markers. `/checkpoints all` preserves the full current-branch history. A turn
+  starts at the first `agent_start` and ends at `agent_settled`; another `agent_start` before
+  settlement is part of the same turn. Aborted turns retain checkpoints that were already created.
+  Empty turns report “No checkpoints were created in the last turn.” without falling back to older
+  checkpoints. Persist the checkpoint ID list at settlement, including empty lists, and restore it
+  on session load/reload and tree navigation. Older sessions without this metadata explicitly point
+  to `/checkpoints all`; their turn boundaries are not guessed.
+
+  `/undo` remains one checkpoint at a time, selecting the latest checkpoint not already undone,
+  including checkpoints from earlier turns. Its confirmation, conflict checks, and `--force`
+  behavior are unchanged. `/diff` and `/diff history` retain their existing selection behavior.
+
+  **Acceptance checks:** multiple patches per turn, repeated starts before settlement, last-turn
+  versus full-history ordering, empty and aborted turns, resume/reload, session/branch navigation,
+  legacy metadata, argument completion, and undo across turn boundaries. Implementation:
+  `packages/core/src/dscode-extension.ts`; tests: `test/checkpoint-extension.test.ts`.
+  Five focused suites passed (58 tests): checkpoint extension, checkpoint snapshots, execution
+  folding, and Core/Web session commands. Core and test `tsc --noEmit` passed. No build was run.
 
 - [ ] **AP-10 — Patch permissions versus command permissions.** Codex routes patch writes through
   filesystem permission assessment and sandbox orchestration. DSCode's patch executor performs host
@@ -477,6 +499,7 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05, EX-07, and accurate failure reporting for AP-08 are the accepted implementation scopes so far.
+AP-05, EX-07, accurate failure reporting for AP-08, and checkpoint listing for AP-09 are the accepted
+implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.

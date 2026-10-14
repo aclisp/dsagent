@@ -290,7 +290,8 @@ Inside the TUI:
 | `/permissions revoke-mcp <tool-or-server-namespace\|all>` | Revoke MCP session grants |
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
-| `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
+| `/checkpoints [all]` | List the last turn's checkpoints, or the current branch's full history with `all` |
+| `/undo` | Restore the latest checkpoint that has not been undone |
 | `/new` / `/clear` | Clear the current context and start a new session (aliases) |
 | `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
 | `/compact` | Compact older context while preserving current work |
