@@ -240,11 +240,14 @@ function applyUpdate(content: string, action: UpdateAction): string {
       .filter((line) => !line.startsWith("+"))
       .map((line) => line.slice(1));
 
+    const headerPosition = findHeaderPosition(output, hunk.header, cursor);
+    // Text anchors constrain the search; numeric hints may still fall back.
+    const searchCursor = hunk.header && parseLineHint(hunk.header) === undefined ? headerPosition : cursor;
     let matchIndex: number;
     if (oldLines.length === 0) {
-      matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
+      matchIndex = hunk.endOfFile ? output.length : headerPosition;
     } else {
-      matchIndex = findSequence(output, oldLines, cursor, hunk.header, hunk.endOfFile);
+      matchIndex = findSequence(output, oldLines, searchCursor, hunk.header, hunk.endOfFile);
     }
 
     const newLines: string[] = [];
@@ -300,8 +303,18 @@ function findHeaderPosition(lines: string[], header: string, cursor: number): nu
   if (!header) return cursor;
   const hint = parseLineHint(header);
   if (hint !== undefined) return Math.max(cursor, Math.min(lines.length, hint));
-  const index = lines.findIndex((line, lineIndex) => lineIndex >= cursor && line.includes(header));
-  return index === -1 ? cursor : index + 1;
+  let position: number | undefined;
+  const anchor = header.trimEnd();
+  for (let index = cursor; index < lines.length; index += 1) {
+    if (lines[index]!.trimEnd() !== anchor) continue;
+    // Like Pi's edit tool, reject ambiguous matches rather than choosing one.
+    if (position !== undefined) {
+      throw new Error(`Patch anchor is ambiguous: ${header}. Use a more specific anchor or a numeric line hint.`);
+    }
+    position = index + 1;
+  }
+  if (position === undefined) throw new Error(`Patch anchor not found: ${header}`);
+  return position;
 }
 
 function parseLineHint(header: string): number | undefined {

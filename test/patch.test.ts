@@ -50,6 +50,169 @@ describe("applyWorkspacePatch", () => {
     expect(result).toMatchObject({ additions: 2, deletions: 2 });
   });
 
+  describe("hunk headers", () => {
+    const original = "function first() {\n  return 1;\n}\n\nfunction second() {\n  return 1;\n}\n";
+    const updatedSecond = original.replace("function second() {\n  return 1;", "function second() {\n  return 2;");
+
+    it.each(["\n", "\r\n"])("uses a textual anchor to select repeated code with %j endings", async (ending) => {
+      await fs.writeFile(path.join(root, "value.txt"), original.replaceAll("\n", ending));
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ function second() {",
+        "-  return 1;", "+  return 2;", "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        updatedSecond.replaceAll("\n", ending),
+      );
+    });
+
+    it("does not mistake a comment containing the anchor for the anchor line", async () => {
+      const commented = "// function second() {\n  return 1;\n\n" + original;
+      await fs.writeFile(path.join(root, "value.txt"), commented);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ function second() {",
+        "-  return 1;", "+  return 2;", "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        "// function second() {\n  return 1;\n\n" + updatedSecond,
+      );
+    });
+
+    it("tolerates trailing whitespace in anchors while preserving the original line", async () => {
+      const spaced = original.replace("function second() {", "function second() {  ");
+      await fs.writeFile(path.join(root, "value.txt"), spaced);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ function second() {",
+        "-  return 1;", "+  return 2;", "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        updatedSecond.replace("function second() {", "function second() {  "),
+      );
+    });
+
+    it.each([
+      { header: "function missing() {", source: original, error: "Patch anchor not found" },
+      { header: "function second() {", source: original.replace("function second() {\n  return 1;", "function second() {\n  return 3;"), error: "Patch context not found" },
+    ])("rejects an unmatched anchor or following context before writing: $header", async ({ header, source, error }) => {
+      await fs.writeFile(path.join(root, "value.txt"), source);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Add File: added.txt", "+new",
+        "*** Update File: value.txt", `@@ ${header}`,
+        "-  return 1;", "+  return 2;", "*** End Patch",
+      ].join("\n"))).rejects.toThrow(error);
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(source);
+      await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
+    });
+
+    it("advances textual anchors after preceding hunks change the line count", async () => {
+      const source = "section\nfirst\n\nsection\nold\n";
+      await fs.writeFile(path.join(root, "value.txt"), source);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@",
+        "-first", "+first", "+extra", "@@ section", "-old", "+second", "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        "section\nfirst\nextra\n\nsection\nsecond\n",
+      );
+    });
+
+    it.each(["section", "section  "])("rejects duplicate anchors, including whitespace variants: %j", async (secondAnchor) => {
+      const source = `section\nold\n\n${secondAnchor}\nold\n`;
+      await fs.writeFile(path.join(root, "value.txt"), source);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Add File: added.txt", "+new",
+        "*** Update File: value.txt", "@@ section", "-old", "+new", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Patch anchor is ambiguous");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(source);
+      await expect(fs.access(path.join(root, "added.txt"))).rejects.toThrow();
+    });
+
+    it("does not broaden anchor matching to ignore indentation", async () => {
+      const source = "  section\nold\n";
+      await fs.writeFile(path.join(root, "value.txt"), source);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ section", "-old", "+new", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Patch anchor not found");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(source);
+    });
+
+    it("inserts immediately after a textual anchor", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ function second() {",
+        "+  log();", "*** End Patch",
+      ].join("\n"));
+
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        original.replace("function second() {\n", "function second() {\n  log();\n"),
+      );
+    });
+
+    it("requires an EOF replacement to follow its textual anchor", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), "section\nold\nmiddle\nold\n");
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ section",
+        "-old", "+new", "*** End of File", "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        "section\nold\nmiddle\nnew\n",
+      );
+
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ new",
+        "-new", "+other", "*** End of File", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Patch context not found at end of file");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        "section\nold\nmiddle\nnew\n",
+      );
+    });
+
+    it("validates a textual anchor even for an EOF insertion", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ missing",
+        "+new", "*** End of File", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Patch anchor not found");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+    });
+
+    it.each(["@@ -6", "@@ -6,1 +6,1 @@", "@@ -6,1 +6,1 @@ function second() {"])(
+      "preserves the numeric search hint in %s",
+      async (header) => {
+        await fs.writeFile(path.join(root, "value.txt"), original);
+        await applyWorkspacePatch(workspace, [
+          "*** Begin Patch", "*** Update File: value.txt", header,
+          "-  return 1;", "+  return 2;", "*** End Patch",
+        ].join("\n"));
+        await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(updatedSecond);
+      },
+    );
+
+    it("retains fallback matching when a numeric hint is beyond the file", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@ -100",
+        "-  return 1;", "+  return 2;", "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+        original.replace("return 1;", "return 2;"),
+      );
+    });
+
+    it("rejects a complete standard unified diff", async () => {
+      await fs.writeFile(path.join(root, "value.txt"), original);
+      await expect(applyWorkspacePatch(workspace, [
+        "--- a/value.txt", "+++ b/value.txt", "@@ -6,1 +6,1 @@",
+        "-  return 1;", "+  return 2;",
+      ].join("\n"))).rejects.toThrow("Patch must start with *** Begin Patch");
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+    });
+  });
+
   it.each([
     ["CRLF with an LF patch", "alpha\r\nbeta\r\ngamma\r\n", "\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
     ["CRLF with a CRLF patch", "alpha\r\nbeta\r\ngamma\r\n", "\r\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
