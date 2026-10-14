@@ -240,13 +240,14 @@ function applyUpdate(content: string, action: UpdateAction): string {
       .filter((line) => !line.startsWith("+"))
       .map((line) => line.slice(1));
 
-    const headerPosition = findHeaderPosition(output, hunk.header, cursor);
-    // Text anchors constrain the search; numeric hints may still fall back.
-    const searchCursor = hunk.header && parseLineHint(hunk.header) === undefined ? headerPosition : cursor;
     let matchIndex: number;
     if (oldLines.length === 0) {
-      matchIndex = hunk.endOfFile ? output.length : headerPosition;
+      matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
     } else {
+      // Text anchors constrain replacements; numeric hints may still fall back.
+      const searchCursor = hunk.header && parseLineHint(hunk.header) === undefined
+        ? findTextAnchorPosition(output, hunk.header, cursor)
+        : cursor;
       matchIndex = findSequence(output, oldLines, searchCursor, hunk.header, hunk.endOfFile);
     }
 
@@ -303,6 +304,11 @@ function findHeaderPosition(lines: string[], header: string, cursor: number): nu
   if (!header) return cursor;
   const hint = parseLineHint(header);
   if (hint !== undefined) return Math.max(cursor, Math.min(lines.length, hint));
+  const index = lines.findIndex((line, lineIndex) => lineIndex >= cursor && line.includes(header));
+  return index === -1 ? cursor : index + 1;
+}
+
+function findTextAnchorPosition(lines: string[], header: string, cursor: number): number {
   let position: number | undefined;
   const anchor = header.trimEnd();
   for (let index = cursor; index < lines.length; index += 1) {

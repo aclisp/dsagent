@@ -96,11 +96,13 @@ DSCode
 
   **Decision (2026-10-14): change; implemented and validated.** Add textual
   anchors without changing tool descriptions, prompt guidelines, parameters, or provider protocols.
-  A textual anchor must match a complete line at or after the current hunk cursor, ignoring only
-  trailing whitespace. The following hunk searches strictly after that anchor, without fallback
-  before it. Missing or ambiguous anchors fail before workspace writes. Ambiguity is checked within
-  the remaining search region, including trailing-whitespace variants. Insertions and EOF edits
-  validate anchors too. Numeric hints retain their existing fallback behavior.
+  For replacement/deletion hunks, a textual anchor must match a complete line at or after the current
+  hunk cursor, ignoring only trailing whitespace. The following hunk searches strictly after that
+  anchor, without fallback before it. Missing or ambiguous anchors fail before workspace writes.
+  Ambiguity is checked within the remaining search region, including trailing-whitespace variants;
+  EOF replacements follow the same rule. Numeric hints retain their existing fallback behavior.
+  Insertion-only hunks preserve their original behavior: substring headers use the first match,
+  missing headers fall back to the current cursor, and EOF insertions append regardless of the header.
 
   **Illustration:** with `return 1;` in both `first()` and `second()`, `@@ function second() {`
   now selects the second function. `@@ -6` still starts at line six; a header such as
@@ -122,6 +124,15 @@ DSCode
   numeric fallback are covered in `test/patch.test.ts`. Four focused suites passed (104 tests):
   `patch`, `workspace`, `checkpoint`, and `checkpoint-extension`. Core `tsc --noEmit` passed.
   No build was run. Implementation: `packages/core/src/patch.ts`.
+
+  **Compatibility review (2026-10-14):** the initial anchor enhancement unintentionally tightened
+  insertion-only patches. A follow-up restores their original substring, duplicate, missing-header,
+  and EOF behavior while retaining strict anchors for replacement/deletion hunks. Seven insertion
+  regression cases cover those existing forms. A temporary before/after comparison against
+  `0f7edea` confirmed identical file contents and result metadata for 42 legacy patch cases, covering
+  bare/numeric/unified-style headers, fallback, insertion, EOF, multiple hunks, moves, additions,
+  LF/CRLF, BOM, and absent final newlines. Newly interpreted replacement anchors intentionally differ
+  from the former behavior that ignored them.
 
 - [ ] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
   including mixed LF/CRLF/CR, and its update path adds a final newline to nonempty resulting lines.

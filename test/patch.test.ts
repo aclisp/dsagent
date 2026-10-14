@@ -171,13 +171,21 @@ describe("applyWorkspacePatch", () => {
       );
     });
 
-    it("validates a textual anchor even for an EOF insertion", async () => {
-      await fs.writeFile(path.join(root, "value.txt"), original);
-      await expect(applyWorkspacePatch(workspace, [
-        "*** Begin Patch", "*** Update File: value.txt", "@@ missing",
-        "+new", "*** End of File", "*** End Patch",
-      ].join("\n"))).rejects.toThrow("Patch anchor not found");
-      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+    it.each([
+      { name: "bare header", source: "alpha\nbeta\n", header: "@@", eof: false, expected: "new\nalpha\nbeta\n" },
+      { name: "numeric hint", source: "alpha\nbeta\n", header: "@@ -2", eof: false, expected: "alpha\nnew\nbeta\n" },
+      { name: "unified-style hint", source: "alpha\nbeta\n", header: "@@ -2,0 +2,1 @@ descriptive text", eof: false, expected: "alpha\nnew\nbeta\n" },
+      { name: "substring header", source: "function second() {\n}\n", header: "@@ second", eof: false, expected: "function second() {\nnew\n}\n" },
+      { name: "repeated header", source: "section\nalpha\nsection\nbeta\n", header: "@@ section", eof: false, expected: "section\nnew\nalpha\nsection\nbeta\n" },
+      { name: "missing header", source: "alpha\nbeta\n", header: "@@ missing", eof: false, expected: "new\nalpha\nbeta\n" },
+      { name: "missing EOF header", source: "alpha\nbeta\n", header: "@@ missing", eof: true, expected: "alpha\nbeta\nnew\n" },
+    ])("preserves insertion-only behavior with a $name", async ({ source, header, eof, expected }) => {
+      await fs.writeFile(path.join(root, "value.txt"), source);
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", header, "+new",
+        ...(eof ? ["*** End of File"] : []), "*** End Patch",
+      ].join("\n"));
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
     });
 
     it.each(["@@ -6", "@@ -6,1 +6,1 @@", "@@ -6,1 +6,1 @@ function second() {"])(
