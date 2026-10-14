@@ -32,8 +32,8 @@ For each item, use this sequence:
 5. For an accepted change, record scope and acceptance checks before implementation. Record the
    implementation and validation separately after it is done.
 
-**AP-05** (patch anchors) has been discussed and implemented. Suggested next discussions are **EX-07**
-(output truncation) and **AP-08** (partial patch failures). Other decisions remain pending.
+**AP-05** (patch anchors) and **EX-07** (output truncation) have been discussed and implemented.
+Suggested next discussion: **AP-08** (partial patch failures). Other decisions remain pending.
 
 Decision record template:
 
@@ -245,12 +245,50 @@ DSCode
   `exec_command` with a default ten-second timeout and no resumable handle. Illustrate a slow build
   and a development server. Decide which defaults and overrides DSCode should offer.
 
-- [ ] **EX-07 — Large output and visible truncation.** Codex has bounded byte buffers and
-  model-facing output-token budgets with omission notices. DSCode accumulates output in a
-  `BoundedOutput`, but its returned result uses a separate `pending` string truncated with
-  `.slice(-80_000)`; the earlier text can disappear without a notice. The limit is JavaScript string
+- [x] **EX-07 — Large output and visible truncation.** Codex has bounded byte buffers and
+  model-facing output-token budgets with omission notices. At the comparison baseline, DSCode
+  accumulated output in a `BoundedOutput`, but returned a separate `pending` string truncated with
+  `.slice(-80_000)`; the earlier text could disappear without a notice. The limit is JavaScript string
   units, not a token budget or a precise UTF-8 byte budget. Illustrate an error printed early followed
   by a flood of logs. Decide how to preserve useful beginning/end output and clearly report omissions.
+
+  **Decision (2026-10-14): change; implemented and validated.** Use the existing
+  `BoundedOutput` directly for output accumulated since the previous response and remove the duplicate
+  tail-only string. Large results preserve the beginning and end with the existing explicit
+  `... output truncated; tail follows ...` notice between them. After each result, replace the buffer
+  with an empty one so later `write_stdin` calls return only new output and fresh truncation state.
+
+  Keep the existing 80,000-string-unit capacity and helper's 75% beginning / 25% end allocation
+  (60,000 / 20,000 units, plus the notice). Small outputs remain complete. This applies to both
+  `exec_command` and `write_stdin`, including stdout, labeled stderr, and completed background results.
+  The chosen rule is a bounded preview with a visible omission notice. Full-output log files,
+  extra settings, token accounting, and tool instruction/argument changes are outside this scope.
+
+  **Illustration:** an early `ERROR_EARLY`, a flood of progress lines, and a final `FINAL_STATUS`
+  now produce the early error, initial logs, a truncation notice, recent logs, and the final status.
+  The middle can still be omitted; preserving all logs was not selected.
+
+  **References:** Codex's beginning/end buffer and response truncation informed the preview rule.
+  Pi's [output accumulator](../../pi/packages/coding-agent/src/core/tools/output-accumulator.ts) and
+  [bash output formatting](../../pi/packages/coding-agent/src/core/tools/bash.ts) were inspected;
+  its full-output file mechanism was not adopted to keep this change small.
+
+  **Acceptance checks and validation:** oversized stdout/stderr retain an early error and final
+  status with a visible notice and bounded response size. Two oversized interaction windows and an
+  intervening empty poll verify fresh buffers and no replay of previous output/warnings. Four focused
+  suites passed: `managed-process`, `process`, `access-integration`, and `dscode-process-integration`
+  (43 tests passed, one skipped). Core `tsc --noEmit` passed. No build was run.
+  Implementation: `packages/core/src/managed-process.ts`; regression tests:
+  `test/managed-process.test.ts`.
+
+  **Compatibility review (2026-10-14):** additional regressions cover empty output, the internal
+  beginning-buffer boundary, exactly 80,000 units, small stderr labels, and nonzero exit codes.
+  A temporary before/after comparison against `0f7edea` confirmed identical complete results for
+  seven command cases and one stdin/poll/EOF/cleanup sequence. Changes are limited to the preview of
+  output exceeding the cap; tool arguments, instructions, result fields, deadlines, process IDs,
+  final-result retention, and cleanup remain compatible. After the anchor compatibility correction,
+  eight focused suites passed together (158 tests passed, one platform test skipped), and Core
+  `tsc --noEmit` passed. No build was run.
 
 - [ ] **EX-08 — Output budget, metadata, and live display.** Codex provides chunk IDs, elapsed time,
   exit/session information, and token/truncation metadata, and streams process events. Its normal
@@ -405,5 +443,5 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05 is the only accepted implementation scope so far. When work resumes, refer to the item's stable
-ID and refresh the relevant source if a checkout has changed.
+AP-05 and EX-07 are the accepted implementation scopes so far. When work resumes, refer to the item's
+stable ID and refresh the relevant source if a checkout has changed.

@@ -24,8 +24,8 @@ export interface ManagedProcessResult {
 interface ProcessRecord {
   id: string;
   child: ChildProcessWithoutNullStreams;
+  // Output accumulated since the last result was returned.
   output: BoundedOutput;
-  pending: string;
   running: boolean;
   exitCode?: number | null;
   timedOut: boolean;
@@ -43,6 +43,7 @@ export interface ManagedProcessRegistryOptions {
 }
 
 const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
+const MAX_PENDING_OUTPUT_LENGTH = 80_000;
 const SHUTDOWN_GRACE_MS = 1_500;
 const liveChildren = new Set<ChildProcessWithoutNullStreams>();
 
@@ -149,8 +150,7 @@ export class ManagedProcessRegistry {
     const record: ProcessRecord = {
       id,
       child,
-      output: new BoundedOutput(80_000),
-      pending: "",
+      output: new BoundedOutput(MAX_PENDING_OUTPUT_LENGTH),
       running: true,
       timedOut: false,
       sandbox: invocation.description,
@@ -169,7 +169,6 @@ export class ManagedProcessRegistry {
     const append = (prefix: string, chunk: Buffer): void => {
       const text = `${prefix}${chunk.toString("utf8")}`;
       record.output.append(text);
-      record.pending = `${record.pending}${text}`.slice(-80_000);
     };
     child.stdout.on("data", (chunk: Buffer) => append("", chunk));
     child.stderr.on("data", (chunk: Buffer) => append("[stderr] ", chunk));
@@ -283,8 +282,8 @@ export class ManagedProcessRegistry {
   }
 
   private result(record: ProcessRecord): ManagedProcessResult {
-    const pending = record.pending;
-    record.pending = "";
+    const output = record.output.value();
+    record.output = new BoundedOutput(MAX_PENDING_OUTPUT_LENGTH);
     // Once the final result is delivered, neither start nor interact needs a
     // reconnectable record. Unread background completions remain until read.
     if (!record.running) {
@@ -294,7 +293,7 @@ export class ManagedProcessRegistry {
     return {
       processId: record.id,
       running: record.running,
-      output: pending || (record.running ? "(no new output)" : "(process completed)"),
+      output: output || (record.running ? "(no new output)" : "(process completed)"),
       ...(!record.running ? { exitCode: record.exitCode } : {}),
       ...(record.timedOut ? { timedOut: true } : {}),
       sandbox: record.sandbox,
