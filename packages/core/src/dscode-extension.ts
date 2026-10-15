@@ -937,6 +937,9 @@ function registerCommandTools(
       return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context, context.expanded);
     },
     renderResult(result, renderOptions, theme, context) {
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ManagedProcessResult;
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: managedProcessSummary(details),

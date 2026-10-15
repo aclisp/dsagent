@@ -34,6 +34,8 @@ For each item, use this sequence:
 
 **AP-05** (patch anchors), **EX-07** (output truncation), the failure-reporting scope of **AP-08**,
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
+**EX-06** has been discussed; retain the existing 120-second default deadline.
+**EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 Other decisions remain pending.
 
 Decision record template:
@@ -294,12 +296,17 @@ DSCode
   whose first tool call returns after ten seconds. Decide whether current DSCode wait behavior is
   suitable. A yield limit is not a process runtime deadline.
 
-- [ ] **EX-06 — How long the process is allowed to run.** DSCode's deadline defaults to 120 seconds
+- [x] **EX-06 — How long the process is allowed to run.** DSCode's deadline defaults to 120 seconds
   and survives yielding; `timeout_ms: 0` disables it, and the tool allows finite deadlines from
   1,000 to 600,000 ms. Codex's normal resumable path has no corresponding per-call deadline. When
   resumable execution is disabled by managed requirements, Codex can expose a separate completion-only
   `exec_command` with a default ten-second timeout and no resumable handle. Illustrate a slow build
   and a development server. Decide which defaults and overrides DSCode should offer.
+
+  **Decision (2026-10-15): keep.** Retain the 120-second default to stop unexpectedly stuck
+  processes. Keep the existing explicit positive deadlines and `timeout_ms: 0` opt-out for
+  deliberately long-running tasks. Yielding or polling does not reset the process deadline.
+  No runtime, tool argument, or instruction changes are needed.
 
 - [x] **EX-07 — Large output and visible truncation.** Codex has bounded byte buffers and
   model-facing output-token budgets with omission notices. At the comparison baseline, DSCode
@@ -375,13 +382,41 @@ DSCode
   agent command. Decide whether any wider backend work belongs in the tool or a separate architecture
   project; preserve intentional child boundaries unless explicitly revisited.
 
-- [ ] **EX-12 — Process capacity and cleanup.** Codex limits managed sessions to 64 and uses a
-  recency-based pruning policy that can terminate an older running process under pressure. DSCode
-  does not cap running processes and retains at most 100 unread completed records, removing the oldest
+- [x] **EX-12 — Process capacity and cleanup.** Codex targets a soft cap of 64 managed sessions and
+  uses a recency-based pruning policy that prefers exited processes but can terminate an older
+  running process under pressure. Busy interactions can defer pruning and temporarily exceed the
+  cap. At the comparison baseline, DSCode did not cap running processes. It retains at most 100
+  unread completed records, removing the oldest
   completed ones first. DSCode also terminates managed children during shutdown, using process-tree
   signals/taskkill and a grace period. Illustrate starting many background jobs and closing the agent.
-  Decide whether capacity limits or cleanup changes are warranted. A running-process cap would
-  revisit the explicit no-cap decision in ADR-0002.
+  Decide whether capacity limits or cleanup changes are warranted.
+
+  **Discussion (2026-10-15):** retaining EX-06's deadline bounds the normal lifetime of each
+  command, but does not bound the number running concurrently; explicit longer/disabled deadlines
+  also remain available. Completed-record retention, running-process capacity, and shutdown cleanup
+  are separate concerns. The current completed-record cap and process-tree shutdown cleanup already
+  address the first and third concerns.
+
+  **Decision (2026-10-15): change; implemented.** Limit each session's process registry to 64
+  running jobs. This is a hard admission limit: the 65th concurrent launch is rejected before spawn,
+  with instructions to inspect `/jobs`, wait, or stop a job with `write_stdin` and `terminate: true`.
+  Existing running jobs are never evicted by this limit. Admission and record registration remain
+  synchronous, so concurrent `start` calls cannot oversubscribe capacity. A slot is released only
+  when the child closes, including after termination or spawn failure; yielding and polling do not
+  release slots. Unread completed records do not count toward running capacity and retain their
+  independent 100-record cap. Keep the 120-second default deadline, explicit timeout overrides,
+  process-tree shutdown cleanup, tool instructions, and argument schemas. No queue or new setting
+  is introduced. This supersedes ADR-0002's earlier no-running-cap decision.
+
+  **Acceptance checks:** 64 concurrent admissions, pre-spawn rejection of the 65th, no eviction,
+  per-session isolation, capacity recovery after exit/termination/spawn failure, independent
+  completed-record retention, and visible error rendering without process details. Implementation:
+  `packages/core/src/managed-process.ts` and `packages/core/src/dscode-extension.ts`; tests:
+  `test/managed-process-capacity.test.ts` and `test/access-integration.test.ts`.
+  Four focused suites passed (49 tests passed, one platform test skipped): process capacity,
+  managed process lifecycle, access integration, and process helpers. Core and test `tsc --noEmit`
+  passed. The capacity suite uses simulated child processes to exercise the real registry without
+  launching 64 OS processes. No build was run.
 
 Source entry points:
 
@@ -492,14 +527,14 @@ Source entry points:
 ## Existing DSCode decisions to consult
 
 - [ADR-0002: Web command, MCP, jobs, and checkpoint boundaries](decisions/0002-web-ui-command-mcp-and-checkpoint-boundaries.md).
-  In particular: running jobs have no cap; only patch-tool changes create checkpoints; user-requested
+  In particular: running jobs have a 64-job admission cap; only patch-tool changes create checkpoints; user-requested
   undo has its own confirmation and may restore files even when commands are read-only. Its recorded
   historical completion-read behavior should be rechecked against current code before relying on it.
 - [ADR-0005: Native Pi MCP](decisions/0005-native-pi-mcp.md) for code-mode and tool integration.
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05, EX-07, accurate failure reporting for AP-08, and checkpoint listing for AP-09 are the accepted
+AP-05, EX-07, EX-12, accurate failure reporting for AP-08, and checkpoint listing for AP-09 are the accepted
 implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.

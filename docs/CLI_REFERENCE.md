@@ -303,6 +303,11 @@ Inside the TUI:
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
 
+Each CLI or Web session allows at most 64 running managed jobs. At capacity, new
+launches are rejected before a process is started; existing jobs continue running.
+Use `/jobs` to inspect them, then wait for a job to finish or use `write_stdin` with
+`terminate: true` to stop one. A yielded job still occupies a slot until it closes.
+
 Completed managed processes are removed as soon as `exec_command` or `write_stdin`
 returns their final result. Background processes that finish between reads retain
 their output and exit status until the next `write_stdin` call. Each CLI or Web

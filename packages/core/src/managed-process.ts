@@ -43,6 +43,7 @@ export interface ManagedProcessRegistryOptions {
 }
 
 const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
+const MAX_RUNNING_PROCESSES = 64;
 const MAX_PENDING_OUTPUT_LENGTH = 80_000;
 const SHUTDOWN_GRACE_MS = 1_500;
 const liveChildren = new Set<ChildProcessWithoutNullStreams>();
@@ -134,6 +135,14 @@ export class ManagedProcessRegistry {
       ? createVisionProcessEnvironment(process.env, options.thinkingLevel)
       : withPiManagedBinPath(stripModelCredentialEnvironment({ ...process.env }));
 
+    const running = [...this.records.values()].filter((record) => record.running).length;
+    if (running >= MAX_RUNNING_PROCESSES) {
+      throw new Error([
+        `Cannot start command: this session already has ${MAX_RUNNING_PROCESSES} running jobs.`,
+        "Use /jobs to inspect them, then wait for a job to finish or stop one with write_stdin using terminate: true.",
+      ].join("\n"));
+    }
+    // Admission through record registration stays synchronous, including parallel start calls.
     const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd,
       env,

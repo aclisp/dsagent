@@ -167,6 +167,11 @@ Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 stand
 正值范围为 1000–600000 ms。`yield_time_ms` 仅控制单次工具调用的等待时间，最多 30000 ms。
 通过 `write_stdin` 的 `terminate: true` 停止进程；会话关闭会清理剩余托管进程。
 
+每个 CLI 或 Web 会话最多同时运行 64 个托管任务。达到上限时，在创建进程之前拒绝新任务，
+已有任务继续运行。通过 `/jobs` 查看任务，等待其结束或使用 `write_stdin` 的 `terminate: true`
+停止任务。工具调用提前返回不会释放运行名额，进程关闭后才释放。已结束且尚未读取的记录
+单独受 100 条保留上限约束，不占运行名额。
+
 ### RPC 子进程与审批
 
 需要后续交互或审批时，使用 `dscode --mode rpc --no-session` 并保持 stdin 打开。
