@@ -36,6 +36,7 @@ For each item, use this sequence:
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
+The Windows discovery and preparation scope of **EX-03** has been discussed and implemented.
 Other decisions remain pending.
 
 Decision record template:
@@ -279,11 +280,53 @@ DSCode
   that command but does not change the patch tool's workspace root. Illustrate testing a package in a
   monorepo. Decide whether an explicit working-directory argument improves clarity.
 
-- [ ] **EX-03 — Which shell runs and whether startup files load.** Codex supports shell selection
+- [x] **EX-03 — Which shell runs and whether startup files load.** Codex supports shell selection
   and a login-shell option subject to configuration and environment limits. DSCode's Unix command
   backend uses `$SHELL` or `/bin/sh` with `-lc`; Windows uses its PowerShell selection path. Illustrate
   a command that depends on shell startup setup and one that benefits from skipping it. Decide
   whether explicit shell/login controls are needed.
+
+  **Decision (2026-10-15): improve Windows discovery and shared preparation; implemented.**
+  Follow up on `498161d0` by sharing the PowerShell invocation builder between host and native
+  sandbox execution. Both use the same best-effort UTF-8 output prefix, preserving an already
+  prefixed script without duplication. Retain the existing host and native flag sets and the native
+  backend's requirement for PowerShell 7. Keep Unix execution and tool instructions/arguments.
+
+  Discovery prefers `DSCODE_SHELL`, then PowerShell 7 on PATH, then its standard
+  `%ProgramFiles%\PowerShell\7\pwsh.exe` installation. Host execution alone may fall back to
+  Windows PowerShell on PATH or under `%SystemRoot%`/`%WINDIR%`. Host overrides retain the old
+  pass-through behavior: trim surrounding whitespace and leave the value unchanged for process
+  creation, including bare names and relative or extensionless paths. Native sandbox overrides
+  remain validated. Automatic discovery skips directories and reports a clear error if no executable
+  is found. Shell discovery does not start probe processes. Microsoft Store/sandbox compatibility
+  handling and new shell/login controls are outside this accepted scope.
+
+  **Illustration:** when PowerShell 7 is installed outside PATH but Windows PowerShell is on PATH,
+  DSCode now finds PowerShell 7. A native sandbox request for `Write-Output '中文'` now carries the
+  same UTF-8-prefixed script as host execution, instead of bypassing that preparation.
+
+  **References:** Codex's shared runtime preparation, duplicate-prefix check, and installation-path
+  fallbacks in `codex-rs/core/src/tools/runtimes/unified_exec.rs` and
+  `codex-rs/shell-command/src/{powershell,shell_detect}.rs` informed the change. The flag sets from
+  DSCode's Pi alignment are preserved.
+
+  **Acceptance checks and validation:** temporary fixture files cover discovery precedence,
+  explicit overrides, PowerShell 7 and Windows PowerShell fallbacks, quoted PATH directories,
+  missing executables, directory rejection, UTF-8 preparation, flag compatibility, duplicate-prefix
+  prevention, and Unix invocation compatibility. The helper-request test exercises native discovery
+  without an injected shell. Six focused suites passed (73 tests passed, one platform test skipped):
+  shell, Windows sandbox protocol, managed process lifecycle/capacity, access integration, and
+  sandbox execution. Core and test `tsc --noEmit` passed. New Windows preparation tests launch no
+  subprocesses; Windows execution and actual output encoding were not exercised on this macOS host.
+  No build was run. Implementation: `packages/core/src/shell.ts` and
+  `packages/core/src/windows-sandbox.ts`; tests: `test/shell.test.ts` and `test/windows-sandbox.test.ts`.
+
+  **Compatibility review (2026-10-15):** restore the original host override contract instead of
+  pre-validating, resolving, or adding extensions to `DSCODE_SHELL`. Regression cases cover bare
+  names, relative paths, extensionless paths, missing paths, and custom launchers. Native sandbox
+  override validation and automatic discovery are retained. Per the user's decision, keep UTF-8
+  prefixing on both paths without adding special handling for leading statements such as
+  `using namespace`; its ordering restriction is accepted for this scope.
 
 - [ ] **EX-04 — Pipes versus a terminal (PTY).** Codex defaults to pipes and optionally allocates a
   pseudo-terminal with `tty: true`, when enabled. DSCode uses pipes only. Illustrate an ordinary test
@@ -534,7 +577,7 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05, EX-07, EX-12, accurate failure reporting for AP-08, and checkpoint listing for AP-09 are the accepted
-implementation scopes so far.
+AP-05, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
+discovery/preparation for EX-03 are the accepted implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.

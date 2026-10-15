@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { getDSCodeHome } from "./home.ts";
 import type { SandboxOptions, SandboxedCommand } from "./sandbox.ts";
-import type { ShellInvocation } from "./shell.ts";
+import { windowsPowerShellCommand, type ShellInvocation } from "./shell.ts";
 
 const EXPERIMENTAL_ENV = "DSCODE_WINDOWS_SANDBOX";
 const HELPER_ENV = "DSCODE_WINDOWS_SANDBOX_HELPER";
@@ -60,7 +60,7 @@ export function buildWindowsSandboxCommand(
   options: SandboxOptions,
   runtime: WindowsSandboxRuntime,
 ): SandboxedCommand {
-  const shell = runtime.shell ?? nativePowerShellCommand(shellCommand);
+  const shell = runtime.shell ?? windowsPowerShellCommand(shellCommand, "native-sandbox");
   const requestPath = path.join(
     os.tmpdir(),
     `dscode-windows-sandbox-${process.pid}-${randomUUID()}.json`,
@@ -82,35 +82,6 @@ export function buildWindowsSandboxCommand(
     command: runtime.helperPath,
     args: ["run", requestPath],
     description: `Windows native sandbox (${options.mode}${options.network ? ", network" : ", no network"})`,
-  };
-}
-
-function nativePowerShellCommand(shellCommand: string): ShellInvocation {
-  const configured = process.env.DSCODE_SHELL?.trim();
-  if (configured) {
-    const resolved = path.resolve(configured);
-    if (path.basename(resolved).toLowerCase() !== "pwsh.exe" || !fs.existsSync(resolved)) {
-      throw new Error("The Windows native sandbox requires DSCODE_SHELL to point to pwsh.exe.");
-    }
-    return powerShellInvocation(resolved, shellCommand);
-  }
-  const pathValue = process.env.PATH ?? "";
-  for (const entry of pathValue.split(path.delimiter)) {
-    const directory = entry.trim().replace(/^"|"$/g, "");
-    if (!directory) continue;
-    const candidate = path.join(directory, "pwsh.exe");
-    if (fs.existsSync(candidate)) return powerShellInvocation(candidate, shellCommand);
-  }
-  throw new Error(
-    "The experimental Windows native sandbox requires PowerShell 7 (pwsh.exe).",
-  );
-}
-
-function powerShellInvocation(command: string, shellCommand: string): ShellInvocation {
-  return {
-    command,
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", shellCommand],
-    description: `PowerShell 7 (${path.basename(command)})`,
   };
 }
 

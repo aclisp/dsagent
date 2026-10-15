@@ -4,6 +4,16 @@
 
 Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
 
+Windows host commands use PowerShell. Discovery prefers `DSCODE_SHELL`, then `pwsh.exe` on PATH,
+then `%ProgramFiles%\PowerShell\7\pwsh.exe`. If PowerShell 7 is unavailable, host execution tries
+`powershell.exe` on PATH, then `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`
+(`WINDIR` is also accepted when `SystemRoot` is unset). Host `DSCODE_SHELL` overrides pass through
+unchanged after trimming surrounding whitespace, preserving bare names and relative or extensionless
+paths for process creation to resolve. Automatic discovery reports a clear error if no executable
+is found. The native Windows sandbox validates its override and requires
+PowerShell 7 and never falls back to Windows PowerShell. Both paths share best-effort UTF-8 console
+output setup and disable profile loading, while retaining their existing backend-specific flags.
+
 Start DSCode from a local source checkout:
 
 ```bash

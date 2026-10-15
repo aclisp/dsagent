@@ -4,6 +4,14 @@
 
 要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
 
+Windows 主机命令使用 PowerShell，依次查找 `DSCODE_SHELL`、PATH 中的 `pwsh.exe` 和
+`%ProgramFiles%\PowerShell\7\pwsh.exe`。找不到 PowerShell 7 时，主机执行继续查找 PATH 中的
+`powershell.exe` 和 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`；未设置
+`SystemRoot` 时也接受 `WINDIR`。主机执行的 `DSCODE_SHELL` 只去掉首尾空白后原样传给进程创建，
+保留裸名称、相对路径和无扩展名路径的原有解析行为。自动查找失败时给出明确错误。
+Windows 原生沙箱仍验证显式配置并要求 PowerShell 7，不回退到旧版 Windows PowerShell。两条路径共用尽力而为的
+UTF-8 控制台输出设置，并禁用 profile 加载，同时保留各后端原有的启动参数。
+
 从本地源码 checkout 启动 DSCode：
 
 ```bash
