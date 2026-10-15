@@ -139,8 +139,8 @@ describe("Windows PowerShell preparation", () => {
     expect(windowsPowerShellCommand(prepared, "native-sandbox").args.at(-1)).toBe(prepared);
   });
 
-  it.skipIf(process.platform === "win32")("preserves Unix host shell invocation", () => {
+  it.skipIf(process.platform === "win32")("uses non-login Unix command flags", () => {
     vi.stubEnv("SHELL", "/bin/sh");
-    expect(hostShellCommand("printf hello")).toEqual({ command: "/bin/sh", args: ["-lc", "printf hello"], description: "host" });
+    expect(hostShellCommand("printf hello")).toEqual({ command: "/bin/sh", args: ["-c", "printf hello"], description: "host" });
   });
 });

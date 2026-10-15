@@ -4,6 +4,14 @@
 
 Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
 
+On Unix, host commands use a non-empty `$SHELL`, otherwise `/bin/bash`, then an executable `bash`
+on PATH, and finally `/bin/sh`. A configured `$SHELL` is used explicitly; an invalid value produces
+a launch error instead of silently selecting another shell. Host and macOS Seatbelt commands run
+with `-c`, so login-shell startup files are not reloaded for each command. Exported SDK variables
+and PATH entries already inherited by DSCode remain available. Initialize required SDK environments
+before starting DSCode. Docker commands use `/bin/sh -c` inside the container rather than a host
+shell path.
+
 Windows host commands use PowerShell. Discovery prefers `DSCODE_SHELL`, then `pwsh.exe` on PATH,
 then `%ProgramFiles%\PowerShell\7\pwsh.exe`. If PowerShell 7 is unavailable, host execution tries
 `powershell.exe` on PATH, then `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`

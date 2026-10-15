@@ -16,12 +16,19 @@ export function hostShellCommand(shellCommand: string): ShellInvocation {
     return windowsPowerShellCommand(shellCommand);
   }
 
-  const shell = process.env.SHELL ?? "/bin/sh";
+  const shell = resolveUnixShell();
   return {
     command: shell,
-    args: ["-lc", shellCommand],
+    args: ["-c", shellCommand],
     description: "host",
   };
+}
+
+function resolveUnixShell(): string {
+  const configured = process.env.SHELL?.trim();
+  if (configured) return configured;
+  if (isFile("/bin/bash")) return "/bin/bash";
+  return findExecutableOnPath("bash", true) ?? "/bin/sh";
 }
 
 export function windowsPowerShellCommand(
@@ -76,13 +83,21 @@ function resolveWindowsPowerShell(requirePwsh: boolean): string {
   throw new Error("No PowerShell executable found. Install PowerShell or set DSCODE_SHELL to an existing PowerShell executable.");
 }
 
-function findExecutableOnPath(executable: string): string | undefined {
+function findExecutableOnPath(executable: string, requireExecutable = false): string | undefined {
   const pathValue = process.env.PATH ?? "";
   for (const entry of pathValue.split(path.delimiter)) {
     const directory = entry.trim().replace(/^"|"$/g, "");
     if (!directory) continue;
     const candidate = path.join(directory, executable);
-    if (isFile(candidate)) return candidate;
+    if (!isFile(candidate)) continue;
+    if (requireExecutable) {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+      } catch {
+        continue;
+      }
+    }
+    return candidate;
   }
   return undefined;
 }

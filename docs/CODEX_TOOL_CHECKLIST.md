@@ -36,7 +36,8 @@ For each item, use this sequence:
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
-The Windows discovery and preparation scope of **EX-03** has been discussed and implemented.
+The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
+and implemented.
 Other decisions remain pending.
 
 Decision record template:
@@ -281,8 +282,9 @@ DSCode
   monorepo. Decide whether an explicit working-directory argument improves clarity.
 
 - [x] **EX-03 — Which shell runs and whether startup files load.** Codex supports shell selection
-  and a login-shell option subject to configuration and environment limits. DSCode's Unix command
-  backend uses `$SHELL` or `/bin/sh` with `-lc`; Windows uses its PowerShell selection path. Illustrate
+  and a login-shell option subject to configuration and environment limits. At the comparison
+  baseline, DSCode's Unix backend used `$SHELL` or `/bin/sh` with `-lc`; Windows uses its PowerShell
+  selection path. Illustrate
   a command that depends on shell startup setup and one that benefits from skipping it. Decide
   whether explicit shell/login controls are needed.
 
@@ -327,6 +329,31 @@ DSCode
   override validation and automatic discovery are retained. Per the user's decision, keep UTF-8
   prefixing on both paths without adding special handling for leading statements such as
   `using namespace`; its ordering restriction is accepted for this scope.
+
+  **Unix decision (2026-10-15): change; implemented.** Retain `$SHELL` as the first choice instead
+  of adding Pi's `shellPath` setting, then use `/bin/bash`, executable Bash on PATH, and `/bin/sh`.
+  Empty or whitespace-only `$SHELL` values use the fallback chain; a non-empty explicit value is
+  passed to process creation and fails at launch if invalid, without silently selecting another
+  shell. Use `-c` for Unix host and macOS Seatbelt commands. Seatbelt wraps the same selected shell
+  and arguments as host execution. Docker uses its container's `/bin/sh -c`, without resolving a
+  host shell for the container. Windows PowerShell behavior, tool schemas/instructions, and settings
+  are unchanged. PATH lookup uses filesystem checks and skips non-executable Bash candidates without
+  spawning a lookup process.
+
+  **Compatibility:** skipping login startup is intentional. Exported variables and PATH entries
+  inherited by DSCode continue to reach child commands, subject to the existing credential filtering
+  and managed-bin PATH preparation. SDK initialization available only through login startup must
+  happen before DSCode starts. With `$SHELL` unset, Bash now takes precedence over the former
+  immediate `/bin/sh` fallback. Shell syntax still follows the selected `$SHELL` when set.
+
+  **Acceptance checks and validation:** shell preference and fallback ordering, empty/unset values,
+  non-executable PATH candidates, invalid explicit-shell launch errors, intact script arguments,
+  real SDK environment/PATH inheritance, real Bash non-login execution, Seatbelt wrapping, and
+  Docker container shell arguments are covered. Six focused suites passed (80 tests passed, one
+  platform test skipped): Unix shells, shell preparation, Windows sandbox protocol, managed process
+  lifecycle, access integration, and sandbox execution. Core and test `tsc --noEmit` passed.
+  No build was run. Implementation: `packages/core/src/shell.ts` and `packages/core/src/sandbox.ts`;
+  tests: `test/unix-shell.test.ts` and `test/shell.test.ts`.
 
 - [ ] **EX-04 — Pipes versus a terminal (PTY).** Codex defaults to pipes and optionally allocates a
   pseudo-terminal with `tty: true`, when enabled. DSCode uses pipes only. Illustrate an ordinary test
@@ -578,6 +605,6 @@ Source entry points:
   and permission boundaries.
 
 AP-05, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
-discovery/preparation for EX-03 are the accepted implementation scopes so far.
+discovery/preparation plus Unix shell selection for EX-03 are the accepted implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.

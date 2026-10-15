@@ -4,6 +4,12 @@
 
 要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
 
+Unix 主机命令优先使用非空的 `$SHELL`，否则依次查找 `/bin/bash`、PATH 中可执行的 `bash`，
+最后回退到 `/bin/sh`。显式配置的 `$SHELL` 无效时返回启动错误，不静默改用其他 shell。
+主机和 macOS Seatbelt 命令使用 `-c`，不再为每条命令重新加载登录 shell 的启动文件。
+DSCode 已继承的导出 SDK 环境变量和 PATH 条目仍然可用；请在启动 DSCode 前完成必要的 SDK
+环境初始化。Docker 命令使用容器内的 `/bin/sh -c`，不使用主机 shell 路径。
+
 Windows 主机命令使用 PowerShell，依次查找 `DSCODE_SHELL`、PATH 中的 `pwsh.exe` 和
 `%ProgramFiles%\PowerShell\7\pwsh.exe`。找不到 PowerShell 7 时，主机执行继续查找 PATH 中的
 `powershell.exe` 和 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`；未设置
