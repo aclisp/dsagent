@@ -249,8 +249,12 @@ only advertises skills to the model when the `read` tool is active: `~/.dscode/s
 auto-discovered and listed in the system prompt, and the model loads a skill's `SKILL.md` via
 `read`.
 
-The Web UI keeps the CLI checkpoint commands available. `/checkpoints` lists the current branch's
-durable `apply_patch` checkpoints, `/diff` displays the latest active patch, and
+The Web UI keeps the CLI checkpoint commands available. `/checkpoints` lists the last settled turn's
+`apply_patch` checkpoints, earliest first; `/checkpoints all` lists the current branch's full history.
+A turn spans the first `agent_start` through `agent_settled`, including retries and queued
+continuations. Empty turns are recorded, so a turn without patches does not display older checkpoints
+after a refresh or resume. Sessions recorded before turn tracking remain available through
+`/checkpoints all`. `/diff` displays the latest active patch, and
 `/diff <checkpoint-id>` displays an earlier patch (including an undone patch).
 `/diff history` opens a checkpoint picker, newest first, with 10 checkpoints per page
 and Older/Newer options. Diffs appear in a complete,

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { windowsPowerShellCommand } from "../packages/core/src/shell.ts";
 import {
   buildWindowsSandboxCommand,
   parseWindowsSandboxLifecycleCommand,
@@ -11,6 +12,7 @@ describe("Windows native sandbox protocol", () => {
   const requests: string[] = [];
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await Promise.all(requests.splice(0).map((request) => fs.rm(request, { force: true })));
   });
 
@@ -52,6 +54,32 @@ describe("Windows native sandbox protocol", () => {
     } finally {
       await fs.rm(cwd, { recursive: true, force: true });
     }
+  });
+
+  it("discovers PowerShell 7 and sends the shared UTF-8 script to the helper without an injected shell", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-windows-discovery-"));
+    try {
+      const programFiles = path.join(cwd, "Program Files 中文");
+      const shell = path.join(programFiles, "PowerShell", "7", "pwsh.exe");
+      await fs.mkdir(path.dirname(shell), { recursive: true });
+      await fs.writeFile(shell, "fixture; never executed");
+      vi.stubEnv("PATH", "");
+      vi.stubEnv("DSCODE_SHELL", "");
+      vi.stubEnv("ProgramFiles", programFiles);
+      const script = "Write-Output '中文'\nGet-Item -LiteralPath 'C:\\Work Files\\a[1].txt'";
+      const invocation = buildWindowsSandboxCommand(script, cwd, { mode: "workspace-write", network: false }, {
+        helperPath: "C:\\DSCode\\dscode-windows-sandbox.exe", statePath: "C:\\DSCode\\state.bin",
+      });
+      const requestPath = invocation.args[1]!;
+      requests.push(requestPath);
+      const request = JSON.parse(await fs.readFile(requestPath, "utf8"));
+      expect(request.command).toBe(shell);
+      expect(request.args.at(-1)).toBe(windowsPowerShellCommand(script).args.at(-1));
+      expect(request.args.at(-1)).toContain("[Console]::OutputEncoding=");
+      expect(request.args.at(-1)).toContain(script);
+      expect(request.args).toContain("-NoProfile");
+      expect(request).not.toHaveProperty("env");
+    } finally { await fs.rm(cwd, { recursive: true, force: true }); }
   });
 
   it("parses only explicit lifecycle commands", () => {

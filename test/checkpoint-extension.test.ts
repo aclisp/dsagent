@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
@@ -17,12 +17,217 @@ describe("checkpoint extension commands", () => {
     home = path.join(root, "home");
     await fs.mkdir(home);
     vi.stubEnv("DSCODE_HOME", home);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    vi.useRealTimers();
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("lists only the last settled turn by default and keeps retries in the same turn", async () => {
+    const harness = await createPatchHarness(root);
+    await harness.emit({ type: "agent_start" });
+    const older = await harness.patch("older.txt");
+    await harness.settle();
+    await harness.emit({ type: "agent_start" });
+    const first = await harness.patch("first.txt");
+    await harness.emit({ type: "agent_end", messages: [] });
+    // The loop can restart for retry, compaction, or queued continuation without settling.
+    await harness.emit({ type: "agent_start" });
+    const second = await harness.patch("second.txt");
+
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${older}  older.txt`, "info");
+    await harness.settle();
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${first}  first.txt\n● ${second}  second.txt`, "info");
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${older}  older.txt\n● ${first}  first.txt\n● ${second}  second.txt`, "info");
+    expect(harness.entries.filter((entry) => entry.customType === "dscode-checkpoint-turn")).toEqual([
+      { customType: "dscode-checkpoint-turn", data: { checkpointIds: [older] } },
+      { customType: "dscode-checkpoint-turn", data: { checkpointIds: [first, second] } },
+    ]);
+
+    const resumed = await createPatchHarness(root, harness.entries);
+    await resumed.emit({ type: "session_start", reason: "resume" });
+    await resumed.list("", resumed.ctx);
+    expect(resumed.notify).toHaveBeenLastCalledWith(`● ${first}  first.txt\n● ${second}  second.txt`, "info");
+  });
+
+  it("persists an empty last turn instead of falling back to earlier checkpoints", async () => {
+    const harness = await createPatchHarness(root);
+    await harness.emit({ type: "agent_start" });
+    const older = await harness.patch("older.txt");
+    await harness.settle();
+    await harness.emit({ type: "agent_start" });
+    await harness.settle();
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("No checkpoints were created in the last turn.", "info");
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${older}  older.txt`, "info");
+
+    const resumed = await createPatchHarness(root, harness.entries);
+    await resumed.emit({ type: "session_start", reason: "reload" });
+    await resumed.list("", resumed.ctx);
+    expect(resumed.notify).toHaveBeenLastCalledWith("No checkpoints were created in the last turn.", "info");
+  });
+
+  it("includes checkpoints from an aborted turn and keeps undo working one checkpoint at a time", async () => {
+    const harness = await createPatchHarness(root);
+    await harness.emit({ type: "agent_start" });
+    const older = await harness.patch("older.txt");
+    await harness.settle();
+    await harness.emit({ type: "agent_start" });
+    const latest = await harness.patch("latest.txt");
+    await harness.settle(true);
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${latest}  latest.txt`, "info");
+    await harness.undo("", harness.ctx);
+    await expect(fs.access(path.join(root, "latest.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(root, "older.txt"), "utf8")).resolves.toBe("saved\n");
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`↶ ${latest}  latest.txt`, "info");
+    await harness.emit({ type: "session_start", reason: "reload" });
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`↶ ${latest}  latest.txt`, "info");
+    await harness.undo("", harness.ctx);
+    await expect(fs.access(path.join(root, "older.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`↶ ${older}  older.txt\n↶ ${latest}  latest.txt`, "info");
+  });
+
+  it("restores the last turn and full history from the selected session branch", async () => {
+    const harness = await createPatchHarness(root);
+    await harness.emit({ type: "agent_start" });
+    const older = await harness.patch("older.txt");
+    await harness.settle();
+    const earlierBranch = [...harness.entries];
+    await harness.emit({ type: "agent_start" });
+    await harness.patch("other-branch.txt");
+    await harness.settle();
+    harness.entries.splice(0, harness.entries.length, ...earlierBranch);
+    await harness.emit({ type: "session_tree", newLeafId: "earlier", oldLeafId: "later" });
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${older}  older.txt`, "info");
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${older}  older.txt`, "info");
+    harness.entries.length = 0;
+    await harness.emit({ type: "session_start", reason: "new" });
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("No checkpoints were created in the last turn.", "info");
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("No patch checkpoints in this branch.", "info");
+  });
+
+  it("keeps legacy checkpoints available without inventing their turn boundaries", async () => {
+    const harness = await createPatchHarness(root);
+    const legacy = await harness.patch("legacy.txt");
+    harness.entries.push({ customType: "dscode-checkpoint-turn", data: { checkpointIds: [123] } });
+    await harness.emit({ type: "session_start", reason: "resume" });
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(
+      "Last-turn checkpoint information is unavailable. Use /checkpoints all to list this branch's checkpoints.", "info",
+    );
+    await harness.list("all", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith(`● ${legacy}  legacy.txt`, "info");
+    await harness.emit({ type: "agent_start" });
+    await harness.settle();
+    await harness.list("", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("No checkpoints were created in the last turn.", "info");
+  });
+
+  it("offers the all argument and explains unsupported arguments", async () => {
+    const harness = await createPatchHarness(root);
+    expect(harness.commands.get("checkpoints")!.getArgumentCompletions!("a")).toEqual([
+      { value: "all", label: "all — list every checkpoint in the current branch" },
+    ]);
+    expect(harness.commands.get("checkpoints")!.getArgumentCompletions!("x")).toEqual([]);
+    await harness.list("unknown", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("Usage: /checkpoints [all]", "warning");
+    await harness.list(" all ", harness.ctx);
+    expect(harness.notify).toHaveBeenLastCalledWith("No patch checkpoints in this branch.", "info");
+  });
+
+  it("reports partial writes without creating a checkpoint or claiming undo support", async () => {
+    const { tool, ctx, entries, undo, notify } = await createPatchHarness(root);
+    const failedPath = path.join(root, "failed.txt");
+    const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (String(to) === failedPath) throw new Error("disk full");
+      return rename(from, to);
+    });
+    const error = await tool.execute("partial", {
+      input: "*** Begin Patch\n*** Add File: saved.txt\n+saved\n*** Add File: failed.txt\n+failed\n*** End Patch",
+    }, undefined, undefined, ctx).catch((error: unknown) => error);
+    const message = (error as Error).message;
+    expect(message).toContain("write failed.txt: disk full");
+    expect(message).toContain("- write saved.txt");
+    expect(message).toContain("No checkpoint was created for this patch");
+    expect(message).toContain("/undo cannot restore this patch's changes");
+    expect(entries).toEqual([]);
+    await undo("", ctx);
+    expect(notify).toHaveBeenCalledWith("No patch checkpoint is available to undo.", "info");
+    await expect(fs.readFile(path.join(root, "saved.txt"), "utf8")).resolves.toBe("saved\n");
+
+    const rendered = tool.renderResult!({ content: [{ type: "text", text: message }], details: undefined },
+      { expanded: true, isPartial: false }, createTestTheme(), {
+        args: {}, toolCallId: "partial", invalidate() {}, lastComponent: undefined, state: undefined,
+        cwd: root, executionStarted: true, argsComplete: true, isPartial: false, expanded: true,
+        showImages: false, isError: true, durationMs: 0, outputPad: 0,
+      }).render(200).join("\n");
+    expect(rendered).toContain("write failed.txt: disk full");
+    expect(rendered).toContain("- write saved.txt");
+    expect(rendered).toContain("No checkpoint was created");
+  });
+
+  it("reports completed writes when after-snapshot capture fails", async () => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    const target = path.join(root, "saved.txt");
+    let written = false;
+    const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      await rename(from, to);
+      if (String(to) === target) written = true;
+    });
+    const stat = fs.stat.bind(fs);
+    vi.spyOn(fs, "stat").mockImplementation(async (file) => {
+      if (written && String(file) === target) throw new Error("snapshot read blocked");
+      return stat(file);
+    });
+    await expect(tool.execute("snapshot", {
+      input: "*** Begin Patch\n*** Add File: saved.txt\n+saved\n*** End Patch",
+    }, undefined, undefined, ctx)).rejects.toThrow(
+      "File operations completed for: saved.txt\nCheckpoint capture failed: snapshot read blocked\nNo checkpoint was created",
+    );
+    expect(entries).toEqual([]);
+    await expect(fs.readFile(target, "utf8")).resolves.toBe("saved\n");
+  });
+
+  it("reports unconfirmed checkpoint persistence while retaining session undo", async () => {
+    const { tool, ctx, entries, appendEntry, undo } = await createPatchHarness(root);
+    appendEntry.mockImplementationOnce(() => { throw new Error("session write blocked"); });
+    const error = await tool.execute("persist", {
+      input: "*** Begin Patch\n*** Add File: saved.txt\n+saved\n*** End Patch",
+    }, undefined, undefined, ctx).catch((error: unknown) => error);
+    expect((error as Error).message).toContain("File operations completed for: saved.txt");
+    expect((error as Error).message).toContain("session write blocked");
+    expect((error as Error).message).toContain("Checkpoint persistence was not confirmed. /undo remains available in this session.");
+    expect(entries).toEqual([]);
+    await expect(fs.readFile(path.join(root, "saved.txt"), "utf8")).resolves.toBe("saved\n");
+    await undo("", ctx);
+    await expect(fs.access(path.join(root, "saved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves validation errors before file operations begin", async () => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    await expect(tool.execute("invalid", {
+      input: "*** Add File: invalid.txt\n+invalid",
+    }, undefined, undefined, ctx)).rejects.toThrow(/^Patch must start with \*\*\* Begin Patch$/);
+    expect(entries).toEqual([]);
+    await expect(fs.access(path.join(root, "invalid.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("shows diffs, reports cancelled undo, and restores the latest checkpoint", async () => {
@@ -217,3 +422,55 @@ describe("checkpoint extension commands", () => {
     );
   });
 });
+
+async function createPatchHarness(root: string, entries: Array<{ customType: string; data: unknown }> = []) {
+  const tools = new Map<string, ToolDefinition>();
+  type Command = {
+    handler: (args: string, ctx: ExtensionContext) => Promise<void>;
+    getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string }>;
+  };
+  const commands = new Map<string, Command>();
+  const handlers = new Map<string, Array<(event: ExtensionEvent, ctx: ExtensionContext) => unknown>>();
+  const appendEntry = vi.fn((customType: string, data: unknown) => { entries.push({ customType, data }); });
+  const pi = new Proxy({
+    registerTool(tool: ToolDefinition) { tools.set(tool.name, tool); },
+    registerCommand(name: string, command: Command) { commands.set(name, command); },
+    on(name: string, handler: (event: ExtensionEvent, ctx: ExtensionContext) => unknown) {
+      handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+    },
+    appendEntry,
+    getActiveTools: () => ["apply_patch"],
+    getAllTools: () => [...tools.values()],
+  }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
+  const notify = vi.fn();
+  const ctx = {
+    cwd: root, mode: "rpc", hasUI: true,
+    ui: new Proxy({ notify, confirm: async () => true, theme: createTestTheme() }, {
+      get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined,
+    }),
+    isProjectTrusted: () => true,
+    sessionManager: {
+      getBranch: () => entries.map((entry) => ({ type: "custom", ...entry })),
+      getSessionFile: () => undefined,
+      buildSessionProjection: () => ({ messages: [] }),
+    },
+  } as unknown as ExtensionToolContext;
+  const extension = createDSCodeExtension(parseRuntimeArgs(["-C", root, "--no-mcp", "--permission", "auto"]).options);
+  await (typeof extension === "function" ? extension(pi) : extension.factory(pi));
+  const tool = tools.get("apply_patch")!;
+  const emit = async (event: ExtensionEvent) => {
+    for (const handler of handlers.get(event.type) ?? []) await handler(event, ctx);
+  };
+  const settle = async (aborted = false) => {
+    await emit({ type: "agent_end", messages: [] });
+    await emit({ type: "agent_settled", aborted });
+  };
+  const patch = async (file: string) => {
+    const result = await tool.execute(file, {
+      input: `*** Begin Patch\n*** Add File: ${file}\n+saved\n*** End Patch`,
+    }, undefined, undefined, ctx);
+    return (result.details as { checkpointId: string }).checkpointId;
+  };
+  return { tool, ctx, entries, appendEntry, notify, commands, emit, settle, patch,
+    undo: commands.get("undo")!.handler, list: commands.get("checkpoints")!.handler };
+}

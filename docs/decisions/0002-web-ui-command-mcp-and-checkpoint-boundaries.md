@@ -30,18 +30,24 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 1. 每个 Session 的 `ManagedProcessRegistry` 最多保留 100 条已结束记录。超过上限时删除最早
    结束的记录，运行中的进程不参与淘汰。
 2. `/jobs` 保持原有展示，只显示 running/not-running 两种状态；不增加 TTL、过滤或 `--all`。
-3. 记录读取行为保持兼容：已返回完成结果的记录仍可再读取一次完成状态；后台结束后的最终
-   输出仍可读取；`write_stdin` 读取完成记录后立即删除。已淘汰的 ID 继续返回 `Unknown process`。
-4. 不限制活跃进程数量，不引入轻量完成状态、持久化或额外配置。记录总数上界为运行中任务数
-   加 100，进程结束时立即执行回收，不依赖 `/jobs` 查询。
+3. `exec_command` 或 `write_stdin` 返回完成结果后立即删除对应记录；后台结束后尚未读取的
+   最终输出仍保留至下次读取或被完成记录上限淘汰。已删除或淘汰的 ID 返回 `Unknown process`。
+4. 每个 Session 最多同时运行 64 个托管任务。达到上限时，在启动新进程之前拒绝新任务，
+   提示通过 `/jobs` 查看并等待或通过 `write_stdin` 的 `terminate: true` 停止已有任务。
+   不淘汰运行中的任务、不排队、不引入额外配置。只有进程关闭后才释放运行名额，工具调用
+   提前返回并不释放名额；完成记录单独受 100 条上限约束。记录总数最多为 64 + 100。
+   本项取代原先不限制活跃进程数量的决定。（2026-10-15 更新）
 
 ### 4. Web checkpoint、diff 与 undo
 
 1. checkpoint 只由 `apply_patch` 创建；`exec_command`、重定向和 Git 命令造成的文件修改不会
    自动生成 checkpoint。checkpoint 保存涉及文件的完整 before/after 快照，并持久化到 session
    branch。
-2. `/checkpoints` 列出当前 branch 的 checkpoint ID、文件和撤销状态；无记录和全部撤销时复用
-   Core 的文本通知。
+2. `/checkpoints` 列出上一轮的 checkpoint ID、文件和撤销状态，按从早到晚排序；
+   `/checkpoints all` 列出当前 branch 的全部历史。一轮从首次 `agent_start` 到 `agent_settled`，
+   中间的重试与自动续跑不另起一轮。每轮结束时持久化 checkpoint ID 列表，包括没有 patch 的
+   空轮次；重载后仍保留该范围。旧 session 没有轮次记录时提示使用 `/checkpoints all`。
+   无记录时复用 Core 的文本通知。（2026-10-15 更新）
 3. `/diff` 显示最后一个未撤销 checkpoint 的完整 patch。Core 追加 `dscode-diff` entry，HTTP
    host 将其转换为 `checkpoint_diff` SSE 事件，`/chat` 和 `/debug` 展示 checkpoint ID 及完整
    等宽 patch。展示区支持横向、纵向滚动和复制，不静默截断；首期不引入 Git diff 语义、弹窗、
@@ -59,7 +65,7 @@ DSCode CLI 与 Web UI 共用 Core extension，但 HTTP host 的交互能力和�
 ## 非目标
 
 - Web 不新增 CLI 子进程调查能力。
-- jobs 不引入过期时间、持久化、轻量完成状态或活跃进程数量限制。
+- jobs 不引入过期时间、持久化、轻量完成状态、自动淘汰运行任务或等待队列。
 - checkpoint UI 不扩展为版本管理或仓库级 Git diff 工具。
 
 ## 实现入口

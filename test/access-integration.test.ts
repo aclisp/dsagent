@@ -162,6 +162,25 @@ describe("command access escalation", () => {
     expect(rendered).toContain("status: running");
   });
 
+  it("renders text-only exec_command errors without accessing missing process details", async () => {
+    const tools = new Map<string, any>();
+    const pi = new Proxy({
+      registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
+    }, {
+      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
+    }) as unknown as ExtensionAPI;
+    await runExtensionFactory(options(process.cwd()), pi);
+    const message = "Cannot start command: this session already has 64 running jobs.";
+    const tool = tools.get("exec_command");
+    const rendered = tool.renderResult(
+      { content: [{ type: "text", text: message }], details: undefined },
+      { expanded: false, isPartial: false },
+      createTestTheme(),
+      { isError: true, isPartial: false },
+    ).render(120).join("\n");
+    expect(rendered).toContain(message);
+  });
+
   it("passes the current main-agent thinking level to every managed command", async () => {
     const tools = new Map<string, any>();
     let thinkingLevel: "low" | "max" = "low";

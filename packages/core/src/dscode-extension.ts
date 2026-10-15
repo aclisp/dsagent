@@ -34,7 +34,7 @@ import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-pro
 import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
 import { McpSessionPermissions } from "./mcp-permissions.ts";
 import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
-import { applyWorkspacePatch, type ApplyPatchResult } from "./patch.ts";
+import { applyWorkspacePatch, PatchApplicationError, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
 import { defaultModelForProvider } from "./providers.ts";
@@ -59,6 +59,7 @@ import { Workspace } from "./workspace.ts";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
+const CHECKPOINT_TURN_ENTRY = "dscode-checkpoint-turn";
 const DIFF_ENTRY = "dscode-diff";
 const STANDALONE_DOCS = [
   "This standalone CLI omits local Pi docs/examples and disables user extensions and Pi package management.",
@@ -69,6 +70,11 @@ interface DiffEntryData {
   checkpointId: string;
   patch: string;
   files?: Array<{ path: string; status: string; diff: string }>;
+}
+
+interface CheckpointTurnState {
+  activeStart: number | undefined;
+  lastIds: string[] | undefined;
 }
 
 const askWithoutPromptTools = new Set([
@@ -145,6 +151,7 @@ export function createDSCodeExtension(
       let permission: PermissionMode = options.permission;
       const checkpoints: PatchCheckpoint[] = [];
       const undone = new Set<string>();
+      const checkpointTurn: CheckpointTurnState = { activeStart: undefined, lastIds: undefined };
       let projectCommands: string[] = [];
       let lastAgentFailed = false;
       let sessionPartition = Promise.resolve();
@@ -176,6 +183,14 @@ export function createDSCodeExtension(
         ctx.ui.setTitle(`DSCode — ${ctx.cwd}`);
       };
 
+      const restoreCheckpoints = (ctx: ExtensionContext): void => {
+        checkpoints.length = 0;
+        undone.clear();
+        checkpointTurn.activeStart = undefined;
+        checkpointTurn.lastIds = undefined;
+        restoreCheckpointState(ctx.sessionManager.getBranch(), checkpoints, undone, checkpointTurn);
+      };
+
       registerDeepSeekProvider(pi, options);
       registerLocalImageInput(pi);
       registerNaturalExit(pi);
@@ -200,10 +215,8 @@ export function createDSCodeExtension(
 
       pi.on("session_start", async (_event, ctx) => {
         mcpPermissions.clear();
-        checkpoints.length = 0;
-        undone.clear();
+        restoreCheckpoints(ctx);
         projectCommands = await discoverProjectCommands(ctx.cwd);
-        restoreCheckpointState(ctx.sessionManager.getBranch(), checkpoints, undone);
         updateStatus(ctx);
         ctx.ui.setHiddenThinkingLabel(
           formatThinkingLabel(ctx.model?.name ?? ctx.model?.id ?? options.modelId),
@@ -229,7 +242,22 @@ export function createDSCodeExtension(
         await queueSessionPartition(ctx);
       });
 
+      pi.on("session_tree", (_event, ctx) => {
+        restoreCheckpoints(ctx);
+      });
+
+      pi.on("agent_start", () => {
+        // Retries and queued continuations may start another loop before settlement.
+        checkpointTurn.activeStart ??= checkpoints.length;
+      });
+
       pi.on("agent_settled", async (_event, ctx) => {
+        if (checkpointTurn.activeStart !== undefined) {
+          checkpointTurn.lastIds = checkpoints.slice(checkpointTurn.activeStart).map((checkpoint) => checkpoint.id);
+          checkpointTurn.activeStart = undefined;
+          // Persist empty turns too, so a reload cannot show an older turn's patches.
+          pi.appendEntry(CHECKPOINT_TURN_ENTRY, { checkpointIds: checkpointTurn.lastIds });
+        }
         await queueSessionPartition(ctx);
       });
 
@@ -539,14 +567,28 @@ export function createDSCodeExtension(
       });
 
       pi.registerCommand("checkpoints", {
-        description: "List durable patch checkpoints in the current branch",
-        handler: async (_args, ctx) => {
-          if (checkpoints.length === 0) {
-            ctx.ui.notify("No patch checkpoints in this branch.", "info");
+        description: "List the last turn's patch checkpoints; add all for the current branch's history",
+        getArgumentCompletions: (prefix) => [
+          { value: "all", label: "all — list every checkpoint in the current branch" },
+        ].filter((item) => item.value.startsWith(prefix)),
+        handler: async (args, ctx) => {
+          const selection = args.trim();
+          if (selection && selection !== "all") {
+            ctx.ui.notify("Usage: /checkpoints [all]", "warning");
+            return;
+          }
+          const all = selection === "all";
+          if (!all && checkpointTurn.lastIds === undefined && checkpoints.length > 0) {
+            ctx.ui.notify("Last-turn checkpoint information is unavailable. Use /checkpoints all to list this branch's checkpoints.", "info");
+            return;
+          }
+          const listed = all ? checkpoints : checkpoints.filter((checkpoint) => checkpointTurn.lastIds?.includes(checkpoint.id));
+          if (listed.length === 0) {
+            ctx.ui.notify(all ? "No patch checkpoints in this branch." : "No checkpoints were created in the last turn.", "info");
             return;
           }
           ctx.ui.notify(
-            checkpoints
+            listed
               .map(
                 (checkpoint) =>
                   `${undone.has(checkpoint.id) ? "↶" : "●"} ${checkpoint.id}  ${checkpoint.before
@@ -581,7 +623,7 @@ export function createDSCodeExtension(
             const label = (candidate: PatchCheckpoint) =>
               `${candidate.id} — ${candidate.before.map((file) => file.path).join(", ")}${undone.has(candidate.id) ? " (undone)" : ""}`;
             if (!ctx.hasUI) {
-              ctx.ui.notify(`${history.slice(0, pageSize).map(label).join("\n")}\nUse /checkpoints to list all patches or /diff <checkpoint-id> to inspect one.`, "info");
+              ctx.ui.notify(`${history.slice(0, pageSize).map(label).join("\n")}\nUse /checkpoints all to list all patches or /diff <checkpoint-id> to inspect one.`, "info");
               return;
             }
             let offset = 0;
@@ -603,7 +645,7 @@ export function createDSCodeExtension(
           } else if (selection) {
             checkpoint = history.find((candidate) => candidate.id === selection);
             if (!checkpoint) {
-              ctx.ui.notify(`Unknown checkpoint: ${selection}. Use /diff history or /checkpoints to list patches.`, "warning");
+              ctx.ui.notify(`Unknown checkpoint: ${selection}. Use /diff history or /checkpoints all to list patches.`, "warning");
               return;
             }
           } else {
@@ -895,6 +937,9 @@ function registerCommandTools(
       return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context, context.expanded);
     },
     renderResult(result, renderOptions, theme, context) {
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ManagedProcessResult;
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: managedProcessSummary(details),
@@ -1033,11 +1078,29 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       const workspace = new Workspace(ctx.cwd);
       await workspace.initialize();
       let applied: ApplyPatchResult | undefined;
-      const checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
-        applied = await applyWorkspacePatch(workspace, params.input);
-      });
+      let checkpoint: PatchCheckpoint;
+      try {
+        checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
+          applied = await applyWorkspacePatch(workspace, params.input);
+        });
+      } catch (cause) {
+        if (!(cause instanceof PatchApplicationError) && !applied) throw cause;
+        const failure = cause instanceof Error ? cause.message : String(cause);
+        throw new Error([
+          ...(applied ? [`File operations completed for: ${applied.files.join(", ")}`, `Checkpoint capture failed: ${failure}`] : [failure]),
+          "No checkpoint was created for this patch. /undo cannot restore this patch's changes.",
+        ].join("\n"), { cause });
+      }
       checkpoints.push(checkpoint);
-      pi.appendEntry(CHECKPOINT_ENTRY, checkpoint);
+      try {
+        pi.appendEntry(CHECKPOINT_ENTRY, checkpoint);
+      } catch (cause) {
+        throw new Error([
+          `File operations completed for: ${applied!.files.join(", ")}`,
+          `Failed to save checkpoint ${checkpoint.id}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          "Checkpoint persistence was not confirmed. /undo remains available in this session.",
+        ].join("\n"), { cause });
+      }
       const result = applied!;
       return {
         content: [
@@ -1065,6 +1128,9 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       );
     },
     renderResult(result, renderOptions, theme, context) {
+      if (context.isError) {
+        return renderCollapsibleToolResult(result, renderOptions, theme, context);
+      }
       const details = result.details as ApplyPatchResult & { checkpointId: string };
       return renderCollapsibleToolResult(result, renderOptions, theme, context, {
         collapsedSummary: `checkpoint ${details.checkpointId} · +${details.additions} -${details.deletions}`,
@@ -1123,6 +1189,7 @@ function restoreCheckpointState(
   entries: SessionEntry[],
   checkpoints: PatchCheckpoint[],
   undone: Set<string>,
+  turn: CheckpointTurnState,
 ): void {
   for (const entry of entries) {
     if (entry.type !== "custom") continue;
@@ -1134,6 +1201,13 @@ function restoreCheckpointState(
       typeof entry.data.checkpointId === "string"
     ) {
       undone.add(entry.data.checkpointId);
+    } else if (
+      entry.customType === CHECKPOINT_TURN_ENTRY &&
+      isRecord(entry.data) &&
+      Array.isArray(entry.data.checkpointIds) &&
+      entry.data.checkpointIds.every((id) => typeof id === "string")
+    ) {
+      turn.lastIds = entry.data.checkpointIds;
     }
   }
 }

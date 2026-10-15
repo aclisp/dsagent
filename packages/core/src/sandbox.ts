@@ -36,7 +36,7 @@ export function sandboxCommand(
   }
 
   if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
-    const shell = process.env.SHELL ?? "/bin/sh";
+    const shell = hostShellCommand(shellCommand);
     const workspace = fs.realpathSync(cwd);
     const temporary = fs.realpathSync(os.tmpdir());
     const writable =
@@ -57,7 +57,7 @@ export function sandboxCommand(
       .join(" ");
     return {
       command: "/usr/bin/sandbox-exec",
-      args: ["-p", rules, shell, "-lc", shellCommand],
+      args: ["-p", rules, shell.command, ...shell.args],
       description: `macOS Seatbelt (${options.mode}${options.network ? ", network" : ", no network"})`,
     };
   }
@@ -95,7 +95,7 @@ export function sandboxCommand(
         "/workspace",
         image,
         "/bin/sh",
-        "-lc",
+        "-c",
         shellCommand,
       ],
       description: `Docker ${image} (${options.mode}${options.network ? ", network" : ", no network"})`,

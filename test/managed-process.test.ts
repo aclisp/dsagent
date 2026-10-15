@@ -5,6 +5,76 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
 
 describe("ManagedProcessRegistry", () => {
+  it.each([0, 60_000, 60_001, 80_000])("returns complete stdout without a notice at length %i", async (length) => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const result = await registry.start(nodeCommand(`process.stdout.write('x'.repeat(${length}));`), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 0, output: length ? "x".repeat(length) : "(process completed)", sandbox: "host" });
+    } finally { await registry.dispose(); }
+  });
+
+  it("preserves stderr labels and exit status for small output", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const result = await registry.start(nodeCommand("process.stderr.write('error'); process.exitCode = 3;"), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 3, output: "[stderr] error", sandbox: "host" });
+    } finally { await registry.dispose(); }
+  });
+
+  it.each(["stdout", "stderr"])("preserves early errors and final status in oversized %s", async (stream) => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const result = await registry.start(nodeCommand(
+        `process.${stream}.write('ERROR_EARLY\\n' + 'progress\\n'.repeat(25_000) + 'FINAL_STATUS\\n'); process.exitCode = 7;`,
+      ), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 7 });
+      expect(result.output).toContain("ERROR_EARLY\n");
+      expect(result.output).toContain("... output truncated; tail follows ...");
+      expect(result.output.endsWith("FINAL_STATUS\n")).toBe(true);
+      expect(result.output.length).toBeLessThan(81_000);
+    } finally { await registry.dispose(); }
+  });
+
+  it("drains each oversized output window without replaying earlier output or warnings", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start(nodeCommand(
+        "let count = 0; process.stdin.on('data', () => { const label = ++count === 1 ? 'FIRST' : 'SECOND'; process.stdout.write(label + '_HEAD' + 'x'.repeat(200_000) + label + '_TAIL', () => { if (count === 2) process.exit(0); }); });",
+      ), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+      });
+      expect(started.running).toBe(true);
+      const first = await registry.interact(started.processId, { chars: "first\n", yieldTimeMs: 2_000 });
+      expect(first.running).toBe(true);
+      expect(first.output.startsWith("FIRST_HEAD")).toBe(true);
+      expect(first.output.endsWith("FIRST_TAIL")).toBe(true);
+      expect(first.output).toContain("... output truncated; tail follows ...");
+      expect(first.output.length).toBeLessThan(81_000);
+
+      const empty = await registry.interact(started.processId, { yieldTimeMs: 0 });
+      expect(empty).toMatchObject({ running: true, output: "(no new output)" });
+
+      const second = await registry.interact(started.processId, { chars: "second\n", yieldTimeMs: 2_000 });
+      expect(second).toMatchObject({ running: false, exitCode: 0 });
+      expect(second.output.startsWith("SECOND_HEAD")).toBe(true);
+      expect(second.output.endsWith("SECOND_TAIL")).toBe(true);
+      expect(second.output).toContain("... output truncated; tail follows ...");
+      expect(second.output).not.toContain("FIRST");
+      expect(second.output.length).toBeLessThan(81_000);
+      expect(registry.list()).toEqual([]);
+    } finally { await registry.dispose(); }
+  });
+
   it.each(["terminate", "dispose"])("keeps a zero-deadline process alive until %s", async (action) => {
     const registry = new ManagedProcessRegistry();
     try {

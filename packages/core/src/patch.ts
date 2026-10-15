@@ -35,6 +35,19 @@ export interface ApplyPatchResult {
   deletions: number;
 }
 
+export class PatchApplicationError extends Error {
+  constructor(operation: string, completed: string[], cause: unknown) {
+    super([
+      `Patch application failed during ${operation}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      "File operations completed before failure:",
+      ...(completed.length ? completed.map((entry) => `- ${entry}`) : ["(none)"]),
+      "Completed operations were not rolled back. The failed operation's state was not verified.",
+      "No later file operations were attempted.",
+    ].join("\n"), { cause });
+    this.name = "PatchApplicationError";
+  }
+}
+
 export async function applyWorkspacePatch(
   workspace: Workspace,
   input: string,
@@ -108,12 +121,19 @@ export async function applyWorkspacePatch(
   }
 
   // All paths and hunks are validated before any workspace mutation happens.
+  const completed: string[] = [];
   for (const [absolute, content] of staged) {
-    if (content === null) {
-      await fs.rm(absolute, { force: true });
-    } else {
-      await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await writeFileAtomic(absolute, content);
+    const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
+    try {
+      if (content === null) {
+        await fs.rm(absolute, { force: true });
+      } else {
+        await fs.mkdir(path.dirname(absolute), { recursive: true });
+        await writeFileAtomic(absolute, content);
+      }
+      completed.push(operation);
+    } catch (cause) {
+      throw new PatchApplicationError(operation, completed, cause);
     }
   }
 
@@ -244,7 +264,11 @@ function applyUpdate(content: string, action: UpdateAction): string {
     if (oldLines.length === 0) {
       matchIndex = hunk.endOfFile ? output.length : findHeaderPosition(output, hunk.header, cursor);
     } else {
-      matchIndex = findSequence(output, oldLines, cursor, hunk.header, hunk.endOfFile);
+      // Text anchors constrain replacements; numeric hints may still fall back.
+      const searchCursor = hunk.header && parseLineHint(hunk.header) === undefined
+        ? findTextAnchorPosition(output, hunk.header, cursor)
+        : cursor;
+      matchIndex = findSequence(output, oldLines, searchCursor, hunk.header, hunk.endOfFile);
     }
 
     const newLines: string[] = [];
@@ -302,6 +326,21 @@ function findHeaderPosition(lines: string[], header: string, cursor: number): nu
   if (hint !== undefined) return Math.max(cursor, Math.min(lines.length, hint));
   const index = lines.findIndex((line, lineIndex) => lineIndex >= cursor && line.includes(header));
   return index === -1 ? cursor : index + 1;
+}
+
+function findTextAnchorPosition(lines: string[], header: string, cursor: number): number {
+  let position: number | undefined;
+  const anchor = header.trimEnd();
+  for (let index = cursor; index < lines.length; index += 1) {
+    if (lines[index]!.trimEnd() !== anchor) continue;
+    // Like Pi's edit tool, reject ambiguous matches rather than choosing one.
+    if (position !== undefined) {
+      throw new Error(`Patch anchor is ambiguous: ${header}. Use a more specific anchor or a numeric line hint.`);
+    }
+    position = index + 1;
+  }
+  if (position === undefined) throw new Error(`Patch anchor not found: ${header}`);
+  return position;
 }
 
 function parseLineHint(header: string): number | undefined {

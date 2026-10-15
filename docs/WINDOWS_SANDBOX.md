@@ -48,6 +48,15 @@ are untrusted.
 `danger-full-access` is not a Windows sandbox mode. It continues to use the host PowerShell path and
 must be described as unrestricted host execution.
 
+Host and native execution share PowerShell discovery and best-effort UTF-8 output preparation.
+The native backend requires `pwsh.exe`: it honors a valid `DSCODE_SHELL` override, then searches PATH
+and `%ProgramFiles%\PowerShell\7\pwsh.exe`. An override pointing to a missing or invalid executable
+is an error. A missing PowerShell 7 installation never causes fallback to Windows PowerShell or
+unrestricted execution.
+Native invocations retain `-NoLogo -NoProfile -NonInteractive -Command`; host invocations retain
+`-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`. Existing UTF-8 prefixes are preserved
+without duplication. Discovery checks files without launching PowerShell probes.
+
 ## Identity and token requirements
 
 - Sandboxed commands must run as dedicated, non-administrator local identities at Medium Integrity.

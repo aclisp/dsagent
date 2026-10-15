@@ -4,6 +4,20 @@
 
 要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
 
+Unix 主机命令优先使用非空的 `$SHELL`，否则依次查找 `/bin/bash`、PATH 中可执行的 `bash`，
+最后回退到 `/bin/sh`。显式配置的 `$SHELL` 无效时返回启动错误，不静默改用其他 shell。
+主机和 macOS Seatbelt 命令使用 `-c`，不再为每条命令重新加载登录 shell 的启动文件。
+DSCode 已继承的导出 SDK 环境变量和 PATH 条目仍然可用；请在启动 DSCode 前完成必要的 SDK
+环境初始化。Docker 命令使用容器内的 `/bin/sh -c`，不使用主机 shell 路径。
+
+Windows 主机命令使用 PowerShell，依次查找 `DSCODE_SHELL`、PATH 中的 `pwsh.exe` 和
+`%ProgramFiles%\PowerShell\7\pwsh.exe`。找不到 PowerShell 7 时，主机执行继续查找 PATH 中的
+`powershell.exe` 和 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`；未设置
+`SystemRoot` 时也接受 `WINDIR`。主机执行的 `DSCODE_SHELL` 只去掉首尾空白后原样传给进程创建，
+保留裸名称、相对路径和无扩展名路径的原有解析行为。自动查找失败时给出明确错误。
+Windows 原生沙箱仍验证显式配置并要求 PowerShell 7，不回退到旧版 Windows PowerShell。两条路径共用尽力而为的
+UTF-8 控制台输出设置，并禁用 profile 加载，同时保留各后端原有的启动参数。
+
 从本地源码 checkout 启动 DSCode：
 
 ```bash
@@ -167,6 +181,11 @@ Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 stand
 正值范围为 1000–600000 ms。`yield_time_ms` 仅控制单次工具调用的等待时间，最多 30000 ms。
 通过 `write_stdin` 的 `terminate: true` 停止进程；会话关闭会清理剩余托管进程。
 
+每个 CLI 或 Web 会话最多同时运行 64 个托管任务。达到上限时，在创建进程之前拒绝新任务，
+已有任务继续运行。通过 `/jobs` 查看任务，等待其结束或使用 `write_stdin` 的 `terminate: true`
+停止任务。工具调用提前返回不会释放运行名额，进程关闭后才释放。已结束且尚未读取的记录
+单独受 100 条保留上限约束，不占运行名额。
+
 ### RPC 子进程与审批
 
 需要后续交互或审批时，使用 `dscode --mode rpc --no-session` 并保持 stdin 打开。
@@ -244,7 +263,8 @@ TUI 常用命令：
 | `/permissions revoke-mcp <工具名或server namespace\|all>` | 撤销 MCP 会话授权 |
 | `/status` | 查看模型、context、缓存命中、token、费用和会话信息 |
 | `/diff` | 查看当前 patch transcript |
-| `/checkpoints` / `/undo` | 查看或恢复持久 checkpoint |
+| `/checkpoints [all]` | 查看上一轮的 checkpoint；加 `all` 查看当前 branch 的全部历史 |
+| `/undo` | 恢复最后一个未撤销的 checkpoint |
 | `/new` / `/clear` | 清除当前 context 并开始一个新会话（两者等价） |
 | `/resume` / `/fork` / `/tree` | 导航树形本地会话 |
 | `/compact` | 压缩旧 context，同时保留当前工作状态 |

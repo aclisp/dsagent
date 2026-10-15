@@ -4,6 +4,24 @@
 
 Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
 
+On Unix, host commands use a non-empty `$SHELL`, otherwise `/bin/bash`, then an executable `bash`
+on PATH, and finally `/bin/sh`. A configured `$SHELL` is used explicitly; an invalid value produces
+a launch error instead of silently selecting another shell. Host and macOS Seatbelt commands run
+with `-c`, so login-shell startup files are not reloaded for each command. Exported SDK variables
+and PATH entries already inherited by DSCode remain available. Initialize required SDK environments
+before starting DSCode. Docker commands use `/bin/sh -c` inside the container rather than a host
+shell path.
+
+Windows host commands use PowerShell. Discovery prefers `DSCODE_SHELL`, then `pwsh.exe` on PATH,
+then `%ProgramFiles%\PowerShell\7\pwsh.exe`. If PowerShell 7 is unavailable, host execution tries
+`powershell.exe` on PATH, then `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`
+(`WINDIR` is also accepted when `SystemRoot` is unset). Host `DSCODE_SHELL` overrides pass through
+unchanged after trimming surrounding whitespace, preserving bare names and relative or extensionless
+paths for process creation to resolve. Automatic discovery reports a clear error if no executable
+is found. The native Windows sandbox validates its override and requires
+PowerShell 7 and never falls back to Windows PowerShell. Both paths share best-effort UTF-8 console
+output setup and disable profile loading, while retaining their existing backend-specific flags.
+
 Start DSCode from a local source checkout:
 
 ```bash
@@ -290,7 +308,8 @@ Inside the TUI:
 | `/permissions revoke-mcp <tool-or-server-namespace\|all>` | Revoke MCP session grants |
 | `/status` | Show model, context, cache hits, tokens, cost, and session details |
 | `/diff` | Inspect the current patch transcript |
-| `/checkpoints` / `/undo` | Inspect or restore durable patch checkpoints |
+| `/checkpoints [all]` | List the last turn's checkpoints, or the current branch's full history with `all` |
+| `/undo` | Restore the latest checkpoint that has not been undone |
 | `/new` / `/clear` | Clear the current context and start a new session (aliases) |
 | `/resume` / `/fork` / `/tree` | Navigate tree-shaped local sessions |
 | `/compact` | Compact older context while preserving current work |
@@ -301,6 +320,11 @@ Inside the TUI:
 | `/effort ...` | Change the active model's reasoning effort |
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
+
+Each CLI or Web session allows at most 64 running managed jobs. At capacity, new
+launches are rejected before a process is started; existing jobs continue running.
+Use `/jobs` to inspect them, then wait for a job to finish or use `write_stdin` with
+`terminate: true` to stop one. A yielded job still occupies a slot until it closes.
 
 Completed managed processes are removed as soon as `exec_command` or `write_stdin`
 returns their final result. Background processes that finish between reads retain
