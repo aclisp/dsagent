@@ -42,6 +42,10 @@ dscode -C /path/to/project
 
 `/login` 和 `--provider` 也接受 `kimi`、`grok` 这两个易记别名。
 
+Pi 1.3.0 的 `kimi-coding` 改用 OpenAI Chat Completions 协议，默认地址为
+`https://api.kimi.com/coding/v1`。`models.json` 中自定义的 `kimi-coding` base URL
+必须包含 `/v1`，并支持该协议。
+
 新会话的思考力度优先级为：CLI `--effort` / `--thinking`（最后一个参数生效）、
 `DSCODE_EFFORT`、`modelThinkingLevels["provider/modelId"]`、`defaultThinkingLevel`、
 provider 默认值（DeepSeek 为 `max`，其他 provider 为 `medium`）。配置位于
@@ -207,7 +211,7 @@ RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求�
 转发为 Web UI 的原生审批对话框。
 
 
-MCP 使用 Pi 1.2.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+MCP 使用 Pi 1.3.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，

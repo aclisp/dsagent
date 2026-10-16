@@ -47,6 +47,10 @@ non-interactive commands and explicit provider-free configuration.
 
 The aliases `kimi` and `grok` are accepted by `/login` and `--provider`.
 
+Pi 1.3.0 uses OpenAI Chat Completions for `kimi-coding` at
+`https://api.kimi.com/coding/v1`. Custom `kimi-coding` base URLs in `models.json`
+must include `/v1` and support that protocol.
+
 Reasoning effort for a new session resolves in this order: CLI `--effort` / `--thinking`
 (the last flag wins), `DSCODE_EFFORT`, `modelThinkingLevels["provider/modelId"]`,
 `defaultThinkingLevel`, then the provider default (DeepSeek `max`, other providers `medium`).
@@ -240,7 +244,7 @@ protocol requests explicitly; child dialogs are not automatically forwarded into
 Web UI's native approval dialogs.
 
 
-MCP uses Pi 1.2.0's native implementation and schema. Global configuration is
+MCP uses Pi 1.3.0's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools
