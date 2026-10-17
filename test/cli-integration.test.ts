@@ -241,7 +241,7 @@ describe("DSCode Pi integration", () => {
     expect(execution.exitCode, execution.stderr).toBe(0);
     const events = execution.stdout.trim().split("\n").map(line => JSON.parse(line));
     const launched = events.find(event => event.type === "tool_execution_end" && event.toolName === "exec_command");
-    expect(launched.result.details).toMatchObject({ running: true, sandbox: "trusted dscode (child CLI permissions)" });
+    expect(launched.result.details).toMatchObject({ running: true, sandbox: "trusted dscode" });
     expect(events.some(event => event.type === "tool_execution_end" && event.toolName === "read")).toBe(true);
     expect(execution.stdout).toContain("CHILD_DONE");
     expect(await fs.readFile(path.join(root, "child.txt"), "utf8")).toBe("CHILD_EDIT_OK\n");

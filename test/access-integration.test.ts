@@ -206,7 +206,7 @@ describe("command access escalation", () => {
       running: false,
       output: "done",
       exitCode: 0,
-      sandbox: "trusted dscode-vision (fixed executable)",
+      sandbox: "trusted dscode-vision",
     });
     runExtensionFactory(
       {
@@ -263,7 +263,7 @@ describe("command access escalation", () => {
       running: false,
       output: "done",
       exitCode: 0,
-      sandbox: "trusted dscode-vision (fixed executable)",
+      sandbox: "trusted dscode-vision",
     });
     runExtensionFactory(options(process.cwd()), pi);
     const prompts: string[] = [];
