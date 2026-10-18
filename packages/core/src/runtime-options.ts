@@ -168,7 +168,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (explicitEffort !== undefined) forwarded.unshift("--thinking", explicitEffort);
-  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode"])];
+  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"])];
   if (noMcp) activeTools = activeTools.filter((tool) => !isMcpTool(tool));
 
   return {
@@ -216,11 +216,12 @@ DSCode options:
   --prompt-contract <mode>         engineering|none (default: engineering)
   --tools <names>                  Select initially active tools
                                    Default: read,exec_command,write_stdin,apply_patch,codemode
+                                   Plus web_search,web_fetch when network and DeepSeek credentials are available
   --no-mcp                         Skip MCP connections and tools
   --no-tools                       Disable all tools and MCP, regardless of argument order
   --permission <mode>              ask|auto|full (full grants host + network)
   --sandbox <mode>                 read-only|workspace-write|danger-full-access
-  --network                        Pre-authorize command network access for this run
+  --network                        Enable command network access and web tools for this run
   -y, --yes                        YOLO: trust project, skip approvals, allow host + network
 
 Session and editor features:

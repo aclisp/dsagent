@@ -85,14 +85,14 @@ try {
       }`);
     const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: home, USERPROFILE: home, DSCODE_HOME: home, DSCODE_CREDENTIALS_STORE: "file", DEEPSEEK_API_KEY: "smoke-only-key", PI_OFFLINE: "1", PI_TELEMETRY: "0", PI_SKIP_VERSION_CHECK: "1" };
     const entry = path.join(manifest[variant], variant === "baseline" ? "dist/cli.js" : "cli.js");
-    const args = ["--extension", extension, "--base-url", `http://127.0.0.1:${server.address().port}`, "--mode", "json", "--print", "--no-session", "--no-approve", "reply once"];
+    const args = ["--extension", extension, "--base-url", `http://127.0.0.1:${server.address().port}`, "--network", "--mode", "json", "--print", "--no-session", "--no-approve", "reply once"];
     failResponse = false;
     const success = await capture(entry, args, env, home);
     assert.equal(success.code, 0, success.stderr);
     assert.ok(success.stdout.includes("bundle smoke ok"), success.stdout);
     assert.ok(success.stderr.includes("EXTENSION_READY"), success.stderr);
     assert.equal(payload.model, "deepseek-flash");
-    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"].sort());
+    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "mcp__fixture__echo"].sort());
     assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type, "function");
     assert.equal(payload.tools.find(tool => tool.name === "apply_patch").parameters.properties.input.type, "string");
     plannedCode = 'console.log(await tools.mcp__fixture__echo({text:"CODEMODE_BUNDLE_OK"}));';

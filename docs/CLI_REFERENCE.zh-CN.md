@@ -144,6 +144,29 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
+配置 DeepSeek 凭据且允许网络访问后，还会自动启用 `web_search`、`web_fetch`，所有聊天 provider 均可使用。
+它们复用 DeepSeek 的服务地址和凭据；自定义代理需要支持 `/v1/tools/search`、
+`/v1/tools/fetch`。`--tools` 可限定工具，`--no-tools` 禁用全部工具，`--no-mcp` 不影响它们。
+
+搜索每次请求最新结果，默认返回 5 条；可设置 `count`（1～50）、`ori_question`
+（不超过 128 个 Unicode 字符）和 `need_content`（默认 `false`）。支持 `site:`、
+`lang:`、`after:` 等原生查询语法。结果保留排序、摘要、URL、日期及评分。
+`need_content: true` 获取的正文保存为快照，不直接塞入搜索结果。
+
+`web_fetch` 接受 `url` 或 `snapshot_id` 二者之一，按 `offset`（从 1 开始）和
+`limit` 分段阅读，默认 200 个展示行，每次最多 50 KiB。超长行按 4000 个 Unicode
+字符折行展示，原始 Markdown 不变。结果返回 `snapshot_id` 和 `next_offset`。
+按 URL 读取会复用最近快照；`refresh: true` 生成新版本，旧 ID 始终指向旧正文。
+按 ID 读取不发起网络请求，也不重新解析凭据。
+
+正文保存在 `$DSCODE_HOME/web-snapshots/`，会话只保存元数据，恢复和 fork 可继续读取。
+`--no-session` 等非持久化会话只在内存保存正文。工具沿用 `auto` / `ask` / `full`
+权限规则。网络访问被禁用时，两个工具都不可用，包括已缓存快照的读取。
+`--network`、`full` 权限或 `danger-full-access` 沙箱可启用网络访问；单个命令的临时网络授权
+不会启用网页工具。Fetch 失败时不自动转为本机抓取。
+搜索与抓取通过 DeepSeek 按次计费，正文进入模型上下文后也会消耗模型 token；
+详见 [DeepSeek Search / Fetch 文档](https://api-docs.deepseek.com/zh-cn/guides/search/)。
+
 CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI 子进程，
 再通过 `write_stdin` 获取结果。直接调用 `dscode ...` 使用固定的安装入口并保留模型凭据，
 不通过 PATH 查找，也不受父 agent 的命令沙箱限制。子进程根据自己的 CLI 参数和普通默认值

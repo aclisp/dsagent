@@ -49,7 +49,7 @@ describe("parseRuntimeArgs", () => {
       promptContract: "engineering",
       permission: "auto",
       sandbox: "workspace-write",
-      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"],
       toolsExplicit: false,
     });
     expect(parsed.piArgs).toContain("deepseek");
@@ -153,7 +153,7 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.options).toMatchObject({
       permission: "ask",
       sandbox: "read-only",
-      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode"],
+      activeTools: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"],
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining(["--thinking", "high", "--mode", "json", "--continue"]),

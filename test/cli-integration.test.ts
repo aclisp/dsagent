@@ -116,6 +116,7 @@ describe("DSCode Pi integration", () => {
         ...toolArgs,
         "--base-url",
         `http://127.0.0.1:${address.port}`,
+        "--network",
         "--mode",
         "json",
         "--print",
@@ -143,7 +144,7 @@ describe("DSCode Pi integration", () => {
     expect(payload).not.toHaveProperty("include");
     expect(payload?.reasoning).toEqual({ effort: "max" });
     expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
-      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode"]), "mcp__fixture__echo"].sort(),
+      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"]), "mcp__fixture__echo"].sort(),
     );
     if (!noTools && !toolArgs.length) {
       expect(payload?.tools.find((tool: { name: string }) => tool.name === "codemode"))

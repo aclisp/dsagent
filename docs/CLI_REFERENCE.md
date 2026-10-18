@@ -164,6 +164,36 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
+With DeepSeek credentials configured and network access enabled, `web_search` and `web_fetch` are also enabled
+for all chat providers. They use the configured DeepSeek base URL and credentials;
+proxies must support `/v1/tools/search` and `/v1/tools/fetch`. Explicit `--tools`
+selection and `--no-tools` apply; `--no-mcp` does not disable these native tools.
+
+Every search is fresh and returns five results by default. Optional parameters are
+`count` (1–50), `ori_question` (up to 128 Unicode characters), and `need_content`
+(default `false`). Queries retain native operators such as `site:`, `lang:`, and
+`after:`. Results preserve server order, summaries, URLs, dates, and scores.
+With `need_content: true`, available full pages are saved as snapshots rather than
+included in the search output.
+
+`web_fetch` accepts exactly one of `url` or `snapshot_id`. Read pages with 1-based
+`offset` and `limit`: 200 display lines by default, at most 50 KiB per result.
+Long lines wrap at 4000 Unicode characters for display; original Markdown stays
+unchanged. Results include `snapshot_id` and `next_offset`. URL reads reuse the
+latest session snapshot; `refresh: true` creates a new immutable version. Reading
+an ID never makes a network request or resolves credentials again.
+
+Full pages are stored in `$DSCODE_HOME/web-snapshots/`; only metadata is appended
+to sessions, allowing resume and fork to retain old versions. Non-persistent
+sessions (`--no-session`) keep full pages in memory. Both tools follow normal
+`auto` / `ask` / `full` permissions. Disabling network access hides and blocks both
+tools, including cached snapshot reads. `--network`, full permissions, or the
+`danger-full-access` sandbox enable network access. A scoped command-network grant
+does not enable web tools.
+Fetch failures do not fall back to local HTTP requests. Search and Fetch are
+billed by DeepSeek per request, and returned text also consumes model context;
+see the [DeepSeek Search / Fetch guide](https://api-docs.deepseek.com/guides/search/).
+
 CLI and Web/HTTP agents can start ordinary DSCode CLI children through `exec_command`
 and collect their output with `write_stdin`. Direct `dscode ...` invocations use a fixed
 installed CLI entrypoint with model credentials preserved; they do not use PATH lookup

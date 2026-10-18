@@ -382,8 +382,8 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
   });
 
   it.each<{ runtimeArgs: string[]; expected: string[]; exposure?: string }>([
-    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"] },
-    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"] },
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "mcp__fixture__echo"] },
+    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "tool_search"] },
     { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
     { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },

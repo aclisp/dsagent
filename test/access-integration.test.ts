@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createAssistantMessageEventStream, validateToolArguments, type AssistantMessage, type JsonObject, type Message, type Model } from "@earendil-works/pi-ai";
 import { runAgentLoop, type AgentEvent, type StreamFn } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
@@ -24,7 +24,7 @@ describe("command access escalation", () => {
     const ui = new Proxy({ theme: createTestTheme() }, {
       get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
     });
-    const ctx = { mode, ui, hasUI: mode === "tui", model: undefined };
+    const ctx = { mode, ui, hasUI: mode === "tui", model: undefined, sessionManager: SessionManager.inMemory() };
     expect(commands.get("permissions").description).toContain("ask|auto|full");
     expect(commands.has("plan")).toBe(false);
     expect(commands.has("agents")).toBe(false);
