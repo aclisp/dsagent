@@ -56,6 +56,7 @@ import {
 import { createDSCodeReadTool } from "./read-tool.ts";
 import { formatThinkingLabel, registerCodingTui } from "./tui-experience.ts";
 import { Workspace } from "./workspace.ts";
+import { isWebTool, registerWebTools, WEB_TOOL_NAMES } from "./web-tools.ts";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
@@ -192,6 +193,14 @@ export function createDSCodeExtension(
       };
 
       registerDeepSeekProvider(pi, options);
+      const webTools = registerWebTools(pi, options, () => effectiveAccess().network);
+      const refreshWebTools = async (ctx: ExtensionContext): Promise<void> => {
+        const wasAvailable = webTools.isAvailable();
+        if (await webTools.sync(ctx) && !wasAvailable) {
+          const selected = options.toolsExplicit ? options.activeTools.filter(isWebTool) : [...WEB_TOOL_NAMES];
+          pi.setActiveTools([...new Set([...pi.getActiveTools(), ...selected])]);
+        }
+      };
       registerLocalImageInput(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
@@ -214,6 +223,8 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_start", async (_event, ctx) => {
+        const webAvailable = await webTools.sync(ctx);
+        const availableSelection = (names: string[]) => names.filter((name) => !isWebTool(name) || webAvailable);
         mcpPermissions.clear();
         restoreCheckpoints(ctx);
         projectCommands = await discoverProjectCommands(ctx.cwd);
@@ -228,12 +239,19 @@ export function createDSCodeExtension(
           const restored = options.toolsExplicit ? undefined : getCurrentSystemMessage(
             ctx.sessionManager.buildSessionProjection().messages,
           )?.toolsAdded?.map((tool) => tool.name);
-          pendingRestoredTools = (restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
+          pendingRestoredTools = availableSelection(restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
           // Pi's MCP session_start runs first and activates discovery from server exposure.
           const discoveryTools = pi.getActiveTools().filter((name) => name === "codemode" || name === "tool_search");
-          const selectedTools = restored ? pendingRestoredTools : options.activeTools;
-          pi.setActiveTools(options.noTools ? [] : [...new Set([...selectedTools, ...discoveryTools])]);
+          const selectedTools = restored ? [...pendingRestoredTools] : [...options.activeTools];
+          if (webTools.becameAvailable() && !options.toolsExplicit) selectedTools.push(...WEB_TOOL_NAMES);
+          pi.setActiveTools(options.noTools ? [] : [...new Set([...availableSelection(selectedTools), ...discoveryTools])]);
           activateRestoredTools();
+        } else if (_event.reason === "reload" && webAvailable) {
+          const declared = getCurrentSystemMessage(ctx.sessionManager.buildSessionProjection().messages)?.toolsAdded ?? [];
+          const selected = webTools.becameAvailable() && !options.toolsExplicit
+            ? [...WEB_TOOL_NAMES]
+            : declared.filter((tool) => isWebTool(tool.name)).map((tool) => tool.name);
+          pi.setActiveTools([...new Set([...pi.getActiveTools(), ...selected])]);
         }
         await queueSessionPartition(ctx);
       });
@@ -270,7 +288,8 @@ export function createDSCodeExtension(
         }
       });
 
-      pi.on("before_agent_start", async (event) => {
+      pi.on("before_agent_start", async (event, ctx) => {
+        await refreshWebTools(ctx);
         activateRestoredTools();
         lastAgentFailed = false;
         if (isStandalone) {
@@ -479,6 +498,7 @@ export function createDSCodeExtension(
             if (!approved) return;
           }
           permission = parsed.data;
+          await refreshWebTools(ctx);
           updateStatus(ctx);
           pi.appendEntry("dscode-permission", { permission });
           ctx.ui.notify(`Permission mode: ${permission}`, "info");
@@ -842,8 +862,8 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
       contextWindow: 1_000_000,
       maxTokens: 384_000,
       thinkingLevelMap: {
-        off: null,
-        minimal: null,
+        off: options.transport === "responses" ? "none" : null,
+        minimal: "low",
         low: "low",
         medium: "high",
         high: "high",
@@ -853,7 +873,8 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
       compat:
         options.transport === "responses"
           ? {
-              supportsDeveloperRole: true,
+              // DeepSeek treats developer messages as user messages.
+              supportsDeveloperRole: false,
               supportsLongCacheRetention: false,
               supportsStrictMode: false,
               supportsOpenAIGrammarTools: false,
@@ -1307,7 +1328,7 @@ function engineeringInstructions(
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
     `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
-    `- Command network access is ${access.network ? "enabled" : "disabled until the user grants scoped access"}; do not work around this boundary.`,
+    `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}; do not work around this boundary.`,
     ...(access.network
       ? []
       : [

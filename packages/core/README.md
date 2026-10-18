@@ -7,8 +7,19 @@ checkpoints, and RPC behavior used by the `@aclisp/dsagent` terminal client. Dee
 default; Codex, OpenAI, Anthropic, OpenRouter, Z.AI, Kimi, MiniMax, xAI, and OpenCode Zen Go are supported by the same
 runtime.
 
-The runtime uses Pi 1.2.0's native MCP, codemode, and tool-search extensions.
+The runtime uses Pi 1.3.0's native MCP, codemode, and tool-search extensions.
 Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, and `codemode`.
+When network access and DeepSeek credentials are available, `web_search` and `web_fetch` are also enabled
+for every chat provider. Both use the configured DeepSeek service and normal tool
+permissions; `--tools` can select them explicitly and `--no-tools` disables them.
+Disabled network access hides both tools and blocks calls, including cached snapshot
+reads. `--network`, full permissions, or a full-access sandbox enable network access.
+Search returns five results by default and optionally saves full pages with
+`need_content: true`. Fetch reads immutable, versioned Markdown snapshots by URL or
+`snapshot_id`, with 1-based `offset`/`limit` pagination. `refresh: true` fetches a new
+version without replacing historical snapshots. Snapshot files live in
+`DSCODE_HOME/web-snapshots`; session entries contain only their metadata. Non-persistent
+sessions keep snapshots in memory. Both tools return structured data to codemode.
 Codemode's `searchTools()` and `describeTool()` discover MCP tools without changing
 the model's active tool declarations. `tool_search` remains available through
 `--tools` or server `exposure: "deferred"`, which activates it automatically.

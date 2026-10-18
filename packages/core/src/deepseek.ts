@@ -21,8 +21,10 @@ export function optimizeDeepSeekResponsesPayload(
     next.reasoning = { effort: next.reasoning.effort };
   }
 
-  // Let DeepSeek apply sampling controls: top_p affects thinking mode, while
-  // temperature affects non-thinking mode (including reasoning.effort: "none").
+  // Let DeepSeek apply sampling controls. Temperature only affects non-thinking
+  // mode (reasoning.effort: "none"). Flash uses top_p in thinking mode (minimum
+  // 0.95) and fixes it at 1.0 otherwise. Pro ignores top_p in thinking mode
+  // (0.95 with tools, 1.0 without) and uses it in non-thinking mode.
 
   return next;
 }

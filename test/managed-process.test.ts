@@ -111,7 +111,7 @@ describe("ManagedProcessRegistry", () => {
       const result = await registry.start("dscode --permission full --network --model child --effort low -p 'run task'", {
         cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 2_000, timeoutMs: 0, thinkingLevel: "max",
       });
-      expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "trusted dscode (child CLI permissions)" });
+      expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "trusted dscode" });
       expect(JSON.parse(result.output)).toEqual({ args: ["--permission", "full", "--network", "--model", "child", "--effort", "low", "-p", "run task"], key: "child-test-key", custom: null, depth: "1" });
     } finally {
       await registry.dispose(); restoreEnvironment(saved); await fs.rm(root, { recursive: true, force: true });
@@ -566,7 +566,7 @@ describe("ManagedProcessRegistry", () => {
         expect(completed).toMatchObject({
           running: false,
           exitCode: 0,
-          sandbox: "trusted dscode-vision (fixed executable)",
+          sandbox: "trusted dscode-vision",
         });
         expect(JSON.parse(completed.output)).toEqual({
           fixed: true,
@@ -649,7 +649,7 @@ describe("ManagedProcessRegistry", () => {
         expect(result).toMatchObject({
           running: false,
           timedOut: true,
-          sandbox: "trusted dscode-vision (fixed executable)",
+          sandbox: "trusted dscode-vision",
         });
       } finally {
         await registry.dispose();

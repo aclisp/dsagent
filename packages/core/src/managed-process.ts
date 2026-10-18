@@ -121,12 +121,12 @@ export class ManagedProcessRegistry {
       ? this.dscodeExecutable === undefined ? resolveDSCodeExecutable() : { executable: process.execPath, prefix: [this.dscodeExecutable] }
       : undefined;
     const invocation = dscodeCommand && cli
-      ? { command: cli.executable, args: [...cli.prefix, ...dscodeCommand.args], description: "trusted dscode (child CLI permissions)" }
+      ? { command: cli.executable, args: [...cli.prefix, ...dscodeCommand.args], description: "trusted dscode" }
       : visionCommand
       ? {
           command: process.execPath,
           args: [this.visionExecutable, ...visionCommand.args],
-          description: "trusted dscode-vision (fixed executable)",
+          description: "trusted dscode-vision",
         }
       : sandboxCommand(command, options.cwd, options.sandbox);
     const env = dscodeCommand
