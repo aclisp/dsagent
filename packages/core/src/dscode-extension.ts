@@ -29,6 +29,7 @@ import { registerEffortDefaults } from "./effort.ts";
 import { registerNaturalExit } from "./exit.ts";
 import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
+import { registerLlmMetrics } from "./llm-metrics.ts";
 import { partitionSessionFile } from "./home.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
 import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
@@ -202,6 +203,7 @@ export function createDSCodeExtension(
         }
       };
       registerLocalImageInput(pi);
+      registerLlmMetrics(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
       registerEffortDefaults(pi, options);

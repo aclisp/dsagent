@@ -369,6 +369,37 @@ output; later `write_stdin` calls for that ID return `Unknown process`. Running
 processes are never evicted by this limit. `/jobs` keeps showing both running and
 retained completed records.
 
+### Internal latency diagnostics
+
+On Node.js, `/x-metrics` reports the latest user message's initial LLM call up to
+the first non-empty thinking, text, or tool-call content. It works through the
+existing TUI, RPC, and Web notification output without making a model request or
+adding the report to model context. Tool continuations and compaction calls are
+excluded. Reports are session-local, kept in memory, and cleared on session
+replacement, reload, or process restart.
+
+The report includes overall time to first content and separate attempts for
+provider and agent retries. For observable HTTP requests, it records these phases:
+
+| Phase | Measurement |
+| --- | --- |
+| `request_preparation` | Initial model-turn preparation through creation of the HTTP request |
+| `connection_setup` | HTTP request creation through availability of a writable connection, including pool waits, DNS, TCP, and TLS |
+| `request_upload` | Start of HTTP headers/body writes through local socket write completion |
+| `first_content_wait` | Local socket write completion through the first non-empty model content |
+
+DeepSeek Flash with `openai-responses` on Node.js supports all four phases. Other
+providers and transports retain overall first-content latency, but phases that
+cannot be observed are marked `unavailable`. Retry gaps are shown separately; a
+retry's preparation is unavailable when its start cannot be observed. Connection
+reuse and actual request-body byte counts are included when observable.
+
+Socket write completion does not mean the provider has received or acknowledged
+the request. First-content waiting includes remaining network transit, proxies,
+and provider processing, and cannot isolate provider queueing from prefill.
+No prompts, response content, credentials, or HTTP headers are retained. Bun
+standalone measurement is not supported.
+
 ## Safety model
 
 Permissions decide when DSCode asks. The sandbox decides what a command can actually access.
