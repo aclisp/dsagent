@@ -842,8 +842,8 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
       contextWindow: 1_000_000,
       maxTokens: 384_000,
       thinkingLevelMap: {
-        off: null,
-        minimal: null,
+        off: options.transport === "responses" ? "none" : null,
+        minimal: "low",
         low: "low",
         medium: "high",
         high: "high",
@@ -853,7 +853,8 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
       compat:
         options.transport === "responses"
           ? {
-              supportsDeveloperRole: true,
+              // DeepSeek treats developer messages as user messages.
+              supportsDeveloperRole: false,
               supportsLongCacheRetention: false,
               supportsStrictMode: false,
               supportsOpenAIGrammarTools: false,
