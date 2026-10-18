@@ -25,6 +25,7 @@ const originalEnvironment = new Map(
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const key of ENV_KEYS) {
     const value = originalEnvironment.get(key);
     if (value === undefined) delete process.env[key];
@@ -389,6 +390,7 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
   ])(
     "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected, exposure = "direct" }) => {
+      vi.stubEnv("DEEPSEEK_API_KEY", "http-mcp-test-key");
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-mcp-"));
       temporaryRoots.push(root);
       const home = path.join(root, "home");
