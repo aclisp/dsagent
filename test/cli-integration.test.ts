@@ -144,11 +144,15 @@ describe("DSCode Pi integration", () => {
     expect(payload).not.toHaveProperty("include");
     expect(payload?.reasoning).toEqual({ effort: "max" });
     expect((payload?.tools ?? []).map((tool: { name: string }) => tool.name).sort()).toEqual(
-      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"]), "mcp__fixture__echo"].sort(),
+      noTools ? [] : [...(toolArgs.length ? ["read", "exec_command", "write_stdin", "apply_patch"] : ["read", "exec_command", "write_stdin", "apply_patch", "codemode"]), "mcp__fixture__echo"].sort(),
     );
     if (!noTools && !toolArgs.length) {
       expect(payload?.tools.find((tool: { name: string }) => tool.name === "codemode"))
         .toMatchObject({ type: "function", parameters: { properties: { code: { type: "string" } } } });
+      const codemode = payload?.tools.find((tool: { name: string }) => tool.name === "codemode");
+      expect(codemode.description).not.toContain("need_content");
+      expect(codemode.description).not.toContain("snapshot_id");
+      expect(payload?.input[0]).toMatchObject({ role: "system", content: expect.stringContaining("discover web_search and web_fetch on demand") });
     }
     if (!noTools) {
       expect(payload?.tools.find((tool: { name: string }) => tool.name === "apply_patch"))

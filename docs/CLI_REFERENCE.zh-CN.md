@@ -144,9 +144,13 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
-配置 DeepSeek 凭据且允许网络访问后，还会自动启用 `web_search`、`web_fetch`，所有聊天 provider 均可使用。
-它们复用 DeepSeek 的服务地址和凭据；自定义代理需要支持 `/v1/tools/search`、
-`/v1/tools/fetch`。`--tools` 可限定工具，`--no-tools` 禁用全部工具，`--no-mcp` 不影响它们。
+配置 DeepSeek 凭据且允许网络访问后，`web_search`、`web_fetch` 以 deferred 工具注册，所有聊天 provider 均可使用。
+它们默认不加入 activeTools，完整定义也不会内嵌到 codemode 的说明中。需要时通过 codemode 的
+`searchTools()` 或 `describeTool()` 发现，再调用 `tools.web_search()` 或 `tools.web_fetch()`。
+原生 `tool_search` 也可以按需将它们加载为直接工具。
+它们复用 DeepSeek 的服务地址和凭据；自定义代理需要支持 `/v1/tools/search`、`/v1/tools/fetch`。
+`--tools` 选择初始激活的工具，不影响通过 codemode 调用 deferred 网页工具；
+`--no-tools` 禁用全部工具，`--no-mcp` 不影响它们。
 
 搜索每次请求最新结果，默认返回 5 条；可设置 `count`（1～50）、`ori_question`
 （不超过 128 个 Unicode 字符）和 `need_content`（默认 `false`）。支持 `site:`、

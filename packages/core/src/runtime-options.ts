@@ -168,7 +168,7 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   forwarded.unshift("--provider", providerId);
   if (!hasFlag(forwarded, "--model")) forwarded.unshift("--model", modelId);
   if (explicitEffort !== undefined) forwarded.unshift("--thinking", explicitEffort);
-  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch"])];
+  activeTools = noTools ? [] : [...new Set(activeTools ?? ["read", "exec_command", "write_stdin", "apply_patch", "codemode"])];
   if (noMcp) activeTools = activeTools.filter((tool) => !isMcpTool(tool));
 
   return {
@@ -216,7 +216,6 @@ DSCode options:
   --prompt-contract <mode>         engineering|none (default: engineering)
   --tools <names>                  Select initially active tools
                                    Default: read,exec_command,write_stdin,apply_patch,codemode
-                                   Plus web_search,web_fetch when network and DeepSeek credentials are available
   --no-mcp                         Skip MCP connections and tools
   --no-tools                       Disable all tools and MCP, regardless of argument order
   --permission <mode>              ask|auto|full (full grants host + network)

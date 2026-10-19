@@ -9,9 +9,13 @@ runtime.
 
 The runtime uses Pi 1.3.0's native MCP, codemode, and tool-search extensions.
 Default tools are `read`, `exec_command`, `write_stdin`, `apply_patch`, and `codemode`.
-When network access and DeepSeek credentials are available, `web_search` and `web_fetch` are also enabled
-for every chat provider. Both use the configured DeepSeek service and normal tool
-permissions; `--tools` can select them explicitly and `--no-tools` disables them.
+When network access and DeepSeek credentials are available, `web_search` and `web_fetch` are registered
+as deferred tools for every chat provider. They are not active by default and do not add their
+definitions to codemode's description. Discover them with codemode's `searchTools()` or
+`describeTool()`, then call `tools.web_search()` or `tools.web_fetch()`. Native `tool_search` can
+also load them as direct tools on demand. Both use the configured DeepSeek service and normal
+tool permissions; `--tools` selects initially active tools without disabling deferred calls,
+and `--no-tools` disables them.
 Disabled network access hides both tools and blocks calls, including cached snapshot
 reads. `--network`, full permissions, or a full-access sandbox enable network access.
 Search returns five results by default and optionally saves full pages with

@@ -25,7 +25,6 @@ const originalEnvironment = new Map(
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
-  vi.unstubAllEnvs();
   for (const key of ENV_KEYS) {
     const value = originalEnvironment.get(key);
     if (value === undefined) delete process.env[key];
@@ -383,14 +382,13 @@ describe("createAgentSessionHost", { concurrent: false }, () => {
   });
 
   it.each<{ runtimeArgs: string[]; expected: string[]; exposure?: string }>([
-    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "mcp__fixture__echo"] },
-    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "tool_search"] },
+    { runtimeArgs: [], expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"] },
+    { runtimeArgs: [], exposure: "deferred", expected: ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "tool_search"] },
     { runtimeArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], expected: ["read", "exec_command", "write_stdin", "apply_patch", "mcp__fixture__echo"] },
     { runtimeArgs: ["--no-mcp", "--tools", "read,mcp__fixture__echo"], expected: ["read"] },
     { runtimeArgs: ["--no-tools", "--tools", "read,mcp__fixture__echo"], expected: [] },
   ])(
     "applies MCP selection in a real HTTP session ($runtimeArgs)", async ({ runtimeArgs, expected, exposure = "direct" }) => {
-      vi.stubEnv("DEEPSEEK_API_KEY", "http-mcp-test-key");
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-http-mcp-"));
       temporaryRoots.push(root);
       const home = path.join(root, "home");
