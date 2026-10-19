@@ -164,10 +164,14 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
-With DeepSeek credentials configured and network access enabled, `web_search` and `web_fetch` are also enabled
-for all chat providers. They use the configured DeepSeek base URL and credentials;
-proxies must support `/v1/tools/search` and `/v1/tools/fetch`. Explicit `--tools`
-selection and `--no-tools` apply; `--no-mcp` does not disable these native tools.
+With DeepSeek credentials configured and network access enabled, `web_search` and `web_fetch` are
+registered as deferred tools for all chat providers. They are not active by default, and their
+definitions are not inlined in codemode's description. Use codemode's `searchTools()` or
+`describeTool()` to discover them, then call `tools.web_search()` or `tools.web_fetch()`.
+Native `tool_search` can also load them as direct tools on demand. They use the configured
+DeepSeek base URL and credentials; proxies must support `/v1/tools/search` and `/v1/tools/fetch`.
+`--tools` selects initially active tools; deferred web tools remain callable through codemode.
+`--no-tools` disables them; `--no-mcp` does not affect these native tools.
 
 Every search is fresh and returns five results by default. Optional parameters are
 `count` (1–50), `ori_question` (up to 128 Unicode characters), and `need_content`

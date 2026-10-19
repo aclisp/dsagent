@@ -90,6 +90,8 @@ describe("native web tools and snapshots", () => {
   it("uses DeepSeek credentials with another chat provider and hides tools when unavailable", async () => {
     const h = await harness();
     expect([...h.definitions.keys()]).toEqual(["web_search", "web_fetch"]);
+    expect(h.definitions.get("web_search")?.exposure).toBe("deferred");
+    expect(h.definitions.get("web_fetch")?.exposure).toBe("deferred");
     const result = await h.call("web_fetch", { url: "https://example.org/docs" });
     expect(result.isError).not.toBe(true);
     expect(h.fetchImpl.mock.calls[0]![0]).toBe("https://proxy.example/v1/tools/fetch");

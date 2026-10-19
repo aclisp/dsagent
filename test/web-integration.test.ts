@@ -67,7 +67,37 @@ async function executeCode(host: AgentSessionHost, code: string): Promise<string
   return result.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
 }
 
+function expectDeferredWebTools(host: AgentSessionHost) {
+  for (const name of ["web_search", "web_fetch"]) {
+    expect(host.session.getActiveToolNames()).not.toContain(name);
+    expect(host.session.getCallableToolNames()).toContain(name);
+    expect(host.session.getAllTools().find((tool) => tool.name === name)?.exposure).toBe("deferred");
+  }
+  const description = host.session.agent.state.tools.find((tool) => tool.name === "codemode")!.description;
+  expect(description).not.toContain("need_content");
+  expect(description).not.toContain("snapshot_id");
+}
+
 describe("web tools in the Pi session runtime", () => {
+  it("discovers web definitions through codemode without declaring them, and allows native tool_search loading", async () => {
+    const h = await setup();
+    const host = await h.create(["--tools", "read,codemode,tool_search"]);
+    expectDeferredWebTools(host);
+    const discovery = await executeCode(host, 'console.log(await describeTool("web_search")); console.log(await searchTools("web_fetch"));');
+    expect(discovery).toContain("need_content");
+    expect(discovery).toContain("snapshot_id");
+    expectDeferredWebTools(host);
+    expect(h.requests).toHaveLength(0);
+
+    const search = host.session.agent.state.tools.find((tool) => tool.name === "tool_search")!;
+    await search.execute("discover-web", { query: "web_search", limit: 1 });
+    expect(host.session.getActiveToolNames()).toContain("web_search");
+    expect(host.session.getCallableToolNames()).toContain("web_search");
+    await host.session.reload();
+    expect(host.session.getActiveToolNames()).toContain("web_search");
+    expect(host.session.getActiveToolNames()).not.toContain("web_fetch");
+  }, 15_000);
+
   it("hides web tools without network access and updates both loadouts when permissions change", async () => {
     const h = await setup([], false);
     const blocked = await h.create(["--provider", "openai"]);
@@ -76,7 +106,7 @@ describe("web tools in the Pi session runtime", () => {
     await executeCode(blocked, 'console.log(await tools.web_search({query:"fixture"}));');
     expect(h.requests).toHaveLength(0);
     const host = await h.create(["--permission", "full"]);
-    expect(host.session.getActiveToolNames()).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+    expectDeferredWebTools(host);
     await executeCode(host, 'console.log(await tools.web_search({query:"fixture"}));');
     expect(h.requests).toHaveLength(1);
     await host.prompt("/permissions auto");
@@ -92,7 +122,7 @@ describe("web tools in the Pi session runtime", () => {
       }
     });
     await host.prompt("/permissions full");
-    expect(host.session.getActiveToolNames()).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+    expectDeferredWebTools(host);
     await executeCode(host, 'console.log(await tools.web_search({query:"fixture"}));');
     expect(h.requests).toHaveLength(2);
   }, 15_000);
@@ -100,7 +130,7 @@ describe("web tools in the Pi session runtime", () => {
   it("supports structured codemode calls across providers and retains snapshots through reload", async () => {
     const h = await setup();
     const host = await h.create();
-    expect(host.session.getActiveToolNames()).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+    expectDeferredWebTools(host);
     await host.session.setModel({ ...host.session.model!, provider: "openai", id: "web-fixture" });
     const calls: string[] = [];
     host.session.subscribe((event) => {
@@ -114,13 +144,13 @@ describe("web tools in the Pi session runtime", () => {
     const snapshotEntry = host.session.sessionManager.getEntries().findLast((entry) => entry.type === "custom" && entry.customType === "dscode-web-snapshot");
     const id = (snapshotEntry as any).data.id;
     await host.session.reload();
-    expect(host.session.getActiveToolNames()).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+    expectDeferredWebTools(host);
     expect(await executeCode(host, `console.log((await tools.web_fetch({snapshot_id:"${id}",offset:2})).content);`)).toContain("cached second line");
     expect(h.requests).toHaveLength(1);
     expect(await fs.readdir(path.join(h.agentDir, "web-snapshots"))).toHaveLength(1);
   }, 15_000);
 
-  it("keeps unavailable or unselected web tools out of both direct and codemode loadouts", async () => {
+  it("keeps web tools deferred after credentials appear and with explicit active tool selection", async () => {
     const h = await setup();
     vi.stubEnv("DEEPSEEK_API_KEY", "");
     const unavailable = await h.create(["--provider", "openai"]);
@@ -128,13 +158,14 @@ describe("web tools in the Pi session runtime", () => {
     expect(unavailable.session.getActiveToolNames()).not.toContain("web_fetch");
     vi.stubEnv("DEEPSEEK_API_KEY", "deepseek-web-test-key");
     await unavailable.session.reload();
-    expect(unavailable.session.getActiveToolNames()).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+    expectDeferredWebTools(unavailable);
     const explicit = await h.create(["--tools", "read,codemode"]);
-    expect(explicit.session.getCallableToolNames()).not.toContain("web_search");
+    expectDeferredWebTools(explicit);
+    expect(await executeCode(explicit, 'console.log((await tools.web_search({query:"fixture"})).results[0].title);')).toContain("Fixture docs");
     const disabled = await h.create(["--no-tools"]);
     expect(disabled.session.getActiveToolNames()).toEqual([]);
     expect(disabled.session.getCallableToolNames()).toEqual([]);
-    expect(h.requests).toHaveLength(0);
+    expect(h.requests).toHaveLength(1);
   }, 15_000);
 
   it("applies ask-mode approval to codemode web calls before issuing any HTTP request", async () => {

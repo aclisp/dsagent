@@ -92,7 +92,7 @@ try {
     assert.ok(success.stdout.includes("bundle smoke ok"), success.stdout);
     assert.ok(success.stderr.includes("EXTENSION_READY"), success.stderr);
     assert.equal(payload.model, "deepseek-flash");
-    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "web_search", "web_fetch", "mcp__fixture__echo"].sort());
+    assert.deepEqual(payload.tools.map(tool => tool.name).sort(), ["read", "exec_command", "write_stdin", "apply_patch", "codemode", "mcp__fixture__echo"].sort());
     assert.equal(payload.tools.find(tool => tool.name === "apply_patch").type, "function");
     assert.equal(payload.tools.find(tool => tool.name === "apply_patch").parameters.properties.input.type, "string");
     plannedCode = 'console.log(await tools.mcp__fixture__echo({text:"CODEMODE_BUNDLE_OK"}));';

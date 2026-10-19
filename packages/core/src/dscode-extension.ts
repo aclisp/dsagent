@@ -57,7 +57,7 @@ import {
 import { createDSCodeReadTool } from "./read-tool.ts";
 import { formatThinkingLabel, registerCodingTui } from "./tui-experience.ts";
 import { Workspace } from "./workspace.ts";
-import { isWebTool, registerWebTools, WEB_TOOL_NAMES } from "./web-tools.ts";
+import { isWebTool, registerWebTools } from "./web-tools.ts";
 
 const CHECKPOINT_ENTRY = "dscode-checkpoint";
 const CHECKPOINT_UNDO_ENTRY = "dscode-checkpoint-undone";
@@ -195,13 +195,6 @@ export function createDSCodeExtension(
 
       registerDeepSeekProvider(pi, options);
       const webTools = registerWebTools(pi, options, () => effectiveAccess().network);
-      const refreshWebTools = async (ctx: ExtensionContext): Promise<void> => {
-        const wasAvailable = webTools.isAvailable();
-        if (await webTools.sync(ctx) && !wasAvailable) {
-          const selected = options.toolsExplicit ? options.activeTools.filter(isWebTool) : [...WEB_TOOL_NAMES];
-          pi.setActiveTools([...new Set([...pi.getActiveTools(), ...selected])]);
-        }
-      };
       registerLocalImageInput(pi);
       registerLlmMetrics(pi);
       registerNaturalExit(pi);
@@ -245,15 +238,8 @@ export function createDSCodeExtension(
           // Pi's MCP session_start runs first and activates discovery from server exposure.
           const discoveryTools = pi.getActiveTools().filter((name) => name === "codemode" || name === "tool_search");
           const selectedTools = restored ? [...pendingRestoredTools] : [...options.activeTools];
-          if (webTools.becameAvailable() && !options.toolsExplicit) selectedTools.push(...WEB_TOOL_NAMES);
           pi.setActiveTools(options.noTools ? [] : [...new Set([...availableSelection(selectedTools), ...discoveryTools])]);
           activateRestoredTools();
-        } else if (_event.reason === "reload" && webAvailable) {
-          const declared = getCurrentSystemMessage(ctx.sessionManager.buildSessionProjection().messages)?.toolsAdded ?? [];
-          const selected = webTools.becameAvailable() && !options.toolsExplicit
-            ? [...WEB_TOOL_NAMES]
-            : declared.filter((tool) => isWebTool(tool.name)).map((tool) => tool.name);
-          pi.setActiveTools([...new Set([...pi.getActiveTools(), ...selected])]);
         }
         await queueSessionPartition(ctx);
       });
@@ -291,14 +277,16 @@ export function createDSCodeExtension(
       });
 
       pi.on("before_agent_start", async (event, ctx) => {
-        await refreshWebTools(ctx);
+        await webTools.sync(ctx);
         activateRestoredTools();
         lastAgentFailed = false;
         if (isStandalone) {
           event.systemPromptOptions.sections.docs = STANDALONE_DOCS;
         }
         if (options.promptContract === "engineering") {
-          event.systemPromptOptions.sections.dscode = engineeringInstructions(projectCommands, effectiveAccess());
+          event.systemPromptOptions.sections.dscode = engineeringInstructions(
+            projectCommands, effectiveAccess(), webTools.isAvailable() && pi.getActiveTools().includes("codemode"),
+          );
         }
       });
 
@@ -500,7 +488,7 @@ export function createDSCodeExtension(
             if (!approved) return;
           }
           permission = parsed.data;
-          await refreshWebTools(ctx);
+          await webTools.sync(ctx);
           updateStatus(ctx);
           pi.appendEntry("dscode-permission", { permission });
           ctx.ui.notify(`Permission mode: ${permission}`, "info");
@@ -1320,6 +1308,7 @@ function formatManagedResult(result: ManagedProcessResult): string {
 function engineeringInstructions(
   projectCommands: string[],
   access: EffectiveAccess,
+  webAvailable: boolean,
 ): string {
   const commandSandbox = sandboxDescription({ mode: access.sandbox, network: access.network });
   const instructions = [
@@ -1330,11 +1319,12 @@ function engineeringInstructions(
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
     `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
-    `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}; do not work around this boundary.`,
+    `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}.`,
+    ...(webAvailable ? ["- For web research, use codemode's searchTools()/describeTool() to discover web_search and web_fetch on demand."] : []),
     ...(access.network
       ? []
       : [
-          "- DSCode handles recognized network and sandbox denials with an allow-once / allow-for-session / deny prompt and retries approved commands automatically. If the user denies access, report that decision; do not suggest bypassing the sandbox.",
+          "- Do not work around disabled network access. DSCode handles recognized network and sandbox denials with an allow-once / allow-for-session / deny prompt and retries approved commands automatically. If the user denies access, report that decision.",
         ]),
     "- Keep the final answer evidence-based: changed files, checks actually run, failures or limitations, and the shortest useful next action.",
   ];
