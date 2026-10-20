@@ -32,6 +32,12 @@ its nested tool calls retain DSCode permissions, sandboxing, and checkpoints.
 Pi owns the MCP schema, discovery, OAuth, `/mcp`, and `dscode mcp` commands.
 Global configuration is `DSCODE_HOME/mcp.json`; trusted projects use `.pi/mcp.json`.
 
+The built-in extension reuses image uploads through DeepSeek's Files API for `deepseek-flash`
+over `openai-responses` on the official endpoint. The session retains Pi's processed image bytes;
+only outgoing image parts become `file_id` references. References live in session memory and files
+expire after 24 hours. Upload failure/timeout falls back to Base64 with a warning and 60-second
+cooldown. The whole batch has a 15-second upload budget. No Web/API changes or extra commands are needed.
+
 ```ts
 import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";
 
