@@ -24,6 +24,7 @@ import { brandBlue } from "./brand.ts";
 import { capturePatchCheckpoint, restoreCheckpoint, type PatchCheckpoint } from "./checkpoint.ts";
 import { permissionSchema, type PermissionMode } from "./config.ts";
 import { optimizeDeepSeekResponsesPayload } from "./deepseek.ts";
+import { registerDeepSeekFiles } from "./deepseek-files.ts";
 import { isStandalone } from "./distribution.ts";
 import { registerEffortDefaults } from "./effort.ts";
 import { registerNaturalExit } from "./exit.ts";
@@ -216,6 +217,7 @@ export function createDSCodeExtension(
         if (ctx.model?.provider !== "deepseek" || options.transport !== "responses") return;
         return optimizeDeepSeekResponsesPayload(event.payload);
       });
+      registerDeepSeekFiles(pi);
 
       pi.on("session_start", async (_event, ctx) => {
         const webAvailable = await webTools.sync(ctx);

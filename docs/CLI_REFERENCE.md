@@ -434,6 +434,19 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - The Responses API is stateless; DSCode replays messages, reasoning items, and tool results from the
   local session tree.
 - The adapter removes unsupported OpenAI storage, cache-retention, and include fields.
+- Official DeepSeek `deepseek-flash` requests using `openai-responses` automatically upload inline
+  images through the Files API and reuse `file_id` references. This applies to user attachments and
+  tool images in TUI, RPC, and Web. Pi's processed image bytes remain in the local session; only the
+  outbound request changes. Custom gateways and other models/transports retain their normal behavior.
+- File references are cached only in the current session's memory and remote files expire after
+  24 hours. Reloading/resuming a session or restarting uploads images again when needed. Images near
+  expiry are reuploaded. Uploads share a 15-second batch budget with at most two in flight. Failed or
+  timed-out images fall back to Base64, with one warning per user request and a 60-second upload
+  cooldown; already uploaded images can still be reused. User cancellation aborts uploads.
+- An explicit invalid/expired file-reference error clears the affected request's cached references
+  and asks you to retry; DSCode does not automatically replay the LLM request. For the initial call
+  measured by `/x-metrics`, Files API time is part of `request_preparation`; `request_bytes` and
+  `request_upload` describe only the final LLM request, and total first-content latency includes preparation.
 - Sampling parameters are preserved: DeepSeek uses `top_p` in thinking mode and `temperature` otherwise.
   Thinking supports `low`, `high`, and `max` effort selection.
 - `apply_patch` uses a schema-based function tool with an `input` string for every provider.
