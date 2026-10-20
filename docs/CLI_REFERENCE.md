@@ -441,8 +441,9 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
 - File references are cached only in the current session's memory and remote files expire after
   24 hours. Reloading/resuming a session or restarting uploads images again when needed. Images near
   expiry are reuploaded. Uploads share a 15-second batch budget with at most two in flight. Failed or
-  timed-out images fall back to Base64, with one warning per user request and a 60-second upload
-  cooldown; already uploaded images can still be reused. User cancellation aborts uploads.
+  timed-out images fall back to Base64, with at most one failure warning per user request and a
+  60-second upload cooldown. Cooldown fallbacks are silent; a failed upload retry can warn again.
+  Already uploaded images can still be reused. User cancellation aborts uploads.
 - An explicit invalid/expired file-reference error clears the affected request's cached references
   and asks you to retry; DSCode does not automatically replay the LLM request. For the initial call
   measured by `/x-metrics`, Files API time is part of `request_preparation`; `request_bytes` and
