@@ -36,7 +36,8 @@ The built-in extension reuses image uploads through DeepSeek's Files API for `de
 over `openai-responses` on the official endpoint. The session retains Pi's processed image bytes;
 only outgoing image parts become `file_id` references. References live in session memory and files
 expire after 24 hours. Upload failure/timeout falls back to Base64 with a warning and 60-second
-cooldown. The whole batch has a 15-second upload budget. No Web/API changes or extra commands are needed.
+cooldown. Requests during cooldown fall back silently; a failed upload retry can warn again.
+The whole batch has a 15-second upload budget. No Web/API changes or extra commands are needed.
 
 ```ts
 import { createDSCodeRpcClient } from "@aclisp/dsagent-core/rpc";

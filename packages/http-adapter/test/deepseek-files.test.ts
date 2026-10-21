@@ -106,7 +106,7 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
     expect(requests[1]).not.toContain(PNG);
   });
 
-  it("warns and sends inline images during an upload outage, without repeated upload attempts", async () => {
+  it("warns on an upload failure and silently sends inline images during cooldown", async () => {
     uploadFailure = true;
     await host!.session.prompt("Inspect", { source: "rpc", images: [{ type: "image", data: PNG, mimeType: "image/png" }] });
     expect(uploads).toHaveLength(1);
@@ -115,7 +115,7 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
     await host!.prompt("Continue");
     expect(uploads).toHaveLength(1);
     expect(requests[1]).toContain(PNG);
-    expect(notices.filter((notice) => notice.includes("Base64"))).toHaveLength(2);
+    expect(notices.filter((notice) => notice.includes("Base64"))).toHaveLength(1);
   });
 
   it("uploads actual read-tool image output once and reuses it on the next user request", async () => {

@@ -118,8 +118,11 @@ describe("DeepSeek Files extension", () => {
     expect(upload).toHaveBeenCalledTimes(4);
   });
 
-  it("falls back on failures, warns once per user run and resumes after cooldown", async () => {
-    const upload = vi.fn().mockResolvedValueOnce(new Response("", { status: 503 })).mockImplementation(async () => fileResponse());
+  it("warns on actual failures, stays silent during cooldown and warns again on a failed retry", async () => {
+    const upload = vi.fn()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockImplementation(async () => fileResponse());
     vi.stubGlobal("fetch", upload);
     const h = harness();
     const now = Date.now();
@@ -130,12 +133,21 @@ describe("DeepSeek Files extension", () => {
     expect(upload).toHaveBeenCalledOnce();
     expect(h.notify).toHaveBeenCalledOnce();
     expect(h.notify).toHaveBeenLastCalledWith(expect.stringContaining("Base64"), "warning");
+    clock.mockReturnValue(now + 30_000);
     await h.emit("before_agent_start");
     await h.transform();
-    expect(h.notify).toHaveBeenCalledTimes(2);
+    expect(h.notify).toHaveBeenCalledOnce();
+    expect(upload).toHaveBeenCalledOnce();
     clock.mockReturnValue(now + 60_001);
-    expect(await h.transform()).toBeDefined();
+    await h.emit("before_agent_start");
+    expect(await h.transform()).toBeUndefined();
+    expect(h.notify).toHaveBeenCalledTimes(2);
     expect(upload).toHaveBeenCalledTimes(2);
+    clock.mockReturnValue(now + 120_002);
+    await h.emit("before_agent_start");
+    expect(await h.transform()).toBeDefined();
+    expect(upload).toHaveBeenCalledTimes(3);
+    expect(h.notify).toHaveBeenCalledTimes(2);
     expect(source).toEqual(payload());
   });
 
@@ -161,8 +173,10 @@ describe("DeepSeek Files extension", () => {
     expect(await operation).toBeUndefined();
     expect(upload).toHaveBeenCalledTimes(2);
     expect(h.notify).toHaveBeenCalledOnce();
+    await h.emit("before_agent_start");
     await h.transform();
     expect(upload).toHaveBeenCalledTimes(2);
+    expect(h.notify).toHaveBeenCalledOnce();
   });
 
   it.each(["user", "shutdown"])("aborts uploads on %s cancellation without a fallback warning", async (cause) => {

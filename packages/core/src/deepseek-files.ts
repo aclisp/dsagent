@@ -37,6 +37,11 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
     fallbackNotified = true;
     ctx.ui.notify(FALLBACK_NOTICE, "warning");
   };
+  const pauseUploads = (ctx: ExtensionContext): void => {
+    if (Date.now() < cooldownUntil) return;
+    cooldownUntil = Date.now() + COOLDOWN_MS;
+    notifyFallback(ctx);
+  };
 
   pi.on("session_start", reset);
   pi.on("session_shutdown", reset);
@@ -56,8 +61,7 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
     // A credential resolver can override the endpoint as well as the key.
     if (auth.ok && !officialBaseUrl(auth.baseUrl ?? model.baseUrl)) return;
     if (!auth.ok) {
-      cooldownUntil = Date.now() + COOLDOWN_MS;
-      notifyFallback(ctx);
+      pauseUploads(ctx);
       return;
     }
     const headers = new Headers();
@@ -72,8 +76,7 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
     headers.delete("content-type");
     headers.delete("content-length");
     if (!headers.get("authorization")) {
-      cooldownUntil = Date.now() + COOLDOWN_MS;
-      notifyFallback(ctx);
+      pauseUploads(ctx);
       return;
     }
     const requestScope = hash(`${new URL(auth.baseUrl ?? model.baseUrl).origin}\n${headers.get("authorization")}`);
@@ -109,7 +112,7 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
               if (!signal.aborted && requestGeneration === generation && scope === requestScope) cache.set(image.key, file);
             } catch {
               if (!ctx.signal?.aborted && requestGeneration === generation && scope === requestScope) {
-                cooldownUntil = Date.now() + COOLDOWN_MS;
+                pauseUploads(ctx);
               }
             }
           }
@@ -118,7 +121,7 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
         clearTimeout(timeout);
         pending.delete(controller);
         if (controller.signal.aborted && !ctx.signal?.aborted && requestGeneration === generation && scope === requestScope) {
-          cooldownUntil = Date.now() + COOLDOWN_MS;
+          pauseUploads(ctx);
         }
       }
     }
@@ -134,7 +137,6 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
         replacements.set(part, { ...rest, file_id: file.id });
       }
     }
-    if (images.some((image) => !cache.has(image.key))) notifyFallback(ctx);
     if (!replacements.size) return;
     return replaceImages(event.payload, replacements);
   });

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { TextDecoder } from "node:util";
+import { checkPatchInput, PatchBudget, readPatchFile } from "./patch-limits.ts";
 import { Workspace } from "./workspace.ts";
 
 interface AddAction {
@@ -51,16 +52,37 @@ export class PatchApplicationError extends Error {
 export async function applyWorkspacePatch(
   workspace: Workspace,
   input: string,
+  budget = new PatchBudget(),
+  signal?: AbortSignal,
 ): Promise<ApplyPatchResult> {
+  signal?.throwIfAborted();
   const actions = parsePatch(input);
   const staged = new Map<string, string | null>();
+  const pending = new Map<string, string | null>();
+  const modes = new Map<string, number | undefined>();
+  const operations: [absolute: string, content: string | null, mode?: number | undefined][] = [];
+  const stageFile = (absolute: string, content: string | null, mode?: number): void => {
+    budget.stageWrite(workspace.relative(absolute), content);
+    staged.set(absolute, content);
+    pending.set(absolute, content);
+    modes.set(absolute, mode);
+  };
+  const flushPending = (): void => {
+    budget.flushPending();
+    for (const [absolute, content] of pending) {
+      operations.push([absolute, content, modes.get(absolute)]);
+    }
+    pending.clear();
+  };
   let additions = 0;
   let deletions = 0;
 
   const readVirtual = async (absolute: string): Promise<string | null> => {
+    signal?.throwIfAborted();
     if (staged.has(absolute)) return staged.get(absolute) ?? null;
     try {
-      const bytes = await fs.readFile(absolute);
+      const bytes = await readPatchFile(absolute, workspace.relative(absolute), budget, signal);
+      signal?.throwIfAborted();
       const message = `Cannot patch ${workspace.relative(absolute)}: only UTF-8 text files are supported. Convert the file to UTF-8 first.`;
       let content: string;
       try {
@@ -79,29 +101,36 @@ export async function applyWorkspacePatch(
   };
 
   for (const action of actions) {
+    signal?.throwIfAborted();
     if (action.type === "add") {
-      const absolute = await workspace.resolve(action.path, true);
+      const absolute = await workspace.resolvePatchPath(action.path, true);
       if ((await readVirtual(absolute)) !== null) {
         throw new Error(`Cannot add existing file: ${action.path}`);
       }
       const content = action.lines.length > 0 ? `${action.lines.join("\n")}\n` : "";
-      staged.set(absolute, content);
+      stageFile(absolute, content);
       additions += action.lines.length;
       continue;
     }
 
-    const absolute = await workspace.resolve(action.path);
+    // A preceding action may have created this file only in the virtual plan.
+    const absolute = await workspace.resolvePatchPath(action.path, true);
     const original = await readVirtual(absolute);
+    signal?.throwIfAborted();
     if (original === null) {
       throw new Error(`File not found: ${action.path}`);
     }
 
     if (action.type === "delete") {
-      staged.set(absolute, null);
+      stageFile(absolute, null);
       deletions += splitFile(original).lines.length;
       continue;
     }
 
+    // Follow permissions through virtual updates and chained moves as well as content.
+    const mode = staged.has(absolute)
+      ? modes.get(absolute)
+      : (await fs.stat(absolute)).mode & 0o777;
     const updated = applyUpdate(original, action);
     for (const hunk of action.hunks) {
       additions += hunk.lines.filter((line) => line.startsWith("+")).length;
@@ -109,27 +138,45 @@ export async function applyWorkspacePatch(
     }
 
     if (action.moveTo) {
-      const destination = await workspace.resolve(action.moveTo, true);
+      const destination = await workspace.resolvePatchPath(action.moveTo, true);
       if (destination !== absolute && (await readVirtual(destination)) !== null) {
         throw new Error(`Move destination already exists: ${action.moveTo}`);
       }
+      // Preserve action order around moves, including chained moves and later
+      // reuse of the source path. Keep the source until its destination is saved.
+      flushPending();
+      budget.addWrite(workspace.relative(destination), updated);
+      operations.push([destination, updated, mode]);
+      if (destination !== absolute) operations.push([absolute, null]);
       staged.set(absolute, null);
       staged.set(destination, updated);
+      modes.delete(absolute);
+      modes.set(destination, mode);
     } else {
-      staged.set(absolute, updated);
+      stageFile(absolute, updated, mode);
     }
   }
+  flushPending();
+  signal?.throwIfAborted();
 
   // All paths and hunks are validated before any workspace mutation happens.
   const completed: string[] = [];
-  for (const [absolute, content] of staged) {
+  for (const [absolute, content, mode] of operations) {
     const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
+    try {
+      await workspace.resolvePatchPath(absolute, true);
+    } catch (cause) {
+      throw new PatchApplicationError(operation, completed, cause);
+    }
+    // The last cancellation point is immediately before the first mutation.
+    // Once an operation starts, finish the remaining plan and checkpoint flow.
+    if (completed.length === 0) signal?.throwIfAborted();
     try {
       if (content === null) {
         await fs.rm(absolute, { force: true });
       } else {
         await fs.mkdir(path.dirname(absolute), { recursive: true });
-        await writeFileAtomic(absolute, content);
+        await writeFileAtomic(absolute, content, mode);
       }
       completed.push(operation);
     } catch (cause) {
@@ -145,6 +192,7 @@ export async function applyWorkspacePatch(
 }
 
 export function parsePatch(input: string): PatchAction[] {
+  checkPatchInput(input);
   const lines = input.replaceAll("\r\n", "\n").split("\n");
   if (lines[0] !== "*** Begin Patch") {
     throw new Error("Patch must start with *** Begin Patch");
@@ -157,6 +205,9 @@ export function parsePatch(input: string): PatchAction[] {
     const line = lines[index]!;
     if (line === "*** End Patch") {
       if (actions.length === 0) throw new Error("Patch contains no file actions");
+      if (lines.slice(index + 1).some((trailing) => trailing.trim() !== "")) {
+        throw new Error("Patch contains unexpected content after *** End Patch");
+      }
       return actions;
     }
 
@@ -390,19 +441,22 @@ function requireRelativePatchPath(value: string): string {
   return file;
 }
 
-async function writeFileAtomic(target: string, content: string): Promise<void> {
+async function writeFileAtomic(target: string, content: string, mode?: number): Promise<void> {
   const temporary = path.join(
     path.dirname(target),
     `.${path.basename(target)}.dscode-${process.pid}-${Date.now()}.tmp`,
   );
-  let mode: number | undefined;
-  try {
-    mode = (await fs.stat(target)).mode;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  if (mode === undefined) {
+    try {
+      mode = (await fs.stat(target)).mode & 0o777;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
   try {
     await fs.writeFile(temporary, content, { encoding: "utf8", mode });
+    // Creation mode is filtered by umask; restore ordinary permissions before publishing.
+    if (mode !== undefined) await fs.chmod(temporary, mode);
     await fs.rename(temporary, target);
   } catch (error) {
     await fs.rm(temporary, { force: true });

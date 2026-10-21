@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parsePatch } from "./patch.ts";
+import { PatchBudget, readPatchFile } from "./patch-limits.ts";
 import { Workspace } from "./workspace.ts";
 
 export interface FileSnapshot {
@@ -21,12 +23,17 @@ export interface PatchCheckpoint {
 export async function capturePatchCheckpoint(
   workspace: Workspace,
   patchInput: string,
-  apply: () => Promise<void>,
+  apply: (budget: PatchBudget) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<PatchCheckpoint> {
+  signal?.throwIfAborted();
   const touched = extractTouchedPaths(patchInput);
-  const before = await snapshotPaths(workspace, touched);
-  await apply();
-  const after = await snapshotPaths(workspace, touched);
+  const budget = new PatchBudget();
+  const before = await snapshotPaths(workspace, touched, budget, signal);
+  signal?.throwIfAborted();
+  await apply(budget);
+  // A successful apply has crossed the mutation boundary; finish its checkpoint.
+  const after = await snapshotPaths(workspace, touched, new PatchBudget(budget.originalBytes));
   return {
     id: crypto.randomUUID().slice(0, 12),
     createdAt: new Date().toISOString(),
@@ -41,9 +48,11 @@ export async function restoreCheckpoint(
   checkpoint: PatchCheckpoint,
   force = false,
 ): Promise<string[]> {
+  const budget = new PatchBudget();
   const current = await snapshotPaths(
     workspace,
     checkpoint.after.map((snapshot) => snapshot.path),
+    budget,
   );
   const conflicts = current
     .filter((snapshot, index) => snapshot.hash !== checkpoint.after[index]?.hash)
@@ -55,7 +64,11 @@ export async function restoreCheckpoint(
   }
 
   for (const snapshot of checkpoint.before) {
-    const absolute = await workspace.resolve(snapshot.path, true);
+    budget.stageWrite(snapshot.path, snapshot.content);
+  }
+
+  for (const snapshot of checkpoint.before) {
+    const absolute = await workspace.resolvePatchPath(snapshot.path, true);
     if (snapshot.content === null) {
       await fs.rm(absolute, { force: true });
       continue;
@@ -68,8 +81,9 @@ export async function restoreCheckpoint(
     try {
       await fs.writeFile(temporary, snapshot.content, {
         encoding: "utf8",
-        ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode }),
+        ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode & 0o777 }),
       });
+      if (snapshot.mode !== undefined) await fs.chmod(temporary, snapshot.mode & 0o777);
       await fs.rename(temporary, absolute);
     } catch (error) {
       await fs.rm(temporary, { force: true });
@@ -80,25 +94,27 @@ export async function restoreCheckpoint(
 }
 
 export function extractTouchedPaths(input: string): string[] {
-  const paths: string[] = [];
-  for (const line of input.replaceAll("\r\n", "\n").split("\n")) {
-    const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
-    if (!match) continue;
-    const file = match[1]!.trim();
-    if (file && !paths.includes(file)) paths.push(file);
+  const paths = new Set<string>();
+  for (const action of parsePatch(input)) {
+    paths.add(action.path);
+    if (action.type === "update" && action.moveTo) paths.add(action.moveTo);
   }
-  if (paths.length === 0) throw new Error("Patch contains no file paths");
-  return paths;
+  return [...paths];
 }
 
-async function snapshotPaths(workspace: Workspace, files: string[]): Promise<FileSnapshot[]> {
+async function snapshotPaths(workspace: Workspace, files: string[], budget: PatchBudget, signal?: AbortSignal): Promise<FileSnapshot[]> {
   const snapshots: FileSnapshot[] = [];
   for (const file of files) {
-    const absolute = await workspace.resolve(file, true);
+    signal?.throwIfAborted();
+    const absolute = await workspace.resolvePatchPath(file, true);
+    signal?.throwIfAborted();
     try {
       const stat = await fs.stat(absolute);
+      signal?.throwIfAborted();
       if (!stat.isFile()) throw new Error(`Checkpoint path is not a regular file: ${file}`);
-      const content = await fs.readFile(absolute, "utf8");
+      const bytes = await readPatchFile(absolute, file, budget, signal);
+      signal?.throwIfAborted();
+      const content = bytes.toString("utf8");
       snapshots.push({
         path: file,
         content,

@@ -27,6 +27,58 @@ describe("ManagedProcessRegistry", () => {
     } finally { await registry.dispose(); }
   });
 
+  describe.each(["stdout", "stderr"] as const)("UTF-8 %s", (stream) => {
+    it.each([
+      { text: "中文", split: 1 },
+      { text: "😀", split: 2 },
+    ])("preserves $text split across reads and polling results", async ({ text, split }) => {
+      const registry = new ManagedProcessRegistry();
+      const bytes = Buffer.from(text);
+      const first = JSON.stringify([...Buffer.concat([Buffer.from("head:"), bytes.subarray(0, split)])]);
+      const rest = JSON.stringify([...Buffer.concat([bytes.subarray(split), Buffer.from(":tail")])]);
+      const script = [
+        `process.${stream}.write(Buffer.from(${first}));`,
+        `process.stdin.once('data', () => { process.${stream}.write(Buffer.from(${rest})); process.stdin.destroy(); });`,
+      ].join("\n");
+      try {
+        const started = await registry.start(nodeCommand(script), {
+          cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+          yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+        });
+        let received = "";
+        const collect = (output: string): void => {
+          if (output !== "(no new output)") received += output.replaceAll("[stderr] ", "");
+        };
+        collect(started.output);
+        await expect.poll(async () => {
+          collect((await registry.interact(started.processId, { yieldTimeMs: 0 })).output);
+          return received;
+        }).toContain("head:");
+        // Returning a result must retain the incomplete character for the next read.
+        expect(received).toBe("head:");
+
+        const completed = await registry.interact(started.processId, { chars: "continue\n", yieldTimeMs: 2_000 });
+        expect(completed).toMatchObject({ running: false, exitCode: 0 });
+        if (stream === "stderr") expect(completed.output).toMatch(/^\[stderr\] /);
+        collect(completed.output);
+        expect(received).toBe(`head:${text}:tail`);
+      } finally { await registry.dispose(); }
+    });
+
+    it("flushes an incomplete character as a replacement when the stream ends", async () => {
+      const registry = new ManagedProcessRegistry();
+      try {
+        const result = await registry.start(nodeCommand(`process.${stream}.write(Buffer.from([0x68, 0xe4]));`), {
+          cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+          yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+        });
+        expect(result).toMatchObject({ running: false, exitCode: 0 });
+        if (stream === "stderr") expect(result.output).toMatch(/^\[stderr\] /);
+        expect(result.output.replaceAll("[stderr] ", "")).toBe("h\uFFFD");
+      } finally { await registry.dispose(); }
+    });
+  });
+
   it.each(["stdout", "stderr"])("preserves early errors and final status in oversized %s", async (stream) => {
     const registry = new ManagedProcessRegistry();
     try {

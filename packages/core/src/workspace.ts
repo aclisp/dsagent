@@ -49,16 +49,30 @@ export class Workspace {
     return path.relative(this.root, absolutePath) || ".";
   }
 
+  async resolvePatchPath(userPath: string, allowMissing = false): Promise<string> {
+    // Resolve parents as usual, but inspect the final component without following
+    // it. This also rejects dangling links that realpath treats as missing files.
+    const absolute = await this.resolve(userPath, true);
+    try {
+      if ((await fs.lstat(absolute)).isSymbolicLink()) {
+        throw new Error(`Cannot patch symbolic link: ${userPath}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !allowMissing) throw error;
+    }
+    return absolute;
+  }
+
   private assertLexicallyInside(candidate: string): void {
     const relative = path.relative(this.root, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Path escapes workspace: ${candidate}`);
     }
   }
 
   private assertReallyInside(candidate: string): void {
     const relative = path.relative(this.realRoot!, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Path resolves outside workspace: ${candidate}`);
     }
   }

@@ -35,6 +35,9 @@ For each item, use this sequence:
 **AP-05** (patch anchors), **EX-07** (output truncation), the failure-reporting scope of **AP-08**,
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
+**AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
+**AP-10** has been discussed; retain independent command-sandbox and patch-tool controls.
+**AP-12** has been discussed and implemented: fixed content limits and cancellation before mutation.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
@@ -82,6 +85,29 @@ DSCode
   lexical traversal and real paths, including symlinks. Illustrate `src/app.ts`, an absolute path,
   `../other-project/app.ts`, and a symlink pointing outside the workspace. Decide whether to retain
   confinement, improve error messages, or introduce an explicit broader scope.
+
+  **Partial decision (2026-10-21): reject symbolic links at patch file paths.** The previous
+  implementation read through a link, then replaced the link itself with an ordinary file during
+  atomic writing. Checkpoints did not record link type or destination, so undo could not restore it.
+  Reject a symbolic link at the final component of every Add/Update/Delete source and Move target,
+  including dangling links. Use `lstat` through a shared `Workspace.resolvePatchPath` check in patch
+  validation, checkpoint snapshots, and undo. Check again before each patch or undo file operation.
+  A link present during validation rejects the whole patch before writes; a link detected later
+  stops execution with the existing partial-failure report. Undo rejects links even with `--force`.
+
+  This rule does not change tool instructions or arguments, ordinary workspace path resolution,
+  or access to regular files through directory links confined to the workspace. No link-following
+  write mode or link snapshot format is introduced. Four focused suites passed (154 tests): `patch`,
+  `workspace`, `checkpoint`, and `checkpoint-extension`. Coverage includes all five file-operation
+  positions with intact and dangling links, a link introduced after validation, tool-level rejection
+  without a checkpoint, undo with and without force, and regular-file access through a directory
+  alias. No build was run.
+
+  **Follow-up decision (2026-10-21): allow ordinary names beginning with two dots.** Both lexical
+  and real-path confinement reject only a relative path equal to `..`, beginning with `..` plus
+  the platform path separator, or remaining absolute. Names such as `..notes` and `..directory`
+  are allowed for existing and new paths. Parent traversal and links resolving outside the
+  workspace remain rejected; directory aliases resolving to such ordinary names inside it work.
 
 - [ ] **AP-03 — Adding or moving onto an existing file.** Codex can overwrite an existing add target
   or move destination. DSCode rejects both collisions. Illustrate creating `notes.txt` when it already
@@ -139,18 +165,56 @@ DSCode
   LF/CRLF, BOM, and absent final newlines. Newly interpreted replacement anchors intentionally differ
   from the former behavior that ignored them.
 
-- [ ] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
+- [x] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
   including mixed LF/CRLF/CR, and its update path adds a final newline to nonempty resulting lines.
   DSCode reconstructs the edited file using its first newline convention and preserves whether the
   file ended with a newline; it explicitly preserves a UTF-8 BOM. Illustrate a tiny edit in a file
   with mixed endings and a file with no final newline. Decide which unrelated formatting changes to
   avoid and which conventions to preserve.
 
+  **Decision (2026-10-21): keep the existing Pi-style LF/CRLF strategy.** Detect the first newline's
+  convention, normalize CRLF to LF for editing, and reconstruct the edited file using the selected
+  convention. Mixed LF/CRLF endings are intentionally unified; this is accepted behavior, not a
+  pending defect. Prefer this simple, predictable rule over Codex's per-line ending preservation,
+  accepting that a local edit in a mixed-ending file can change unrelated line endings.
+
+  **Illustration:** changing `b` to `B` in `a\r\nb\n` produces `a\r\nB\r\n`; the same edit in
+  `a\nb\r\n` produces `a\nB\n`. Retain DSCode's UTF-8 BOM and whether an existing file has a final
+  newline. Move-only patches preserve content exactly, and newly added files continue to use LF.
+
+  **Pi reference:** [edit execution](../../pi/packages/coding-agent/src/core/tools/edit.ts) uses
+  `detectLineEnding`, `normalizeToLF`, and `restoreLineEndings` from
+  [edit-diff.ts](../../pi/packages/coding-agent/src/core/tools/edit-diff.ts). This decision concerns
+  the shared LF/CRLF strategy, rather than requiring every newline edge case to match Pi.
+  DSCode's existing implementation and mixed-ending tests were introduced in `cd7c435`
+  (`fix: preserve file line endings in apply_patch`, 2026-10-09); see
+  [patch implementation](../packages/core/src/patch.ts) and [tests](../test/patch.test.ts).
+  This decision requires no code, tool instruction, or argument changes. Documentation only;
+  no tests or builds were run for this record.
+
 - [ ] **AP-07 — Validation and multiple operations on one file.** Both tool paths verify patches
   before executing writes. DSCode calculates edits in a virtual staged map, allowing later operations
   to see earlier planned edits. Codex verification rejects multiple operations with the same resolved
   source path. Illustrate adding a file and then updating it inside one patch, plus a bad hunk in a
   later file. Decide whether this flexibility is useful or should be restricted.
+
+  **Partial decision (2026-10-21): validate the complete patch and share its parser with
+  checkpoints.** Reject any non-whitespace content following the first `*** End Patch`, including
+  extra directives, another patch, or a second end marker. Previously the patch executor silently
+  applied the valid prefix while checkpoint path extraction scanned the entire input. Keep accepting
+  trailing whitespace and LF/CRLF inputs; preserve whitespace within file content.
+
+  Checkpoint paths now come from `parsePatch` actions, including both source and destination for
+  moves, deduplicated in first-appearance order. Invalid syntax is rejected before snapshot reads
+  or writes, so no prefix is applied and no checkpoint is created. Valid patch execution, checkpoint
+  contents, undo, tool instructions and arguments remain unchanged. The broader repeated-operation
+  policy in AP-07 remains open.
+
+  **Validation:** four focused suites passed (173 tests): `patch`, `workspace`, `checkpoint`, and
+  `checkpoint-extension`. Coverage includes invalid suffixes with LF/CRLF, allowed trailing
+  whitespace, preservation of content whitespace, source/move-path ordering and deduplication,
+  directive-like file content, checkpoint/undo correctness, and tool rejection without prefix writes
+  or checkpoint creation. No build was run.
 
 - [x] **AP-08 — What “atomic” means when a later write fails.** DSCode validates all operations before
   writing and uses temporary-file renames for individual writes, but its multi-file write loop has no
@@ -194,6 +258,41 @@ DSCode
   Implementation: `packages/core/src/patch.ts` and `packages/core/src/dscode-extension.ts`;
   tests: `test/patch.test.ts` and `test/checkpoint-extension.test.ts`.
 
+  **Follow-up decision (2026-10-21): preserve file data when a move fails.** The original
+  implementation deleted the source before writing the destination. A failed destination write
+  could therefore leave neither file on disk. Align the execution order with Codex: save the
+  destination first, then delete the source. If saving fails, retain the source; if deletion fails,
+  retain the saved destination and report that confirmed write through the existing partial-failure
+  mechanism. No later operations run after a failure, and failed patches still create no checkpoint.
+
+  Retain full pre-write validation, destination overwrite rejection, virtual file state, successful
+  result file ordering, and checkpoint/undo behavior. Ordinary operations remain coalesced between
+  moves; moves separate those groups so a chained move or later recreation of a source path cannot
+  discard the saved copy through final-state coalescing. Operations before a move can now complete
+  separately from later operations on the same path; partial-failure reports reflect that actual
+  execution order. Moving a path onto itself performs only a write. Tool instructions and arguments,
+  rollback, link handling, newline handling, and file-mode changes are outside this follow-up.
+
+  **Validation:** destination directory creation, write and rename failures retain the source;
+  source deletion failure retains both files and reports only confirmed completed operations.
+  Coverage also includes chained moves with success and failure, source-path reuse, same-path moves,
+  unchanged coalescing without moves, overwrite rejection, later validation failure, successful
+  checkpoint/undo, and absent checkpoints on move failure. Four focused suites passed (138 tests):
+  `patch`, `workspace`, `checkpoint`, and `checkpoint-extension`. No build was run.
+
+  **Follow-up decision (2026-10-21): preserve ordinary file permissions on moves.** Carry the
+  source's `rwx` permission bits with virtual file contents through updates and chained moves.
+  Apply those bits to the written temporary file before renaming it into place, so `umask` cannot
+  silently remove permissions. Permission-setting failures retain the source, remove the temporary
+  file, and use the existing partial-failure report. New files retain default creation permissions;
+  recreating a moved source does not inherit the old source's mode. Existing-file updates and undo
+  also set the saved ordinary permissions before rename. No owner, ACL, extended-attribute, or
+  special permission-bit preservation is added. Chained moves can read a preceding action's virtual
+  destination even when that path does not yet exist on disk; path and symbolic-link checks remain.
+
+  **Coverage:** executable updates, pure/edited/chained/same-path moves, source-path recreation,
+  permission-setting failure cleanup, and checkpoint/undo permissions, including restrictive umask.
+
 - [x] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
   patches in its session and offers `/diff`, `/checkpoints`, and `/undo`; undo checks for later content
   changes unless forced. Codex's inspected patch path tracks applied deltas and turn diffs, rather
@@ -222,12 +321,32 @@ DSCode
   Five focused suites passed (58 tests): checkpoint extension, checkpoint snapshots, execution
   folding, and Core/Web session commands. Core and test `tsc --noEmit` passed. No build was run.
 
-- [ ] **AP-10 — Patch permissions versus command permissions.** Codex routes patch writes through
+- [x] **AP-10 — Patch permissions versus command permissions.** Codex routes patch writes through
   filesystem permission assessment and sandbox orchestration. DSCode's patch executor performs host
   filesystem writes with workspace confinement and its tool approval hook; it does not consult the
   command sandbox setting in that execution path. Illustrate a session whose commands are
   `read-only` receiving a patch request. Decide the intended meaning of read-only across tools before
   changing behavior; distinguish model-driven patching from user-requested `/undo`.
+
+  **Decision (2026-10-21): keep the existing independent boundaries.** `--sandbox read-only`
+  configures the command sandbox; it does not make the entire agent session read-only. Do not hide
+  or reject `apply_patch` based on the command sandbox mode. Patch calls remain subject to tool
+  approval, workspace confinement, patch validation, and checkpoint/undo handling.
+
+  **Reason and illustration:** users can permit reviewable, checkpointed file edits while restricting
+  writes by tests, builds, and other shell commands. With an effective `read-only` command sandbox,
+  a shell command writing `a.txt` is denied by the sandbox and may request additional access, while
+  an `apply_patch` edit to that file can proceed if its independent approval and validation checks
+  pass. Tool choice follows these documented boundaries; linking the two would expand the existing
+  parameter's meaning and change supported workflows. This is an intentional architectural
+  difference from Codex, not a pending defect to align.
+
+  Preserve user-requested `/undo` and its existing confirmation and conflict/path protections;
+  command-sandbox read-only mode does not prevent restoring a checkpoint. A future analysis-only
+  session mode, if needed, requires a separate decision rather than changing `--sandbox` semantics
+  or restoring the removed plan mode. This decision applies across CLI, Web, and HTTP workflows.
+  Documentation only: no runtime code, active-tool filtering, tool instructions, or arguments change.
+  No tests or builds were run for this record.
 
 - [ ] **AP-11 — Patching through a shell command.** Codex recognizes supported `apply_patch` command
   forms, including heredocs, and routes them through its patch handler. DSCode's managed command path
@@ -235,10 +354,62 @@ DSCode
   DSCode checkpoints. Illustrate a tool patch and a shell redirection that make the same edit. Decide
   whether interception is useful or whether this boundary should remain explicit.
 
+- [x] **AP-12 — Patch content budgets and cancellation.** Unbounded patch text, file reads, and retained
+  snapshots/write plans can consume excessive memory even when each edit is small.
+
+  **Decision (2026-10-21): implement fixed limits; defer cancellation changes.** Limit patch input
+  to 1 MiB before parsing, each original/result file to 10 MiB, and original snapshots plus retained
+  planned writes to 50 MiB per patch. Measure UTF-8 bytes, including BOMs and generated line endings.
+  Count originals once per resolved path across before snapshots and patch execution; ordinary
+  pending writes replace their previous budget charge, while intermediate versions retained across
+  move boundaries remain charged. All planned writes are checked before the first mutation.
+
+  Patch reads and checkpoint snapshots share a bounded reader that checks the opened file's size
+  and type, then reads at most the remaining allowance plus one byte to detect growth. Always close
+  its handle after success, rejection, or read failure. After snapshots use the remaining capacity
+  beside the original snapshots. Existing partial-write/checkpoint-capture failure reporting still
+  applies if files change externally during execution. Undo uses the same bounded reads and checks
+  all restoration contents before any mutation; `--force` does not bypass capacity checks. This can
+  reject older oversized checkpoints. These are content budgets, not a strict process-memory ceiling
+  or a limit on accumulated checkpoint history.
+
+  No configuration, tool arguments/instructions, cancellation behavior, rollback, or checkpoint
+  format changes. Errors identify the size and limit, plus the affected path for file/total limits.
+  Implementation: `patch-limits.ts`, `patch.ts`, `checkpoint.ts`, and the patch tool wrapper.
+  Five focused suites passed (200 tests): `patch-limits`, `patch`, `workspace`, `checkpoint`, and
+  `checkpoint-extension`; core and test typechecks passed. Tests lower the internal constants and
+  use small temporary files for boundaries, UTF-8 byte counts, cumulative budgets, repeated writes,
+  move-chain versions, growing reads, handle cleanup, tool rejection, and checkpoint/undo behavior.
+  No large files, process batches, or builds were used.
+
+  **Follow-up decision (2026-10-21): cancel preparation; finish after mutation starts.** Pi already
+  checks cancellation before dispatching a tool. Previously DSCode's patch executor ignored the
+  signal after dispatch, so even preparation ran to completion. Pass the signal through workspace
+  initialization, before snapshots, bounded file reads, and patch planning. Check it one last time
+  after final path validation and immediately before the first mutating filesystem operation,
+  including directory creation or deletion. Cancellation before that boundary leaves files unchanged
+  and creates no checkpoint. In-flight reads are awaited and their handles closed before returning.
+
+  After the first operation starts, finish the remaining plan, after snapshots, and checkpoint
+  persistence without further cancellation checks. Existing filesystem and persistence failures
+  retain their partial-failure reporting. Use the existing completed-operation list to identify the
+  boundary; no partial-cancellation state, rollback, tool arguments/instructions, or undo changes.
+  Pi's [edit cancellation checks](../../pi/packages/coding-agent/src/core/tools/edit.ts) inform the
+  await-before-return approach, while DSCode deliberately shields the full mutation/checkpoint phase.
+
+  **Validation:** six focused suites passed (215 tests), including `patch-cancellation` and the
+  previous five suites; core and test typechecks passed. Tests cover pre-cancellation, final
+  pre-write checks for writes/deletes, cancellation during open/stat/read with handle cleanup,
+  waiting for an in-flight read, and tool-level cancellation during preparation. Cancellation during
+  directory creation, rename, source deletion, after snapshots, and persistence still finishes the
+  patch, creates a checkpoint, and supports undo; real I/O failures retain their original reporting.
+  No build was run.
+
 Source entry points:
 
 - DSCode: [tool registration and checkpoint wrapper](../packages/core/src/dscode-extension.ts),
   [patch parser and writer](../packages/core/src/patch.ts),
+  [content budgets and bounded reads](../packages/core/src/patch-limits.ts),
   [workspace path checks](../packages/core/src/workspace.ts),
   [checkpoint capture and restore](../packages/core/src/checkpoint.ts).
 - Codex: [freeform schema](/Users/homerh/Code/codex-shallow/codex-rs/core/src/tools/handlers/apply_patch_spec.rs),
@@ -604,7 +775,7 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
+AP-05, AP-12, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
 discovery/preparation plus Unix shell selection for EX-03 are the accepted implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { capturePatchCheckpoint, restoreCheckpoint } from "../packages/core/src/checkpoint.ts";
 import { applyWorkspacePatch } from "../packages/core/src/patch.ts";
 import { Workspace } from "../packages/core/src/workspace.ts";
@@ -39,6 +39,95 @@ describe("patch checkpoints", () => {
     await restoreCheckpoint(workspace, checkpoint);
     await expect(fs.readFile(path.join(root, "existing.txt"), "utf8")).resolves.toBe("before\n");
     await expect(fs.access(path.join(root, "new.txt"))).rejects.toThrow();
+  });
+
+  it("captures parsed sources and move targets once, excluding directive-like file content", async () => {
+    await fs.writeFile(path.join(root, "removed.txt"), "removed\n");
+    const patch = [
+      "*** Begin Patch", "*** Add File: new.txt",
+      "+*** Update File: phantom-update.txt", "+*** Move to: phantom-move.txt",
+      "+*** Delete File: phantom-delete.txt", "+*** End Patch",
+      "*** Update File: existing.txt", "@@", "-before", "+after",
+      "*** Update File: existing.txt", "*** Move to: moved.txt",
+      "*** Delete File: removed.txt", "*** End Patch", " \t", "",
+    ].join("\r\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async () => {
+      await applyWorkspacePatch(workspace, patch);
+    });
+    const expectedPaths = ["new.txt", "existing.txt", "moved.txt", "removed.txt"];
+    expect(checkpoint.before.map((snapshot) => snapshot.path)).toEqual(expectedPaths);
+    expect(checkpoint.after.map((snapshot) => snapshot.path)).toEqual(expectedPaths);
+    expect(checkpoint.before.map((snapshot) => snapshot.content)).toEqual([null, "before\n", null, "removed\n"]);
+    expect(checkpoint.after.map((snapshot) => snapshot.content)).toEqual([
+      "*** Update File: phantom-update.txt\n*** Move to: phantom-move.txt\n*** Delete File: phantom-delete.txt\n*** End Patch\n",
+      null, "after\n", null,
+    ]);
+    await restoreCheckpoint(workspace, checkpoint);
+    await expect(fs.readFile(path.join(root, "existing.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.readFile(path.join(root, "removed.txt"), "utf8")).resolves.toBe("removed\n");
+    await expect(fs.access(path.join(root, "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.skipIf(process.platform === "win32")("preserves executable permissions through an edited move and undo", async () => {
+    const source = path.join(root, "existing.txt");
+    const destination = path.join(root, "moved.sh");
+    await fs.chmod(source, 0o775);
+    const patch = [
+      "*** Begin Patch", "*** Update File: existing.txt", "*** Move to: moved.sh",
+      "@@", "-before", "+after", "*** End Patch",
+    ].join("\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async (budget) => {
+      await applyWorkspacePatch(workspace, patch, budget);
+    });
+
+    expect(checkpoint.before[0]!.mode! & 0o777).toBe(0o775);
+    expect(checkpoint.after[1]!.mode! & 0o777).toBe(0o775);
+    expect((await fs.stat(destination)).mode & 0o777).toBe(0o775);
+    await expect(fs.readFile(destination, "utf8")).resolves.toBe("after\n");
+    await expect(fs.access(source)).rejects.toMatchObject({ code: "ENOENT" });
+
+    await restoreCheckpoint(workspace, checkpoint);
+    expect((await fs.stat(source)).mode & 0o777).toBe(0o775);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a malformed patch before taking snapshots or invoking the writer", async () => {
+    const resolve = vi.spyOn(workspace, "resolvePatchPath");
+    const apply = vi.fn(async () => {});
+    try {
+      await expect(capturePatchCheckpoint(workspace, [
+        "*** Begin Patch", "*** Update File: existing.txt", "@@", "-before", "+after",
+        "*** End Patch", "*** Add File: ignored.txt", "+ignored",
+      ].join("\n"), apply)).rejects.toThrow("Patch contains unexpected content after *** End Patch");
+      expect(resolve).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+      await expect(fs.readFile(path.join(root, "existing.txt"), "utf8")).resolves.toBe("before\n");
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
+  it.each([false, true])("refuses to replace a symbolic link during undo (force: %s)", async (force) => {
+    const patch = [
+      "*** Begin Patch", "*** Add File: new.txt", "+created",
+      "*** Update File: existing.txt", "@@", "-before", "+after", "*** End Patch",
+    ].join("\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async () => {
+      await applyWorkspacePatch(workspace, patch);
+    });
+    // Identical text would pass the ordinary content conflict check.
+    await fs.writeFile(path.join(root, "target.txt"), "after\n");
+    await fs.rm(path.join(root, "existing.txt"));
+    await fs.symlink("target.txt", path.join(root, "existing.txt"), "file");
+
+    await expect(restoreCheckpoint(workspace, checkpoint, force)).rejects.toThrow(
+      "Cannot patch symbolic link: existing.txt",
+    );
+    await expect(fs.readlink(path.join(root, "existing.txt"))).resolves.toBe("target.txt");
+    await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("after\n");
+    await expect(fs.readFile(path.join(root, "new.txt"), "utf8")).resolves.toBe("created\n");
   });
 
   it("protects edits made after the checkpoint", async () => {

@@ -1087,15 +1087,17 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     parameters: applyPatchParameters,
     renderShell: "self",
     executionMode: "sequential",
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      signal?.throwIfAborted();
       const workspace = new Workspace(ctx.cwd);
       await workspace.initialize();
+      signal?.throwIfAborted();
       let applied: ApplyPatchResult | undefined;
       let checkpoint: PatchCheckpoint;
       try {
-        checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
-          applied = await applyWorkspacePatch(workspace, params.input);
-        });
+        checkpoint = await capturePatchCheckpoint(workspace, params.input, async (budget) => {
+          applied = await applyWorkspacePatch(workspace, params.input, budget, signal);
+        }, signal);
       } catch (cause) {
         if (!(cause instanceof PatchApplicationError) && !applied) throw cause;
         const failure = cause instanceof Error ? cause.message : String(cause);
@@ -1132,7 +1134,12 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     },
     renderCall(args, theme, context) {
       const summary = summarizePatch(args.input);
-      const header = renderToolCall("Updated", summary, theme, context);
+      const header = renderToolCall(
+        context.isPartial || context.isError ? "Write" : "Wrote",
+        summary,
+        theme,
+        context,
+      );
       if (!context.expanded) return header;
       return new Text(
         `${header.render(10_000)[0]?.trimEnd() ?? ""}\n${colorPatch(args.input, theme)}`,
