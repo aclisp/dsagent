@@ -194,6 +194,28 @@ DSCode
   Implementation: `packages/core/src/patch.ts` and `packages/core/src/dscode-extension.ts`;
   tests: `test/patch.test.ts` and `test/checkpoint-extension.test.ts`.
 
+  **Follow-up decision (2026-10-21): preserve file data when a move fails.** The original
+  implementation deleted the source before writing the destination. A failed destination write
+  could therefore leave neither file on disk. Align the execution order with Codex: save the
+  destination first, then delete the source. If saving fails, retain the source; if deletion fails,
+  retain the saved destination and report that confirmed write through the existing partial-failure
+  mechanism. No later operations run after a failure, and failed patches still create no checkpoint.
+
+  Retain full pre-write validation, destination overwrite rejection, virtual file state, successful
+  result file ordering, and checkpoint/undo behavior. Ordinary operations remain coalesced between
+  moves; moves separate those groups so a chained move or later recreation of a source path cannot
+  discard the saved copy through final-state coalescing. Operations before a move can now complete
+  separately from later operations on the same path; partial-failure reports reflect that actual
+  execution order. Moving a path onto itself performs only a write. Tool instructions and arguments,
+  rollback, link handling, newline handling, and file-mode changes are outside this follow-up.
+
+  **Validation:** destination directory creation, write and rename failures retain the source;
+  source deletion failure retains both files and reports only confirmed completed operations.
+  Coverage also includes chained moves with success and failure, source-path reuse, same-path moves,
+  unchanged coalescing without moves, overwrite rejection, later validation failure, successful
+  checkpoint/undo, and absent checkpoints on move failure. Four focused suites passed (138 tests):
+  `patch`, `workspace`, `checkpoint`, and `checkpoint-extension`. No build was run.
+
 - [x] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
   patches in its session and offers `/diff`, `/checkpoints`, and `/undo`; undo checks for later content
   changes unless forced. Codex's inspected patch path tracks applied deltas and turn diffs, rather

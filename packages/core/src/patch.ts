@@ -54,6 +54,16 @@ export async function applyWorkspacePatch(
 ): Promise<ApplyPatchResult> {
   const actions = parsePatch(input);
   const staged = new Map<string, string | null>();
+  const pending = new Map<string, string | null>();
+  const operations: [string, string | null][] = [];
+  const stageFile = (absolute: string, content: string | null): void => {
+    staged.set(absolute, content);
+    pending.set(absolute, content);
+  };
+  const flushPending = (): void => {
+    for (const operation of pending) operations.push(operation);
+    pending.clear();
+  };
   let additions = 0;
   let deletions = 0;
 
@@ -85,7 +95,7 @@ export async function applyWorkspacePatch(
         throw new Error(`Cannot add existing file: ${action.path}`);
       }
       const content = action.lines.length > 0 ? `${action.lines.join("\n")}\n` : "";
-      staged.set(absolute, content);
+      stageFile(absolute, content);
       additions += action.lines.length;
       continue;
     }
@@ -97,7 +107,7 @@ export async function applyWorkspacePatch(
     }
 
     if (action.type === "delete") {
-      staged.set(absolute, null);
+      stageFile(absolute, null);
       deletions += splitFile(original).lines.length;
       continue;
     }
@@ -113,16 +123,22 @@ export async function applyWorkspacePatch(
       if (destination !== absolute && (await readVirtual(destination)) !== null) {
         throw new Error(`Move destination already exists: ${action.moveTo}`);
       }
+      // Preserve action order around moves, including chained moves and later
+      // reuse of the source path. Keep the source until its destination is saved.
+      flushPending();
+      operations.push([destination, updated]);
+      if (destination !== absolute) operations.push([absolute, null]);
       staged.set(absolute, null);
       staged.set(destination, updated);
     } else {
-      staged.set(absolute, updated);
+      stageFile(absolute, updated);
     }
   }
+  flushPending();
 
   // All paths and hunks are validated before any workspace mutation happens.
   const completed: string[] = [];
-  for (const [absolute, content] of staged) {
+  for (const [absolute, content] of operations) {
     const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
     try {
       if (content === null) {

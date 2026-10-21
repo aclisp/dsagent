@@ -74,16 +74,132 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("reports source deletion when a move destination fails to write", async () => {
+  it.each(["mkdir", "write", "rename"] as const)("preserves the move source when destination %s fails", async (failureKind) => {
     await fs.writeFile(path.join(root, "old.txt"), "before\n");
-    vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("destination blocked"));
+    const destination = path.join(root, "nested/moved.txt");
+    const failure = new Error("destination blocked");
+    if (failureKind === "mkdir") {
+      vi.spyOn(fs, "mkdir").mockRejectedValueOnce(failure);
+    } else if (failureKind === "write") {
+      vi.spyOn(fs, "writeFile").mockRejectedValueOnce(failure);
+    } else {
+      vi.spyOn(fs, "rename").mockRejectedValueOnce(failure);
+    }
     const error = await applyWorkspacePatch(workspace, [
-      "*** Begin Patch", "*** Update File: old.txt", "*** Move to: moved.txt", "*** End Patch",
+      "*** Begin Patch", "*** Update File: old.txt", "*** Move to: nested/moved.txt",
+      "@@", "-before", "+after", "*** Add File: later.txt", "+not attempted", "*** End Patch",
     ].join("\n")).catch((error: unknown) => error);
-    expect((error as Error).message).toContain("write moved.txt: destination blocked");
-    expect((error as Error).message).toContain("- delete old.txt");
+    expect(error).toBeInstanceOf(PatchApplicationError);
+    expect(error).toMatchObject({ cause: failure });
+    expect((error as Error).message).toContain(`write ${path.join("nested", "moved.txt")}: destination blocked`);
+    expect((error as Error).message).toContain("File operations completed before failure:\n(none)");
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retains both files and reports the saved destination when source deletion fails", async () => {
+    const source = path.join(root, "old.txt");
+    await fs.writeFile(source, "before\n");
+    const rm = fs.rm.bind(fs);
+    const failure = new Error("source deletion blocked");
+    vi.spyOn(fs, "rm").mockImplementation(async (file, options) => {
+      if (String(file) === source) throw failure;
+      return rm(file, options);
+    });
+    const error = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: old.txt", "*** Move to: moved.txt", "@@", "-before", "+after",
+      "*** Add File: later.txt", "+not attempted", "*** End Patch",
+    ].join("\n")).catch((error: unknown) => error);
+    expect(error).toMatchObject({ cause: failure });
+    expect((error as Error).message).toContain("delete old.txt: source deletion blocked");
+    expect((error as Error).message).toContain("File operations completed before failure:\n- write moved.txt");
+    expect((error as Error).message).not.toContain("- delete old.txt");
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("before\n");
+    await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("after\n");
+    await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("saves the moved contents before recreating the source path", async () => {
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    const result = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: old.txt", "*** Move to: moved.txt",
+      "*** Add File: old.txt", "+recreated", "*** End Patch",
+    ].join("\n"));
+    expect(result).toEqual({ files: ["old.txt", "moved.txt"], additions: 1, deletions: 0 });
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("recreated\n");
+    await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("before\n");
+  });
+
+  it.each([false, true])("executes chained moves in order (final write failure: %s)", async (fail) => {
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    await fs.writeFile(path.join(root, "middle.txt"), "discard\n");
+    if (fail) {
+      const rename = fs.rename.bind(fs);
+      vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+        if (String(to) === path.join(root, "final.txt")) throw new Error("final destination blocked");
+        return rename(from, to);
+      });
+    }
+    const outcome = await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Delete File: middle.txt",
+      "*** Update File: old.txt", "*** Move to: middle.txt", "@@", "-before", "+after",
+      "*** Update File: middle.txt", "*** Move to: final.txt", "*** End Patch",
+    ].join("\n")).catch((error: unknown) => error);
     await expect(fs.access(path.join(root, "old.txt"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (fail) {
+      expect(outcome).toBeInstanceOf(PatchApplicationError);
+      expect((outcome as Error).message).toContain("- delete middle.txt\n- write middle.txt\n- delete old.txt");
+      await expect(fs.readFile(path.join(root, "middle.txt"), "utf8")).resolves.toBe("after\n");
+      await expect(fs.access(path.join(root, "final.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect(outcome).toEqual({ files: ["middle.txt", "old.txt", "final.txt"], additions: 1, deletions: 2 });
+      await expect(fs.access(path.join(root, "middle.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.readFile(path.join(root, "final.txt"), "utf8")).resolves.toBe("after\n");
+    }
+  });
+
+  it("treats a move to the source path as an update", async () => {
+    await fs.writeFile(path.join(root, "value.txt"), "before\n");
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "*** Move to: value.txt",
+      "@@", "-before", "+after", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("after\n");
+  });
+
+  it("still coalesces repeated updates when there is no move", async () => {
+    await fs.writeFile(path.join(root, "value.txt"), "before\n");
+    const rename = vi.spyOn(fs, "rename");
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", "-before", "+middle",
+      "*** Update File: value.txt", "@@", "-middle", "+after", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("after\n");
+    expect(rename).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["existing destination", "later invalid hunk"])("validates the whole move patch before writing: %s", async (failureKind) => {
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    await fs.writeFile(path.join(root, "other.txt"), "other\n");
+    if (failureKind === "existing destination") {
+      await fs.writeFile(path.join(root, "moved.txt"), "keep\n");
+    }
+    await expect(applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Add File: first.txt", "+not written",
+      "*** Update File: old.txt", "*** Move to: moved.txt", "@@", "-before", "+after",
+      "*** Update File: other.txt", "@@", "-missing", "+changed", "*** End Patch",
+    ].join("\n"))).rejects.toThrow(
+      failureKind === "existing destination" ? "Move destination already exists" : "Patch context not found",
+    );
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.readFile(path.join(root, "other.txt"), "utf8")).resolves.toBe("other\n");
+    await expect(fs.access(path.join(root, "first.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (failureKind === "existing destination") {
+      await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("keep\n");
+    } else {
+      await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    }
   });
 
   it("adds, updates, moves, and deletes files", async () => {

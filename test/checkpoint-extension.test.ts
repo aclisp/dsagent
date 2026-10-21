@@ -183,6 +183,54 @@ describe("checkpoint extension commands", () => {
     expect(rendered).toContain("No checkpoint was created");
   });
 
+  it.each(["destination write", "source deletion"] as const)("reports a failed move without a checkpoint: %s", async (failureKind) => {
+    const { tool, ctx, entries, undo, notify } = await createPatchHarness(root);
+    const source = path.join(root, "old.txt");
+    const destination = path.join(root, "moved.txt");
+    await fs.writeFile(source, "before\n");
+    if (failureKind === "destination write") {
+      vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("destination blocked"));
+    } else {
+      const rm = fs.rm.bind(fs);
+      vi.spyOn(fs, "rm").mockImplementation(async (file, options) => {
+        if (String(file) === source) throw new Error("source deletion blocked");
+        return rm(file, options);
+      });
+    }
+    const error = await tool.execute("move", {
+      input: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-before\n+after\n*** End Patch",
+    }, undefined, undefined, ctx).catch((error: unknown) => error);
+    expect((error as Error).message).toContain("No checkpoint was created for this patch. /undo cannot restore this patch's changes.");
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("before\n");
+    if (failureKind === "destination write") {
+      expect((error as Error).message).toContain("write moved.txt: destination blocked");
+      expect((error as Error).message).toContain("File operations completed before failure:\n(none)");
+      await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect((error as Error).message).toContain("delete old.txt: source deletion blocked");
+      expect((error as Error).message).toContain("File operations completed before failure:\n- write moved.txt");
+      await expect(fs.readFile(destination, "utf8")).resolves.toBe("after\n");
+    }
+    expect(entries).toEqual([]);
+    await undo("", ctx);
+    expect(notify).toHaveBeenCalledWith("No patch checkpoint is available to undo.", "info");
+  });
+
+  it("creates a checkpoint for a successful move and restores its source on undo", async () => {
+    const { tool, ctx, entries, undo } = await createPatchHarness(root);
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    const result = await tool.execute("move", {
+      input: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-before\n+after\n*** End Patch",
+    }, undefined, undefined, ctx);
+    expect(result.details).toMatchObject({ files: ["old.txt", "moved.txt"], additions: 1, deletions: 1 });
+    expect(entries).toHaveLength(1);
+    await expect(fs.access(path.join(root, "old.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("after\n");
+    await undo("", ctx);
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("reports completed writes when after-snapshot capture fails", async () => {
     const { tool, ctx, entries } = await createPatchHarness(root);
     const target = path.join(root, "saved.txt");
