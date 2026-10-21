@@ -175,18 +175,18 @@ export class ManagedProcessRegistry {
     }
     this.records.set(id, record);
 
-    const append = (prefix: string, chunk: Buffer): void => {
-      const text = `${prefix}${chunk.toString("utf8")}`;
-      record.output.append(text);
+    const append = (prefix: string, text: string): void => {
+      record.output.append(`${prefix}${text}`);
     };
-    child.stdout.on("data", (chunk: Buffer) => append("", chunk));
-    child.stderr.on("data", (chunk: Buffer) => append("[stderr] ", chunk));
+    // Each stream retains incomplete UTF-8 characters across reads and result drains.
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => append("", chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => append("[stderr] ", chunk));
     // stdin is a separate EventEmitter: child errors do not cover pipe errors.
     child.stdin.on("error", (error) => {
       record.stdinError = error;
     });
     child.once("error", (error) => {
-      append("[error] ", Buffer.from(error.message));
+      append("[error] ", error.message);
     });
     child.once("close", (exitCode) => {
       record.running = false;
