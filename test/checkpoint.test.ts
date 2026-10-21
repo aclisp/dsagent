@@ -41,6 +41,27 @@ describe("patch checkpoints", () => {
     await expect(fs.access(path.join(root, "new.txt"))).rejects.toThrow();
   });
 
+  it.each([false, true])("refuses to replace a symbolic link during undo (force: %s)", async (force) => {
+    const patch = [
+      "*** Begin Patch", "*** Add File: new.txt", "+created",
+      "*** Update File: existing.txt", "@@", "-before", "+after", "*** End Patch",
+    ].join("\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async () => {
+      await applyWorkspacePatch(workspace, patch);
+    });
+    // Identical text would pass the ordinary content conflict check.
+    await fs.writeFile(path.join(root, "target.txt"), "after\n");
+    await fs.rm(path.join(root, "existing.txt"));
+    await fs.symlink("target.txt", path.join(root, "existing.txt"), "file");
+
+    await expect(restoreCheckpoint(workspace, checkpoint, force)).rejects.toThrow(
+      "Cannot patch symbolic link: existing.txt",
+    );
+    await expect(fs.readlink(path.join(root, "existing.txt"))).resolves.toBe("target.txt");
+    await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("after\n");
+    await expect(fs.readFile(path.join(root, "new.txt"), "utf8")).resolves.toBe("created\n");
+  });
+
   it("protects edits made after the checkpoint", async () => {
     const patch = [
       "*** Begin Patch",

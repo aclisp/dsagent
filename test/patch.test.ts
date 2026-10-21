@@ -233,6 +233,67 @@ describe("applyWorkspacePatch", () => {
     expect(result).toMatchObject({ additions: 2, deletions: 2 });
   });
 
+  describe("symbolic link paths", () => {
+    describe.each([false, true])("dangling link: %s", (dangling) => {
+      it.each([
+        { name: "add", action: ["*** Add File: link.txt", "+replacement"] },
+        { name: "update", action: ["*** Update File: link.txt", "@@", "-before", "+after"] },
+        { name: "delete", action: ["*** Delete File: link.txt"] },
+        { name: "move source", action: ["*** Update File: link.txt", "*** Move to: moved.txt"] },
+        { name: "move destination", action: ["*** Update File: source.txt", "*** Move to: link.txt"] },
+      ])("rejects $name before any workspace mutation", async ({ action }) => {
+        const target = path.join(root, "target.txt");
+        if (!dangling) await fs.writeFile(target, "before\n");
+        await fs.writeFile(path.join(root, "source.txt"), "source\n");
+        await fs.symlink("target.txt", path.join(root, "link.txt"), "file");
+        await expect(applyWorkspacePatch(workspace, [
+          "*** Begin Patch", "*** Add File: earlier.txt", "+not written", ...action, "*** End Patch",
+        ].join("\n"))).rejects.toThrow("Cannot patch symbolic link: link.txt");
+
+        await expect(fs.readlink(path.join(root, "link.txt"))).resolves.toBe("target.txt");
+        await expect(fs.readFile(path.join(root, "source.txt"), "utf8")).resolves.toBe("source\n");
+        await expect(fs.access(path.join(root, "earlier.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+        if (dangling) {
+          await expect(fs.access(target)).rejects.toMatchObject({ code: "ENOENT" });
+        } else {
+          await expect(fs.readFile(target, "utf8")).resolves.toBe("before\n");
+        }
+      });
+    });
+
+    it("rechecks for a symbolic link introduced after validation", async () => {
+      const target = path.join(root, "target.txt");
+      const file = path.join(root, "value.txt");
+      await fs.writeFile(target, "target\n");
+      await fs.writeFile(file, "before\n");
+      const resolvePatchPath = workspace.resolvePatchPath.bind(workspace);
+      vi.spyOn(workspace, "resolvePatchPath").mockImplementation(async (userPath, allowMissing) => {
+        if (userPath === file) {
+          await fs.rm(file);
+          await fs.symlink("target.txt", file, "file");
+        }
+        return resolvePatchPath(userPath, allowMissing);
+      });
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: value.txt", "@@", "-before", "+after", "*** End Patch",
+      ].join("\n"))).rejects.toThrow("Cannot patch symbolic link");
+      await expect(fs.readlink(file)).resolves.toBe("target.txt");
+      await expect(fs.readFile(target, "utf8")).resolves.toBe("target\n");
+    });
+
+    it("still edits regular files through a directory alias inside the workspace", async () => {
+      await fs.mkdir(path.join(root, "real"));
+      await fs.writeFile(path.join(root, "real/value.txt"), "before\n");
+      await fs.symlink("real", path.join(root, "alias"), "dir");
+      await applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Update File: alias/value.txt", "@@", "-before", "+after", "*** End Patch",
+      ].join("\n"));
+      expect((await fs.lstat(path.join(root, "alias"))).isSymbolicLink()).toBe(true);
+      await expect(fs.readFile(path.join(root, "real/value.txt"), "utf8")).resolves.toBe("after\n");
+    });
+  });
+
   describe("hunk headers", () => {
     const original = "function first() {\n  return 1;\n}\n\nfunction second() {\n  return 1;\n}\n";
     const updatedSecond = original.replace("function second() {\n  return 1;", "function second() {\n  return 2;");

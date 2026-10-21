@@ -231,6 +231,21 @@ describe("checkpoint extension commands", () => {
     await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each([false, true])("rejects a symbolic link without saving a checkpoint (dangling: %s)", async (dangling) => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    if (!dangling) await fs.writeFile(path.join(root, "target.txt"), "before\n");
+    await fs.symlink("target.txt", path.join(root, "link.txt"), "file");
+    await expect(tool.execute("link", {
+      input: "*** Begin Patch\n*** Add File: earlier.txt\n+not written\n*** Update File: link.txt\n@@\n-before\n+after\n*** End Patch",
+    }, undefined, undefined, ctx)).rejects.toThrow("Cannot patch symbolic link: link.txt");
+    expect(entries).toEqual([]);
+    await expect(fs.readlink(path.join(root, "link.txt"))).resolves.toBe("target.txt");
+    await expect(fs.access(path.join(root, "earlier.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (!dangling) {
+      await expect(fs.readFile(path.join(root, "target.txt"), "utf8")).resolves.toBe("before\n");
+    }
+  });
+
   it("reports completed writes when after-snapshot capture fails", async () => {
     const { tool, ctx, entries } = await createPatchHarness(root);
     const target = path.join(root, "saved.txt");

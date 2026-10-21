@@ -83,6 +83,23 @@ DSCode
   `../other-project/app.ts`, and a symlink pointing outside the workspace. Decide whether to retain
   confinement, improve error messages, or introduce an explicit broader scope.
 
+  **Partial decision (2026-10-21): reject symbolic links at patch file paths.** The previous
+  implementation read through a link, then replaced the link itself with an ordinary file during
+  atomic writing. Checkpoints did not record link type or destination, so undo could not restore it.
+  Reject a symbolic link at the final component of every Add/Update/Delete source and Move target,
+  including dangling links. Use `lstat` through a shared `Workspace.resolvePatchPath` check in patch
+  validation, checkpoint snapshots, and undo. Check again before each patch or undo file operation.
+  A link present during validation rejects the whole patch before writes; a link detected later
+  stops execution with the existing partial-failure report. Undo rejects links even with `--force`.
+
+  This rule does not change tool instructions or arguments, ordinary workspace path resolution,
+  or access to regular files through directory links confined to the workspace. No link-following
+  write mode or link snapshot format is introduced. Four focused suites passed (154 tests): `patch`,
+  `workspace`, `checkpoint`, and `checkpoint-extension`. Coverage includes all five file-operation
+  positions with intact and dangling links, a link introduced after validation, tool-level rejection
+  without a checkpoint, undo with and without force, and regular-file access through a directory
+  alias. No build was run.
+
 - [ ] **AP-03 — Adding or moving onto an existing file.** Codex can overwrite an existing add target
   or move destination. DSCode rejects both collisions. Illustrate creating `notes.txt` when it already
   contains the user's notes. Decide whether strict collision rejection is desirable.

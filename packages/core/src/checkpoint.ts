@@ -55,7 +55,7 @@ export async function restoreCheckpoint(
   }
 
   for (const snapshot of checkpoint.before) {
-    const absolute = await workspace.resolve(snapshot.path, true);
+    const absolute = await workspace.resolvePatchPath(snapshot.path, true);
     if (snapshot.content === null) {
       await fs.rm(absolute, { force: true });
       continue;
@@ -94,7 +94,7 @@ export function extractTouchedPaths(input: string): string[] {
 async function snapshotPaths(workspace: Workspace, files: string[]): Promise<FileSnapshot[]> {
   const snapshots: FileSnapshot[] = [];
   for (const file of files) {
-    const absolute = await workspace.resolve(file, true);
+    const absolute = await workspace.resolvePatchPath(file, true);
     try {
       const stat = await fs.stat(absolute);
       if (!stat.isFile()) throw new Error(`Checkpoint path is not a regular file: ${file}`);

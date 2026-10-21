@@ -90,7 +90,7 @@ export async function applyWorkspacePatch(
 
   for (const action of actions) {
     if (action.type === "add") {
-      const absolute = await workspace.resolve(action.path, true);
+      const absolute = await workspace.resolvePatchPath(action.path, true);
       if ((await readVirtual(absolute)) !== null) {
         throw new Error(`Cannot add existing file: ${action.path}`);
       }
@@ -100,7 +100,7 @@ export async function applyWorkspacePatch(
       continue;
     }
 
-    const absolute = await workspace.resolve(action.path);
+    const absolute = await workspace.resolvePatchPath(action.path);
     const original = await readVirtual(absolute);
     if (original === null) {
       throw new Error(`File not found: ${action.path}`);
@@ -119,7 +119,7 @@ export async function applyWorkspacePatch(
     }
 
     if (action.moveTo) {
-      const destination = await workspace.resolve(action.moveTo, true);
+      const destination = await workspace.resolvePatchPath(action.moveTo, true);
       if (destination !== absolute && (await readVirtual(destination)) !== null) {
         throw new Error(`Move destination already exists: ${action.moveTo}`);
       }
@@ -141,6 +141,7 @@ export async function applyWorkspacePatch(
   for (const [absolute, content] of operations) {
     const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
     try {
+      await workspace.resolvePatchPath(absolute, true);
       if (content === null) {
         await fs.rm(absolute, { force: true });
       } else {
