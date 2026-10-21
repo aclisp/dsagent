@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parsePatch } from "./patch.ts";
 import { Workspace } from "./workspace.ts";
 
 export interface FileSnapshot {
@@ -80,15 +81,12 @@ export async function restoreCheckpoint(
 }
 
 export function extractTouchedPaths(input: string): string[] {
-  const paths: string[] = [];
-  for (const line of input.replaceAll("\r\n", "\n").split("\n")) {
-    const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
-    if (!match) continue;
-    const file = match[1]!.trim();
-    if (file && !paths.includes(file)) paths.push(file);
+  const paths = new Set<string>();
+  for (const action of parsePatch(input)) {
+    paths.add(action.path);
+    if (action.type === "update" && action.moveTo) paths.add(action.moveTo);
   }
-  if (paths.length === 0) throw new Error("Patch contains no file paths");
-  return paths;
+  return [...paths];
 }
 
 async function snapshotPaths(workspace: Workspace, files: string[]): Promise<FileSnapshot[]> {

@@ -174,6 +174,9 @@ export function parsePatch(input: string): PatchAction[] {
     const line = lines[index]!;
     if (line === "*** End Patch") {
       if (actions.length === 0) throw new Error("Patch contains no file actions");
+      if (lines.slice(index + 1).some((trailing) => trailing.trim() !== "")) {
+        throw new Error("Patch contains unexpected content after *** End Patch");
+      }
       return actions;
     }
 

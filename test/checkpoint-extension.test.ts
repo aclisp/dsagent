@@ -293,6 +293,16 @@ describe("checkpoint extension commands", () => {
     await expect(fs.access(path.join(root, "invalid.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("does not apply or checkpoint the valid prefix of a patch with trailing directives", async () => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    await expect(tool.execute("trailing", {
+      input: "*** Begin Patch\n*** Add File: first.txt\n+first\n*** End Patch\n*** Add File: ignored.txt\n+ignored",
+    }, undefined, undefined, ctx)).rejects.toThrow("Patch contains unexpected content after *** End Patch");
+    expect(entries).toEqual([]);
+    await expect(fs.access(path.join(root, "first.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "ignored.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("shows diffs, reports cancelled undo, and restores the latest checkpoint", async () => {
     const tools = new Map<string, ToolDefinition>();
     const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();

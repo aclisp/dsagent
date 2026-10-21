@@ -190,6 +190,24 @@ DSCode
   source path. Illustrate adding a file and then updating it inside one patch, plus a bad hunk in a
   later file. Decide whether this flexibility is useful or should be restricted.
 
+  **Partial decision (2026-10-21): validate the complete patch and share its parser with
+  checkpoints.** Reject any non-whitespace content following the first `*** End Patch`, including
+  extra directives, another patch, or a second end marker. Previously the patch executor silently
+  applied the valid prefix while checkpoint path extraction scanned the entire input. Keep accepting
+  trailing whitespace and LF/CRLF inputs; preserve whitespace within file content.
+
+  Checkpoint paths now come from `parsePatch` actions, including both source and destination for
+  moves, deduplicated in first-appearance order. Invalid syntax is rejected before snapshot reads
+  or writes, so no prefix is applied and no checkpoint is created. Valid patch execution, checkpoint
+  contents, undo, tool instructions and arguments remain unchanged. The broader repeated-operation
+  policy in AP-07 remains open.
+
+  **Validation:** four focused suites passed (173 tests): `patch`, `workspace`, `checkpoint`, and
+  `checkpoint-extension`. Coverage includes invalid suffixes with LF/CRLF, allowed trailing
+  whitespace, preservation of content whitespace, source/move-path ordering and deduplication,
+  directive-like file content, checkpoint/undo correctness, and tool rejection without prefix writes
+  or checkpoint creation. No build was run.
+
 - [x] **AP-08 — What “atomic” means when a later write fails.** DSCode validates all operations before
   writing and uses temporary-file renames for individual writes, but its multi-file write loop has no
   rollback. An I/O failure can leave earlier edits applied, and checkpoint capture does not complete

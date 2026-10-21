@@ -20,6 +20,35 @@ describe("applyWorkspacePatch", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
+  describe.each(["\n", "\r\n"])("patch termination with %j endings", (ending) => {
+    it.each([
+      "extra text",
+      "*** Add File: ignored.txt\n+ignored",
+      "*** Begin Patch\n*** Add File: ignored.txt\n+ignored\n*** End Patch",
+      "*** End Patch",
+      "\n \t\nextra text",
+    ])("rejects trailing content without applying the valid prefix: %j", async (trailing) => {
+      await fs.writeFile(path.join(root, "value.txt"), "before\n");
+      await expect(applyWorkspacePatch(workspace, [
+        "*** Begin Patch", "*** Add File: first.txt", "+not written",
+        "*** Update File: value.txt", "@@", "-before", "+after", "*** End Patch", trailing,
+      ].join("\n").replaceAll("\n", ending))).rejects.toThrow(
+        "Patch contains unexpected content after *** End Patch",
+      );
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("before\n");
+      await expect(fs.access(path.join(root, "first.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(path.join(root, "ignored.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+
+    it.each(["", "\n", "\n \t\n"])("accepts a whitespace-only suffix: %j", async (suffix) => {
+      const result = await applyWorkspacePatch(workspace, (
+        "*** Begin Patch\n*** Add File: added.txt\n+content  \n*** End Patch" + suffix
+      ).replaceAll("\n", ending));
+      expect(result).toEqual({ files: ["added.txt"], additions: 1, deletions: 0 });
+      await expect(fs.readFile(path.join(root, "added.txt"), "utf8")).resolves.toBe("content  \n");
+    });
+  });
+
   it.each(["write", "rename", "delete"] as const)("reports completed operations when a later %s fails", async (failureKind) => {
     await fs.writeFile(path.join(root, "removed.txt"), "remove me\n");
     const failedPath = path.join(root, "failed.txt");
