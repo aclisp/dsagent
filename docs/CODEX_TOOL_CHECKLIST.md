@@ -35,6 +35,7 @@ For each item, use this sequence:
 **AP-05** (patch anchors), **EX-07** (output truncation), the failure-reporting scope of **AP-08**,
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
+**AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
@@ -156,12 +157,32 @@ DSCode
   LF/CRLF, BOM, and absent final newlines. Newly interpreted replacement anchors intentionally differ
   from the former behavior that ignored them.
 
-- [ ] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
+- [x] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
   including mixed LF/CRLF/CR, and its update path adds a final newline to nonempty resulting lines.
   DSCode reconstructs the edited file using its first newline convention and preserves whether the
   file ended with a newline; it explicitly preserves a UTF-8 BOM. Illustrate a tiny edit in a file
   with mixed endings and a file with no final newline. Decide which unrelated formatting changes to
   avoid and which conventions to preserve.
+
+  **Decision (2026-10-21): keep the existing Pi-style LF/CRLF strategy.** Detect the first newline's
+  convention, normalize CRLF to LF for editing, and reconstruct the edited file using the selected
+  convention. Mixed LF/CRLF endings are intentionally unified; this is accepted behavior, not a
+  pending defect. Prefer this simple, predictable rule over Codex's per-line ending preservation,
+  accepting that a local edit in a mixed-ending file can change unrelated line endings.
+
+  **Illustration:** changing `b` to `B` in `a\r\nb\n` produces `a\r\nB\r\n`; the same edit in
+  `a\nb\r\n` produces `a\nB\n`. Retain DSCode's UTF-8 BOM and whether an existing file has a final
+  newline. Move-only patches preserve content exactly, and newly added files continue to use LF.
+
+  **Pi reference:** [edit execution](../../pi/packages/coding-agent/src/core/tools/edit.ts) uses
+  `detectLineEnding`, `normalizeToLF`, and `restoreLineEndings` from
+  [edit-diff.ts](../../pi/packages/coding-agent/src/core/tools/edit-diff.ts). This decision concerns
+  the shared LF/CRLF strategy, rather than requiring every newline edge case to match Pi.
+  DSCode's existing implementation and mixed-ending tests were introduced in `cd7c435`
+  (`fix: preserve file line endings in apply_patch`, 2026-10-09); see
+  [patch implementation](../packages/core/src/patch.ts) and [tests](../test/patch.test.ts).
+  This decision requires no code, tool instruction, or argument changes. Documentation only;
+  no tests or builds were run for this record.
 
 - [ ] **AP-07 — Validation and multiple operations on one file.** Both tool paths verify patches
   before executing writes. DSCode calculates edits in a virtual staged map, allowing later operations
