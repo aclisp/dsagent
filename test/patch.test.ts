@@ -103,7 +103,7 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it.each(["mkdir", "write", "rename"] as const)("preserves the move source when destination %s fails", async (failureKind) => {
+  it.each(["mkdir", "write", "chmod", "rename"] as const)("preserves the move source when destination %s fails", async (failureKind) => {
     await fs.writeFile(path.join(root, "old.txt"), "before\n");
     const destination = path.join(root, "nested/moved.txt");
     const failure = new Error("destination blocked");
@@ -111,6 +111,8 @@ describe("applyWorkspacePatch", () => {
       vi.spyOn(fs, "mkdir").mockRejectedValueOnce(failure);
     } else if (failureKind === "write") {
       vi.spyOn(fs, "writeFile").mockRejectedValueOnce(failure);
+    } else if (failureKind === "chmod") {
+      vi.spyOn(fs, "chmod").mockRejectedValueOnce(failure);
     } else {
       vi.spyOn(fs, "rename").mockRejectedValueOnce(failure);
     }
@@ -125,6 +127,55 @@ describe("applyWorkspacePatch", () => {
     await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
     await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readdir(root, { recursive: true })).resolves.not.toEqual(
+      expect.arrayContaining([expect.stringContaining(".dscode-")]),
+    );
+  });
+
+  it.skipIf(process.platform === "win32").each([
+    { name: "update", moves: [], target: "script.sh", edit: true },
+    { name: "move", moves: ["nested/script.sh"], target: "nested/script.sh", edit: false },
+    { name: "edit and move", moves: ["nested/script.sh"], target: "nested/script.sh", edit: true },
+    { name: "chained moves", moves: ["middle.sh", "nested/script.sh"], target: "nested/script.sh", edit: true },
+    { name: "same-path move", moves: ["script.sh"], target: "script.sh", edit: true },
+  ])("preserves ordinary executable permissions across $name", async ({ moves, target, edit }) => {
+    const source = path.join(root, "script.sh");
+    await fs.writeFile(source, "#!/bin/sh\necho before\n");
+    // Group write also detects accidental filtering by the common umask 022.
+    await fs.chmod(source, 0o775);
+    const actions = ["*** Update File: script.sh"];
+    if (moves.length) actions.push(`*** Move to: ${moves[0]}`);
+    if (edit) actions.push("@@", "-echo before", "+echo after");
+    for (let index = 1; index < moves.length; index++) {
+      actions.push(`*** Update File: ${moves[index - 1]}`, `*** Move to: ${moves[index]}`);
+    }
+    await applyWorkspacePatch(workspace, ["*** Begin Patch", ...actions, "*** End Patch"].join("\n"));
+
+    const destination = path.join(root, target);
+    expect((await fs.stat(destination)).mode & 0o777).toBe(0o775);
+    await expect(fs.readFile(destination, "utf8")).resolves.toBe(
+      `#!/bin/sh\necho ${edit ? "after" : "before"}\n`,
+    );
+    for (const file of new Set(["script.sh", ...moves])) {
+      if (file !== target) await expect(fs.access(path.join(root, file))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("keeps moved permissions separate from a recreated source", async () => {
+    const source = path.join(root, "script.sh");
+    await fs.writeFile(source, "original\n");
+    await fs.chmod(source, 0o775);
+    await fs.writeFile(path.join(root, "default.txt"), "default\n");
+    const defaultMode = (await fs.stat(path.join(root, "default.txt"))).mode & 0o777;
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: script.sh", "*** Move to: moved.sh",
+      "*** Add File: script.sh", "+new", "*** Update File: script.sh", "*** Move to: new.sh",
+      "*** End Patch",
+    ].join("\n"));
+    expect((await fs.stat(path.join(root, "moved.sh"))).mode & 0o777).toBe(0o775);
+    expect((await fs.stat(path.join(root, "new.sh"))).mode & 0o777).toBe(defaultMode);
+    await expect(fs.readFile(path.join(root, "new.sh"), "utf8")).resolves.toBe("new\n");
+    await expect(fs.access(source)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("retains both files and reports the saved destination when source deletion fails", async () => {

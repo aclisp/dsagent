@@ -273,6 +273,19 @@ DSCode
   checkpoint/undo, and absent checkpoints on move failure. Four focused suites passed (138 tests):
   `patch`, `workspace`, `checkpoint`, and `checkpoint-extension`. No build was run.
 
+  **Follow-up decision (2026-10-21): preserve ordinary file permissions on moves.** Carry the
+  source's `rwx` permission bits with virtual file contents through updates and chained moves.
+  Apply those bits to the written temporary file before renaming it into place, so `umask` cannot
+  silently remove permissions. Permission-setting failures retain the source, remove the temporary
+  file, and use the existing partial-failure report. New files retain default creation permissions;
+  recreating a moved source does not inherit the old source's mode. Existing-file updates and undo
+  also set the saved ordinary permissions before rename. No owner, ACL, extended-attribute, or
+  special permission-bit preservation is added. Chained moves can read a preceding action's virtual
+  destination even when that path does not yet exist on disk; path and symbolic-link checks remain.
+
+  **Coverage:** executable updates, pure/edited/chained/same-path moves, source-path recreation,
+  permission-setting failure cleanup, and checkpoint/undo permissions, including restrictive umask.
+
 - [x] **AP-09 — Checkpoints, diffs, and undo.** DSCode saves before/after snapshots for successful
   patches in its session and offers `/diff`, `/checkpoints`, and `/undo`; undo checks for later content
   changes unless forced. Codex's inspected patch path tracks applied deltas and turn diffs, rather

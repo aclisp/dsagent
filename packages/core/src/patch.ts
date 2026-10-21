@@ -59,15 +59,19 @@ export async function applyWorkspacePatch(
   const actions = parsePatch(input);
   const staged = new Map<string, string | null>();
   const pending = new Map<string, string | null>();
-  const operations: [string, string | null][] = [];
-  const stageFile = (absolute: string, content: string | null): void => {
+  const modes = new Map<string, number | undefined>();
+  const operations: [absolute: string, content: string | null, mode?: number | undefined][] = [];
+  const stageFile = (absolute: string, content: string | null, mode?: number): void => {
     budget.stageWrite(workspace.relative(absolute), content);
     staged.set(absolute, content);
     pending.set(absolute, content);
+    modes.set(absolute, mode);
   };
   const flushPending = (): void => {
     budget.flushPending();
-    for (const operation of pending) operations.push(operation);
+    for (const [absolute, content] of pending) {
+      operations.push([absolute, content, modes.get(absolute)]);
+    }
     pending.clear();
   };
   let additions = 0;
@@ -109,7 +113,8 @@ export async function applyWorkspacePatch(
       continue;
     }
 
-    const absolute = await workspace.resolvePatchPath(action.path);
+    // A preceding action may have created this file only in the virtual plan.
+    const absolute = await workspace.resolvePatchPath(action.path, true);
     const original = await readVirtual(absolute);
     signal?.throwIfAborted();
     if (original === null) {
@@ -122,6 +127,10 @@ export async function applyWorkspacePatch(
       continue;
     }
 
+    // Follow permissions through virtual updates and chained moves as well as content.
+    const mode = staged.has(absolute)
+      ? modes.get(absolute)
+      : (await fs.stat(absolute)).mode & 0o777;
     const updated = applyUpdate(original, action);
     for (const hunk of action.hunks) {
       additions += hunk.lines.filter((line) => line.startsWith("+")).length;
@@ -137,12 +146,14 @@ export async function applyWorkspacePatch(
       // reuse of the source path. Keep the source until its destination is saved.
       flushPending();
       budget.addWrite(workspace.relative(destination), updated);
-      operations.push([destination, updated]);
+      operations.push([destination, updated, mode]);
       if (destination !== absolute) operations.push([absolute, null]);
       staged.set(absolute, null);
       staged.set(destination, updated);
+      modes.delete(absolute);
+      modes.set(destination, mode);
     } else {
-      stageFile(absolute, updated);
+      stageFile(absolute, updated, mode);
     }
   }
   flushPending();
@@ -150,7 +161,7 @@ export async function applyWorkspacePatch(
 
   // All paths and hunks are validated before any workspace mutation happens.
   const completed: string[] = [];
-  for (const [absolute, content] of operations) {
+  for (const [absolute, content, mode] of operations) {
     const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
     try {
       await workspace.resolvePatchPath(absolute, true);
@@ -165,7 +176,7 @@ export async function applyWorkspacePatch(
         await fs.rm(absolute, { force: true });
       } else {
         await fs.mkdir(path.dirname(absolute), { recursive: true });
-        await writeFileAtomic(absolute, content);
+        await writeFileAtomic(absolute, content, mode);
       }
       completed.push(operation);
     } catch (cause) {
@@ -430,19 +441,22 @@ function requireRelativePatchPath(value: string): string {
   return file;
 }
 
-async function writeFileAtomic(target: string, content: string): Promise<void> {
+async function writeFileAtomic(target: string, content: string, mode?: number): Promise<void> {
   const temporary = path.join(
     path.dirname(target),
     `.${path.basename(target)}.dscode-${process.pid}-${Date.now()}.tmp`,
   );
-  let mode: number | undefined;
-  try {
-    mode = (await fs.stat(target)).mode;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  if (mode === undefined) {
+    try {
+      mode = (await fs.stat(target)).mode & 0o777;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
   try {
     await fs.writeFile(temporary, content, { encoding: "utf8", mode });
+    // Creation mode is filtered by umask; restore ordinary permissions before publishing.
+    if (mode !== undefined) await fs.chmod(temporary, mode);
     await fs.rename(temporary, target);
   } catch (error) {
     await fs.rm(temporary, { force: true });

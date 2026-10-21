@@ -69,6 +69,30 @@ describe("patch checkpoints", () => {
     await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.skipIf(process.platform === "win32")("preserves executable permissions through an edited move and undo", async () => {
+    const source = path.join(root, "existing.txt");
+    const destination = path.join(root, "moved.sh");
+    await fs.chmod(source, 0o775);
+    const patch = [
+      "*** Begin Patch", "*** Update File: existing.txt", "*** Move to: moved.sh",
+      "@@", "-before", "+after", "*** End Patch",
+    ].join("\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async (budget) => {
+      await applyWorkspacePatch(workspace, patch, budget);
+    });
+
+    expect(checkpoint.before[0]!.mode! & 0o777).toBe(0o775);
+    expect(checkpoint.after[1]!.mode! & 0o777).toBe(0o775);
+    expect((await fs.stat(destination)).mode & 0o777).toBe(0o775);
+    await expect(fs.readFile(destination, "utf8")).resolves.toBe("after\n");
+    await expect(fs.access(source)).rejects.toMatchObject({ code: "ENOENT" });
+
+    await restoreCheckpoint(workspace, checkpoint);
+    expect((await fs.stat(source)).mode & 0o777).toBe(0o775);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("rejects a malformed patch before taking snapshots or invoking the writer", async () => {
     const resolve = vi.spyOn(workspace, "resolvePatchPath");
     const apply = vi.fn(async () => {});

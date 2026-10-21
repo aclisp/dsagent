@@ -81,8 +81,9 @@ export async function restoreCheckpoint(
     try {
       await fs.writeFile(temporary, snapshot.content, {
         encoding: "utf8",
-        ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode }),
+        ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode & 0o777 }),
       });
+      if (snapshot.mode !== undefined) await fs.chmod(temporary, snapshot.mode & 0o777);
       await fs.rename(temporary, absolute);
     } catch (error) {
       await fs.rm(temporary, { force: true });
