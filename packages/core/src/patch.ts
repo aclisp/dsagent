@@ -53,7 +53,9 @@ export async function applyWorkspacePatch(
   workspace: Workspace,
   input: string,
   budget = new PatchBudget(),
+  signal?: AbortSignal,
 ): Promise<ApplyPatchResult> {
+  signal?.throwIfAborted();
   const actions = parsePatch(input);
   const staged = new Map<string, string | null>();
   const pending = new Map<string, string | null>();
@@ -72,9 +74,11 @@ export async function applyWorkspacePatch(
   let deletions = 0;
 
   const readVirtual = async (absolute: string): Promise<string | null> => {
+    signal?.throwIfAborted();
     if (staged.has(absolute)) return staged.get(absolute) ?? null;
     try {
-      const bytes = await readPatchFile(absolute, workspace.relative(absolute), budget);
+      const bytes = await readPatchFile(absolute, workspace.relative(absolute), budget, signal);
+      signal?.throwIfAborted();
       const message = `Cannot patch ${workspace.relative(absolute)}: only UTF-8 text files are supported. Convert the file to UTF-8 first.`;
       let content: string;
       try {
@@ -93,6 +97,7 @@ export async function applyWorkspacePatch(
   };
 
   for (const action of actions) {
+    signal?.throwIfAborted();
     if (action.type === "add") {
       const absolute = await workspace.resolvePatchPath(action.path, true);
       if ((await readVirtual(absolute)) !== null) {
@@ -106,6 +111,7 @@ export async function applyWorkspacePatch(
 
     const absolute = await workspace.resolvePatchPath(action.path);
     const original = await readVirtual(absolute);
+    signal?.throwIfAborted();
     if (original === null) {
       throw new Error(`File not found: ${action.path}`);
     }
@@ -140,6 +146,7 @@ export async function applyWorkspacePatch(
     }
   }
   flushPending();
+  signal?.throwIfAborted();
 
   // All paths and hunks are validated before any workspace mutation happens.
   const completed: string[] = [];
@@ -147,6 +154,13 @@ export async function applyWorkspacePatch(
     const operation = `${content === null ? "delete" : "write"} ${workspace.relative(absolute)}`;
     try {
       await workspace.resolvePatchPath(absolute, true);
+    } catch (cause) {
+      throw new PatchApplicationError(operation, completed, cause);
+    }
+    // The last cancellation point is immediately before the first mutation.
+    // Once an operation starts, finish the remaining plan and checkpoint flow.
+    if (completed.length === 0) signal?.throwIfAborted();
+    try {
       if (content === null) {
         await fs.rm(absolute, { force: true });
       } else {

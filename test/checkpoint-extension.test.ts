@@ -294,6 +294,105 @@ describe("checkpoint extension commands", () => {
     await expect(fs.access(path.join(root, "invalid.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each(["entry", "before snapshot"] as const)("cancels during %s without applying files or saving a checkpoint", async (phase) => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    const controller = new AbortController();
+    const reason = new Error("cancel requested");
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    if (phase === "entry") controller.abort(reason);
+    else {
+      const open = fs.open.bind(fs);
+      vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
+        const handle = await open(...args);
+        controller.abort(reason);
+        return handle;
+      });
+    }
+    await expect(tool.execute("cancel", {
+      input: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-before\n+after\n*** End Patch",
+    }, controller.signal, undefined, ctx)).rejects.toBe(reason);
+    expect(entries).toEqual([]);
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each(["mkdir", "rename", "delete", "after snapshot", "persistence"] as const)("finishes the patch and checkpoint when cancelled during %s", async (phase) => {
+    const { tool, ctx, entries, appendEntry, undo } = await createPatchHarness(root);
+    const controller = new AbortController();
+    const reason = new Error("cancel requested");
+    const source = path.join(root, "old.txt");
+    const destination = path.join(root, "moved.txt");
+    await fs.writeFile(source, "before\n");
+    let written = false;
+    const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      await rename(from, to);
+      if (String(to) === destination) {
+        written = true;
+        if (phase === "rename") controller.abort(reason);
+      }
+    });
+    if (phase === "mkdir") {
+      const mkdir = fs.mkdir.bind(fs);
+      vi.spyOn(fs, "mkdir").mockImplementationOnce(async (...args) => {
+        const result = await mkdir(...args);
+        controller.abort(reason);
+        return result;
+      });
+    } else if (phase === "delete") {
+      const rm = fs.rm.bind(fs);
+      vi.spyOn(fs, "rm").mockImplementation(async (file, options) => {
+        await rm(file, options);
+        if (String(file) === source) controller.abort(reason);
+      });
+    } else if (phase === "after snapshot") {
+      const stat = fs.stat.bind(fs);
+      vi.spyOn(fs, "stat").mockImplementation(async (file) => {
+        if (written && String(file) === destination) controller.abort(reason);
+        return stat(file);
+      });
+    } else if (phase === "persistence") {
+      const save = appendEntry.getMockImplementation()!;
+      appendEntry.mockImplementationOnce((...args) => {
+        controller.abort(reason);
+        save(...args);
+      });
+    }
+    const result = await tool.execute("cancel", {
+      input: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-before\n+after\n*** Add File: later.txt\n+later\n*** End Patch",
+    }, controller.signal, undefined, ctx);
+    expect(controller.signal.aborted).toBe(true);
+    expect(result.details).toMatchObject({ files: ["old.txt", "moved.txt", "later.txt"] });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.customType).toBe("dscode-checkpoint");
+    await expect(fs.access(source)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(destination, "utf8")).resolves.toBe("after\n");
+    await expect(fs.readFile(path.join(root, "later.txt"), "utf8")).resolves.toBe("later\n");
+    await undo("", ctx);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(root, "later.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves filesystem failure reporting after the cancellation boundary", async () => {
+    const { tool, ctx, entries } = await createPatchHarness(root);
+    const controller = new AbortController();
+    await fs.writeFile(path.join(root, "old.txt"), "before\n");
+    const mkdir = fs.mkdir.bind(fs);
+    vi.spyOn(fs, "mkdir").mockImplementationOnce(async (...args) => {
+      const result = await mkdir(...args);
+      controller.abort(new Error("cancel requested"));
+      return result;
+    });
+    vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("disk full"));
+    await expect(tool.execute("cancel", {
+      input: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: moved.txt\n*** End Patch",
+    }, controller.signal, undefined, ctx)).rejects.toThrow("write moved.txt: disk full");
+    expect(entries).toEqual([]);
+    await expect(fs.readFile(path.join(root, "old.txt"), "utf8")).resolves.toBe("before\n");
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it.each([
     { name: "input", limits: { inputBytes: 16 }, error: "Patch input is" },
     { name: "original", limits: { fileBytes: 6 }, error: "per-file limit" },

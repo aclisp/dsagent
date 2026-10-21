@@ -24,11 +24,15 @@ export async function capturePatchCheckpoint(
   workspace: Workspace,
   patchInput: string,
   apply: (budget: PatchBudget) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<PatchCheckpoint> {
+  signal?.throwIfAborted();
   const touched = extractTouchedPaths(patchInput);
   const budget = new PatchBudget();
-  const before = await snapshotPaths(workspace, touched, budget);
+  const before = await snapshotPaths(workspace, touched, budget, signal);
+  signal?.throwIfAborted();
   await apply(budget);
+  // A successful apply has crossed the mutation boundary; finish its checkpoint.
   const after = await snapshotPaths(workspace, touched, new PatchBudget(budget.originalBytes));
   return {
     id: crypto.randomUUID().slice(0, 12),
@@ -97,14 +101,19 @@ export function extractTouchedPaths(input: string): string[] {
   return [...paths];
 }
 
-async function snapshotPaths(workspace: Workspace, files: string[], budget: PatchBudget): Promise<FileSnapshot[]> {
+async function snapshotPaths(workspace: Workspace, files: string[], budget: PatchBudget, signal?: AbortSignal): Promise<FileSnapshot[]> {
   const snapshots: FileSnapshot[] = [];
   for (const file of files) {
+    signal?.throwIfAborted();
     const absolute = await workspace.resolvePatchPath(file, true);
+    signal?.throwIfAborted();
     try {
       const stat = await fs.stat(absolute);
+      signal?.throwIfAborted();
       if (!stat.isFile()) throw new Error(`Checkpoint path is not a regular file: ${file}`);
-      const content = (await readPatchFile(absolute, file, budget)).toString("utf8");
+      const bytes = await readPatchFile(absolute, file, budget, signal);
+      signal?.throwIfAborted();
+      const content = bytes.toString("utf8");
       snapshots.push({
         path: file,
         content,

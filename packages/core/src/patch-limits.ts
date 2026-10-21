@@ -84,10 +84,13 @@ export class PatchBudget {
   }
 }
 
-export async function readPatchFile(absolute: string, file: string, budget: PatchBudget): Promise<Buffer> {
+export async function readPatchFile(absolute: string, file: string, budget: PatchBudget, signal?: AbortSignal): Promise<Buffer> {
+  signal?.throwIfAborted();
   const handle = await fs.open(absolute, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   try {
+    signal?.throwIfAborted();
     const stat = await handle.stat();
+    signal?.throwIfAborted();
     if (!stat.isFile()) throw new Error(`Cannot patch ${file}: only regular files are supported.`);
     budget.checkOriginal(absolute, file, stat.size);
     const limit = budget.maxReadBytes(absolute);
@@ -95,8 +98,10 @@ export async function readPatchFile(absolute: string, file: string, budget: Patc
     const chunks: Buffer[] = [];
     let size = 0;
     while (true) {
+      signal?.throwIfAborted();
       // Read at most one extra byte to detect growth beyond the remaining budget.
       const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, limit - size + 1));
+      signal?.throwIfAborted();
       if (bytesRead === 0) break;
       size += bytesRead;
       budget.checkOriginal(absolute, file, size);

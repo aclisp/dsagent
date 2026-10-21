@@ -36,7 +36,7 @@ For each item, use this sequence:
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
 **AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
-**AP-12** has been discussed and implemented: fixed patch-input, per-file and total-content limits.
+**AP-12** has been discussed and implemented: fixed content limits and cancellation before mutation.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
@@ -314,7 +314,7 @@ DSCode
   DSCode checkpoints. Illustrate a tool patch and a shell redirection that make the same edit. Decide
   whether interception is useful or whether this boundary should remain explicit.
 
-- [x] **AP-12 — Fixed patch content budgets.** Unbounded patch text, file reads, and retained
+- [x] **AP-12 — Patch content budgets and cancellation.** Unbounded patch text, file reads, and retained
   snapshots/write plans can consume excessive memory even when each edit is small.
 
   **Decision (2026-10-21): implement fixed limits; defer cancellation changes.** Limit patch input
@@ -341,6 +341,29 @@ DSCode
   use small temporary files for boundaries, UTF-8 byte counts, cumulative budgets, repeated writes,
   move-chain versions, growing reads, handle cleanup, tool rejection, and checkpoint/undo behavior.
   No large files, process batches, or builds were used.
+
+  **Follow-up decision (2026-10-21): cancel preparation; finish after mutation starts.** Pi already
+  checks cancellation before dispatching a tool. Previously DSCode's patch executor ignored the
+  signal after dispatch, so even preparation ran to completion. Pass the signal through workspace
+  initialization, before snapshots, bounded file reads, and patch planning. Check it one last time
+  after final path validation and immediately before the first mutating filesystem operation,
+  including directory creation or deletion. Cancellation before that boundary leaves files unchanged
+  and creates no checkpoint. In-flight reads are awaited and their handles closed before returning.
+
+  After the first operation starts, finish the remaining plan, after snapshots, and checkpoint
+  persistence without further cancellation checks. Existing filesystem and persistence failures
+  retain their partial-failure reporting. Use the existing completed-operation list to identify the
+  boundary; no partial-cancellation state, rollback, tool arguments/instructions, or undo changes.
+  Pi's [edit cancellation checks](../../pi/packages/coding-agent/src/core/tools/edit.ts) inform the
+  await-before-return approach, while DSCode deliberately shields the full mutation/checkpoint phase.
+
+  **Validation:** six focused suites passed (215 tests), including `patch-cancellation` and the
+  previous five suites; core and test typechecks passed. Tests cover pre-cancellation, final
+  pre-write checks for writes/deletes, cancellation during open/stat/read with handle cleanup,
+  waiting for an in-flight read, and tool-level cancellation during preparation. Cancellation during
+  directory creation, rename, source deletion, after snapshots, and persistence still finishes the
+  patch, creates a checkpoint, and supports undo; real I/O failures retain their original reporting.
+  No build was run.
 
 Source entry points:
 

@@ -368,6 +368,12 @@ File/total-limit errors identify the path, observed byte count, and applicable l
 errors identify the input byte count and limit. Oversized older checkpoints can also be rejected.
 These are content budgets rather than a process memory ceiling, and have no configuration override.
 
+`apply_patch` accepts cancellation during preparation, including before snapshots and file reads.
+The final cancellation check is immediately before its first mutating filesystem operation
+(directory creation, deletion, or writing). Once that operation starts, cancellation does not
+interrupt the remaining patch, after snapshots, or checkpoint persistence, so successful patches
+remain undoable. Filesystem and checkpoint failures still use the normal error reporting.
+
 Each CLI or Web session allows at most 64 running managed jobs. At capacity, new
 launches are rejected before a process is started; existing jobs continue running.
 Use `/jobs` to inspect them, then wait for a job to finish or use `write_stdin` with
