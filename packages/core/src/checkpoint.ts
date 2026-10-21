@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parsePatch } from "./patch.ts";
+import { PatchBudget, readPatchFile } from "./patch-limits.ts";
 import { Workspace } from "./workspace.ts";
 
 export interface FileSnapshot {
@@ -22,12 +23,13 @@ export interface PatchCheckpoint {
 export async function capturePatchCheckpoint(
   workspace: Workspace,
   patchInput: string,
-  apply: () => Promise<void>,
+  apply: (budget: PatchBudget) => Promise<void>,
 ): Promise<PatchCheckpoint> {
   const touched = extractTouchedPaths(patchInput);
-  const before = await snapshotPaths(workspace, touched);
-  await apply();
-  const after = await snapshotPaths(workspace, touched);
+  const budget = new PatchBudget();
+  const before = await snapshotPaths(workspace, touched, budget);
+  await apply(budget);
+  const after = await snapshotPaths(workspace, touched, new PatchBudget(budget.originalBytes));
   return {
     id: crypto.randomUUID().slice(0, 12),
     createdAt: new Date().toISOString(),
@@ -42,9 +44,11 @@ export async function restoreCheckpoint(
   checkpoint: PatchCheckpoint,
   force = false,
 ): Promise<string[]> {
+  const budget = new PatchBudget();
   const current = await snapshotPaths(
     workspace,
     checkpoint.after.map((snapshot) => snapshot.path),
+    budget,
   );
   const conflicts = current
     .filter((snapshot, index) => snapshot.hash !== checkpoint.after[index]?.hash)
@@ -53,6 +57,10 @@ export async function restoreCheckpoint(
     throw new Error(
       `Cannot undo because these files changed after the checkpoint: ${conflicts.join(", ")}`,
     );
+  }
+
+  for (const snapshot of checkpoint.before) {
+    budget.stageWrite(snapshot.path, snapshot.content);
   }
 
   for (const snapshot of checkpoint.before) {
@@ -89,14 +97,14 @@ export function extractTouchedPaths(input: string): string[] {
   return [...paths];
 }
 
-async function snapshotPaths(workspace: Workspace, files: string[]): Promise<FileSnapshot[]> {
+async function snapshotPaths(workspace: Workspace, files: string[], budget: PatchBudget): Promise<FileSnapshot[]> {
   const snapshots: FileSnapshot[] = [];
   for (const file of files) {
     const absolute = await workspace.resolvePatchPath(file, true);
     try {
       const stat = await fs.stat(absolute);
       if (!stat.isFile()) throw new Error(`Checkpoint path is not a regular file: ${file}`);
-      const content = await fs.readFile(absolute, "utf8");
+      const content = (await readPatchFile(absolute, file, budget)).toString("utf8");
       snapshots.push({
         path: file,
         content,

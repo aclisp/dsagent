@@ -359,6 +359,15 @@ Inside the TUI:
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
 
+`apply_patch` has fixed UTF-8 content limits: 1 MiB of patch input, 10 MiB per original or resulting
+file, and 50 MiB combined original snapshots plus planned writes per patch. Intermediate writes in
+move chains count toward the total; coalesced ordinary updates count only their retained version.
+Planned content is checked before the first write. Checkpoint reads and `/undo` use the same bounded
+file reads and content budget; `/undo --force` only bypasses content conflicts, not capacity limits.
+File/total-limit errors identify the path, observed byte count, and applicable limit; input-limit
+errors identify the input byte count and limit. Oversized older checkpoints can also be rejected.
+These are content budgets rather than a process memory ceiling, and have no configuration override.
+
 Each CLI or Web session allows at most 64 running managed jobs. At capacity, new
 launches are rejected before a process is started; existing jobs continue running.
 Use `/jobs` to inspect them, then wait for a job to finish or use `write_stdin` with

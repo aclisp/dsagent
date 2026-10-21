@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { TextDecoder } from "node:util";
+import { checkPatchInput, PatchBudget, readPatchFile } from "./patch-limits.ts";
 import { Workspace } from "./workspace.ts";
 
 interface AddAction {
@@ -51,16 +52,19 @@ export class PatchApplicationError extends Error {
 export async function applyWorkspacePatch(
   workspace: Workspace,
   input: string,
+  budget = new PatchBudget(),
 ): Promise<ApplyPatchResult> {
   const actions = parsePatch(input);
   const staged = new Map<string, string | null>();
   const pending = new Map<string, string | null>();
   const operations: [string, string | null][] = [];
   const stageFile = (absolute: string, content: string | null): void => {
+    budget.stageWrite(workspace.relative(absolute), content);
     staged.set(absolute, content);
     pending.set(absolute, content);
   };
   const flushPending = (): void => {
+    budget.flushPending();
     for (const operation of pending) operations.push(operation);
     pending.clear();
   };
@@ -70,7 +74,7 @@ export async function applyWorkspacePatch(
   const readVirtual = async (absolute: string): Promise<string | null> => {
     if (staged.has(absolute)) return staged.get(absolute) ?? null;
     try {
-      const bytes = await fs.readFile(absolute);
+      const bytes = await readPatchFile(absolute, workspace.relative(absolute), budget);
       const message = `Cannot patch ${workspace.relative(absolute)}: only UTF-8 text files are supported. Convert the file to UTF-8 first.`;
       let content: string;
       try {
@@ -126,6 +130,7 @@ export async function applyWorkspacePatch(
       // Preserve action order around moves, including chained moves and later
       // reuse of the source path. Keep the source until its destination is saved.
       flushPending();
+      budget.addWrite(workspace.relative(destination), updated);
       operations.push([destination, updated]);
       if (destination !== absolute) operations.push([absolute, null]);
       staged.set(absolute, null);
@@ -162,6 +167,7 @@ export async function applyWorkspacePatch(
 }
 
 export function parsePatch(input: string): PatchAction[] {
+  checkPatchInput(input);
   const lines = input.replaceAll("\r\n", "\n").split("\n");
   if (lines[0] !== "*** Begin Patch") {
     throw new Error("Patch must start with *** Begin Patch");

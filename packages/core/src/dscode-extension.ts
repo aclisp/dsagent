@@ -1093,8 +1093,8 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
       let applied: ApplyPatchResult | undefined;
       let checkpoint: PatchCheckpoint;
       try {
-        checkpoint = await capturePatchCheckpoint(workspace, params.input, async () => {
-          applied = await applyWorkspacePatch(workspace, params.input);
+        checkpoint = await capturePatchCheckpoint(workspace, params.input, async (budget) => {
+          applied = await applyWorkspacePatch(workspace, params.input, budget);
         });
       } catch (cause) {
         if (!(cause instanceof PatchApplicationError) && !applied) throw cause;

@@ -6,6 +6,7 @@ import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { PATCH_LIMITS } from "../packages/core/src/patch-limits.ts";
 import { createTestTheme } from "./fixtures/theme.ts";
 
 describe("checkpoint extension commands", () => {
@@ -291,6 +292,46 @@ describe("checkpoint extension commands", () => {
     }, undefined, undefined, ctx)).rejects.toThrow(/^Patch must start with \*\*\* Begin Patch$/);
     expect(entries).toEqual([]);
     await expect(fs.access(path.join(root, "invalid.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    { name: "input", limits: { inputBytes: 16 }, error: "Patch input is" },
+    { name: "original", limits: { fileBytes: 6 }, error: "per-file limit" },
+    { name: "output", limits: { fileBytes: 7 }, error: "per-file limit" },
+    { name: "total", limits: { totalBytes: 16 }, error: "Patch content budget exceeded" },
+  ])("rejects an oversized $name without writing or saving a checkpoint", async ({ limits, error }) => {
+    const savedLimits = { ...PATCH_LIMITS };
+    try {
+      Object.assign(PATCH_LIMITS, { inputBytes: 512, fileBytes: 16, totalBytes: 64 }, limits);
+      const { tool, ctx, entries } = await createPatchHarness(root);
+      await fs.writeFile(path.join(root, "value.txt"), "before\n");
+      await expect(tool.execute("limit", {
+        input: "*** Begin Patch\n*** Add File: first.txt\n+x\n*** Update File: value.txt\n@@\n-before\n+after!!\n*** End Patch",
+      }, undefined, undefined, ctx)).rejects.toThrow(error);
+      expect(entries).toEqual([]);
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("before\n");
+      await expect(fs.access(path.join(root, "first.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      Object.assign(PATCH_LIMITS, savedLimits);
+    }
+  });
+
+  it("shares the original-file budget with patch execution and preserves checkpoint undo at the limit", async () => {
+    const savedLimits = { ...PATCH_LIMITS };
+    try {
+      Object.assign(PATCH_LIMITS, { inputBytes: 512, fileBytes: 16, totalBytes: 14 });
+      const { tool, ctx, entries, undo } = await createPatchHarness(root);
+      await fs.writeFile(path.join(root, "value.txt"), "before\n");
+      await tool.execute("limit", {
+        input: "*** Begin Patch\n*** Update File: value.txt\n@@\n-before\n+after!\n*** End Patch",
+      }, undefined, undefined, ctx);
+      expect(entries).toHaveLength(1);
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("after!\n");
+      await undo("", ctx);
+      await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe("before\n");
+    } finally {
+      Object.assign(PATCH_LIMITS, savedLimits);
+    }
   });
 
   it("does not apply or checkpoint the valid prefix of a patch with trailing directives", async () => {

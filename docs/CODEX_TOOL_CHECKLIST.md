@@ -36,6 +36,7 @@ For each item, use this sequence:
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
 **AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
+**AP-12** has been discussed and implemented: fixed patch-input, per-file and total-content limits.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
@@ -313,10 +314,39 @@ DSCode
   DSCode checkpoints. Illustrate a tool patch and a shell redirection that make the same edit. Decide
   whether interception is useful or whether this boundary should remain explicit.
 
+- [x] **AP-12 — Fixed patch content budgets.** Unbounded patch text, file reads, and retained
+  snapshots/write plans can consume excessive memory even when each edit is small.
+
+  **Decision (2026-10-21): implement fixed limits; defer cancellation changes.** Limit patch input
+  to 1 MiB before parsing, each original/result file to 10 MiB, and original snapshots plus retained
+  planned writes to 50 MiB per patch. Measure UTF-8 bytes, including BOMs and generated line endings.
+  Count originals once per resolved path across before snapshots and patch execution; ordinary
+  pending writes replace their previous budget charge, while intermediate versions retained across
+  move boundaries remain charged. All planned writes are checked before the first mutation.
+
+  Patch reads and checkpoint snapshots share a bounded reader that checks the opened file's size
+  and type, then reads at most the remaining allowance plus one byte to detect growth. Always close
+  its handle after success, rejection, or read failure. After snapshots use the remaining capacity
+  beside the original snapshots. Existing partial-write/checkpoint-capture failure reporting still
+  applies if files change externally during execution. Undo uses the same bounded reads and checks
+  all restoration contents before any mutation; `--force` does not bypass capacity checks. This can
+  reject older oversized checkpoints. These are content budgets, not a strict process-memory ceiling
+  or a limit on accumulated checkpoint history.
+
+  No configuration, tool arguments/instructions, cancellation behavior, rollback, or checkpoint
+  format changes. Errors identify the size and limit, plus the affected path for file/total limits.
+  Implementation: `patch-limits.ts`, `patch.ts`, `checkpoint.ts`, and the patch tool wrapper.
+  Five focused suites passed (200 tests): `patch-limits`, `patch`, `workspace`, `checkpoint`, and
+  `checkpoint-extension`; core and test typechecks passed. Tests lower the internal constants and
+  use small temporary files for boundaries, UTF-8 byte counts, cumulative budgets, repeated writes,
+  move-chain versions, growing reads, handle cleanup, tool rejection, and checkpoint/undo behavior.
+  No large files, process batches, or builds were used.
+
 Source entry points:
 
 - DSCode: [tool registration and checkpoint wrapper](../packages/core/src/dscode-extension.ts),
   [patch parser and writer](../packages/core/src/patch.ts),
+  [content budgets and bounded reads](../packages/core/src/patch-limits.ts),
   [workspace path checks](../packages/core/src/workspace.ts),
   [checkpoint capture and restore](../packages/core/src/checkpoint.ts).
 - Codex: [freeform schema](/Users/homerh/Code/codex-shallow/codex-rs/core/src/tools/handlers/apply_patch_spec.rs),
@@ -682,7 +712,7 @@ Source entry points:
 - [ADR-0006: CLI child processes](decisions/0006-cli-child-processes.md) for intentional child execution
   and permission boundaries.
 
-AP-05, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
+AP-05, AP-12, EX-07, EX-12, accurate failure reporting for AP-08, checkpoint listing for AP-09, and Windows
 discovery/preparation plus Unix shell selection for EX-03 are the accepted implementation scopes so far.
 When work resumes, refer to the item's stable ID and refresh the relevant source if a checkout has
 changed.
