@@ -1134,7 +1134,12 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
     },
     renderCall(args, theme, context) {
       const summary = summarizePatch(args.input);
-      const header = renderToolCall("Updated", summary, theme, context);
+      const header = renderToolCall(
+        context.isPartial || context.isError ? "Write" : "Wrote",
+        summary,
+        theme,
+        context,
+      );
       if (!context.expanded) return header;
       return new Text(
         `${header.render(10_000)[0]?.trimEnd() ?? ""}\n${colorPatch(args.input, theme)}`,
