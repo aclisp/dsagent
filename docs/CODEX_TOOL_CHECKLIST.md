@@ -102,6 +102,12 @@ DSCode
   without a checkpoint, undo with and without force, and regular-file access through a directory
   alias. No build was run.
 
+  **Follow-up decision (2026-10-21): allow ordinary names beginning with two dots.** Both lexical
+  and real-path confinement reject only a relative path equal to `..`, beginning with `..` plus
+  the platform path separator, or remaining absolute. Names such as `..notes` and `..directory`
+  are allowed for existing and new paths. Parent traversal and links resolving outside the
+  workspace remain rejected; directory aliases resolving to such ordinary names inside it work.
+
 - [ ] **AP-03 — Adding or moving onto an existing file.** Codex can overwrite an existing add target
   or move destination. DSCode rejects both collisions. Illustrate creating `notes.txt` when it already
   contains the user's notes. Decide whether strict collision rejection is desirable.

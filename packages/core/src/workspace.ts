@@ -65,14 +65,14 @@ export class Workspace {
 
   private assertLexicallyInside(candidate: string): void {
     const relative = path.relative(this.root, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Path escapes workspace: ${candidate}`);
     }
   }
 
   private assertReallyInside(candidate: string): void {
     const relative = path.relative(this.realRoot!, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Path resolves outside workspace: ${candidate}`);
     }
   }
