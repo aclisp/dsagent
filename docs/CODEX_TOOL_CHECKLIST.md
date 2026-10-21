@@ -36,6 +36,7 @@ For each item, use this sequence:
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
 **AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
+**AP-10** has been discussed; retain independent command-sandbox and patch-tool controls.
 **AP-12** has been discussed and implemented: fixed content limits and cancellation before mutation.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
@@ -320,12 +321,32 @@ DSCode
   Five focused suites passed (58 tests): checkpoint extension, checkpoint snapshots, execution
   folding, and Core/Web session commands. Core and test `tsc --noEmit` passed. No build was run.
 
-- [ ] **AP-10 — Patch permissions versus command permissions.** Codex routes patch writes through
+- [x] **AP-10 — Patch permissions versus command permissions.** Codex routes patch writes through
   filesystem permission assessment and sandbox orchestration. DSCode's patch executor performs host
   filesystem writes with workspace confinement and its tool approval hook; it does not consult the
   command sandbox setting in that execution path. Illustrate a session whose commands are
   `read-only` receiving a patch request. Decide the intended meaning of read-only across tools before
   changing behavior; distinguish model-driven patching from user-requested `/undo`.
+
+  **Decision (2026-10-21): keep the existing independent boundaries.** `--sandbox read-only`
+  configures the command sandbox; it does not make the entire agent session read-only. Do not hide
+  or reject `apply_patch` based on the command sandbox mode. Patch calls remain subject to tool
+  approval, workspace confinement, patch validation, and checkpoint/undo handling.
+
+  **Reason and illustration:** users can permit reviewable, checkpointed file edits while restricting
+  writes by tests, builds, and other shell commands. With an effective `read-only` command sandbox,
+  a shell command writing `a.txt` is denied by the sandbox and may request additional access, while
+  an `apply_patch` edit to that file can proceed if its independent approval and validation checks
+  pass. Tool choice follows these documented boundaries; linking the two would expand the existing
+  parameter's meaning and change supported workflows. This is an intentional architectural
+  difference from Codex, not a pending defect to align.
+
+  Preserve user-requested `/undo` and its existing confirmation and conflict/path protections;
+  command-sandbox read-only mode does not prevent restoring a checkpoint. A future analysis-only
+  session mode, if needed, requires a separate decision rather than changing `--sandbox` semantics
+  or restoring the removed plan mode. This decision applies across CLI, Web, and HTTP workflows.
+  Documentation only: no runtime code, active-tool filtering, tool instructions, or arguments change.
+  No tests or builds were run for this record.
 
 - [ ] **AP-11 — Patching through a shell command.** Codex recognizes supported `apply_patch` command
   forms, including heredocs, and routes them through its patch handler. DSCode's managed command path
