@@ -249,7 +249,7 @@ and the blocked operation rather than silently treating it as complete.
 
 `timeout_ms: 0` disables the process deadline for any managed command. Omission keeps
 the 120000 ms default; positive deadlines are 1000–600000 ms. `yield_time_ms` only controls
-how long a tool call waits (up to 30000 ms), independently of the process lifetime.
+how long a tool call waits, independently of the process lifetime.
 Use `write_stdin` with `terminate: true` to stop a child. Session shutdown terminates
 remaining managed processes; print-mode parents must collect results before exiting.
 

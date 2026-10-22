@@ -120,7 +120,7 @@ const writeStdinParameters = Type.Object({
   })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
-    description: "Milliseconds to wait for output, capped at 30000.",
+    description: "Milliseconds to wait before returning. Defaults to 30000 for polls and 5000 for other operations.",
   })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
@@ -971,11 +971,14 @@ function registerCommandTools(
     renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal) {
+      const polling = !params.chars && !params.eof && !params.terminate;
       const result = await registry.interact(params.process_id, {
         ...(signal ? { signal } : {}),
         ...(params.chars === undefined ? {} : { chars: params.chars }),
         ...(params.eof === undefined ? {} : { eof: params.eof }),
-        yieldTimeMs: params.yield_time_ms ?? 5_000,
+        yieldTimeMs: polling
+          ? Math.max(5_000, params.yield_time_ms ?? 30_000)
+          : params.yield_time_ms ?? 5_000,
         terminate: params.terminate ?? false,
       });
       if (result.writeError) {

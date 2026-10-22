@@ -39,6 +39,7 @@ and the checkpoint-listing scope of **AP-09** have been discussed and implemente
 **AP-10** has been discussed; retain independent command-sandbox and patch-tool controls.
 **AP-12** has been discussed and implemented: fixed content limits and cancellation before mutation.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
+**IN-05** has been discussed and implemented: separate wait windows for pure polls and active input.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
 Other decisions remain pending.
@@ -721,11 +722,37 @@ DSCode
   Illustrate asking a server to stop gracefully versus forcing it to exit. Decide whether an explicit
   interrupt operation is needed in addition to termination.
 
-- [ ] **IN-05 — Polling and response wait times.** Codex defaults writes to 250 ms; empty polls use a
-  minimum of five seconds and a configurable maximum defaulting to 300 seconds. DSCode defaults both
-  writes and polls to five seconds, allows zero, and caps waits at 30 seconds. These are waits for a
-  tool response, not process expiry times. Illustrate typing into an interactive program and polling a
-  slow task. Decide whether separate write/poll defaults improve responsiveness.
+- [x] **IN-05 — Polling and response wait times.** Codex defaults writes to 250 ms; empty polls use a
+  minimum of five seconds and a configurable maximum defaulting to 300 seconds. At the comparison
+  baseline, DSCode defaulted both writes and polls to five seconds, allowed zero, and capped waits
+  at 30 seconds. These are waits for a tool response, not process expiry times. Illustrate typing
+  into an interactive program and polling a slow task. Decide whether separate write/poll defaults
+  improve responsiveness.
+
+  **Decision (2026-10-22): change; separate pure-poll waits from active operations.** A pure poll has
+  omitted or empty `chars`, no EOF, and no termination request. Its tool default is 30000 ms, with a
+  5000 ms minimum and a fixed 120000 ms maximum. Reduce repeated model calls for long tasks without
+  requiring the model to select a longer window. Sending input, EOF, or termination retains the
+  5000 ms default and 0–30000 ms range; `exec_command` retains its 10000 ms default and 0–30000 ms
+  range. Do not add configuration or change the existing 120000 ms default process deadline.
+
+  For example, a two-minute command can yield from `exec_command` after ten seconds and then use
+  fewer 30-second polls, or one explicitly requested 120-second poll. Completion returns early and
+  cancelling a poll stops waiting without terminating its process. A long poll does not extend any
+  process deadline; commands with `timeout_ms: 0` can be polled again after each wait window.
+
+  Apply the minimum and default at the tool boundary; retain explicit short waits for internal
+  registry callers. Enforce the operation-specific maximum in the registry rather than truncating
+  every wait to 30 seconds in the shared waiting helper. Tool names and arguments remain unchanged;
+  update the existing `yield_time_ms` description to explain the behavior.
+
+  **Coverage:** tool argument validation/defaults and poll classification; virtual-clock checks for
+  long polls and upper bounds, unchanged input/EOF/termination and startup caps, early completion,
+  immediate cancellation, and independent process deadlines. No large process batches or real
+  multi-minute waits are required. Implementation: `dscode-extension.ts` and `managed-process.ts`;
+  tests: `access-integration.test.ts` and `managed-process-wait.test.ts`.
+  Five focused suites passed (77 tests; one Windows-only test skipped); core and test typechecks
+  passed. No build was run.
 
 - [ ] **IN-06 — Concurrent calls and output ownership.** Codex permits parallel command/stdin calls
   across sessions and locks interactions with one process because output is drained. DSCode registers
