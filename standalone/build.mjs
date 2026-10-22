@@ -55,7 +55,7 @@ async function buildPlatform(platform) {
     for (const name of ["light.json", "dark.json"]) assets[name] = path.join(pi, "modes/interactive/theme", name);
     for (const name of ["dscode-light.json", "dscode-dark.json"]) assets[name] = path.join(root, "packages/core/themes", name);
     for (const name of ["template.html", "template.css", "template.js"]) assets[name] = path.join(pi, "core/export-html", name);
-    for (const name of ["marked.min.js", "highlight.min.js"]) assets[name] = path.join(pi, "core/export-html/vendor", name);
+    for (const name of ["marked.min.js", "marked-cjk-friendly.min.js", "highlight.min.js"]) assets[name] = path.join(pi, "core/export-html/vendor", name);
     for (const name of fs.readdirSync(path.join(pi, "modes/interactive/assets"))) assets[name] = path.join(pi, "modes/interactive/assets", name);
     const audit = { inputs: new Set(), excluded: new Set(), adapted: new Set() };
     const result = await Bun.build({

@@ -278,7 +278,7 @@ protocol requests explicitly; child dialogs are not automatically forwarded into
 Web UI's native approval dialogs.
 
 
-MCP uses Pi 1.3.0's native implementation and schema. Global configuration is
+MCP uses Pi 1.4.0's native implementation and schema. Global configuration is
 `DSCODE_HOME/mcp.json` (default `~/.dscode/mcp.json`); trusted projects use `.pi/mcp.json`.
 Disable a server with `enabled: false`. The default `exposure: "codemode"` makes tools
 callable from scripts. Codemode's `searchTools()` and `describeTool()` discover tools

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "1.3.0";
+export const PI_VERSION = "1.4.0";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);
@@ -103,7 +103,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
           source = 'import { assets } from "dscode:assets";\n' + source;
           for (const name of ["template.html", "template.css", "template.js"]) source = replace(source,
             `join(templateDir, "${name}")`, `assets["${name}"]`);
-          for (const name of ["marked.min.js", "highlight.min.js"]) source = replace(source,
+          for (const name of ["marked.min.js", "marked-cjk-friendly.min.js", "highlight.min.js"]) source = replace(source,
             `join(templateDir, "vendor", "${name}")`, `assets["${name}"]`);
         }
         if (file === path.join(pi, "utils/image-resize.js")) source = body(source,
