@@ -8,8 +8,8 @@
 # builds it, and puts a `dscode` launcher into $DSCode_BIN_DIR
 # (default ~/.local/bin). ~/.dscode is left untouched for runtime state.
 #
-# Prerequisites detected/installed here: node >= 22.19 (required), pnpm (via
-# corepack), ripgrep (best-effort). Requires git.
+# Prerequisites: Node.js 26.x, pnpm 12.x, and git.
+# Installs ripgrep on macOS when Homebrew is available (best-effort).
 
 set -e
 
@@ -18,7 +18,8 @@ REPO_URL="${DSCode_REPO_URL:-https://github.com/aclisp/dsagent.git}"
 REPO_BRANCH="${DSCode_REPO_BRANCH:-main}"
 INSTALL_DIR="${DSCode_INSTALL_DIR:-$HOME/.local/share/dscode}"
 BIN_DIR="${DSCode_BIN_DIR:-$HOME/.local/bin}"
-NODE_MIN="22.19.0"
+NODE_MAJOR="26"
+PNPM_MAJOR="12"
 
 # --- helpers ---------------------------------------------------------------
 info() { printf '\033[1;34m[dscode]\033[0m %s\n' "$*"; }
@@ -31,20 +32,6 @@ require_cmd() {
   if ! need "$1"; then
     die "missing required command '$1'. Install it and rerun."
   fi
-}
-
-# compare dotted versions: return 0 if $1 >= $2
-ver_ge() {
-  [ "$1" = "$2" ] && return 0
-  a=$1; b=$2
-  while [ -n "$a" ] || [ -n "$b" ]; do
-    da=${a%%.*}; [ "$da" = "$a" ] && a=
-    db=${b%%.*}; [ "$db" = "$b" ] && b=
-    [ "$da" -gt "$db" ] 2>/dev/null && return 0
-    [ "$da" -lt "$db" ] 2>/dev/null && return 1
-    a=${a#*.}; b=${b#*.}
-  done
-  return 0
 }
 
 detect_os() {
@@ -62,33 +49,25 @@ info "platform: $OS"
 # --- node ------------------------------------------------------------------
 if need node; then
   NODE_VER=$(node -v | sed 's/^v//')
-  if ! ver_ge "$NODE_VER" "$NODE_MIN"; then
-    die "node $NODE_VER found, but DSCode requires >= $NODE_MIN."
+  if [ "${NODE_VER%%.*}" != "$NODE_MAJOR" ]; then
+    die "node $NODE_VER found, but DSCode requires Node.js $NODE_MAJOR.x."
   fi
   info "node $NODE_VER OK"
 else
-  die "node not found. Install node >= $NODE_MIN (e.g. 'brew install node@24' on macOS), then rerun."
+  die "node not found. Install Node.js $NODE_MAJOR.x, then rerun."
 fi
 
 require_cmd git
 
-# --- pnpm (via corepack, bundled with node) --------------------------------
-if need pnpm; then
-  PNPM="pnpm"
-else
-  if command -v corepack >/dev/null 2>&1; then
-    info "enabling pnpm via corepack"
-    corepack enable 2>/dev/null || true
-    if command -v pnpm >/dev/null 2>&1; then
-      PNPM="pnpm"
-    else
-      PNPM="corepack pnpm"
-    fi
-  else
-    die "pnpm not found and corepack unavailable. Install pnpm and rerun."
-  fi
+# --- pnpm ------------------------------------------------------------------
+if ! need pnpm; then
+  die "pnpm not found. Install it with 'npm install --global pnpm@$PNPM_MAJOR', then rerun."
 fi
-info "using pnpm: $PNPM"
+PNPM_VER=$(pnpm --version)
+if [ "${PNPM_VER%%.*}" != "$PNPM_MAJOR" ]; then
+  die "pnpm $PNPM_VER found, but DSCode requires pnpm $PNPM_MAJOR.x. Install it with 'npm install --global pnpm@$PNPM_MAJOR', then rerun."
+fi
+info "pnpm $PNPM_VER OK"
 
 # --- ripgrep (required at runtime) -----------------------------------------
 if ! need rg; then
@@ -115,9 +94,9 @@ fi
 # --- build ---------------------------------------------------------------
 cd "$INSTALL_DIR"
 info "installing dependencies"
-$PNPM install --frozen-lockfile
+pnpm install --frozen-lockfile
 info "building"
-$PNPM build
+pnpm build
 
 # --- launcher --------------------------------------------------------------
 LAUNCHER="$INSTALL_DIR/dscode"

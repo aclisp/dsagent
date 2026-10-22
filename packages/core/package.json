@@ -40,7 +40,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": "26"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "catalog:",

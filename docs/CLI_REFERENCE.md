@@ -2,7 +2,7 @@
 
 ## Terminal app
 
-Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
+Requirements: Node.js 26.x and Git; source builds also need pnpm 12.x. DSCode also uses `rg`.
 
 On Unix, host commands use a non-empty `$SHELL`, otherwise `/bin/bash`, then an executable `bash`
 on PATH, and finally `/bin/sh`. A configured `$SHELL` is used explicitly; an invalid value produces
@@ -603,7 +603,7 @@ developers should use the workspace setup above.
 ```bash
 git clone https://github.com/aclisp/dsagent.git
 cd dsagent
-corepack enable
+npm install --global pnpm@12
 pnpm install
 pnpm check
 pnpm dev -C /path/to/project

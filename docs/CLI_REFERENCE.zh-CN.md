@@ -2,7 +2,7 @@
 
 ## 终端应用
 
-要求 Node.js 22.19+ 和 Git。DSCode 运行时也使用 `rg`。
+要求 Node.js 26.x 和 Git；源码构建还需要 pnpm 12.x。DSCode 运行时也使用 `rg`。
 
 Unix 主机命令优先使用非空的 `$SHELL`，否则依次查找 `/bin/bash`、PATH 中可执行的 `bash`，
 最后回退到 `/bin/sh`。显式配置的 `$SHELL` 无效时返回启动错误，不静默改用其他 shell。
@@ -476,7 +476,7 @@ workspace 设置。
 ```bash
 git clone https://github.com/aclisp/dsagent.git
 cd dsagent
-corepack enable
+npm install --global pnpm@12
 pnpm install
 pnpm check
 pnpm dev -C /path/to/project

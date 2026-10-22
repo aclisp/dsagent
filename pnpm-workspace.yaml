@@ -19,7 +19,7 @@ catalog:
   '@modelcontextprotocol/sdk': 1.32.1
   '@napi-rs/keyring': 1.3.0
   '@wecom/aibot-node-sdk': 1.0.7
-  '@types/node': 22.19.19
+  '@types/node': 26.6.5
   croner: 10.0.1
   esbuild: 0.28.2
   fastify: 5.12.7
@@ -32,7 +32,17 @@ catalog:
   yaml: 2.9.0
   zod: 4.6.7
 
-onlyBuiltDependencies:
-  - '@google/genai'
-  - esbuild
-  - protobufjs
+allowBuilds:
+  '@google/genai': true
+  esbuild: true
+  protobufjs: true
+
+# Keep the already-pinned pi release installable during the one-day age window.
+minimumReleaseAgeExclude:
+  - '@earendil-works/pi-agent-core@1.4.0'
+  - '@earendil-works/pi-ai@1.4.0'
+  - '@earendil-works/pi-codemode@1.4.0'
+  - '@earendil-works/pi-coding-agent@1.4.0'
+  - '@earendil-works/pi-mcp@1.4.0'
+  - '@earendil-works/pi-telemetry@1.4.0'
+  - '@earendil-works/pi-tui@1.4.0'

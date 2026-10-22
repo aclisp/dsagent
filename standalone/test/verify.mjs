@@ -32,7 +32,7 @@ await bundle({
   bundle: true,
   format: "esm",
   platform: "node",
-  target: "node22",
+  target: "node26",
   banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
 });
 const fixture = await fs.readFile(path.join(root, "scripts/cli-bundle-smoke.mjs"), "utf8");

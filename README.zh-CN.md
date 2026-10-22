@@ -61,10 +61,12 @@ curl -fsSL https://raw.githubusercontent.com/aclisp/dsagent/main/scripts/install
 
 ### 开发者：从源码构建
 
+使用 Node.js 26.x 和 pnpm 12.x。
+
 ```bash
 git clone https://github.com/aclisp/dsagent.git
 cd dsagent
-corepack enable
+npm install --global pnpm@12
 pnpm install
 pnpm check
 ```

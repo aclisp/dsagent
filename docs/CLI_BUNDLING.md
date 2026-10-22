@@ -22,7 +22,7 @@ unbundled. The web server and vision bundlers retain their existing boundaries.
 `scripts/bundle-cli.mjs` bundles DSCode, pi's SDK/TUI/model runtime, and statically
 reachable JavaScript dependencies with esbuild. ESM splitting preserves lazy
 provider loading and a shared module graph for DSCode's pi class patches. The
-bundle targets Node 22.19+, minifies syntax and whitespace, retains identifiers,
+bundle targets Node 26, minifies syntax and whitespace, retains identifiers,
 and preserves dependency license comments. All chunks sit in `dist/bundle/`.
 
 Like pi's own Node bundler, it enables `PI_BUNDLED_NODE` for extension virtual
