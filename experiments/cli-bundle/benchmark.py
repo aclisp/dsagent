@@ -47,7 +47,7 @@ import { ModelRuntime, InteractiveMode } from "@earendil-works/pi-coding-agent";
 export default function (pi) {
   const value: string = "extension-loaded";
   if (Type.String().type !== "string" || !(new Text(value) instanceof Text)) throw new Error("Extension imports broken");
-  if (!ModelRuntime[Symbol.for("ai.thinkany.dscode.credential-store-installed")]) throw new Error("Extension sees a different ModelRuntime");
+  if (!ModelRuntime[Symbol.for("ai.aclisp.dscode.credential-store-installed")]) throw new Error("Extension sees a different ModelRuntime");
   if (!InteractiveMode.prototype[Symbol.for("dscode.runtime-branding")]) throw new Error("Extension sees a different InteractiveMode");
   pi.registerCommand("bundle-probe", { description: value, handler: async () => {} });
   pi.on("session_start", () => { process.stderr.write("DSCODE_EXTENSION_READY\\n"); });

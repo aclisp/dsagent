@@ -77,7 +77,7 @@ try {
       import { Type } from "typebox";
       export default function (pi) {
         const label: string = "bundle-probe";
-        if (!ModelRuntime[Symbol.for("ai.thinkany.dscode.credential-store-installed")]) throw new Error("Different credential-store class");
+        if (!ModelRuntime[Symbol.for("ai.aclisp.dscode.credential-store-installed")]) throw new Error("Different credential-store class");
         if (!InteractiveMode.prototype[Symbol.for("dscode.runtime-branding")]) throw new Error("Different UI class");
         if (Type.String().type !== "string") throw new Error("TypeBox import failed");
         pi.registerCommand(label, { description: label, handler: async () => {} });
