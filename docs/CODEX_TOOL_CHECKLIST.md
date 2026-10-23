@@ -603,6 +603,26 @@ DSCode
   information; this tool does not use its `_onUpdate` callback for live output. Illustrate what the
   model sees versus what CLI/Web users see. Decide which metadata, budgets, and live output are useful.
 
+  **Partial decision (2026-10-23): distinguish command exit status from tool execution errors in
+  the TUI.** Both `exec_command` and `write_stdin` keep ordinary completed results collapsed,
+  including non-zero exits. Color only a non-zero exit number red in the summary and expanded
+  `exit_code` field. Expanded command output and ordinary metadata remain neutral; `null` remains
+  unavailable rather than being classified as a crash. Highlight the generated `timed_out: true`
+  field and stdin error messages red, retaining automatic exposure of these failures. Preserve
+  existing error presentation for genuine process/tool failures, including unavailable backends,
+  process launch errors, unknown IDs, access denials, and capacity rejection.
+
+  Format highlights from structured result details, never by recognizing metadata-like command
+  output. Retain process error details so launch failures remain distinguishable from ordinary
+  non-zero exits. Return stdin failures with Pi's `isError: true` result form to preserve structured
+  details, the existing model-visible text, and error status. No tool arguments, instructions,
+  process behavior, or model-visible ANSI coloring change. Live output and other EX-08 scopes
+  remain pending. Regression coverage includes actual rendered color sequences, both tools and
+  expansion states, metadata-like command output, timeouts, multiline stdin errors, process
+  errors, unknown exit codes, and text-only errors.
+  Seven focused suites passed (153 tests; one Windows-only test skipped); core and test typechecks
+  passed. No build was run.
+
 - [ ] **EX-09 — Approvals and sandbox retries.** Codex uses execution policy, sandbox orchestration,
   and conditional command permission arguments such as justification, prefix rules, and additional
   permissions. DSCode uses `ask|auto|full`, dangerous-command detection, and scoped network/host

@@ -18,6 +18,7 @@ export interface ManagedProcessResult {
   exitCode?: number | null;
   timedOut?: boolean;
   writeError?: string;
+  processError?: string;
   sandbox: string;
 }
 
@@ -30,6 +31,7 @@ interface ProcessRecord {
   exitCode?: number | null;
   timedOut: boolean;
   stdinError?: Error;
+  processError?: string;
   sandbox: string;
   completion: Promise<void>;
   resolveCompletion: () => void;
@@ -186,6 +188,7 @@ export class ManagedProcessRegistry {
       record.stdinError = error;
     });
     child.once("error", (error) => {
+      record.processError = error.message;
       append("[error] ", error.message);
     });
     child.once("close", (exitCode) => {
@@ -306,6 +309,7 @@ export class ManagedProcessRegistry {
       output: output || (record.running ? "(no new output)" : "(process completed)"),
       ...(!record.running ? { exitCode: record.exitCode } : {}),
       ...(record.timedOut ? { timedOut: true } : {}),
+      ...(record.processError === undefined ? {} : { processError: record.processError }),
       sandbox: record.sandbox,
     };
   }

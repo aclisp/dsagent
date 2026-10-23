@@ -41,7 +41,11 @@ export function renderCollapsibleToolResult(
   options: ToolRenderResultOptions,
   theme: Theme,
   context: ToolPresentationContext,
-  config: { collapsedSummary?: string | false; forceError?: boolean } = {},
+  config: {
+    collapsedSummary?: string | false | (() => string);
+    forceError?: boolean;
+    renderLine?: (line: string) => string;
+  } = {},
 ): Text {
   const output = toolResultText(result).trimEnd();
   if (!output) return new Text("", 0, 0);
@@ -51,7 +55,12 @@ export function renderCollapsibleToolResult(
     const visibleLines = options.expanded ? lines : lines.slice(0, COLLAPSED_ERROR_LINES);
     const hidden = lines.length - visibleLines.length;
     const rendered = visibleLines
-      .map((line, index) => theme.fg(error ? "error" : "toolOutput", `${index === 0 ? "  └ " : "    "}${line}`))
+      .map((line, index) => {
+        const prefix = index === 0 ? "  └ " : "    ";
+        return config.renderLine
+          ? theme.fg("toolOutput", prefix) + config.renderLine(line)
+          : theme.fg(error ? "error" : "toolOutput", `${prefix}${line}`);
+      })
       .join("\n");
     return new Text(
       hidden > 0
@@ -64,7 +73,12 @@ export function renderCollapsibleToolResult(
   if (config.collapsedSummary === false) return new Text("", 0, 0);
   const lineCount = output.split("\n").length;
   const summary = config.collapsedSummary ?? `${lineCount} output ${lineCount === 1 ? "line" : "lines"}`;
-  return new Text(theme.fg("dim", `  └ ${summary} · ${keyText("app.tools.expand")} to expand`), 0, 0);
+  const renderedSummary = typeof summary === "function" ? summary() : theme.fg("dim", summary);
+  return new Text(
+    theme.fg("dim", "  └ ") + renderedSummary + theme.fg("dim", ` · ${keyText("app.tools.expand")} to expand`),
+    0,
+    0,
+  );
 }
 
 export function toolResultText(result: AgentToolResult<unknown>): string {

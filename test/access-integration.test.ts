@@ -155,6 +155,7 @@ describe("command access escalation", () => {
     );
     const completed = events.find((event) => event.type === "tool_execution_end");
     expect(completed?.isError).toBe(true);
+    expect(completed?.result.details).toMatchObject({ processId: "1", running: true, writeError: "write EPIPE" });
     const result = messages.find((message) => message.role === "toolResult");
     expect(result?.isError).toBe(true);
     expect(result?.content).toEqual([
