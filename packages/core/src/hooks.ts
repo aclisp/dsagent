@@ -83,6 +83,8 @@ export function registerHooks(
     const result = await runHooks(config.beforeTool, ctx, {
       event: "beforeTool",
       tool: event.toolName,
+      toolCallId: event.toolCallId,
+      ...(event.parentToolCallId !== undefined ? { parentToolCallId: event.parentToolCallId } : {}),
       input: event.input,
     }, getAccess());
     if (result) return { block: true, reason: result };
@@ -93,6 +95,9 @@ export function registerHooks(
     await runHooks(config.afterTool, ctx, {
       event: "afterTool",
       tool: event.toolName,
+      toolCallId: event.toolCallId,
+      ...(event.parentToolCallId !== undefined ? { parentToolCallId: event.parentToolCallId } : {}),
+      input: event.input,
       isError: event.isError,
     }, getAccess());
   });
@@ -180,11 +185,15 @@ async function runHook(
   access: EffectiveAccess,
   cancelWithTurn = true,
 ): Promise<ProcessResult> {
+  const replacements: Record<string, string> = {
+    "{cwd}": ctx.cwd,
+    "{payload}": JSON.stringify(payload),
+    "{tool}": typeof payload.tool === "string" ? payload.tool : "",
+  };
+  // Expand only configured placeholders, never tokens or replacement patterns
+  // inside the inserted payload (for example {tool} or $& in tool arguments).
   const args = hook.args.map((argument) =>
-    argument
-      .replaceAll("{cwd}", ctx.cwd)
-      .replaceAll("{payload}", JSON.stringify(payload))
-      .replaceAll("{tool}", typeof payload.tool === "string" ? payload.tool : ""),
+    argument.replace(/\{(?:cwd|payload|tool)\}/g, (placeholder) => replacements[placeholder]!),
   );
   const command =
     process.platform === "win32" && access.sandbox === "danger-full-access"

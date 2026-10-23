@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionHandler, InputEvent, InputEventResult, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionHandler, InputEvent, InputEventResult, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHooks } from "../packages/core/src/hooks.ts";
 import * as processes from "../packages/core/src/process.ts";
@@ -39,6 +39,49 @@ describe("DSCode hooks", () => {
     const input = on.mock.calls.find(([name]) => name === "input")![1] as ExtensionHandler<InputEvent, InputEventResult>;
     return (event: InputEvent) => input(event, ctx);
   }
+
+  it.each([false, true])("records tool arguments and error status without result content (isError=%s)", async (isError) => {
+    const record = {
+      command: process.execPath,
+      args: ["-e", "require('fs').appendFileSync('tools.jsonl', process.argv[1] + '\\n')", "{payload}"],
+    };
+    const { on, ctx } = await hookSetup({ beforeTool: [record], afterTool: [record] });
+    const before = on.mock.calls.find(([name]) => name === "tool_call")![1] as ExtensionHandler<ToolCallEvent, ToolCallEventResult>;
+    const after = on.mock.calls.find(([name]) => name === "tool_result")![1] as ExtensionHandler<ToolResultEvent, ToolResultEventResult>;
+    const call = {
+      toolName: "mcp__fixture__echo",
+      toolCallId: "call-1/1",
+      parentToolCallId: "call-1",
+      input: { text: "hello 'quoted'\n中文 {tool} {cwd} {payload} $& $` $'", options: { limit: 0, enabled: false }, paths: ["a", "b"] },
+    };
+    await expect(before({ type: "tool_call", ...call }, ctx)).resolves.toBeUndefined();
+    await expect(after({
+      type: "tool_result", ...call, isError,
+      content: [
+        { type: "text", text: "private tool output" },
+        { type: "image", data: "cHJpdmF0ZQ==", mimeType: "image/png" },
+      ],
+      details: { private: "result details" },
+      structuredContent: { private: "structured result" },
+    }, ctx)).resolves.toBeUndefined();
+    const payloads = (await fs.readFile(path.join(root!, "tools.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    expect(payloads).toEqual([
+      { event: "beforeTool", tool: call.toolName, toolCallId: call.toolCallId, parentToolCallId: call.parentToolCallId, input: call.input },
+      { event: "afterTool", tool: call.toolName, toolCallId: call.toolCallId, parentToolCallId: call.parentToolCallId, input: call.input, isError },
+    ]);
+  });
+
+  it("records top-level results with only afterTool configured", async () => {
+    const { on, ctx } = await hookSetup({ afterTool: [{
+      command: process.execPath,
+      args: ["-e", "require('fs').writeFileSync('tool.json', process.argv[1])", "{payload}"],
+    }] });
+    const after = on.mock.calls.find(([name]) => name === "tool_result")![1] as ExtensionHandler<ToolResultEvent, ToolResultEventResult>;
+    await after({ type: "tool_result", toolName: "exec_command", toolCallId: "call-2", input: { cmd: "exit 1" }, isError: true, content: [], details: {} }, ctx);
+    expect(JSON.parse(await fs.readFile(path.join(root!, "tool.json"), "utf8"))).toEqual({
+      event: "afterTool", tool: "exec_command", toolCallId: "call-2", input: { cmd: "exit 1" }, isError: true,
+    });
+  });
 
   describe.each([
     ["uiPromptStart", "ui_prompt_start"],

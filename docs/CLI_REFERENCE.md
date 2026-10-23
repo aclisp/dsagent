@@ -528,6 +528,50 @@ with the input received by this handler, without applying partial replacements.
 Hooks use the current sandbox/network access and require an external executable even in standalone
 builds. Restart the session after editing hook configuration.
 
+### Tool call logging hooks
+
+Configure `hooks.afterTool` in `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`
+to log the tool name, arguments, and error status. For example:
+
+```json
+{
+  "hooks": {
+    "afterTool": [
+      {
+        "command": "node",
+        "args": ["{cwd}/log-tool.cjs", "{payload}"]
+      }
+    ]
+  }
+}
+```
+
+Create `log-tool.cjs` in the project directory:
+
+```js
+const fs = require("node:fs");
+const payload = JSON.parse(process.argv[2]);
+fs.appendFileSync("tool-calls.jsonl", JSON.stringify({
+  timestamp: new Date().toISOString(),
+  ...payload,
+}) + "\n");
+```
+
+The `afterTool` payload contains `event: "afterTool"`, `tool`, `toolCallId`, `input`, and
+`isError`. Nested calls also include `parentToolCallId`, so concurrent and nested calls can be
+correlated. Tool result text, images, details, and structured content are never included in
+these payloads. Arguments are passed as provided by Pi, without redaction or truncation.
+
+To also record calls before execution, configure `hooks.beforeTool` with the same command.
+Its payload contains `event: "beforeTool"`, `tool`, `toolCallId`, `input`, and an optional
+`parentToolCallId`; error status is only available in `afterTool`. Pi validates arguments before
+`beforeTool` and emits `afterTool` for executed calls, so unknown tools, argument validation
+failures, and calls blocked before execution do not produce an `afterTool` record.
+
+Global hooks run before trusted-project hooks under the current sandbox/network permissions.
+The log path must be writable under those permissions. Hook commands require an external
+executable, including in standalone builds. Restart the session after editing hook configuration.
+
 ### UI prompt hooks
 
 Configure `hooks.uiPromptStart` to run a notification command when the session starts waiting

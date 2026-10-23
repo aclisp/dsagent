@@ -397,6 +397,47 @@ DSCode/Pi 控制，hooks 只能替换文本。命令失败、超时或输出截�
 该 handler 时的输入继续处理，不应用已经完成的部分替换。Hooks 使用当前 sandbox/network 权限；standalone 版本也需要系统
 提供相应的外部可执行程序。修改 hook 配置后需重启会话。
 
+### 工具调用日志 hooks
+
+在 `~/.dscode/hooks.json` 或可信项目的 `.dscode/hooks.json` 中配置 `hooks.afterTool`，
+即可记录工具名称、调用参数和是否报错。例如：
+
+```json
+{
+  "hooks": {
+    "afterTool": [
+      {
+        "command": "node",
+        "args": ["{cwd}/log-tool.cjs", "{payload}"]
+      }
+    ]
+  }
+}
+```
+
+在项目目录创建 `log-tool.cjs`：
+
+```js
+const fs = require("node:fs");
+const payload = JSON.parse(process.argv[2]);
+fs.appendFileSync("tool-calls.jsonl", JSON.stringify({
+  timestamp: new Date().toISOString(),
+  ...payload,
+}) + "\n");
+```
+
+`afterTool` payload 包含 `event: "afterTool"`、`tool`、`toolCallId`、`input` 和 `isError`。
+嵌套调用还包含 `parentToolCallId`，便于关联并发和嵌套调用。这些 payload 不包含工具返回的文本、图片、
+details 或 structured content。参数按 Pi 提供的值传递，不脱敏、不截断。
+
+如需同时记录执行前的调用，可为 `hooks.beforeTool` 配置相同命令。其 payload 包含
+`event: "beforeTool"`、`tool`、`toolCallId`、`input` 及可选的 `parentToolCallId`；
+是否报错仅在 `afterTool` 中提供。Pi 在 `beforeTool` 之前校验参数，仅对已执行的调用触发 `afterTool`，
+因此未知工具、参数校验失败和执行前被拦截的调用不会产生 `afterTool` 记录。
+
+全局 hooks 先于可信项目 hooks 运行，使用当前 sandbox/network 权限，日志路径需要在该权限下可写。
+standalone 版本也需要系统提供外部可执行程序。修改 hook 配置后需重启会话。
+
 ### UI 提示 hooks
 
 配置 `hooks.uiPromptStart`，可在会话开始等待阻塞式 UI 提示时执行通知命令；配置 `hooks.uiPromptEnd`
