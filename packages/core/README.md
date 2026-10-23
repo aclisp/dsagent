@@ -22,7 +22,11 @@ Search returns five results by default and optionally saves full pages with
 `need_content: true`. Fetch reads immutable, versioned Markdown snapshots by URL or
 `snapshot_id`, with 1-based `offset`/`limit` pagination. `refresh: true` fetches a new
 version without replacing historical snapshots. Snapshot files live in
-`DSCODE_HOME/web-snapshots`; session entries contain only their metadata. Non-persistent
+`DSCODE_HOME/web-snapshots`; session entries contain only their metadata. Best-effort
+startup cleanup removes files last modified more than 30 days ago, even if saved sessions
+reference them. Set `web_snapshots.retention_days` in `DSCODE_HOME/config.json` to a
+non-negative integer (`0` disables cleanup). Reads do not extend retention; missing
+snapshots require the original URL with `refresh: true` to fetch a new version. Non-persistent
 sessions keep snapshots in memory. Both tools return structured data to codemode.
 Codemode's `searchTools()` and `describeTool()` discover MCP tools without changing
 the model's active tool declarations. `tool_search` remains available through

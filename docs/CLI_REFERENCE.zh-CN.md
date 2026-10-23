@@ -103,12 +103,13 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 同一个 inode，不会重复占用空间。JSONL 是会话正文的唯一事实来源；SQLite 只保存可搜索的
 会话元数据、置顶/归档状态和文件指纹。
 
-可以在 `~/.dscode/config.json` 中配置凭证与历史记录策略：
+可以在 `~/.dscode/config.json` 中配置凭证、历史记录与快照保留策略：
 
 ```json
 {
   "cli_auth_credentials_store": "auto",
-  "history": { "persistence": "save-all" }
+  "history": { "persistence": "save-all" },
+  "web_snapshots": { "retention_days": 30 }
 }
 ```
 
@@ -160,10 +161,14 @@ CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
 `web_fetch` 接受 `url` 或 `snapshot_id` 二者之一，按 `offset`（从 1 开始）和
 `limit` 分段阅读，默认 200 个展示行，每次最多 50 KiB。超长行按 4000 个 Unicode
 字符折行展示，原始 Markdown 不变。结果返回 `snapshot_id` 和 `next_offset`。
-按 URL 读取会复用最近快照；`refresh: true` 生成新版本，旧 ID 始终指向旧正文。
+按 URL 读取会复用最近快照；`refresh: true` 生成新版本，保留期间旧 ID 始终指向旧正文。
 按 ID 读取不发起网络请求，也不重新解析凭据。
 
-正文保存在 `$DSCODE_HOME/web-snapshots/`，会话只保存元数据，恢复和 fork 可继续读取。
+正文保存在 `$DSCODE_HOME/web-snapshots/`，会话只保存元数据，恢复和 fork 可读取尚未清理的版本。
+启动时会尽力清理修改时间超过 30 天的快照，包括已保存会话仍引用的快照。可在
+`~/.dscode/config.json` 中用非负整数 `web_snapshots.retention_days` 调整保留天数，
+`0` 禁用清理。读取不会延长保留期。快照缺失时返回错误；使用原 URL 和 `refresh: true`
+重新抓取可生成新版本，但正文可能已与历史版本不同。
 `--no-session` 等非持久化会话只在内存保存正文。工具沿用 `auto` / `ask` / `full`
 权限规则。网络访问被禁用时，两个工具都不可用，包括已缓存快照的读取。
 `--network`、`full` 权限或 `danger-full-access` 沙箱可启用网络访问；单个命令的临时网络授权

@@ -41,6 +41,7 @@ export function registerWebTools(
 ) {
   let available = false;
   let activeSessionId: string | undefined;
+  let cleanup: Promise<void> | undefined;
   const pending = new Set<AbortController>();
 
   async function withNetwork<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -181,6 +182,7 @@ export function registerWebTools(
   return {
     isAvailable: () => available,
     async sync(ctx: ExtensionContext): Promise<boolean> {
+      await (cleanup ??= snapshots.cleanup().catch(() => undefined));
       let next = false;
       if (!options.noTools && networkEnabled()) {
         try { await authFor(ctx); next = true; } catch { /* Unconfigured credentials keep tools hidden. */ }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -79,6 +80,28 @@ function expectDeferredWebTools(host: AgentSessionHost) {
 }
 
 describe("web tools in the Pi session runtime", () => {
+  it.each([undefined, 1, 0, -1])("applies startup retention %s even with web tools disabled", async (retentionDays) => {
+    const h = await setup(["--no-tools"], false);
+    if (retentionDays !== undefined) {
+      await fs.writeFile(path.join(h.agentDir, "config.json"), JSON.stringify({ web_snapshots: { retention_days: retentionDays } }));
+    }
+    const directory = path.join(h.agentDir, "web-snapshots");
+    await fs.mkdir(directory);
+    const files = await Promise.all([0.5, 2, 31].map(async (age) => {
+      const name = `${randomUUID()}.json`;
+      const file = path.join(directory, name);
+      await fs.writeFile(file, "{}");
+      const modified = new Date(Date.now() - age * 24 * 60 * 60 * 1000);
+      await fs.utimes(file, modified, modified);
+      return name;
+    }));
+    await h.create();
+    const remaining = await fs.readdir(directory);
+    const expected = retentionDays === 1 ? files.slice(0, 1) : retentionDays === undefined ? files.slice(0, 2) : files;
+    expect(remaining.sort()).toEqual(expected.sort());
+    expect(h.requests).toHaveLength(0);
+  }, 15_000);
+
   it("discovers web definitions through codemode without declaring them, and allows native tool_search loading", async () => {
     const h = await setup();
     const host = await h.create(["--tools", "read,codemode,tool_search"]);
