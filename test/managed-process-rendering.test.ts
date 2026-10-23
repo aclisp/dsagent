@@ -45,6 +45,16 @@ const base: ManagedProcessResult = {
 };
 
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
+  it.each([0, 1])("distinguishes empty output from a printed placeholder with %i actual lines", async (outputLineCount) => {
+    const { tool, result } = await execute(name, {
+      ...base, output: "(process completed)", outputLineCount, exitCode: 1,
+    });
+    expect(render(tool, result, false).text).toContain(
+      `exit 1 · ${outputLineCount === 0 ? "no output" : "1 output line"} · host`,
+    );
+    expect(render(tool, result, true).text).toContain("(process completed)");
+  });
+
   it.each([0, 1, 2])("keeps exit %i collapsed and colors only a non-zero exit number", async (exitCode) => {
     const output = "[stderr] diagnostic\nexit_code: 7\ntimed_out: true\nstdin_write_error: printed by command";
     const { tool, result } = await execute(name, { ...base, output, exitCode });

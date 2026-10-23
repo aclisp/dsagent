@@ -1005,7 +1005,7 @@ function registerCommandTools(
 
 function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
   if (result.running) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
-  const lines = result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0;
+  const lines = result.outputLineCount ?? (result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0);
   const exitCode = theme.fg(
     typeof result.exitCode === "number" && result.exitCode !== 0 ? "error" : "dim",
     String(result.exitCode ?? "?"),

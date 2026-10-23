@@ -15,6 +15,8 @@ export interface ManagedProcessResult {
   processId: string;
   running: boolean;
   output: string;
+  // Lines in this result's output, excluding the empty-output placeholder.
+  outputLineCount?: number;
   exitCode?: number | null;
   timedOut?: boolean;
   writeError?: string;
@@ -307,6 +309,7 @@ export class ManagedProcessRegistry {
       processId: record.id,
       running: record.running,
       output: output || (record.running ? "(no new output)" : "(process completed)"),
+      outputLineCount: output.trimEnd() ? output.trimEnd().split("\n").length : 0,
       ...(!record.running ? { exitCode: record.exitCode } : {}),
       ...(record.timedOut ? { timedOut: true } : {}),
       ...(record.processError === undefined ? {} : { processError: record.processError }),
