@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   getCurrentSystemMessage,
   getSystemMessageText,
@@ -9,6 +9,8 @@ import type {
   ExtensionContext,
   InlineExtension,
   SessionEntry,
+  Theme,
+  ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { generateDiffString, renderDiff, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
@@ -54,6 +56,7 @@ import {
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
+  type ToolPresentationContext,
 } from "./tool-ui.ts";
 import { createDSCodeReadTool } from "./read-tool.ts";
 import { formatThinkingLabel, registerCodingTui } from "./tui-experience.ts";
@@ -120,7 +123,7 @@ const writeStdinParameters = Type.Object({
   })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
-    description: "Milliseconds to wait for output, capped at 30000.",
+    description: "Milliseconds to wait before returning. Defaults to 30000 for polls and 5000 for other operations.",
   })),
   terminate: Type.Optional(Type.Boolean({ description: "Terminate this process" })),
 });
@@ -950,14 +953,7 @@ function registerCommandTools(
       return renderToolCall(context.isPartial ? "Run" : "Ran", args.cmd, theme, context, context.expanded);
     },
     renderResult(result, renderOptions, theme, context) {
-      if (context.isError) {
-        return renderCollapsibleToolResult(result, renderOptions, theme, context);
-      }
-      const details = result.details as ManagedProcessResult;
-      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
-        collapsedSummary: managedProcessSummary(details),
-        forceError: managedProcessFailed(details),
-      });
+      return renderManagedProcessResult(result, renderOptions, theme, context);
     },
   });
 
@@ -971,19 +967,20 @@ function registerCommandTools(
     renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal) {
+      const polling = !params.chars && !params.eof && !params.terminate;
       const result = await registry.interact(params.process_id, {
         ...(signal ? { signal } : {}),
         ...(params.chars === undefined ? {} : { chars: params.chars }),
         ...(params.eof === undefined ? {} : { eof: params.eof }),
-        yieldTimeMs: params.yield_time_ms ?? 5_000,
+        yieldTimeMs: polling
+          ? Math.max(5_000, params.yield_time_ms ?? 30_000)
+          : params.yield_time_ms ?? 5_000,
         terminate: params.terminate ?? false,
       });
-      if (result.writeError) {
-        throw new Error(formatManagedResult(result));
-      }
       return {
         content: [{ type: "text", text: formatManagedResult(result) }],
         details: result,
+        ...(result.writeError ? { isError: true } : {}),
       };
     },
     renderCall(args, theme, context) {
@@ -1001,33 +998,45 @@ function registerCommandTools(
       );
     },
     renderResult(result, renderOptions, theme, context) {
-      // pi converts thrown tool errors to text with no managed-process details.
-      if (context.isError) {
-        return renderCollapsibleToolResult(result, renderOptions, theme, context);
-      }
-      const details = result.details as ManagedProcessResult;
-      return renderCollapsibleToolResult(result, renderOptions, theme, context, {
-        collapsedSummary: managedProcessSummary(details),
-        forceError: managedProcessFailed(details),
-      });
+      return renderManagedProcessResult(result, renderOptions, theme, context);
     },
   });
 }
 
-function managedProcessSummary(result: ManagedProcessResult): string {
-  if (result.writeError) return `stdin write failed · process ${result.processId} · ${result.writeError}`;
-  if (result.running) return `running · process ${result.processId} · ${result.sandbox}`;
-  const lines = result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0;
-  return [
-    result.exitCode === 0 ? "exit 0" : `exit ${result.exitCode ?? "?"}`,
+function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
+  if (result.running) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
+  const lines = result.outputLineCount ?? (result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0);
+  const exitCode = theme.fg(
+    typeof result.exitCode === "number" && result.exitCode !== 0 ? "error" : "dim",
+    String(result.exitCode ?? "?"),
+  );
+  const rest = [
     lines > 0 ? `${lines} output ${lines === 1 ? "line" : "lines"}` : "no output",
     result.sandbox,
   ].join(" · ");
+  return theme.fg("dim", "exit ") + exitCode + theme.fg("dim", ` · ${rest}`);
 }
 
-function managedProcessFailed(result: ManagedProcessResult): boolean {
-  return Boolean(result.writeError) || result.timedOut === true ||
-    (!result.running && result.exitCode !== undefined && result.exitCode !== 0);
+function renderManagedProcessResult(
+  result: AgentToolResult<unknown>,
+  options: ToolRenderResultOptions,
+  theme: Theme,
+  context: ToolPresentationContext,
+): Text {
+  const details = result.details as ManagedProcessResult | undefined;
+  const processFailed = details?.processError !== undefined;
+  if (!details || processFailed || (context.isError && !details.writeError && !details.timedOut)) {
+    return renderCollapsibleToolResult(result, options, theme, context, {
+      forceError: processFailed,
+    });
+  }
+  // Style only generated fields, without interpreting anything printed by the command.
+  const styled = { ...result, content: [{ type: "text" as const, text: formatManagedResult(details, theme) }] };
+  return renderCollapsibleToolResult(styled, options, theme, context, {
+    collapsedSummary: () => managedProcessSummary(details, theme),
+    forceError: Boolean(details.writeError) || details.timedOut === true,
+    renderLine: (line) => line,
+  });
 }
 
 async function requestCommandAccess(
@@ -1301,16 +1310,21 @@ function colorPatch(
     .join("\n");
 }
 
-function formatManagedResult(result: ManagedProcessResult): string {
+function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
+  const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
+    theme ? text.split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
   return [
-    result.output.trimEnd(),
-    `process_id: ${result.processId}`,
-    `status: ${result.running ? "running" : "completed"}`,
-    ...(result.writeError ? [`stdin_write_error: ${result.writeError}`] : []),
-    ...(result.running ? ["Use write_stdin to poll or interact."] : []),
-    ...(result.exitCode === undefined ? [] : [`exit_code: ${result.exitCode}`]),
-    ...(result.timedOut ? ["timed_out: true"] : []),
-    `sandbox: ${result.sandbox}`,
+    paint(result.output.trimEnd()),
+    paint(`process_id: ${result.processId}`),
+    paint(`status: ${result.running ? "running" : "completed"}`),
+    ...(result.writeError ? [paint("stdin_write_error: ") + paint(result.writeError, "error")] : []),
+    ...(result.running ? [paint("Use write_stdin to poll or interact.")] : []),
+    ...(result.exitCode === undefined ? [] : [paint("exit_code: ") + paint(
+      String(result.exitCode),
+      result.exitCode === null ? "dim" : result.exitCode !== 0 ? "error" : "toolOutput",
+    )]),
+    ...(result.timedOut ? [paint("timed_out: true", "error")] : []),
+    paint(`sandbox: ${result.sandbox}`),
   ].join("\n");
 }
 

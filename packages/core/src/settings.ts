@@ -7,6 +7,7 @@ import { getDSCodeHome } from "./home.ts";
 import { isStandalone } from "./distribution.ts";
 
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const DEFAULT_WEB_SNAPSHOT_RETENTION_DAYS = 30;
 
 export type CredentialStoreMode = "file" | "keyring" | "auto";
 export type HistoryPersistence = "save-all" | "none";
@@ -28,10 +29,21 @@ interface DSCodeSettings {
   history?: {
     persistence?: unknown;
   };
+  web_snapshots?: {
+    retention_days?: unknown;
+  };
 }
 
 export function getDSCodeSettingsPath(): string {
   return process.env.DSCODE_CONFIG_PATH ?? path.join(getDSCodeHome(), "config.json");
+}
+
+export function getWebSnapshotRetentionDays(settingsPath = getDSCodeSettingsPath()): number {
+  const value = readSettingsSync(settingsPath).web_snapshots?.retention_days ?? DEFAULT_WEB_SNAPSHOT_RETENTION_DAYS;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error("web_snapshots.retention_days must be a non-negative integer (0 disables cleanup)");
+  }
+  return value;
 }
 
 export function getStoredDeepSeekBaseUrl(

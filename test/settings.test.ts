@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,11 +6,12 @@ import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import {
   DEFAULT_DEEPSEEK_BASE_URL,
   getStoredDeepSeekBaseUrl,
+  getWebSnapshotRetentionDays,
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
 } from "../packages/core/src/settings.ts";
 
-describe("DeepSeek API endpoint settings", () => {
+describe("DSCode settings", () => {
   const temporaryDirectories: string[] = [];
   const originalConfigPath = process.env.DSCODE_CONFIG_PATH;
   const originalEnvironmentUrl = process.env.DEEPSEEK_BASE_URL;
@@ -21,6 +22,23 @@ describe("DeepSeek API endpoint settings", () => {
     await Promise.all(
       temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
     );
+  });
+
+  it("defaults snapshot retention to 30 days and supports an override or disabling cleanup", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "dscode-snapshot-settings-"));
+    temporaryDirectories.push(directory);
+    const settingsPath = path.join(directory, "config.json");
+    expect(getWebSnapshotRetentionDays(settingsPath)).toBe(30);
+    await writeFile(settingsPath, "{}");
+    expect(getWebSnapshotRetentionDays(settingsPath)).toBe(30);
+    for (const days of [7, 0]) {
+      await writeFile(settingsPath, JSON.stringify({ web_snapshots: { retention_days: days } }));
+      expect(getWebSnapshotRetentionDays(settingsPath)).toBe(days);
+    }
+    for (const days of [-1, 0.5, "30", false]) {
+      await writeFile(settingsPath, JSON.stringify({ web_snapshots: { retention_days: days } }));
+      expect(() => getWebSnapshotRetentionDays(settingsPath)).toThrow("non-negative integer");
+    }
   });
 
   it("normalizes and securely persists a compatible endpoint", async () => {

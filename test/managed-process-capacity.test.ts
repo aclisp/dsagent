@@ -110,4 +110,17 @@ describe("managed process capacity", () => {
       expect(registry.list().filter((job) => job.running)).toHaveLength(64);
     } finally { await registry.dispose(); }
   });
+
+  it("retains the actual process error separately from its exit code and output", async () => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const started = await registry.start("echo job", options);
+      const child = spawn.mock.results.at(-1)!.value as ChildProcessWithoutNullStreams;
+      child.emit("error", new Error("spawn EACCES"));
+      child.emit("close", -13);
+      await expect(registry.interact(started.processId, { yieldTimeMs: 0 })).resolves.toMatchObject({
+        running: false, exitCode: -13, processError: "spawn EACCES", output: "[error] spawn EACCES",
+      });
+    } finally { await registry.dispose(); }
+  });
 });

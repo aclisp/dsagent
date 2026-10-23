@@ -1,8 +1,8 @@
 # DSCode chat server — lean image (Node + app only).
 # Build the derived full image with the office/PDF tools on the live env server:
 #   docker build -f deploy/tools.Dockerfile --build-arg LEAN_IMAGE=dscode-server:lean -t dscode-server .
-FROM node:22 AS build
-RUN corepack enable
+FROM node:26-trixie AS build
+RUN npm install --global pnpm@12
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 # The root postinstall references scripts/postinstall.mjs.
@@ -13,8 +13,8 @@ RUN pnpm install --frozen-lockfile
 # Build all server packages, the bundled web server, and the standalone vision CLI.
 RUN pnpm build
 
-FROM node:22 AS prod-deps
-RUN corepack enable
+FROM node:26-trixie AS prod-deps
+RUN npm install --global pnpm@12
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts
@@ -25,7 +25,7 @@ COPY packages/wecom/package.json packages/wecom/package.json
 COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN pnpm install --prod --frozen-lockfile
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:26-trixie-slim AS runtime
 WORKDIR /app
 ENV HOST=0.0.0.0 PORT=8899
 ARG DSCODE_APT_MIRROR=deb.debian.org

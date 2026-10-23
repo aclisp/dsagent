@@ -15,9 +15,12 @@ export interface ManagedProcessResult {
   processId: string;
   running: boolean;
   output: string;
+  // Lines in this result's output, excluding the empty-output placeholder.
+  outputLineCount?: number;
   exitCode?: number | null;
   timedOut?: boolean;
   writeError?: string;
+  processError?: string;
   sandbox: string;
 }
 
@@ -30,6 +33,7 @@ interface ProcessRecord {
   exitCode?: number | null;
   timedOut: boolean;
   stdinError?: Error;
+  processError?: string;
   sandbox: string;
   completion: Promise<void>;
   resolveCompletion: () => void;
@@ -186,6 +190,7 @@ export class ManagedProcessRegistry {
       record.stdinError = error;
     });
     child.once("error", (error) => {
+      record.processError = error.message;
       append("[error] ", error.message);
     });
     child.once("close", (exitCode) => {
@@ -208,7 +213,7 @@ export class ManagedProcessRegistry {
     if (options.signal?.aborted) abort();
 
     try {
-      await waitForCompletion(completion, options.yieldTimeMs, options.signal);
+      await waitForCompletion(completion, Math.min(options.yieldTimeMs, 30_000), options.signal);
       return this.result(record);
     } finally {
       // Once start returns, the registry owns the background process lifetime.
@@ -254,7 +259,8 @@ export class ManagedProcessRegistry {
     }
 
     if (record.running) {
-      await waitForCompletion(record.completion, options.yieldTimeMs, options.signal);
+      const maxWaitMs = !options.chars && !options.eof && !options.terminate ? 120_000 : 30_000;
+      await waitForCompletion(record.completion, Math.min(options.yieldTimeMs, maxWaitMs), options.signal);
     }
     return this.result(record);
   }
@@ -303,8 +309,10 @@ export class ManagedProcessRegistry {
       processId: record.id,
       running: record.running,
       output: output || (record.running ? "(no new output)" : "(process completed)"),
+      outputLineCount: output.trimEnd() ? output.trimEnd().split("\n").length : 0,
       ...(!record.running ? { exitCode: record.exitCode } : {}),
       ...(record.timedOut ? { timedOut: true } : {}),
+      ...(record.processError === undefined ? {} : { processError: record.processError }),
       sandbox: record.sandbox,
     };
   }
@@ -316,7 +324,7 @@ async function waitForCompletion(completion: Promise<void>, yieldTimeMs: number,
     await withAbort(Promise.race([
       completion,
       new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, Math.max(0, Math.min(yieldTimeMs, 30_000)));
+        timer = setTimeout(resolve, Math.max(0, yieldTimeMs));
         timer.unref();
       }),
     ]), signal);

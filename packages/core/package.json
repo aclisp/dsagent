@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent-core",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "private": true,
   "description": "Reusable multi-provider DSCode agent runtime with local sessions, tools, and RPC.",
   "type": "module",
@@ -40,7 +40,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": "26"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "catalog:",

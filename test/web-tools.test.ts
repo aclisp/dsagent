@@ -140,6 +140,28 @@ describe("native web tools and snapshots", () => {
     expect((await unrelated.call("web_fetch", { snapshot_id: id })).isError).toBe(true);
   });
 
+  it("reports expired snapshots on resume and recovers only with an explicit fresh fetch", async () => {
+    const h = await harness({ persistent: true });
+    const first = await h.call("web_fetch", { url: "https://example.org/docs" });
+    const id = (first.structuredContent as any).snapshot_id;
+    const file = path.join(h.root, "snapshots", `${id}.json`);
+    const expired = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    await fs.utimes(file, expired, expired);
+    await h.store.cleanup(30);
+
+    const restored = await harness({ root: h.root, session: SessionManager.open(h.session.getSessionFile()!) });
+    for (const input of [{ snapshot_id: id }, { url: "https://example.org/docs" }]) {
+      const result = await restored.call("web_fetch", input);
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({ error: { message: expect.stringContaining("refresh: true") } });
+    }
+    expect(restored.fetchImpl).not.toHaveBeenCalled();
+    const refreshed = await restored.call("web_fetch", { url: "https://example.org/docs", refresh: true });
+    expect(refreshed.isError).not.toBe(true);
+    expect((refreshed.structuredContent as any).snapshot_id).not.toBe(id);
+    expect(restored.fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it("performs fresh searches, preserves low-scoring results, and snapshots search bodies for offline reading", async () => {
     const h = await harness();
     h.fetchImpl.mockImplementation(async () => Response.json({ results: [searchResult("full search body"), { ...searchResult(), url: "https://example.org/other" }] }));

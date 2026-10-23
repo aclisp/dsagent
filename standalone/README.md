@@ -5,7 +5,7 @@ See [ADR-0003](../docs/decisions/0003-standalone-cli.md) for product scope. The 
 
 ## Build and validate
 
-The build machine needs the project dependencies, pnpm, and Bun **1.3.14**; macOS builds also use the system `codesign`:
+The build machine needs Node.js **26.x**, pnpm **12.x**, the project dependencies, and Bun **1.3.14**; macOS builds also use the system `codesign`:
 
 ```sh
 pnpm install --frozen-lockfile

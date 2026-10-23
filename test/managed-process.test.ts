@@ -13,6 +13,19 @@ describe("ManagedProcessRegistry", () => {
         yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
       });
       expect(result).toMatchObject({ running: false, exitCode: 0, output: length ? "x".repeat(length) : "(process completed)", sandbox: "host" });
+      expect(result.outputLineCount).toBe(length ? 1 : 0);
+    } finally { await registry.dispose(); }
+  });
+
+  it.each(["(process completed)", "first\nsecond\n"])("counts actual output lines for %j", async (output) => {
+    const registry = new ManagedProcessRegistry();
+    try {
+      const result = await registry.start(nodeCommand(`process.stdout.write(${JSON.stringify(output)});`), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result.output).toBe(output);
+      expect(result.outputLineCount).toBe(output === "(process completed)" ? 1 : 2);
     } finally { await registry.dispose(); }
   });
 
@@ -114,7 +127,7 @@ describe("ManagedProcessRegistry", () => {
       expect(first.output.length).toBeLessThan(81_000);
 
       const empty = await registry.interact(started.processId, { yieldTimeMs: 0 });
-      expect(empty).toMatchObject({ running: true, output: "(no new output)" });
+      expect(empty).toMatchObject({ running: true, output: "(no new output)", outputLineCount: 0 });
 
       const second = await registry.interact(started.processId, { chars: "second\n", yieldTimeMs: 2_000 });
       expect(second).toMatchObject({ running: false, exitCode: 0 });

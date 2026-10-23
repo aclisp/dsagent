@@ -40,7 +40,20 @@ describe("command access escalation", () => {
     root = undefined;
   });
 
-  it.each<JsonObject>([{}, { eof: true }, { chars: "last input", eof: true }])("validates and forwards write_stdin options (%j)", async (input) => {
+  it.each<{ input: JsonObject; wait: number }>([
+    { input: {}, wait: 30_000 },
+    { input: { chars: "" }, wait: 30_000 },
+    { input: { yield_time_ms: 0 }, wait: 5_000 },
+    { input: { yield_time_ms: 1_000 }, wait: 5_000 },
+    { input: { yield_time_ms: 60_000 }, wait: 60_000 },
+    { input: { chars: "input" }, wait: 5_000 },
+    { input: { eof: true }, wait: 5_000 },
+    { input: { terminate: true }, wait: 5_000 },
+    { input: { chars: "input", yield_time_ms: 0 }, wait: 0 },
+    { input: { eof: true, yield_time_ms: 0 }, wait: 0 },
+    { input: { terminate: true, yield_time_ms: 0 }, wait: 0 },
+    { input: { chars: "last input", eof: true, yield_time_ms: 60_000 }, wait: 60_000 },
+  ])("validates and forwards write_stdin wait options ($input)", async ({ input, wait }) => {
     const tools = new Map<string, any>();
     const pi = new Proxy({
       registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
@@ -59,16 +72,17 @@ describe("command access escalation", () => {
       type: "toolCall",
       id: "poll",
       name: "write_stdin",
-      arguments: { process_id: "background-process", yield_time_ms: 60_000, ...input },
+      arguments: { process_id: "background-process", ...input },
     });
 
     const controller = new AbortController();
     await tool.execute("poll", args, controller.signal);
+    const { yield_time_ms: _yieldTimeMs, ...action } = input;
     expect(interact).toHaveBeenLastCalledWith("background-process", {
-      yieldTimeMs: 60_000,
+      yieldTimeMs: wait,
       terminate: false,
       signal: controller.signal,
-      ...input,
+      ...action,
     });
   });
 
@@ -141,6 +155,7 @@ describe("command access escalation", () => {
     );
     const completed = events.find((event) => event.type === "tool_execution_end");
     expect(completed?.isError).toBe(true);
+    expect(completed?.result.details).toMatchObject({ processId: "1", running: true, writeError: "write EPIPE" });
     const result = messages.find((message) => message.role === "toolResult");
     expect(result?.isError).toBe(true);
     expect(result?.content).toEqual([

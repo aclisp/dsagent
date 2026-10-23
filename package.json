@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "private": true,
   "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
@@ -13,7 +13,6 @@
     "type": "git",
     "url": "git+https://github.com/aclisp/dsagent.git"
   },
-  "packageManager": "pnpm@10.27.0",
   "files": [
     "assets",
     "dist",
@@ -66,7 +65,8 @@
     "acceptance:live": "pnpm check && node scripts/live-smoke.mjs && node scripts/live-features.mjs"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": "26",
+    "pnpm": ">=12 <13"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "catalog:",

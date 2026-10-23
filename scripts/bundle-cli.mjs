@@ -33,7 +33,7 @@ export async function buildCliBundle({
     bundle: true,
     format: "esm",
     platform: "node",
-    target: "node22.19",
+    target: "node26",
     minifySyntax: true,
     minifyWhitespace: true,
     sourcemap: false,

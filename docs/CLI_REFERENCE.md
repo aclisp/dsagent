@@ -2,7 +2,7 @@
 
 ## Terminal app
 
-Requirements: Node.js 22.19+ and Git. DSCode also uses `rg`.
+Requirements: Node.js 26.x and Git; source builds also need pnpm 12.x. DSCode also uses `rg`.
 
 On Unix, host commands use a non-empty `$SHELL`, otherwise `/bin/bash`, then an executable `bash`
 on PATH, and finally `/bin/sh`. A configured `$SHELL` is used explicitly; an invalid value produces
@@ -111,12 +111,13 @@ runtime; each points to the same inode as its date-partitioned transcript and do
 content. JSONL is the transcript source of truth. SQLite contains only searchable thread metadata,
 pin/archive state, and file fingerprints.
 
-Credential and history behavior can be configured in `~/.dscode/config.json`:
+Credential, history, and snapshot retention settings can be configured in `~/.dscode/config.json`:
 
 ```json
 {
   "cli_auth_credentials_store": "auto",
-  "history": { "persistence": "save-all" }
+  "history": { "persistence": "save-all" },
+  "web_snapshots": { "retention_days": 30 }
 }
 ```
 
@@ -188,7 +189,12 @@ latest session snapshot; `refresh: true` creates a new immutable version. Readin
 an ID never makes a network request or resolves credentials again.
 
 Full pages are stored in `$DSCODE_HOME/web-snapshots/`; only metadata is appended
-to sessions, allowing resume and fork to retain old versions. Non-persistent
+to sessions, allowing resume and fork to read retained versions. At startup, best-effort
+cleanup deletes snapshot files last modified more than 30 days ago, including files
+referenced by saved sessions. Configure `web_snapshots.retention_days` in
+`~/.dscode/config.json` with a non-negative integer; `0` disables cleanup. Reads do not
+extend retention. Missing snapshots return an error; use the original URL with
+`refresh: true` to fetch a new version, which may differ from the historical page. Non-persistent
 sessions (`--no-session`) keep full pages in memory. Both tools follow normal
 `auto` / `ask` / `full` permissions. Disabling network access hides and blocks both
 tools, including cached snapshot reads. `--network`, full permissions, or the
@@ -249,7 +255,7 @@ and the blocked operation rather than silently treating it as complete.
 
 `timeout_ms: 0` disables the process deadline for any managed command. Omission keeps
 the 120000 ms default; positive deadlines are 1000–600000 ms. `yield_time_ms` only controls
-how long a tool call waits (up to 30000 ms), independently of the process lifetime.
+how long a tool call waits, independently of the process lifetime.
 Use `write_stdin` with `terminate: true` to stop a child. Session shutdown terminates
 remaining managed processes; print-mode parents must collect results before exiting.
 
@@ -603,7 +609,7 @@ developers should use the workspace setup above.
 ```bash
 git clone https://github.com/aclisp/dsagent.git
 cd dsagent
-corepack enable
+npm install --global pnpm@12
 pnpm install
 pnpm check
 pnpm dev -C /path/to/project

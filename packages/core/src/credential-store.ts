@@ -10,8 +10,8 @@ import {
   type CredentialStoreMode,
 } from "./settings.ts";
 
-const KEYRING_SERVICE = "ai.thinkany.dscode";
-const STORE_PATCH = Symbol.for("ai.thinkany.dscode.credential-store-installed");
+const KEYRING_SERVICE = "ai.aclisp.dscode";
+const STORE_PATCH = Symbol.for("ai.aclisp.dscode.credential-store-installed");
 const LOCK_STALE_MS = 30_000;
 const LOCK_TIMEOUT_MS = 15_000;
 

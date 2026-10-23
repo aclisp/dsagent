@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import { getDSCodeHome } from "./home.ts";
+import { getWebSnapshotRetentionDays } from "./settings.ts";
 
 export const WEB_SNAPSHOT_ENTRY = "dscode-web-snapshot";
 const idSchema = z.string().uuid();
@@ -36,6 +37,22 @@ export class WebSnapshotStore {
 
   constructor(directory = path.join(getDSCodeHome(), "web-snapshots")) {
     this.directory = directory;
+  }
+
+  async cleanup(retentionDays = getWebSnapshotRetentionDays()): Promise<void> {
+    if (retentionDays === 0) return;
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const entries = await fs.readdir(this.directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json") || !idSchema.safeParse(entry.name.slice(0, -5)).success) continue;
+      const file = path.join(this.directory, entry.name);
+      try {
+        const stat = await fs.lstat(file);
+        if (stat.isFile() && stat.mtimeMs < cutoff) await fs.unlink(file);
+      } catch {
+        // Cleanup is best effort; inaccessible files and concurrent cleanup must not block startup.
+      }
+    }
   }
 
   references(ctx: ExtensionContext): WebSnapshotReference[] {
