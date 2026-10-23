@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, KeybindingsManager, setKeybindings } from "@earendil-works/pi-tui";
+import { getKeybindings, KeybindingsManager, setKeybindings, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   oneLine,
@@ -7,6 +7,7 @@ import {
   renderToolCall,
   type ToolPresentationContext,
 } from "../packages/core/src/tool-ui.ts";
+import { createAnsiTestTheme } from "./fixtures/theme.ts";
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -92,5 +93,22 @@ describe("compact Codex-style tool presentation", () => {
 
   it("normalizes multiline details for compact headers", () => {
     expect(oneLine("  rg   foo\nbar  ")).toBe("rg foo bar");
+  });
+
+  it("renders expanded CRLF commands like LF commands with ANSI colors", () => {
+    const ansiTheme = createAnsiTestTheme();
+    const lines = (detail: string) => renderToolCall("Ran", detail, ansiTheme, context, true).render(80);
+    expect(lines("first\r\nsecond")).toEqual(lines("first\nsecond"));
+  });
+
+  it.each([false, true])("preserves intentional blank lines in CRLF output with isError=%s", (isError) => {
+    const result = { content: [{ type: "text" as const, text: "first\r\n\r\nsecond\nthird" }], details: {} };
+    const rendered = renderCollapsibleToolResult(
+      result, { expanded: !isError, isPartial: false }, createAnsiTestTheme(), { ...context, isError },
+    ).render(80);
+    expect(rendered.map((line) => stripTerminalSequences(line).trimEnd())).toEqual([
+      "  └ first", "", "    second", "    third",
+    ]);
+    expect(result.content[0]!.text).toBe("first\r\n\r\nsecond\nthird");
   });
 });

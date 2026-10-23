@@ -13,6 +13,11 @@ export interface ToolPresentationContext {
   isPartial: boolean;
 }
 
+/** Match Pi's display policy before splitting or styling lines; keep stored text unchanged. */
+export function normalizeDisplayText(text: string): string {
+  return text.replace(/\r/g, "");
+}
+
 export function renderToolCall(
   label: string,
   detail: string | undefined,
@@ -23,7 +28,7 @@ export function renderToolCall(
   const bulletColor = context.isError ? "error" : context.isPartial ? "muted" : "success";
   const title = `${theme.fg(bulletColor, "•")} ${theme.fg("toolTitle", theme.bold(label))}`;
   if (expanded && detail) {
-    const command = detail.split("\n").map((line) => theme.fg("mdCode", `    ${line}`)).join("\n");
+    const command = normalizeDisplayText(detail).split("\n").map((line) => theme.fg("mdCode", `    ${line}`)).join("\n");
     return new Text(`${title}\n${command}\n`, 0, 0);
   }
   const normalizedDetail = detail ? oneLine(detail) : "";
@@ -47,7 +52,7 @@ export function renderCollapsibleToolResult(
     renderLine?: (line: string) => string;
   } = {},
 ): Text {
-  const output = toolResultText(result).trimEnd();
+  const output = normalizeDisplayText(toolResultText(result)).trimEnd();
   if (!output) return new Text("", 0, 0);
   const error = context.isError || config.forceError === true;
   if (options.expanded || error) {

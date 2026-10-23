@@ -623,6 +623,16 @@ DSCode
   Seven focused suites passed (153 tests; one Windows-only test skipped); core and test typechecks
   passed. No build was run.
 
+  **Display follow-up (2026-10-23): follow Pi's CR removal policy for TUI text.**
+  Remove `\r` from display copies before splitting, coloring, or parsing diff lines. This prevents
+  ANSI styling from separating CRLF into two line breaks and restores Pi's added/removed diff
+  colors. Apply the shared helper to tool results, expanded call details, managed-process
+  styling, patch previews/summaries, and saved `/diff` rendering (including legacy patches).
+  File contents, checkpoint snapshots, saved patches/diffs, and model-visible tool results retain
+  their original text. Existing intentional blank lines remain. ANSI-based regression tests
+  reproduce the defects without Windows and cover actual read results, both command tools,
+  stdin errors, LF/CRLF patches, and added/modified/deleted CRLF file diffs.
+
 - [ ] **EX-09 — Approvals and sandbox retries.** Codex uses execution policy, sandbox orchestration,
   and conditional command permission arguments such as justification, prefix rules, and additional
   permissions. DSCode uses `ask|auto|full`, dangerous-command detection, and scoped network/host

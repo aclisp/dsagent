@@ -10,12 +10,12 @@ import {
   createReadToolDefinition,
   type ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, KeybindingsManager, setKeybindings } from "@earendil-works/pi-tui";
+import { getKeybindings, KeybindingsManager, setKeybindings, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { createDSCodeReadTool } from "../packages/core/src/read-tool.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
-import { createTestTheme } from "./fixtures/theme.ts";
+import { createAnsiTestTheme, createTestTheme } from "./fixtures/theme.ts";
 
 const theme = Object.assign(createTestTheme(), { bold: (text: string) => text });
 const context = { isError: false, isPartial: false } as Parameters<NonNullable<ReturnType<typeof createDSCodeReadTool>["renderCall"]>>[2];
@@ -68,6 +68,27 @@ describe("DSCode read presentation", () => {
       const result = await tool.execute("read-1", { path: "sample.txt", offset: 2, limit: 1 },
         undefined, undefined, { cwd: root } as ExtensionToolContext);
       expect(result.content).toEqual([{ type: "text", text: "two\n\n[2 more lines in file. Use offset=3 to continue.]" }]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("displays a CRLF file without extra rows and preserves its contents", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-read-crlf-"));
+    try {
+      const content = "one\r\n\r\ntwo\r\nthree";
+      await fs.writeFile(path.join(root, "sample.txt"), content);
+      const tool = createDSCodeReadTool(root);
+      const result = await tool.execute("read-crlf", { path: "sample.txt" },
+        undefined, undefined, { cwd: root } as ExtensionToolContext);
+      const rendered = tool.renderResult!(
+        result, { expanded: true, isPartial: false }, createAnsiTestTheme(), context,
+      ).render(100);
+      expect(rendered.map((line) => stripTerminalSequences(line).trimEnd())).toEqual([
+        "  └ one", "", "    two", "    three",
+      ]);
+      expect(result.content[0]).toMatchObject({ text: content });
+      await expect(fs.readFile(path.join(root, "sample.txt"), "utf8")).resolves.toBe(content);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

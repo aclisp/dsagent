@@ -53,6 +53,7 @@ import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
 import {
+  normalizeDisplayText,
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
@@ -1203,7 +1204,7 @@ function registerEntryRenderers(pi: ExtensionAPI): void {
             `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${
               entry.data.files
                 ? entry.data.files.map((file) =>
-                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(file.diff)}`,
+                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(normalizeDisplayText(file.diff))}`,
                   ).join("\n\n")
                 : colorPatch(entry.data.patch, theme)
             }`,
@@ -1261,14 +1262,13 @@ function approvalSummary(tool: string, input: unknown): string {
 }
 
 function summarizePatch(input: string): string {
-  const files = input
-    .split("\n")
-    .flatMap((line) => {
-      const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
-      return match?.[1] ? [match[1]] : [];
-    });
-  const additions = input.split("\n").filter((line) => line.startsWith("+")).length;
-  const deletions = input.split("\n").filter((line) => line.startsWith("-")).length;
+  const lines = normalizeDisplayText(input).split("\n");
+  const files = lines.flatMap((line) => {
+    const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
+    return match?.[1] ? [match[1]] : [];
+  });
+  const additions = lines.filter((line) => line.startsWith("+")).length;
+  const deletions = lines.filter((line) => line.startsWith("-")).length;
   return `${[...new Set(files)].join(", ") || "patch"} (+${additions} -${deletions})`;
 }
 
@@ -1300,7 +1300,7 @@ function colorPatch(
   patch: string,
   theme: ExtensionContext["ui"]["theme"],
 ): string {
-  return patch
+  return normalizeDisplayText(patch)
     .split("\n")
     .map((line) => {
       if (line.startsWith("+")) return theme.fg("toolDiffAdded", line);
@@ -1312,7 +1312,7 @@ function colorPatch(
 
 function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
   const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
-    theme ? text.split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
+    theme ? normalizeDisplayText(text).split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
   return [
     paint(result.output.trimEnd()),
     paint(`process_id: ${result.processId}`),

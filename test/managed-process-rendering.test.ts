@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "../packages/core/src/managed-process.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { createAnsiTestTheme } from "./fixtures/theme.ts";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -29,7 +30,7 @@ async function execute(name: string, details: ManagedProcessResult) {
 }
 
 function render(tool: any, result: AgentToolResult<unknown>, expanded: boolean, isError = result.isError === true) {
-  const fg = vi.fn((color: string, text: string) => color === "error" ? `\x1b[31m${text}\x1b[39m` : text);
+  const fg = vi.fn(createAnsiTestTheme().fg);
   const theme = { fg, bold: (text: string) => text } as unknown as Theme;
   const rendered = tool.renderResult(result, { expanded, isPartial: false }, theme, { isError, isPartial: false })
     .render(1000).join("\n");
@@ -45,6 +46,19 @@ const base: ManagedProcessResult = {
 };
 
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
+  it("renders CRLF output like LF while preserving the model's original output", async () => {
+    const details = { ...base, output: "first\r\n\r\nsecond\nthird", exitCode: 1 };
+    const { tool, result } = await execute(name, details);
+    const expanded = render(tool, result, true);
+    expect(expanded.text.split("\n")).toEqual([
+      "  └ first", "", "    second", "    third",
+      "    process_id: 1", "    status: completed", "    exit_code: 1", "    sandbox: host",
+    ]);
+    expect(expanded.red).toEqual(["1"]);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining(details.output) });
+    expect(result.details?.output).toBe(details.output);
+  });
+
   it.each([0, 1])("distinguishes empty output from a printed placeholder with %i actual lines", async (outputLineCount) => {
     const { tool, result } = await execute(name, {
       ...base, output: "(process completed)", outputLineCount, exitCode: 1,
@@ -126,13 +140,14 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
 
 it("preserves stdin error details while highlighting only the error message", async () => {
   const { exitCode: _exitCode, ...running } = { ...base, running: true };
-  const details = { ...running, writeError: "write EPIPE\npipe closed" };
+  const details = { ...running, writeError: "write EPIPE\r\npipe closed" };
   const { tool, result } = await execute("write_stdin", details);
   expect(result.isError).toBe(true);
   expect(result.details).toEqual(details);
   for (const expanded of [false, true]) {
     const rendered = render(tool, result, expanded);
     expect(rendered.red).toEqual(["write EPIPE", "pipe closed"]);
+    expect(rendered.text.split("\n").some((line: string) => line.trim() === "")).toBe(false);
     expect(rendered.text).toContain("status: running");
     expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "command output");
     expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "stdin_write_error: ");
