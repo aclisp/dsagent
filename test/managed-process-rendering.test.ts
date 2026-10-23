@@ -46,9 +46,11 @@ const base: ManagedProcessResult = {
 };
 
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
-  it("renders CRLF output like LF while preserving the model's original output", async () => {
-    const details = { ...base, output: "first\r\n\r\nsecond\nthird", exitCode: 1 };
+  it.each(["\r\n", "\r"])("renders output with %j as line breaks while preserving the model's original output", async (ending) => {
+    const output = `first${ending}${ending}second\nthird`;
+    const details = { ...base, output, outputLineCount: output.split("\n").length, exitCode: 1 };
     const { tool, result } = await execute(name, details);
+    expect(render(tool, result, false).text).toContain("4 output lines");
     const expanded = render(tool, result, true);
     expect(expanded.text.split("\n")).toEqual([
       "  └ first", "", "    second", "    third",
@@ -138,9 +140,9 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
   });
 });
 
-it("preserves stdin error details while highlighting only the error message", async () => {
+it.each(["\r\n", "\r"])("preserves stdin error details with %j while highlighting only the error message", async (ending) => {
   const { exitCode: _exitCode, ...running } = { ...base, running: true };
-  const details = { ...running, writeError: "write EPIPE\r\npipe closed" };
+  const details = { ...running, writeError: `write EPIPE${ending}pipe closed` };
   const { tool, result } = await execute("write_stdin", details);
   expect(result.isError).toBe(true);
   expect(result.details).toEqual(details);

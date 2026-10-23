@@ -1006,7 +1006,8 @@ function registerCommandTools(
 
 function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
   if (result.running) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
-  const lines = result.outputLineCount ?? (result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0);
+  const output = normalizeDisplayText(result.output).trimEnd();
+  const lines = result.outputLineCount === 0 || !output ? 0 : output.split("\n").length;
   const exitCode = theme.fg(
     typeof result.exitCode === "number" && result.exitCode !== 0 ? "error" : "dim",
     String(result.exitCode ?? "?"),
@@ -1204,7 +1205,8 @@ function registerEntryRenderers(pi: ExtensionAPI): void {
             `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${
               entry.data.files
                 ? entry.data.files.map((file) =>
-                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(normalizeDisplayText(file.diff))}`,
+                    // Pi's diff generator can leave a final CR after dropping its paired LF.
+                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(normalizeDisplayText(file.diff).replace(/\n$/, ""))}`,
                   ).join("\n\n")
                 : colorPatch(entry.data.patch, theme)
             }`,

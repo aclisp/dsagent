@@ -13,9 +13,9 @@ export interface ToolPresentationContext {
   isPartial: boolean;
 }
 
-/** Match Pi's display policy before splitting or styling lines; keep stored text unchanged. */
+/** Match Pi's Text newline rules before styling; keep stored text unchanged. */
 export function normalizeDisplayText(text: string): string {
-  return text.replace(/\r/g, "");
+  return text.replace(/\r\n?/g, "\n");
 }
 
 export function renderToolCall(

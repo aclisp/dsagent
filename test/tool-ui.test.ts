@@ -95,20 +95,24 @@ describe("compact Codex-style tool presentation", () => {
     expect(oneLine("  rg   foo\nbar  ")).toBe("rg foo bar");
   });
 
-  it("renders expanded CRLF commands like LF commands with ANSI colors", () => {
+  it("renders expanded CRLF and standalone CR commands like LF commands with ANSI colors", () => {
     const ansiTheme = createAnsiTestTheme();
     const lines = (detail: string) => renderToolCall("Ran", detail, ansiTheme, context, true).render(80);
     expect(lines("first\r\nsecond")).toEqual(lines("first\nsecond"));
+    expect(lines("first\rsecond")).toEqual(lines("first\nsecond"));
   });
 
-  it.each([false, true])("preserves intentional blank lines in CRLF output with isError=%s", (isError) => {
-    const result = { content: [{ type: "text" as const, text: "first\r\n\r\nsecond\nthird" }], details: {} };
-    const rendered = renderCollapsibleToolResult(
-      result, { expanded: !isError, isPartial: false }, createAnsiTestTheme(), { ...context, isError },
-    ).render(80);
-    expect(rendered.map((line) => stripTerminalSequences(line).trimEnd())).toEqual([
-      "  └ first", "", "    second", "    third",
-    ]);
-    expect(result.content[0]!.text).toBe("first\r\n\r\nsecond\nthird");
+  describe.each(["\r\n", "\r"])("output with line ending %j", (ending) => {
+    it.each([false, true])("preserves intentional blank lines with isError=%s", (isError) => {
+      const text = `first${ending}${ending}second\nthird`;
+      const result = { content: [{ type: "text" as const, text }], details: {} };
+      const rendered = renderCollapsibleToolResult(
+        result, { expanded: !isError, isPartial: false }, createAnsiTestTheme(), { ...context, isError },
+      ).render(80);
+      expect(rendered.map((line) => stripTerminalSequences(line).trimEnd())).toEqual([
+        "  └ first", "", "    second", "    third",
+      ]);
+      expect(result.content[0]!.text).toBe(text);
+    });
   });
 });

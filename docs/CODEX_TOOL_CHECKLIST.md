@@ -623,13 +623,19 @@ DSCode
   Seven focused suites passed (153 tests; one Windows-only test skipped); core and test typechecks
   passed. No build was run.
 
-  **Display follow-up (2026-10-23): follow Pi's CR removal policy for TUI text.**
-  Remove `\r` from display copies before splitting, coloring, or parsing diff lines. This prevents
+  **Display follow-up (2026-10-23): preserve Pi Text's newline semantics for TUI text.**
+  Normalize CRLF to one LF and standalone CR to LF in display copies before splitting, coloring,
+  or parsing diff lines. Unlike Pi's tool-output CR removal, this preserves DSCode's previous
+  display of CR-separated progress updates as separate lines. This prevents
   ANSI styling from separating CRLF into two line breaks and restores Pi's added/removed diff
   colors. Apply the shared helper to tool results, expanded call details, managed-process
   styling, patch previews/summaries, and saved `/diff` rendering (including legacy patches).
+  Omit a final normalized newline in generated diffs: Pi can leave the CR of the final CRLF
+  after removing its LF. Preserve spaces so empty added/removed lines still parse correctly.
   File contents, checkpoint snapshots, saved patches/diffs, and model-visible tool results retain
   their original text. Existing intentional blank lines remain. ANSI-based regression tests
+  also verify that collapsed command summaries count these displayed lines correctly and keep
+  empty-output placeholders excluded. They
   reproduce the defects without Windows and cover actual read results, both command tools,
   stdin errors, LF/CRLF patches, and added/modified/deleted CRLF file diffs.
 

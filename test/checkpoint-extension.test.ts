@@ -451,10 +451,10 @@ describe("checkpoint extension commands", () => {
     // renderDiff uses Pi's global theme, independently of the entry renderer's theme.
     vi.spyOn(Theme.prototype, "fg").mockImplementation(ansiTheme.fg);
     await fs.writeFile(path.join(root, "config.txt"), "old\r\nkeep\r\n");
-    await fs.writeFile(path.join(root, "deleted.txt"), "removed\r\nkeep\r\n");
+    await fs.writeFile(path.join(root, "deleted.txt"), "removed\r\nkeep\r\n\r\n");
     const patchLines = [
       "*** Begin Patch", "*** Update File: config.txt", "@@", "-old", "+new",
-      "*** Add File: added.txt", "+added", "*** Delete File: deleted.txt", "*** End Patch",
+      "*** Add File: added.txt", "+added", "+", "*** Delete File: deleted.txt", "*** End Patch",
     ];
     const patch = patchLines.join(ending);
     await harness.tool.execute("crlf", { input: patch }, undefined, undefined, harness.ctx);
@@ -463,7 +463,7 @@ describe("checkpoint extension commands", () => {
       const call = harness.tool.renderCall!({ input: patch }, ansiTheme,
         { expanded: true, isPartial, isError: false } as any);
       const rendered = lines(call);
-      expect(rendered[0]).toContain("config.txt, added.txt, deleted.txt (+2 -1)");
+      expect(rendered[0]).toContain("config.txt, added.txt, deleted.txt (+3 -1)");
       expect(rendered.slice(1)).toEqual(patchLines);
       expect(call.render(160).join("\n")).toContain("\x1b[31m-old");
       expect(call.render(160).join("\n")).toContain("\x1b[32m+new");
@@ -482,11 +482,13 @@ describe("checkpoint extension commands", () => {
     const diff = harness.renderers.get("dscode-diff")!({ data: saved }, { expanded: false }, ansiTheme);
     expect(lines(diff)).toEqual([
       `diff ${saved.checkpointId}`, "config.txt (modified)", "-1 old", "+1 new", " 2 keep", "",
-      "added.txt (added)", "+1 added", "", "deleted.txt (deleted)", "-1 removed", "-2 keep",
+      "added.txt (added)", "+1 added", "+2", "", "deleted.txt (deleted)", "-1 removed", "-2 keep", "-3",
     ]);
     const colored = diff.render(160).join("\n");
     expect(colored).toContain("\x1b[31m-1");
     expect(colored).toContain("\x1b[32m+1");
+    expect(colored).toContain("\x1b[32m+2 ");
+    expect(colored).toContain("\x1b[31m-3 ");
     // Display normalization must not rewrite stored patches, snapshots, or files.
     expect(saved.patch).toBe(patch);
     expect(checkpoint.before.find((file: any) => file.path === "config.txt").content).toBe("old\r\nkeep\r\n");
