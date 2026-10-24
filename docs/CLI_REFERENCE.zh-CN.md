@@ -438,6 +438,31 @@ details 或 structured content。参数按 Pi 提供的值传递，不脱敏、�
 全局 hooks 先于可信项目 hooks 运行，使用当前 sandbox/network 权限，日志路径需要在该权限下可写。
 standalone 版本也需要系统提供外部可执行程序。修改 hook 配置后需重启会话。
 
+### 工作完成 hooks
+
+配置 `hooks.completed`，可在提交的工作不再自动运行、用户可以回来查看结果时执行一次通知命令。
+正常完成和最终失败都会通知。例如在 macOS 播放声音：
+
+```json
+{
+  "hooks": {
+    "completed": [
+      { "command": "/usr/bin/afplay", "args": ["/System/Library/Sounds/Glass.aiff"] }
+    ]
+  }
+}
+```
+
+`{payload}` 仅为 `{ "event": "completed" }`，不包含用户输入、助手回复或结果分类。
+
+该 hook 等待 Pi 的 `agent_settled` 事件，在自动重试、压缩恢复和排队续跑全部结束后，只通知一次。
+通知仅表示“本轮自动执行已经结束，可以回来查看结果”，不区分结果成功或失败。
+用户按 Esc 等方式主动中断时不通知。
+
+可配置在 `~/.dscode/hooks.json` 或可信项目的 `.dscode/hooks.json` 中，全局 hooks 先运行。
+命令在 DSCode 主机执行，使用当前 sandbox/network 权限及配置的超时；standalone 版本也需要外部
+可执行程序。通知命令失败会报告 extension error。修改配置后需重启会话。
+
 ### UI 提示 hooks
 
 配置 `hooks.uiPromptStart`，可在会话开始等待阻塞式 UI 提示时执行通知命令；配置 `hooks.uiPromptEnd`

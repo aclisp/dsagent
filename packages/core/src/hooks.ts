@@ -20,7 +20,7 @@ const hooksConfigSchema = z.object({
       input: z.array(hookSchema).default([]),
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
-      agentEnd: z.array(hookSchema).default([]),
+      completed: z.array(hookSchema).default([]),
       uiPromptStart: z.array(hookSchema).default([]),
       uiPromptEnd: z.array(hookSchema).default([]),
     })
@@ -29,7 +29,7 @@ const hooksConfigSchema = z.object({
       input: [],
       beforeTool: [],
       afterTool: [],
-      agentEnd: [],
+      completed: [],
       uiPromptStart: [],
       uiPromptEnd: [],
     }),
@@ -46,7 +46,7 @@ export function registerHooks(
     input: [],
     beforeTool: [],
     afterTool: [],
-    agentEnd: [],
+    completed: [],
     uiPromptStart: [],
     uiPromptEnd: [],
   };
@@ -102,8 +102,12 @@ export function registerHooks(
     }, getAccess());
   });
 
-  pi.on("agent_end", async (_event, ctx) => {
-    await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, getAccess());
+  pi.on("agent_settled", async (event, ctx) => {
+    if (event.aborted) return;
+    // Unlike agent_end, settlement follows all retries and queued continuations.
+    // The turn's signal is no longer needed for this completion notification.
+    const failure = await runHooks(config.completed, ctx, { event: "completed" }, getAccess(), false);
+    if (failure) throw new Error(failure);
   });
 
   // Pi dispatches these notifications independently of the dialog. Preserve
@@ -143,7 +147,7 @@ async function loadHookConfig(cwd: string, includeProject: boolean): Promise<Hoo
     input: [],
     beforeTool: [],
     afterTool: [],
-    agentEnd: [],
+    completed: [],
     uiPromptStart: [],
     uiPromptEnd: [],
   };

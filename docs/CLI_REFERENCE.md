@@ -572,6 +572,35 @@ Global hooks run before trusted-project hooks under the current sandbox/network 
 The log path must be writable under those permissions. Hook commands require an external
 executable, including in standalone builds. Restart the session after editing hook configuration.
 
+### Work completion hooks
+
+Use `hooks.completed` to run a notification command once the submitted work has stopped
+running automatically and the user can return to inspect the result. Both normal completion
+and final failure trigger a notification. For example, play a sound on macOS:
+
+```json
+{
+  "hooks": {
+    "completed": [
+      { "command": "/usr/bin/afplay", "args": ["/System/Library/Sounds/Glass.aiff"] }
+    ]
+  }
+}
+```
+
+The `{payload}` value is `{ "event": "completed" }`. It contains no prompts, assistant
+output, or result classification.
+
+The hook waits for Pi's `agent_settled` event, after all automatic retries, compaction recovery,
+and queued continuations have finished, then notifies once regardless of the result. The notice
+means "this round of automatic execution has ended; you can return to inspect the result."
+User-requested cancellation, such as pressing Esc, suppresses notification.
+
+Configure this in `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`; global hooks
+run first. Commands use the current sandbox/network access and the configured timeout, require
+an external executable even in standalone builds, and run on the DSCode host. Failed notification
+commands are reported as extension errors. Restart the session after changing the configuration.
+
 ### UI prompt hooks
 
 Configure `hooks.uiPromptStart` to run a notification command when the session starts waiting
