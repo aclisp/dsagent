@@ -320,7 +320,7 @@ describe("DSCode hooks", () => {
         path.join(root, ".dscode", "hooks.json"),
         JSON.stringify({
           hooks: {
-            sessionStart: [
+            beforeTool: [
               {
                 command: "node",
                 args: [
@@ -328,8 +328,6 @@ describe("DSCode hooks", () => {
                   "require('fs').writeFileSync('hook.txt', process.env.DEEPSEEK_API_KEY ?? 'unset')",
                 ],
               },
-            ],
-            beforeTool: [
               {
                 command: "node",
                 args: ["-e", "process.stderr.write('policy blocked'); process.exit(7)"],
@@ -338,7 +336,8 @@ describe("DSCode hooks", () => {
           },
         }),
       );
-      process.env.DEEPSEEK_API_KEY = "must-not-leak";
+      vi.stubEnv("DSCODE_HOME", path.join(root, "home"));
+      vi.stubEnv("DEEPSEEK_API_KEY", "must-not-leak");
 
       const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => any>>();
       const pi = {
@@ -359,13 +358,13 @@ describe("DSCode hooks", () => {
       }));
 
       await handlers.get("session_start")![0]!({ type: "session_start" }, ctx);
-      await expect(fs.readFile(path.join(root, "hook.txt"), "utf8")).resolves.toBe("unset");
 
       const decision = await handlers.get("tool_call")![0]!(
         { type: "tool_call", toolName: "apply_patch", input: {} },
         ctx,
       );
       expect(decision).toEqual({ block: true, reason: expect.stringContaining("policy blocked") });
+      await expect(fs.readFile(path.join(root, "hook.txt"), "utf8")).resolves.toBe("unset");
     },
     30_000,
   );

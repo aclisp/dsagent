@@ -16,7 +16,6 @@ const hookSchema = z.object({
 const hooksConfigSchema = z.object({
   hooks: z
     .object({
-      sessionStart: z.array(hookSchema).default([]),
       input: z.array(hookSchema).default([]),
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
@@ -25,7 +24,6 @@ const hooksConfigSchema = z.object({
       uiPromptEnd: z.array(hookSchema).default([]),
     })
     .default({
-      sessionStart: [],
       input: [],
       beforeTool: [],
       afterTool: [],
@@ -42,7 +40,6 @@ export function registerHooks(
   getAccess: () => EffectiveAccess,
 ): void {
   let config: HookConfig = {
-    sessionStart: [],
     input: [],
     beforeTool: [],
     afterTool: [],
@@ -55,12 +52,6 @@ export function registerHooks(
 
   pi.on("session_start", async (_event, ctx) => {
     config = await loadHookConfig(ctx.cwd, ctx.isProjectTrusted());
-    await runHooks(
-      config.sessionStart,
-      ctx,
-      { event: "sessionStart" },
-      getAccess(),
-    );
   });
 
   pi.on("input", async (event, ctx) => {
@@ -143,7 +134,6 @@ export function registerHooks(
 
 async function loadHookConfig(cwd: string, includeProject: boolean): Promise<HookConfig> {
   const merged: HookConfig = {
-    sessionStart: [],
     input: [],
     beforeTool: [],
     afterTool: [],
