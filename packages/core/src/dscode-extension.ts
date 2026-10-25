@@ -96,6 +96,9 @@ const execCommandParameters = Type.Object({
     minLength: 1,
     description: "Shell command to execute from the current workspace",
   }),
+  stdin_open: Type.Optional(Type.Boolean({
+    description: "Keep stdin open as a pipe for later write_stdin input (default false).",
+  })),
   yield_time_ms: Type.Optional(
     Type.Integer({
       minimum: 0,
@@ -117,10 +120,10 @@ const writeStdinParameters = Type.Object({
     description: "Process ID returned by exec_command",
   }),
   chars: Type.Optional(Type.String({
-    description: "Characters to write to stdin. Omit to poll the process.",
+    description: "Characters to write to stdin. Requires exec_command with stdin_open: true. Omit to poll the process.",
   })),
   eof: Type.Optional(Type.Boolean({
-    description: "Close stdin after writing any chars",
+    description: "Close stdin after writing any chars.",
   })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
@@ -929,6 +932,7 @@ function registerCommandTools(
         yieldTimeMs: params.yield_time_ms ?? 10_000,
         timeoutMs: params.timeout_ms ?? 120_000,
         thinkingLevel: pi.getThinkingLevel(),
+        stdinOpen: params.stdin_open ?? false,
         ...(signal ? { signal } : {}),
       });
       let result = await run(commandAccess);

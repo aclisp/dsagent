@@ -165,6 +165,13 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
+
+`exec_command` attaches stdin to a null device by default. Set `stdin_open: true` when
+launching a command that needs later input through `write_stdin`; this opens a pipe,
+not a terminal. Polling and termination work in either mode. Writing characters to
+closed stdin returns an error; sending EOF to already-closed stdin is harmless.
+Shell pipelines and input redirections still provide their own input normally.
+
 With DeepSeek credentials configured and network access enabled, `web_search` and `web_fetch` are
 registered as deferred tools for all chat providers. They are not active by default, and their
 definitions are not inlined in codemode's description. Use codemode's `searchTools()` or
@@ -240,14 +247,10 @@ Launch through the existing tool:
 {"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p 'Implement and verify the assigned task'","yield_time_ms":0,"timeout_ms":0}
 ```
 
-The tool returns a `process_id`. **Print mode reads piped stdin until EOF**, so immediately
-start the task with the returned ID:
-
-```json
-{"process_id":"1","eof":true,"yield_time_ms":0}
-```
-
-Optional `chars` can supply additional task context before EOF. The parent can then do
+With stdin closed by default, the print task starts without a separate EOF call.
+To supply additional context over stdin, launch with `stdin_open: true`, write `chars`
+through `write_stdin`, then send `eof: true`; print mode waits until EOF in this case.
+If the child is still running, the tool returns a `process_id`. The parent can do
 independent work and call `write_stdin` without `chars` to collect new output. Collect
 all child results and inspect their changes before concluding. Print mode rejects
 operations requiring an interactive approval UI; a child should report unfinished work
@@ -262,7 +265,13 @@ remaining managed processes; print-mode parents must collect results before exit
 ### RPC children and approvals
 
 Use `dscode --mode rpc --no-session` for follow-up interaction and approval dialogs.
-Leave stdin open and send one JSON record per line through `write_stdin`:
+Explicitly keep stdin open at launch:
+
+```json
+{"cmd":"dscode --mode rpc --no-session","stdin_open":true,"yield_time_ms":0,"timeout_ms":0}
+```
+
+Send one JSON record per line through `write_stdin`:
 
 ```json
 {"type":"prompt","message":"Implement and verify the assigned task"}

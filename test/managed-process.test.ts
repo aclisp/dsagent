@@ -56,7 +56,7 @@ describe("ManagedProcessRegistry", () => {
       try {
         const started = await registry.start(nodeCommand(script), {
           cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-          yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+          yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low", stdinOpen: true,
         });
         let received = "";
         const collect = (output: string): void => {
@@ -116,7 +116,7 @@ describe("ManagedProcessRegistry", () => {
         "let count = 0; process.stdin.on('data', () => { const label = ++count === 1 ? 'FIRST' : 'SECOND'; process.stdout.write(label + '_HEAD' + 'x'.repeat(200_000) + label + '_TAIL', () => { if (count === 2) process.exit(0); }); });",
       ), {
         cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low", stdinOpen: true,
       });
       expect(started.running).toBe(true);
       const first = await registry.interact(started.processId, { chars: "first\n", yieldTimeMs: 2_000 });
@@ -234,7 +234,7 @@ describe("ManagedProcessRegistry", () => {
         "let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(input));",
       ), {
         cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low", stdinOpen: true,
       });
       const controller = new AbortController();
       const pending = registry.interact(started.processId, { yieldTimeMs: 30_000, signal: controller.signal });
@@ -256,7 +256,7 @@ describe("ManagedProcessRegistry", () => {
     try {
       const started = await registry.start(longBackgroundCommand(), {
         cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low",
+        yieldTimeMs: 0, timeoutMs: 10_000, thinkingLevel: "low", stdinOpen: true,
       });
       const controller = new AbortController();
       const pending = registry.interact(started.processId, {
@@ -298,7 +298,7 @@ describe("ManagedProcessRegistry", () => {
         "let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(JSON.stringify(input)));",
       ), {
         cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low", stdinOpen: true,
       });
       const written = await registry.interact(started.processId, { chars: "head", yieldTimeMs: 0 });
       expect(written.running).toBe(true);
@@ -320,7 +320,7 @@ describe("ManagedProcessRegistry", () => {
         "process.stdin.resume(); process.stdin.on('end', () => { process.stdout.write('EOF received'); setInterval(() => {}, 1000); });",
       ), {
         cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low",
+        yieldTimeMs: 0, timeoutMs: 5_000, thinkingLevel: "low", stdinOpen: true,
       });
       const ended = await registry.interact(started.processId, { eof: true, yieldTimeMs: 0 });
       expect(ended.running).toBe(true);
@@ -359,6 +359,7 @@ describe("ManagedProcessRegistry", () => {
         yieldTimeMs: 0,
         timeoutMs: 5_000,
         thinkingLevel: "low",
+        stdinOpen: true,
       });
       await expect(registry.interact(started.processId, {
         chars: "hello\n", yieldTimeMs: 2_000,
@@ -377,6 +378,7 @@ describe("ManagedProcessRegistry", () => {
         yieldTimeMs: 0,
         timeoutMs: 10_000,
         thinkingLevel: "low",
+        stdinOpen: true,
       });
       let output = started.output;
       await expect.poll(async () => {

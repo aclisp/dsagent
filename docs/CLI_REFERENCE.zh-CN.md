@@ -145,6 +145,12 @@ network     blocked
 ```
 
 CLI 和 Web 默认启用 `read,exec_command,write_stdin,apply_patch,codemode`。
+
+`exec_command` 默认将 stdin 接到空设备。需要通过 `write_stdin` 后续输入时，启动命令须设置
+`stdin_open: true`，这会打开输入管道，不会分配终端。两种模式都支持轮询和终止。
+向关闭的 stdin 写入字符会返回错误；向已经关闭的 stdin 发送 EOF 无副作用。
+Shell 内部的管道和输入重定向仍可正常提供输入。
+
 配置 DeepSeek 凭据且允许网络访问后，`web_search`、`web_fetch` 以 deferred 工具注册，所有聊天 provider 均可使用。
 它们默认不加入 activeTools，完整定义也不会内嵌到 codemode 的说明中。需要时通过 codemode 的
 `searchTools()` 或 `describeTool()` 发现，再调用 `tools.web_search()` 或 `tools.web_fetch()`。
@@ -203,13 +209,10 @@ Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 stand
 {"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p '实现并验证指定任务'","yield_time_ms":0,"timeout_ms":0}
 ```
 
-工具返回 `process_id`。**Print 模式会等待 stdin EOF**，应立即使用返回的 ID 开始任务：
-
-```json
-{"process_id":"1","eof":true,"yield_time_ms":0}
-```
-
-可在 EOF 前通过 `chars` 补充上下文。随后父 agent 可以继续其他工作，通过不带 `chars` 的
+stdin 默认关闭，Print 任务会直接开始，无需额外发送 EOF。如需通过 stdin 补充上下文，
+启动时设置 `stdin_open: true`，再通过 `write_stdin` 写入 `chars` 并发送 `eof: true`；
+此时 Print 模式会等待 EOF 后处理输入。子进程仍在运行时，工具返回 `process_id`。
+父 agent 可以继续其他工作，通过不带 `chars` 的
 `write_stdin` 轮询输出；结束前应收集所有结果并检查修改。Print 模式会拒绝需要交互批准的
 操作，子进程应报告被阻塞的操作和未完成的工作。
 
@@ -224,7 +227,12 @@ Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 stand
 
 ### RPC 子进程与审批
 
-需要后续交互或审批时，使用 `dscode --mode rpc --no-session` 并保持 stdin 打开。
+需要后续交互或审批时，启动 `dscode --mode rpc --no-session` 并显式保持 stdin 打开：
+
+```json
+{"cmd":"dscode --mode rpc --no-session","stdin_open":true,"yield_time_ms":0,"timeout_ms":0}
+```
+
 通过 `write_stdin` 发送 JSONL `prompt` 记录，每条记录后追加真实换行符：
 
 ```json

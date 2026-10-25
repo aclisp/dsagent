@@ -35,9 +35,10 @@ any managed process; omitted and positive values retain their existing semantics
 The parent yields immediately, performs independent work, and collects results before
 concluding. Shared workspace edits need coordination; create worktrees explicitly.
 
-Print-mode children read stdin until EOF. Send EOF immediately after launching a task;
-stdin may carry additional context first. Print mode rejects approval-dependent
-operations. RPC children keep stdin open and exchange existing JSONL prompt and UI
+Managed commands attach stdin to a null device by default, so print-mode children
+start without a separate EOF call. To supply additional context over stdin, launch
+with `stdin_open: true`, write the context, then send EOF. Print mode rejects approval-dependent
+operations. RPC children launch with `stdin_open: true` and exchange existing JSONL prompt and UI
 records. The parent obtains the user's decision and responds explicitly; no automatic
 approval bridge is added. Collect final output after `agent_settled`, then close RPC
 stdin. Recommend `--no-session` for disposable tasks without forcing it.

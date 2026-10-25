@@ -1,5 +1,6 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { BoundedOutput, withPiManagedBinPath } from "./process.ts";
 import { stripModelCredentialEnvironment } from "./providers.ts";
@@ -24,9 +25,11 @@ export interface ManagedProcessResult {
   sandbox: string;
 }
 
+type ManagedChildProcess = ChildProcessByStdio<Writable | null, Readable, Readable>;
+
 interface ProcessRecord {
   id: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ManagedChildProcess;
   // Output accumulated since the last result was returned.
   output: BoundedOutput;
   running: boolean;
@@ -50,14 +53,14 @@ const DEFAULT_MAX_COMPLETED_PROCESSES = 100;
 const MAX_RUNNING_PROCESSES = 64;
 const MAX_PENDING_OUTPUT_LENGTH = 80_000;
 const SHUTDOWN_GRACE_MS = 1_500;
-const liveChildren = new Set<ChildProcessWithoutNullStreams>();
+const liveChildren = new Set<ManagedChildProcess>();
 
 // Runs even when pi exits without emitting session_shutdown (for example, on a crash).
 function killChildrenOnExit(): void {
   for (const child of liveChildren) forceStopChild(child);
 }
 
-function trackChild(child: ChildProcessWithoutNullStreams): void {
+function trackChild(child: ManagedChildProcess): void {
   if (liveChildren.size === 0) process.on("exit", killChildrenOnExit);
   liveChildren.add(child);
   child.once("close", () => {
@@ -99,6 +102,7 @@ export class ManagedProcessRegistry {
       yieldTimeMs: number;
       timeoutMs: number;
       thinkingLevel: ThinkingLevel;
+      stdinOpen?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<ManagedProcessResult> {
@@ -132,7 +136,7 @@ export class ManagedProcessRegistry {
           args: [this.visionExecutable, ...visionCommand.args],
           description: "trusted dscode-vision",
         }
-      : sandboxCommand(command, options.cwd, options.sandbox);
+      : sandboxCommand(command, options.cwd, options.sandbox, { stdinOpen: options.stdinOpen ?? false });
     const env = dscodeCommand
       ? withPiManagedBinPath(createDSCodeProcessEnvironment(process.env))
       : visionCommand
@@ -147,13 +151,16 @@ export class ManagedProcessRegistry {
       ].join("\n"));
     }
     // Admission through record registration stays synchronous, including parallel start calls.
-    const child = spawn(invocation.command, invocation.args, {
+    const spawnOptions = {
       cwd: options.cwd,
       env,
       shell: false,
       detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    };
+    // An unused open pipe makes commands such as rg read stdin instead of files.
+    const child = options.stdinOpen
+      ? spawn(invocation.command, invocation.args, { ...spawnOptions, stdio: ["pipe", "pipe", "pipe"] })
+      : spawn(invocation.command, invocation.args, { ...spawnOptions, stdio: ["ignore", "pipe", "pipe"] });
     trackChild(child);
     const id = String(this.nextProcessId++);
     let resolveCompletion = (): void => {};
@@ -186,7 +193,7 @@ export class ManagedProcessRegistry {
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => append("", chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => append("[stderr] ", chunk));
     // stdin is a separate EventEmitter: child errors do not cover pipe errors.
-    child.stdin.on("error", (error) => {
+    child.stdin?.on("error", (error) => {
       record.stdinError = error;
     });
     child.once("error", (error) => {
@@ -237,9 +244,11 @@ export class ManagedProcessRegistry {
       const stdin = record.child.stdin;
       let error = record.stdinError;
       // Sending EOF again is harmless, but new characters after EOF are an error.
-      const repeatedEof = options.eof && !options.chars && stdin.writableEnded;
+      const repeatedEof = options.eof && !options.chars && (!stdin || stdin.writableEnded);
       if (!error && !repeatedEof) {
-        if (!record.running || stdin.destroyed || !stdin.writable) {
+        if (!stdin) {
+          error = new Error("Process stdin is closed. Rerun exec_command with stdin_open: true to enable input.");
+        } else if (!record.running || stdin.destroyed || !stdin.writable) {
           error = new Error("Process stdin is closed");
         } else {
           error = await withAbort(new Promise<Error | undefined>((resolve) => {
@@ -350,7 +359,7 @@ async function withAbort<T>(pending: Promise<T>, signal?: AbortSignal): Promise<
   }
 }
 
-function stopChild(child: ChildProcessWithoutNullStreams): void {
+function stopChild(child: ManagedChildProcess): void {
   if (child.killed) return;
   signalProcessTree(child, "SIGTERM");
   const timer = setTimeout(() => {
@@ -361,7 +370,7 @@ function stopChild(child: ChildProcessWithoutNullStreams): void {
   child.once("close", () => clearTimeout(timer));
 }
 
-function forceStopChild(child: ChildProcessWithoutNullStreams): void {
+function forceStopChild(child: ManagedChildProcess): void {
   if (process.platform === "win32" && child.pid !== undefined) {
     // Exit handlers cannot wait for an asynchronously spawned taskkill.
     spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
@@ -373,7 +382,7 @@ function forceStopChild(child: ChildProcessWithoutNullStreams): void {
 }
 
 function signalProcessTree(
-  child: ChildProcessWithoutNullStreams,
+  child: ManagedChildProcess,
   signal: NodeJS.Signals,
 ): void {
   if (process.platform === "win32" && child.pid !== undefined) {
