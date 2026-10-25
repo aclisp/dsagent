@@ -53,6 +53,7 @@ import { registerSessionCommands } from "./session-commands.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
 import {
+  normalizeDisplayText,
   oneLine,
   renderCollapsibleToolResult,
   renderToolCall,
@@ -95,6 +96,9 @@ const execCommandParameters = Type.Object({
     minLength: 1,
     description: "Shell command to execute from the current workspace",
   }),
+  stdin_open: Type.Optional(Type.Boolean({
+    description: "Keep stdin open as a pipe for later write_stdin input (default false).",
+  })),
   yield_time_ms: Type.Optional(
     Type.Integer({
       minimum: 0,
@@ -116,10 +120,10 @@ const writeStdinParameters = Type.Object({
     description: "Process ID returned by exec_command",
   }),
   chars: Type.Optional(Type.String({
-    description: "Characters to write to stdin. Omit to poll the process.",
+    description: "Characters to write to stdin. Requires exec_command with stdin_open: true. Omit to poll the process.",
   })),
   eof: Type.Optional(Type.Boolean({
-    description: "Close stdin after writing any chars",
+    description: "Close stdin after writing any chars.",
   })),
   yield_time_ms: Type.Optional(Type.Integer({
     minimum: 0,
@@ -928,6 +932,7 @@ function registerCommandTools(
         yieldTimeMs: params.yield_time_ms ?? 10_000,
         timeoutMs: params.timeout_ms ?? 120_000,
         thinkingLevel: pi.getThinkingLevel(),
+        stdinOpen: params.stdin_open ?? false,
         ...(signal ? { signal } : {}),
       });
       let result = await run(commandAccess);
@@ -1005,7 +1010,8 @@ function registerCommandTools(
 
 function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
   if (result.running) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
-  const lines = result.outputLineCount ?? (result.output.trimEnd() ? result.output.trimEnd().split("\n").length : 0);
+  const output = normalizeDisplayText(result.output).trimEnd();
+  const lines = result.outputLineCount === 0 || !output ? 0 : output.split("\n").length;
   const exitCode = theme.fg(
     typeof result.exitCode === "number" && result.exitCode !== 0 ? "error" : "dim",
     String(result.exitCode ?? "?"),
@@ -1203,7 +1209,8 @@ function registerEntryRenderers(pi: ExtensionAPI): void {
             `${brandBlue(`diff ${entry.data.checkpointId}`, theme)}\n${
               entry.data.files
                 ? entry.data.files.map((file) =>
-                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(file.diff)}`,
+                    // Pi's diff generator can leave a final CR after dropping its paired LF.
+                    `${theme.fg("muted", `${file.path} (${file.status})`)}\n${renderDiff(normalizeDisplayText(file.diff).replace(/\n$/, ""))}`,
                   ).join("\n\n")
                 : colorPatch(entry.data.patch, theme)
             }`,
@@ -1261,14 +1268,13 @@ function approvalSummary(tool: string, input: unknown): string {
 }
 
 function summarizePatch(input: string): string {
-  const files = input
-    .split("\n")
-    .flatMap((line) => {
-      const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
-      return match?.[1] ? [match[1]] : [];
-    });
-  const additions = input.split("\n").filter((line) => line.startsWith("+")).length;
-  const deletions = input.split("\n").filter((line) => line.startsWith("-")).length;
+  const lines = normalizeDisplayText(input).split("\n");
+  const files = lines.flatMap((line) => {
+    const match = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/.exec(line);
+    return match?.[1] ? [match[1]] : [];
+  });
+  const additions = lines.filter((line) => line.startsWith("+")).length;
+  const deletions = lines.filter((line) => line.startsWith("-")).length;
   return `${[...new Set(files)].join(", ") || "patch"} (+${additions} -${deletions})`;
 }
 
@@ -1300,7 +1306,7 @@ function colorPatch(
   patch: string,
   theme: ExtensionContext["ui"]["theme"],
 ): string {
-  return patch
+  return normalizeDisplayText(patch)
     .split("\n")
     .map((line) => {
       if (line.startsWith("+")) return theme.fg("toolDiffAdded", line);
@@ -1312,7 +1318,7 @@ function colorPatch(
 
 function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
   const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
-    theme ? text.split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
+    theme ? normalizeDisplayText(text).split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
   return [
     paint(result.output.trimEnd()),
     paint(`process_id: ${result.processId}`),

@@ -26,6 +26,7 @@ export function sandboxCommand(
   shellCommand: string,
   cwd: string,
   options: SandboxOptions,
+  processOptions: { stdinOpen?: boolean } = {},
 ): SandboxedCommand {
   if (options.mode === "danger-full-access") {
     return hostShellCommand(shellCommand);
@@ -79,7 +80,7 @@ export function sandboxCommand(
       args: [
         "run",
         "--rm",
-        "-i",
+        ...(processOptions.stdinOpen ? ["-i"] : []),
         ...userArgs,
         "--cap-drop",
         "ALL",

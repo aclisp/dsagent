@@ -445,7 +445,7 @@ DSCode
 
 - [ ] **EX-01 — The overall argument contract.** Codex offers `cmd`, `workdir`, `shell`, `login`,
   `tty`, `yield_time_ms`, `max_output_tokens`, and conditional environment/approval options. DSCode
-  exposes `cmd`, `yield_time_ms`, and `timeout_ms`. Illustrate sending the same command through both
+  exposes `cmd`, `stdin_open`, `yield_time_ms`, and `timeout_ms`. Illustrate sending the same command through both
   tools. Decide which extra options solve real DSCode tasks rather than adding every option.
 
 - [ ] **EX-02 — Where the command runs.** Codex has a per-call `workdir`, defaulting to the turn's
@@ -527,10 +527,11 @@ DSCode
   No build was run. Implementation: `packages/core/src/shell.ts` and `packages/core/src/sandbox.ts`;
   tests: `test/unix-shell.test.ts` and `test/shell.test.ts`.
 
-- [ ] **EX-04 — Pipes versus a terminal (PTY).** Codex defaults to pipes and optionally allocates a
-  pseudo-terminal with `tty: true`, when enabled. DSCode uses pipes only. Illustrate an ordinary test
-  command and an interactive program that detects a terminal. Decide whether DSCode needs PTY support
-  and how that affects buffering, stdin, cancellation, platforms, and approvals.
+- [x] **EX-04 — Pipes versus a terminal (PTY).** Codex defaults to pipes and optionally allocates a
+  pseudo-terminal with `tty: true`, when enabled. DSCode retains pipes only, with stdin available
+  through explicit `stdin_open: true`. **Decision (2026-10-25):** fix stdin selection without adding
+  PTY support. RPC and line-oriented input retain their pipe and EOF semantics; terminal-specific
+  echo, control characters, resizing, buffering, and platform support remain separate future work.
 
 - [ ] **EX-05 — Returning control while a command continues.** Both tools can yield a handle for a
   still-running command. On macOS, Codex's initial wait defaults to 10 seconds and is clamped to
@@ -622,6 +623,22 @@ DSCode
   errors, unknown exit codes, and text-only errors.
   Seven focused suites passed (153 tests; one Windows-only test skipped); core and test typechecks
   passed. No build was run.
+
+  **Display follow-up (2026-10-23): preserve Pi Text's newline semantics for TUI text.**
+  Normalize CRLF to one LF and standalone CR to LF in display copies before splitting, coloring,
+  or parsing diff lines. Unlike Pi's tool-output CR removal, this preserves DSCode's previous
+  display of CR-separated progress updates as separate lines. This prevents
+  ANSI styling from separating CRLF into two line breaks and restores Pi's added/removed diff
+  colors. Apply the shared helper to tool results, expanded call details, managed-process
+  styling, patch previews/summaries, and saved `/diff` rendering (including legacy patches).
+  Omit a final normalized newline in generated diffs: Pi can leave the CR of the final CRLF
+  after removing its LF. Preserve spaces so empty added/removed lines still parse correctly.
+  File contents, checkpoint snapshots, saved patches/diffs, and model-visible tool results retain
+  their original text. Existing intentional blank lines remain. ANSI-based regression tests
+  also verify that collapsed command summaries count these displayed lines correctly and keep
+  empty-output placeholders excluded. They
+  reproduce the defects without Windows and cover actual read results, both command tools,
+  stdin errors, LF/CRLF patches, and added/modified/deleted CRLF file diffs.
 
 - [ ] **EX-09 — Approvals and sandbox retries.** Codex uses execution policy, sandbox orchestration,
   and conditional command permission arguments such as justification, prefix rules, and additional
@@ -725,10 +742,14 @@ DSCode
   process IDs. Illustrate starting a process, saving the returned handle, and following it up. Decide
   whether renaming/type alignment would help or only break callers.
 
-- [ ] **IN-02 — When stdin is available.** Codex requires `tty: true` at launch for ordinary nonempty
-  input; its non-PTY process has closed stdin, with an interrupt exception. DSCode leaves piped stdin
-  open by default. Illustrate a program waiting for a line of input. Decide whether to retain piped
-  input, add PTY input, or expose both explicitly.
+- [x] **IN-02 — When stdin is available.** Codex requires `tty: true` at launch for ordinary nonempty
+  input; its non-PTY process has closed stdin, with an interrupt exception. **DSCode decision
+  (2026-10-25):** attach stdin to a null device by default so commands such as `rg PATTERN` search
+  files instead of waiting for unused input. `stdin_open: true` explicitly opens a pipe for later
+  `write_stdin` input, including RPC children. Docker adds `-i` only in this mode. Closing a newly
+  created pipe is not equivalent to starting with a null device. Writes to default-closed stdin
+  report an error with the required launch option; pure EOF is harmless, and polling and termination
+  remain available. This contract also applies with `--prompt-contract none`.
 
 - [ ] **IN-03 — Sending EOF.** DSCode has explicit `eof: true`, which can write final characters and
   close stdin; repeated EOF without more characters is harmless. New characters after EOF fail.

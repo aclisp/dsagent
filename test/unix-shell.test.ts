@@ -133,16 +133,18 @@ describe.skipIf(process.platform === "win32")("Unix command shells", () => {
     expect(invocation.args.slice(2)).toEqual([configured, "-c", script]);
   });
 
-  it("uses /bin/sh -c inside Docker without selecting a host shell for the container", async () => {
+  it.each([undefined, false, true])("uses /bin/sh -c and explicit Docker stdin without selecting a host shell (stdinOpen=%s)", async (stdinOpen) => {
     const exists = fs.existsSync.bind(fs);
     vi.spyOn(fs, "existsSync").mockImplementation((file) => String(file) !== "/usr/bin/sandbox-exec" && exists(file));
     await executable(path.join(root, "bin"), "docker");
     vi.stubEnv("SHELL", "/host/only/zsh");
     vi.stubEnv("DSCODE_SANDBOX_IMAGE", "test-image");
-    const invocation = sandboxCommand("printf hello", root, { mode: "workspace-write", network: false });
+    const invocation = sandboxCommand("printf hello", root, { mode: "workspace-write", network: false },
+      stdinOpen === undefined ? {} : { stdinOpen });
     expect(invocation.command).toBe("docker");
     expect(invocation.args.slice(-4)).toEqual(["test-image", "/bin/sh", "-c", "printf hello"]);
     expect(invocation.args).not.toContain("/host/only/zsh");
     expect(invocation.args).toContain("--network");
+    expect(invocation.args.includes("-i")).toBe(stdinOpen === true);
   });
 });

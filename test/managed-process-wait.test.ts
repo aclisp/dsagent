@@ -13,7 +13,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
 
 const options = {
   cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
-  yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "low",
+  yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "low", stdinOpen: true,
 } as const;
 
 describe("managed process wait windows", () => {

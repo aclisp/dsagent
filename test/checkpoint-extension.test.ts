@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
+import { stripTerminalSequences, type Component } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import { PATCH_LIMITS } from "../packages/core/src/patch-limits.ts";
-import { createTestTheme } from "./fixtures/theme.ts";
+import { createAnsiTestTheme, createTestTheme } from "./fixtures/theme.ts";
 
 describe("checkpoint extension commands", () => {
   let root: string;
@@ -443,6 +444,57 @@ describe("checkpoint extension commands", () => {
     await expect(fs.access(path.join(root, "ignored.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each(["\n", "\r\n"])("renders patches and saved CRLF file diffs with patch ending %j", async (ending) => {
+    const harness = await createPatchHarness(root);
+    const ansiTheme = createAnsiTestTheme();
+    initTheme("dark", false);
+    // renderDiff uses Pi's global theme, independently of the entry renderer's theme.
+    vi.spyOn(Theme.prototype, "fg").mockImplementation(ansiTheme.fg);
+    await fs.writeFile(path.join(root, "config.txt"), "old\r\nkeep\r\n");
+    await fs.writeFile(path.join(root, "deleted.txt"), "removed\r\nkeep\r\n\r\n");
+    const patchLines = [
+      "*** Begin Patch", "*** Update File: config.txt", "@@", "-old", "+new",
+      "*** Add File: added.txt", "+added", "+", "*** Delete File: deleted.txt", "*** End Patch",
+    ];
+    const patch = patchLines.join(ending);
+    await harness.tool.execute("crlf", { input: patch }, undefined, undefined, harness.ctx);
+    const lines = (component: Component) => component.render(160).map((line) => stripTerminalSequences(line).trimEnd());
+    for (const isPartial of [true, false]) {
+      const call = harness.tool.renderCall!({ input: patch }, ansiTheme,
+        { expanded: true, isPartial, isError: false } as any);
+      const rendered = lines(call);
+      expect(rendered[0]).toContain("config.txt, added.txt, deleted.txt (+3 -1)");
+      expect(rendered.slice(1)).toEqual(patchLines);
+      expect(call.render(160).join("\n")).toContain("\x1b[31m-old");
+      expect(call.render(160).join("\n")).toContain("\x1b[32m+new");
+    }
+    const checkpoint = harness.entries.find((entry) => entry.customType === "dscode-checkpoint")!.data as any;
+    const entry = harness.renderers.get("dscode-checkpoint")!({ data: checkpoint }, { expanded: true }, ansiTheme);
+    expect(lines(entry).slice(1)).toEqual(patchLines);
+    const legacy = harness.renderers.get("dscode-diff")!(
+      { data: { checkpointId: "legacy", patch } }, { expanded: false }, ansiTheme,
+    );
+    expect(lines(legacy).slice(1)).toEqual(patchLines);
+
+    await harness.commands.get("diff")!.handler("", harness.ctx);
+    const saved = harness.entries.at(-1)!.data as any;
+    expect(saved.files.find((file: any) => file.path === "config.txt").diff).toContain("\r");
+    const diff = harness.renderers.get("dscode-diff")!({ data: saved }, { expanded: false }, ansiTheme);
+    expect(lines(diff)).toEqual([
+      `diff ${saved.checkpointId}`, "config.txt (modified)", "-1 old", "+1 new", " 2 keep", "",
+      "added.txt (added)", "+1 added", "+2", "", "deleted.txt (deleted)", "-1 removed", "-2 keep", "-3",
+    ]);
+    const colored = diff.render(160).join("\n");
+    expect(colored).toContain("\x1b[31m-1");
+    expect(colored).toContain("\x1b[32m+1");
+    expect(colored).toContain("\x1b[32m+2 ");
+    expect(colored).toContain("\x1b[31m-3 ");
+    // Display normalization must not rewrite stored patches, snapshots, or files.
+    expect(saved.patch).toBe(patch);
+    expect(checkpoint.before.find((file: any) => file.path === "config.txt").content).toBe("old\r\nkeep\r\n");
+    await expect(fs.readFile(path.join(root, "config.txt"), "utf8")).resolves.toBe("new\r\nkeep\r\n");
+  });
+
   it("shows diffs, reports cancelled undo, and restores the latest checkpoint", async () => {
     const tools = new Map<string, ToolDefinition>();
     const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
@@ -638,6 +690,7 @@ describe("checkpoint extension commands", () => {
 
 async function createPatchHarness(root: string, entries: Array<{ customType: string; data: unknown }> = []) {
   const tools = new Map<string, ToolDefinition>();
+  const renderers = new Map<string, any>();
   type Command = {
     handler: (args: string, ctx: ExtensionContext) => Promise<void>;
     getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string }>;
@@ -648,6 +701,7 @@ async function createPatchHarness(root: string, entries: Array<{ customType: str
   const pi = new Proxy({
     registerTool(tool: ToolDefinition) { tools.set(tool.name, tool); },
     registerCommand(name: string, command: Command) { commands.set(name, command); },
+    registerEntryRenderer(name: string, renderer: any) { renderers.set(name, renderer); },
     on(name: string, handler: (event: ExtensionEvent, ctx: ExtensionContext) => unknown) {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
@@ -684,6 +738,6 @@ async function createPatchHarness(root: string, entries: Array<{ customType: str
     }, undefined, undefined, ctx);
     return (result.details as { checkpointId: string }).checkpointId;
   };
-  return { tool, ctx, entries, appendEntry, notify, commands, emit, settle, patch,
+  return { tool, ctx, entries, appendEntry, notify, commands, renderers, emit, settle, patch,
     undo: commands.get("undo")!.handler, list: commands.get("checkpoints")!.handler };
 }

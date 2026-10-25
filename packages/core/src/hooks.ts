@@ -16,20 +16,18 @@ const hookSchema = z.object({
 const hooksConfigSchema = z.object({
   hooks: z
     .object({
-      sessionStart: z.array(hookSchema).default([]),
       input: z.array(hookSchema).default([]),
       beforeTool: z.array(hookSchema).default([]),
       afterTool: z.array(hookSchema).default([]),
-      agentEnd: z.array(hookSchema).default([]),
+      completed: z.array(hookSchema).default([]),
       uiPromptStart: z.array(hookSchema).default([]),
       uiPromptEnd: z.array(hookSchema).default([]),
     })
     .default({
-      sessionStart: [],
       input: [],
       beforeTool: [],
       afterTool: [],
-      agentEnd: [],
+      completed: [],
       uiPromptStart: [],
       uiPromptEnd: [],
     }),
@@ -42,11 +40,10 @@ export function registerHooks(
   getAccess: () => EffectiveAccess,
 ): void {
   let config: HookConfig = {
-    sessionStart: [],
     input: [],
     beforeTool: [],
     afterTool: [],
-    agentEnd: [],
+    completed: [],
     uiPromptStart: [],
     uiPromptEnd: [],
   };
@@ -55,12 +52,6 @@ export function registerHooks(
 
   pi.on("session_start", async (_event, ctx) => {
     config = await loadHookConfig(ctx.cwd, ctx.isProjectTrusted());
-    await runHooks(
-      config.sessionStart,
-      ctx,
-      { event: "sessionStart" },
-      getAccess(),
-    );
   });
 
   pi.on("input", async (event, ctx) => {
@@ -83,6 +74,8 @@ export function registerHooks(
     const result = await runHooks(config.beforeTool, ctx, {
       event: "beforeTool",
       tool: event.toolName,
+      toolCallId: event.toolCallId,
+      ...(event.parentToolCallId !== undefined ? { parentToolCallId: event.parentToolCallId } : {}),
       input: event.input,
     }, getAccess());
     if (result) return { block: true, reason: result };
@@ -93,12 +86,19 @@ export function registerHooks(
     await runHooks(config.afterTool, ctx, {
       event: "afterTool",
       tool: event.toolName,
+      toolCallId: event.toolCallId,
+      ...(event.parentToolCallId !== undefined ? { parentToolCallId: event.parentToolCallId } : {}),
+      input: event.input,
       isError: event.isError,
     }, getAccess());
   });
 
-  pi.on("agent_end", async (_event, ctx) => {
-    await runHooks(config.agentEnd, ctx, { event: "agentEnd" }, getAccess());
+  pi.on("agent_settled", async (event, ctx) => {
+    if (event.aborted) return;
+    // Unlike agent_end, settlement follows all retries and queued continuations.
+    // The turn's signal is no longer needed for this completion notification.
+    const failure = await runHooks(config.completed, ctx, { event: "completed" }, getAccess(), false);
+    if (failure) throw new Error(failure);
   });
 
   // Pi dispatches these notifications independently of the dialog. Preserve
@@ -134,11 +134,10 @@ export function registerHooks(
 
 async function loadHookConfig(cwd: string, includeProject: boolean): Promise<HookConfig> {
   const merged: HookConfig = {
-    sessionStart: [],
     input: [],
     beforeTool: [],
     afterTool: [],
-    agentEnd: [],
+    completed: [],
     uiPromptStart: [],
     uiPromptEnd: [],
   };
@@ -180,11 +179,15 @@ async function runHook(
   access: EffectiveAccess,
   cancelWithTurn = true,
 ): Promise<ProcessResult> {
+  const replacements: Record<string, string> = {
+    "{cwd}": ctx.cwd,
+    "{payload}": JSON.stringify(payload),
+    "{tool}": typeof payload.tool === "string" ? payload.tool : "",
+  };
+  // Expand only configured placeholders, never tokens or replacement patterns
+  // inside the inserted payload (for example {tool} or $& in tool arguments).
   const args = hook.args.map((argument) =>
-    argument
-      .replaceAll("{cwd}", ctx.cwd)
-      .replaceAll("{payload}", JSON.stringify(payload))
-      .replaceAll("{tool}", typeof payload.tool === "string" ? payload.tool : ""),
+    argument.replace(/\{(?:cwd|payload|tool)\}/g, (placeholder) => replacements[placeholder]!),
   );
   const command =
     process.platform === "win32" && access.sandbox === "danger-full-access"

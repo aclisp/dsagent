@@ -216,8 +216,6 @@ describe("DSCode Pi integration", () => {
             yield_time_ms: 0, timeout_ms: 0,
           } };
         } else if (parentStep === 2) {
-          tool = { name: "write_stdin", args: { process_id: /process_id: (\d+)/.exec(history)?.[1], eof: true, yield_time_ms: 0 } };
-        } else if (parentStep === 3) {
           tool = { name: "read", args: { path: "evidence.txt" } };
         } else if (!history.includes("CHILD_DONE")) {
           const processId = /process_id: (\d+)/.exec(history)?.[1];

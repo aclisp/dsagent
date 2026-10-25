@@ -165,6 +165,13 @@ network     blocked
 ```
 
 CLI and Web use the same default tools: `read,exec_command,write_stdin,apply_patch,codemode`.
+
+`exec_command` attaches stdin to a null device by default. Set `stdin_open: true` when
+launching a command that needs later input through `write_stdin`; this opens a pipe,
+not a terminal. Polling and termination work in either mode. Writing characters to
+closed stdin returns an error; sending EOF to already-closed stdin is harmless.
+Shell pipelines and input redirections still provide their own input normally.
+
 With DeepSeek credentials configured and network access enabled, `web_search` and `web_fetch` are
 registered as deferred tools for all chat providers. They are not active by default, and their
 definitions are not inlined in codemode's description. Use codemode's `searchTools()` or
@@ -240,14 +247,10 @@ Launch through the existing tool:
 {"cmd":"dscode --no-session --permission auto --sandbox workspace-write -p 'Implement and verify the assigned task'","yield_time_ms":0,"timeout_ms":0}
 ```
 
-The tool returns a `process_id`. **Print mode reads piped stdin until EOF**, so immediately
-start the task with the returned ID:
-
-```json
-{"process_id":"1","eof":true,"yield_time_ms":0}
-```
-
-Optional `chars` can supply additional task context before EOF. The parent can then do
+With stdin closed by default, the print task starts without a separate EOF call.
+To supply additional context over stdin, launch with `stdin_open: true`, write `chars`
+through `write_stdin`, then send `eof: true`; print mode waits until EOF in this case.
+If the child is still running, the tool returns a `process_id`. The parent can do
 independent work and call `write_stdin` without `chars` to collect new output. Collect
 all child results and inspect their changes before concluding. Print mode rejects
 operations requiring an interactive approval UI; a child should report unfinished work
@@ -262,7 +265,13 @@ remaining managed processes; print-mode parents must collect results before exit
 ### RPC children and approvals
 
 Use `dscode --mode rpc --no-session` for follow-up interaction and approval dialogs.
-Leave stdin open and send one JSON record per line through `write_stdin`:
+Explicitly keep stdin open at launch:
+
+```json
+{"cmd":"dscode --mode rpc --no-session","stdin_open":true,"yield_time_ms":0,"timeout_ms":0}
+```
+
+Send one JSON record per line through `write_stdin`:
 
 ```json
 {"type":"prompt","message":"Implement and verify the assigned task"}
@@ -527,6 +536,79 @@ replace text. Failed, timed-out, or truncated responses raise an extension error
 with the input received by this handler, without applying partial replacements.
 Hooks use the current sandbox/network access and require an external executable even in standalone
 builds. Restart the session after editing hook configuration.
+
+### Tool call logging hooks
+
+Configure `hooks.afterTool` in `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`
+to log the tool name, arguments, and error status. For example:
+
+```json
+{
+  "hooks": {
+    "afterTool": [
+      {
+        "command": "node",
+        "args": ["{cwd}/log-tool.cjs", "{payload}"]
+      }
+    ]
+  }
+}
+```
+
+Create `log-tool.cjs` in the project directory:
+
+```js
+const fs = require("node:fs");
+const payload = JSON.parse(process.argv[2]);
+fs.appendFileSync("tool-calls.jsonl", JSON.stringify({
+  timestamp: new Date().toISOString(),
+  ...payload,
+}) + "\n");
+```
+
+The `afterTool` payload contains `event: "afterTool"`, `tool`, `toolCallId`, `input`, and
+`isError`. Nested calls also include `parentToolCallId`, so concurrent and nested calls can be
+correlated. Tool result text, images, details, and structured content are never included in
+these payloads. Arguments are passed as provided by Pi, without redaction or truncation.
+
+To also record calls before execution, configure `hooks.beforeTool` with the same command.
+Its payload contains `event: "beforeTool"`, `tool`, `toolCallId`, `input`, and an optional
+`parentToolCallId`; error status is only available in `afterTool`. Pi validates arguments before
+`beforeTool` and emits `afterTool` for executed calls, so unknown tools, argument validation
+failures, and calls blocked before execution do not produce an `afterTool` record.
+
+Global hooks run before trusted-project hooks under the current sandbox/network permissions.
+The log path must be writable under those permissions. Hook commands require an external
+executable, including in standalone builds. Restart the session after editing hook configuration.
+
+### Work completion hooks
+
+Use `hooks.completed` to run a notification command once the submitted work has stopped
+running automatically and the user can return to inspect the result. Both normal completion
+and final failure trigger a notification. For example, play a sound on macOS:
+
+```json
+{
+  "hooks": {
+    "completed": [
+      { "command": "/usr/bin/afplay", "args": ["/System/Library/Sounds/Glass.aiff"] }
+    ]
+  }
+}
+```
+
+The `{payload}` value is `{ "event": "completed" }`. It contains no prompts, assistant
+output, or result classification.
+
+The hook waits for Pi's `agent_settled` event, after all automatic retries, compaction recovery,
+and queued continuations have finished, then notifies once regardless of the result. The notice
+means "this round of automatic execution has ended; you can return to inspect the result."
+User-requested cancellation, such as pressing Esc, suppresses notification.
+
+Configure this in `~/.dscode/hooks.json` or a trusted project's `.dscode/hooks.json`; global hooks
+run first. Commands use the current sandbox/network access and the configured timeout, require
+an external executable even in standalone builds, and run on the DSCode host. Failed notification
+commands are reported as extension errors. Restart the session after changing the configuration.
 
 ### UI prompt hooks
 

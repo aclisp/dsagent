@@ -5,43 +5,47 @@ description: Delegate tasks to DSCode CLI child agents while continuing independ
 
 # DSCode Delegate
 
-Launch children through `exec_command` and collect their results through `write_stdin`.
-Give each child a self-contained task, relevant context, and a clear expected result;
-it starts a fresh conversation. Children can edit files and run commands.
+Start DSCode CLI child agents with `exec_command` and collect their output with
+`write_stdin`. Each child starts a fresh conversation, so provide its task, relevant
+context, and expected result. Children can edit files and run commands.
 
-Invoke `dscode` directly with literal, quoted arguments. Do not use wrappers, pipes,
-redirections, substitutions, or `cd ... && dscode ...`; these bypass the trusted launch
-or are rejected. Use `dscode -C 'directory' ...` for another workspace.
-Children share the workspace by default: coordinate file ownership or explicitly use
-a Git worktree for overlapping edits.
+Use print mode for a single task. For approval dialogs or follow-up prompts, read
+[RPC children](references/rpc.md) and use RPC mode.
 
-CLI flags select the child's settings independently: `--provider`, `--model`, `--effort`,
-`--permission`, `--sandbox`, and `--network`. Launches use the parent's existing command
-approval flow. Child depth is limited to one: children cannot delegate further or bypass
-that limit.
+Keep `cmd` a direct `dscode ...` invocation with literal, quoted arguments. Use
+`dscode -C 'directory' ...` to select another workspace. Children share the parent's
+workspace by default; coordinate file ownership or use Git worktrees for overlapping
+edits. Managed delegation supports one child level.
 
-## Disposable tasks
+Children use their own CLI settings. Select the provider, model, effort, permissions,
+sandbox, and network access with `--provider`, `--model`, `--effort`, `--permission`,
+`--sandbox`, and `--network`. The parent's command approval flow applies to the launch.
 
-Use print mode for tasks that need no follow-up interaction. For example, call
-`exec_command` with:
+## Launch a task
+
+For a disposable task, call `exec_command` with:
 
 ```json
 {"cmd":"dscode --no-session -p 'Inspect package.json and report the test command with file evidence'","yield_time_ms":0,"timeout_ms":0}
 ```
 
-`timeout_ms: 0` removes the process deadline. **Print mode waits for stdin EOF before
-processing the task.** Immediately call `write_stdin` with the returned `process_id`:
+`yield_time_ms: 0` returns control promptly so the parent can continue other work.
+`timeout_ms: 0` lets the task run until it finishes or is stopped.
+
+To supply additional context through stdin, set `stdin_open: true` at launch, send
+`chars` through `write_stdin`, then send `eof: true` to finish input and start the task.
+
+## Collect results
+
+If `exec_command` reports that the child is still running, use the `process_id` from
+its result to poll. For example, if the returned ID is `1`, call `write_stdin` with
+these arguments:
 
 ```json
-{"process_id":"1","eof":true,"yield_time_ms":0}
+{"process_id":"1"}
 ```
 
-The parent can now continue independent work. Poll with `write_stdin` using the same
-ID and no `chars`; collect output regularly because the buffer is bounded. A running
-process is unfinished work. Before concluding, collect all results, check exit status,
-and inspect any changes. Report blocked operations or failures instead of assuming
-success. Use `terminate: true` to stop an unneeded child; parent shutdown stops remaining
-managed processes.
-
-Print mode rejects operations requiring interactive approval. If the task needs approval
-dialogs or follow-up interaction, read [RPC children](references/rpc.md) and use RPC mode.
+Poll regularly to drain the bounded output buffer. Collect the final output, check the
+exit status, and inspect changes before completing the parent task; parent shutdown
+terminates remaining children. Use `write_stdin` with `terminate: true` to stop an
+unneeded child.

@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
+import { ManagedProcessRegistry, type ManagedProcessResult } from "../packages/core/src/managed-process.ts";
 import { createAgentSessionHost } from "../packages/http-adapter/src/agent-session-host.ts";
 
 describe("DSCode children through managed processes", () => {
@@ -79,7 +79,7 @@ describe("DSCode children through managed processes", () => {
     const launched = await registry.start(command("--tools exec_command,apply_patch --permission full -p 'do the task without grandchildren'"), {
       cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "max",
     });
-    const completed = await registry.interact(launched.processId, { eof: true, yieldTimeMs: 5_000 });
+    const completed = await registry.interact(launched.processId, { yieldTimeMs: 5_000 });
     expect(completed).toMatchObject({ running: false, exitCode: 0 });
     expect(requests).toHaveLength(4);
     expect(JSON.stringify(requests[1].input)).toContain("DSCode child depth limit reached (maximum depth: 1)");
@@ -95,7 +95,7 @@ describe("DSCode children through managed processes", () => {
       const launched = await execute.execute("launch", { cmd: command("--permission full -p 'create a file'"), yield_time_ms: 0, timeout_ms: 0 });
       const processId = (launched.details as { processId: string }).processId;
       expect(launched.details).toMatchObject({ running: true });
-      const completed = await poll.execute("collect", { process_id: processId, eof: true, yield_time_ms: 5_000 });
+      const completed = await poll.execute("collect", { process_id: processId, yield_time_ms: 5_000 });
       expect(completed.details).toMatchObject({ running: false, exitCode: 0 });
       expect(JSON.stringify(completed.content)).toContain("CHILD_FINISHED");
       expect(await fs.readFile(path.join(root, file), "utf8")).toBe("CHILD_RESULT\n");
@@ -110,7 +110,7 @@ describe("DSCode children through managed processes", () => {
     const launched = await registry.start(command("--permission full -p 'create a file'"), {
       cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "max",
     });
-    const completed = await registry.interact(launched.processId, { eof: true, yieldTimeMs: 5_000 });
+    const completed = await registry.interact(launched.processId, { yieldTimeMs: 5_000 });
     expect(completed).toMatchObject({ running: false, exitCode: 0 });
     expect(authorizations[0]).toBe("Bearer stored-test-key");
     expect(await fs.readFile(path.join(root, file), "utf8")).toBe("CHILD_RESULT\n");
@@ -120,42 +120,57 @@ describe("DSCode children through managed processes", () => {
     const result = await registry.start(command("--permission ask -p 'create a file'"), {
       cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "max",
     });
-    const completed = await registry.interact(result.processId, { eof: true, yieldTimeMs: 5_000 });
+    const completed = await registry.interact(result.processId, { yieldTimeMs: 5_000 });
     expect(completed).toMatchObject({ running: false, exitCode: 0 });
     expect(JSON.stringify(requests[1].input)).toContain("interactive approval UI");
     await expect(fs.access(path.join(root, file))).rejects.toThrow();
   }, 15_000);
 
-  it("round-trips an RPC approval through stdin, then collects the result and closes the child", async () => {
-    const launched = await registry.start(command("--permission ask --mode rpc"), {
-      cwd: root, sandbox: { mode: "read-only", network: false }, yieldTimeMs: 0, timeoutMs: 0, thinkingLevel: "max",
-    });
-    const events: any[] = [];
-    let partial = "";
-    function capture(output: string) {
-      partial += output;
-      const lines = partial.split("\n");
-      partial = lines.pop()!;
-      for (const line of lines) {
-        try { events.push(JSON.parse(line)); } catch { /* Non-protocol diagnostics. */ }
+  it("round-trips an RPC approval through exec_command and write_stdin, then closes the child", async () => {
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--no-mcp", "--sandbox", "read-only", "--permission", "full"] });
+    try {
+      const execute = host.session.agent.state.tools.find(tool => tool.name === "exec_command")!;
+      const write = host.session.agent.state.tools.find(tool => tool.name === "write_stdin")!;
+      const launched = await execute.execute("launch", {
+        cmd: command("--permission ask --mode rpc"), stdin_open: true, yield_time_ms: 0, timeout_ms: 0,
+      });
+      const started = launched.details as ManagedProcessResult;
+      expect(started.running).toBe(true);
+      const events: any[] = [];
+      let partial = "";
+      function capture(result: ManagedProcessResult) {
+        if (result.outputLineCount === 0) return;
+        partial += result.output;
+        const lines = partial.split("\n");
+        partial = lines.pop()!;
+        for (const line of lines) {
+          try { events.push(JSON.parse(line)); } catch { /* Non-protocol diagnostics. */ }
+        }
       }
-    }
-    capture(launched.output === "(no new output)" ? "" : launched.output);
-    capture((await registry.interact(launched.processId, { chars: JSON.stringify({ type: "prompt", message: "create a file" }) + "\n", yieldTimeMs: 0 })).output.replace("(no new output)", ""));
-    await vi.waitFor(async () => {
-      capture((await registry.interact(launched.processId, { yieldTimeMs: 20 })).output.replace("(no new output)", ""));
-      expect(events.some(event => event.type === "extension_ui_request" && event.method === "confirm")).toBe(true);
-    }, { timeout: 5_000 });
-    const approval = events.find(event => event.type === "extension_ui_request" && event.method === "confirm");
-    expect(approval.title).toContain(file);
-    await expect(fs.access(path.join(root, file))).rejects.toThrow();
-    capture((await registry.interact(launched.processId, { chars: JSON.stringify({ type: "extension_ui_response", id: approval.id, confirmed: true }) + "\n", yieldTimeMs: 0 })).output.replace("(no new output)", ""));
-    await vi.waitFor(async () => {
-      capture((await registry.interact(launched.processId, { yieldTimeMs: 20 })).output.replace("(no new output)", ""));
-      expect(events.some(event => event.type === "agent_settled")).toBe(true);
-    }, { timeout: 5_000 });
-    expect(JSON.stringify(events)).toContain("CHILD_FINISHED");
-    expect(await fs.readFile(path.join(root, file), "utf8")).toBe("CHILD_RESULT\n");
-    expect(await registry.interact(launched.processId, { eof: true, yieldTimeMs: 2_000 })).toMatchObject({ running: false, exitCode: 0 });
-  }, 15_000);
+      async function interact(input: { chars?: string; eof?: boolean; yield_time_ms: number }) {
+        const result = await write.execute("rpc-input", { process_id: started.processId, ...input });
+        const details = result.details as ManagedProcessResult;
+        expect(details.writeError).toBeUndefined();
+        capture(details);
+        return details;
+      }
+      capture(started);
+      await interact({ chars: JSON.stringify({ type: "prompt", message: "create a file" }) + "\n", yield_time_ms: 0 });
+      await vi.waitFor(async () => {
+        await interact({ yield_time_ms: 5_000 });
+        expect(events.some(event => event.type === "extension_ui_request" && event.method === "confirm")).toBe(true);
+      }, { timeout: 10_000 });
+      const approval = events.find(event => event.type === "extension_ui_request" && event.method === "confirm");
+      expect(approval.title).toContain(file);
+      await expect(fs.access(path.join(root, file))).rejects.toThrow();
+      await interact({ chars: JSON.stringify({ type: "extension_ui_response", id: approval.id, confirmed: true }) + "\n", yield_time_ms: 0 });
+      await vi.waitFor(async () => {
+        await interact({ yield_time_ms: 5_000 });
+        expect(events.some(event => event.type === "agent_settled")).toBe(true);
+      }, { timeout: 10_000 });
+      expect(JSON.stringify(events)).toContain("CHILD_FINISHED");
+      expect(await fs.readFile(path.join(root, file), "utf8")).toBe("CHILD_RESULT\n");
+      expect(await interact({ eof: true, yield_time_ms: 2_000 })).toMatchObject({ running: false, exitCode: 0 });
+    } finally { await host.dispose(); }
+  }, 30_000);
 });
