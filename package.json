@@ -37,7 +37,7 @@
     "dscode-vision": "./dist/vision-cli.js"
   },
   "scripts": {
-    "build:standalone": "pnpm --dir packages/core build && bun standalone/build.mjs",
+    "build:standalone": "pnpm build:packages && bun standalone/build.mjs",
     "check:standalone": "pnpm build:standalone && node standalone/test/verify.mjs",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
@@ -50,12 +50,13 @@
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "pnpm build && pnpm build:windows-sandbox",
     "prepublishOnly": "pnpm check",
-    "predev": "pnpm --dir packages/core run build",
+    "predev": "pnpm build:packages",
     "dev": "node src/cli.ts",
     "start": "node dist/bundle/cli.js",
     "start:unbundled": "node dist/cli.js",
     "test": "vitest run --exclude standalone/test/tools-install.test.mjs && node --test standalone/test/tools-install.test.mjs",
     "package:check": "node scripts/package-smoke.mjs",
+    "check:web-handoff": "node scripts/web-handoff-smoke.mjs",
     "typecheck:packages": "pnpm --recursive run typecheck",
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "typecheck": "pnpm --recursive run build && pnpm typecheck:packages && pnpm typecheck:tests && tsc -p tsconfig.json --noEmit",

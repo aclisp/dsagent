@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import multipart from "@fastify/multipart";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@aclisp/dsagent-chat-client";
 import type { FastifyInstance } from "fastify";
 import { renderChatPage } from "./chat-page.ts";
+import { readWebAsset } from "./web-assets.ts";
 import {
   bindWebUiChatProvider,
 } from "./chat-provider.ts";
@@ -29,12 +29,9 @@ export interface CreateWebUiServerOptions
   /** Preferred multi-Provider form. All Providers share one Session Port. */
   chatProviders?: readonly ChatProvider[];
   onChatProviderStarted?: (providerId: string) => void;
+  /** Personal TUI continuation starts no scheduler or IM producers. */
+  continuationMode?: boolean;
 }
-
-const staticFile = (name: string): Promise<Buffer> =>
-  readFile(new URL(`../static/${name}`, import.meta.url));
-const markedModule = (): Promise<Buffer> =>
-  readFile(new URL(import.meta.resolve("marked")));
 
 export async function createWebUiServer(
   options: CreateWebUiServerOptions,
@@ -45,6 +42,7 @@ export async function createWebUiServer(
     timezone,
     chatProviders,
     onChatProviderStarted,
+    continuationMode,
     ...httpAdapterOptions
   } = options;
   assertValidScheduleTimezone(timezone);
@@ -56,9 +54,6 @@ export async function createWebUiServer(
   }
 
   const providers = chatProviders === undefined ? [] : [...chatProviders];
-  const conversationRegistry = await createConversationAliasRegistry({
-    filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
-  });
   const { server, sessionPort } = createHttpAdapter(httpAdapterOptions);
   await server.register(multipart);
   registerFileRoutes(server, options.workspaces, { maxUploadBytes });
@@ -71,7 +66,7 @@ export async function createWebUiServer(
       if (!options.workspaces[request.params.workspaceId]) {
         return reply.code(404).send({ error: "workspace_not_found" });
       }
-      const html = await staticFile("chat.html");
+      const html = await readWebAsset("chat.html");
       return reply
         .type("text/html; charset=utf-8")
         .send(renderChatPage(html, chatAgentName));
@@ -84,46 +79,51 @@ export async function createWebUiServer(
       if (!options.workspaces[request.params.workspaceId]) {
         return reply.code(404).send({ error: "workspace_not_found" });
       }
-      const html = await staticFile("index.html");
+      const html = await readWebAsset("index.html");
       return reply.type("text/html; charset=utf-8").send(html);
     },
   );
 
   server.get("/chat.js", async (_request, reply) => {
-    const script = await staticFile("chat.js");
+    const script = await readWebAsset("chat.js");
     return reply.type("text/javascript; charset=utf-8").send(script);
   });
 
   server.get("/chat.css", async (_request, reply) => {
-    const css = await staticFile("chat.css");
+    const css = await readWebAsset("chat.css");
     return reply.type("text/css; charset=utf-8").send(css);
   });
 
   server.get("/marked.esm.js", async (_request, reply) => {
-    const script = await markedModule();
+    const script = await readWebAsset("marked.esm.js");
     return reply.type("text/javascript; charset=utf-8").send(script);
   });
 
   server.get("/termino.js", async (_request, reply) => {
-    const script = await staticFile("termino.js");
+    const script = await readWebAsset("termino.js");
     return reply.type("text/javascript; charset=utf-8").send(script);
   });
 
   server.get("/app.js", async (_request, reply) => {
-    const script = await staticFile("app.js");
+    const script = await readWebAsset("app.js");
     return reply.type("text/javascript; charset=utf-8").send(script);
   });
 
   server.get("/style.css", async (_request, reply) => {
-    const css = await staticFile("style.css");
+    const css = await readWebAsset("style.css");
     return reply.type("text/css; charset=utf-8").send(css);
   });
 
   server.get("/favicon.png", async (_request, reply) => {
-    const favicon = await staticFile("favicon.png");
+    const favicon = await readWebAsset("favicon.png");
     return reply.type("image/png").send(favicon);
   });
 
+  if (continuationMode) return server;
+
+  const conversationRegistry = await createConversationAliasRegistry({
+    filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
+  });
   const activeProviders: Array<{
     provider: ChatProvider;
     binding: Awaited<ReturnType<typeof bindWebUiChatProvider>>;

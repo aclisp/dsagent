@@ -371,8 +371,38 @@ Inside the TUI:
 | `/login [provider]` | Choose and authenticate a supported model provider |
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
+| `/web [--host <address>] [--port <port>] [--url <origin>]` | Continue the current TUI conversation in a browser; show its private URL and QR code |
+| `/web status` | Show the TUI-owned Web service's state and browser URL |
+| `/tui` | Stop Web and resume its conversation, retaining the TUI's current runtime settings |
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
+
+Use `/web` when leaving the computer and `/tui` when returning. Web starts from the
+current saved conversation and branch, with a one-time copy of the TUI's current
+model, Thinking, permissions, sandbox/network policy, and active tools. `/tui`
+loads the Web conversation while keeping the TUI's own current settings. The two
+interfaces do not synchronize live. The reminder above the editor stays visible
+while Web is running; run `/tui` before continuing in the TUI.
+
+Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same LAN:
+
+```text
+/web --host 0.0.0.0 --url http://192.168.1.20:8899
+```
+
+Replace the example address with the host's LAN address. For a cloud host behind
+an existing HTTPS reverse proxy, use `/web --url https://agent.example.com` and
+configure its listener with `--host` and `--port` as needed. A wildcard host needs
+an explicit browser origin. Successful network settings are reused from
+`$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`); the private URL stays in memory.
+`/web status` shows the active URL. HTTPS uses the external proxy.
+
+Handoffs require idle agents and no running `/jobs`. Non-persistent sessions
+cannot be handed off. The service belongs to the TUI process, so keep that process
+alive (for example in `tmux` over SSH). Host sleep interrupts browser access;
+DSCode follows the operating system's power settings. Continuation starts neither
+scheduled tasks nor IM bindings. See [ADR-0007](decisions/0007-tui-web-session-handoff.md)
+for the session and access boundaries.
 
 `apply_patch` has fixed UTF-8 content limits: 1 MiB of patch input, 10 MiB per original or resulting
 file, and 50 MiB combined original snapshots plus planned writes per patch. Intermediate writes in

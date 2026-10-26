@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { containsCheckoutPath } from "./checkout-path.mjs";
+import { webAssetPaths } from "./web-assets.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const piDist = path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -46,6 +47,11 @@ export async function buildCliBundle({
     plugins: [{
       name: "dscode-cli-runtime",
       setup(context) {
+        // The retained unbundled launcher uses the same emitted lazy feature.
+        // Always resolve the source here, including on subsequent bundle runs.
+        context.onResolve({ filter: /\/web-continuation\.js$/ }, args => {
+          if (args.importer === path.join(root, "dist/cli.js")) return { path: path.join(root, "src/web-continuation.ts") };
+        });
         context.onResolve({ filter: /^dscode-bundle-origins$/ }, () => ({ path: "origins", namespace: "dscode" }));
         context.onLoad({ filter: /^origins$/, namespace: "dscode" }, () => ({
           contents: `import { createRequire } from "node:module";
@@ -72,6 +78,15 @@ export async function buildCliBundle({
           contents: 'export { HttpsProxyAgent } from "https-proxy-agent";', loader: "js", resolveDir: args.pluginData,
         }));
         context.onLoad({ filter: /\.js$/ }, args => {
+          // Continuation uses Fastify's disabled logger. Pino's optional worker
+          // transport loader needs external files and has no role in this CLI.
+          if (/[/\\]pino[/\\]lib[/\\]transport\.js$/.test(args.path)) {
+            return { contents: 'module.exports = function () { throw new Error("Worker log transports are unavailable in TUI Web continuation"); };', loader: "js" };
+          }
+          if (args.path === path.join(root, "packages/web-ui/dist/web-assets.js")) {
+            const assets = Object.fromEntries(Object.entries(webAssetPaths(root)).map(([name, file]) => [name, readFileSync(file).toString("base64")]));
+            return { contents: `const assets = ${JSON.stringify(assets)}; export async function readWebAsset(name) { if (!(name in assets)) throw new Error("Unknown Web asset: " + name); return Buffer.from(assets[name], "base64"); }`, loader: "js" };
+          }
           // The worker URL must refer to our emitted worker, not pi's original.
           if (args.path === path.join(piDist, "utils/image-resize.js")) return;
           let contents = readFileSync(args.path, "utf8");
@@ -111,7 +126,10 @@ export async function buildCliBundle({
   const previousFiles = existsSync(manifestPath)
     ? JSON.parse(readFileSync(manifestPath, "utf8")).files ?? []
     : [];
-  const main = await build({ ...options, entryPoints, outdir, splitting: true, chunkNames: "[name]-[hash]" });
+  const main = await build({ ...options, entryPoints: {
+    ...entryPoints,
+    "web-continuation": path.join(root, "src/web-continuation.ts"),
+  }, outdir, splitting: true, chunkNames: "[name]-[hash]" });
   const lazy = await build({
     ...options,
     entryPoints: {
@@ -142,9 +160,10 @@ export async function buildCliBundle({
   const outputs = new Set();
   let bytes = 0;
   for (const meta of [main.metafile, lazy.metafile, codemodeWorker.metafile]) {
-    for (const input of Object.values(meta.inputs)) {
+    for (const [inputPath, input] of Object.entries(meta.inputs)) {
       for (const item of input.imports) {
-        if (item.external && !isBuiltin(item.path) && !externalPackages.has(item.path)) throw new Error(`Unexpected external import: ${item.path}`);
+        // esbuild uses <runtime> for require.cache/main, not a package import.
+        if (item.external && item.path !== "<runtime>" && !isBuiltin(item.path) && !externalPackages.has(item.path)) throw new Error(`Unexpected external import: ${item.path} in ${inputPath}`);
       }
     }
     for (const [file, value] of Object.entries(meta.outputs)) {
@@ -161,6 +180,9 @@ export async function buildCliBundle({
   for (const name of Object.keys(entryPoints)) chmodSync(path.join(outdir, `${name}.js`), 0o755);
   const summary = { bytes, mainInputs: Object.keys(main.metafile.inputs).length, outputFiles: outputs.size };
   writeFileSync(manifestPath, `${JSON.stringify({ ...summary, files: [...outputs] }, null, 2)}\n`);
+  if (outdir === path.join(root, "dist/bundle")) {
+    writeFileSync(path.join(root, "dist/web-continuation.js"), 'export { startWebContinuation } from "./bundle/web-continuation.js";\n');
+  }
   console.log(`Bundled CLI: ${summary.mainInputs} modules, ${(bytes / 1024 / 1024).toFixed(1)} MiB, ${summary.outputFiles} files`);
   return summary;
 }

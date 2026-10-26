@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type { DSCodeRuntimeOptions, SessionPosition } from "@aclisp/dsagent-core";
 import cors from "@fastify/cors";
 import Fastify, {
   type FastifyInstance,
@@ -33,10 +34,12 @@ import {
 
 export interface HttpAdapterHostFactoryOptions {
   cwd: string;
+  sessionDir?: string;
   runtimeArgs?: readonly string[];
+  runtimeOptions?: DSCodeRuntimeOptions;
   session:
     | { type: "persistent"; id: string }
-    | { type: "resume"; id: string };
+    | { type: "resume"; id: string; position?: SessionPosition };
 }
 
 export type HttpAdapterHostFactory = (
@@ -49,7 +52,9 @@ export type PersistedSessionLister = (
 
 export interface CreateHttpAdapterServerOptions {
   workspaces: Readonly<Record<string, string>>;
+  sessionDir?: string;
   runtimeArgs?: readonly string[];
+  runtimeOptions?: DSCodeRuntimeOptions;
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
   /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
@@ -57,6 +62,13 @@ export interface CreateHttpAdapterServerOptions {
   /** Browser origins allowed to call /health and routes under /v1; omitted disables CORS. */
   corsOrigins?: readonly string[];
   logger?: boolean | FastifyLoggerOptions;
+  /** Internal composition hook; not exposed as an HTTP configuration API. */
+  onSessionControl?: (control: HttpSessionControl) => void;
+}
+
+export interface HttpSessionControl {
+  activate(workspaceId: string, position: SessionPosition | null): Promise<void>;
+  prepareTakeback(workspaceId: string): SessionPosition | null;
 }
 
 export interface HttpAdapter {
@@ -175,7 +187,7 @@ function isCorsApiRequest(url: string): boolean {
 export function createHttpAdapter(
   options: CreateHttpAdapterServerOptions,
 ): HttpAdapter {
-  parseHttpRuntimeArgs(options.runtimeArgs ?? []);
+  if (!options.runtimeOptions) parseHttpRuntimeArgs(options.runtimeArgs ?? []);
   const corsOrigins = normalizeCorsOrigins(options.corsOrigins);
   const server = Fastify({
     logger: options.logger ?? false,
@@ -214,9 +226,13 @@ export function createHttpAdapter(
     options.createHost ??
     ((hostOptions) => createAgentSessionHost(hostOptions));
   const listSessions: PersistedSessionLister =
-    options.listPersistedSessions ?? listPersistedSessions;
+    options.listPersistedSessions ?? ((cwd) => listPersistedSessions(cwd, options.sessionDir));
   const sessions = new Map<string, SessionController>();
   const disposingSessions = new Map<string, SessionController>();
+  // A normal browser /reload is DELETE then POST(resumeSessionId). Retain its
+  // final position at that boundary so stale TUI writes cannot redirect reload.
+  // This is not a continuously updated crash-recovery record.
+  const reloadPositions = new Map<string, SessionPosition | null>();
   const activatingSessions = new Set<string>();
   const activatingWorkspaces = new Set<string>();
   const workspaceActivations = new Map<
@@ -291,6 +307,8 @@ export function createHttpAdapter(
       ...(options.runtimeArgs !== undefined
         ? { runtimeArgs: options.runtimeArgs }
         : {}),
+      ...(options.runtimeOptions ? { runtimeOptions: options.runtimeOptions } : {}),
+      ...(options.sessionDir ? { sessionDir: options.sessionDir } : {}),
     });
     const controller = new SessionController(
       session.id,
@@ -386,6 +404,7 @@ export function createHttpAdapter(
         throw new Error("Turn message must not be blank");
       }
       const controller = await activateWorkspace(workspaceId);
+      if (closing) throw new Error("HTTP adapter is closing");
       const turn = controller.startTurn(message, undefined, context);
       if (!turn) return { status: "busy" };
       publishTurnStarted({
@@ -405,6 +424,33 @@ export function createHttpAdapter(
       return () => turnStartedListeners.delete(listener);
     },
   };
+
+  // All admission checks and prepareTakeback's state change run synchronously on
+  // the event loop. Requests already admitted are represented by the sets/turns.
+  options.onSessionControl?.({
+    async activate(workspaceId, position) {
+      if (closing) throw new Error("HTTP adapter is closing");
+      const cwd = workspaces.get(workspaceId);
+      if (!cwd) throw new Error(`Workspace not found: ${workspaceId}`);
+      await activateSession(workspaceId, cwd, position
+        ? { type: "resume", id: position.sessionId, position }
+        : { type: "persistent", id: randomUUID() });
+    },
+    prepareTakeback(workspaceId) {
+      if (closing) throw new Error("HTTP adapter is closing");
+      if (activatingWorkspaces.size || disposingSessions.size) {
+        throw new Error("Finish the Web session change before running /tui.");
+      }
+      const controller = getWorkspaceSession(workspaceId);
+      const position = controller?.prepareTakeback() ?? null;
+      closing = true;
+      return position;
+    },
+  });
+
+  server.addHook("onRequest", async (request, reply) => {
+    if (closing) return reply.code(503).send({ error: "server_closing" });
+  });
 
   server.get("/health", async () => ({ status: "ok" }));
 
@@ -457,6 +503,7 @@ export function createHttpAdapter(
       },
     },
     async (request, reply) => {
+      if (closing) return reply.code(503).send({ error: "server_closing" });
       const { workspaceId, resumeSessionId } = request.body;
       if (
         workspaceId.trim().length === 0 ||
@@ -488,10 +535,12 @@ export function createHttpAdapter(
       }
 
       try {
-        const session: HttpAdapterHostFactoryOptions["session"] = resumed
-          ? { type: "resume", id: sessionId }
+        const retained = reloadPositions.get(sessionId);
+        const session: HttpAdapterHostFactoryOptions["session"] = resumed && retained !== null
+          ? { type: "resume", id: sessionId, ...(retained ? { position: retained } : {}) }
           : { type: "persistent", id: sessionId };
         const controller = await activateSession(workspaceId, cwd, session);
+        reloadPositions.clear();
         return reply.code(201).send({
           ...controller.descriptor,
           resumed,
@@ -539,6 +588,7 @@ export function createHttpAdapter(
   server.delete<{ Params: SessionParams }>(
     "/v1/sessions/:sessionId",
     async (request, reply) => {
+      if (closing) return reply.code(503).send({ error: "server_closing" });
       const controller =
         getSession(request.params.sessionId) ??
         disposingSessions.get(request.params.sessionId);
@@ -551,6 +601,10 @@ export function createHttpAdapter(
       }
       try {
         await controller.dispose();
+        if (options.runtimeOptions) {
+          reloadPositions.clear();
+          reloadPositions.set(controller.id, controller.getPosition());
+        }
         disposingSessions.delete(controller.id);
         return reply.code(204).send();
       } catch (error) {
@@ -566,6 +620,7 @@ export function createHttpAdapter(
   server.get<{ Params: SessionParams }>(
     "/v1/sessions/:sessionId/events",
     async (request, reply) => {
+      if (closing) return reply.code(503).send({ error: "server_closing" });
       const controller = getSession(request.params.sessionId);
       if (!controller) {
         return reply.code(404).send({ error: "session_not_found" });
@@ -578,6 +633,7 @@ export function createHttpAdapter(
     "/v1/sessions/:sessionId/turns",
     { schema: { body: turnBodySchema } },
     async (request, reply) => {
+      if (closing) return reply.code(503).send({ error: "server_closing" });
       const controller = getSession(request.params.sessionId);
       if (!controller) {
         return reply.code(404).send({ error: "session_not_found" });
@@ -672,6 +728,7 @@ export function createHttpAdapter(
       ...disposingSessions.values(),
     ]);
     sessions.clear();
+    reloadPositions.clear();
     disposingSessions.clear();
     terminalTurnListeners.clear();
     turnStartedListeners.clear();

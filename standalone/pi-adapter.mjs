@@ -60,6 +60,13 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
           throw new Error(`Excluded Core module reached standalone graph: ${file}`);
         }
         audit.inputs.add(file);
+        if (/[/\\]pino[/\\]lib[/\\]transport\.js$/.test(file)) {
+          return { loader: "js", contents: 'module.exports = function () { throw new Error("Worker log transports are unavailable in TUI Web continuation"); };' };
+        }
+        if (file === path.join(root, "packages/web-ui/dist/web-assets.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { loader: "js", contents: 'import { readFile } from "node:fs/promises"; import { assets } from "dscode:assets"; export function readWebAsset(name) { const file = assets["web/" + name]; if (!file) throw new Error("Unknown Web asset: " + name); return readFile(file); }' };
+        }
         if (file === path.join(root, "packages/core/dist/themes.js")) {
           audit.adapted.add(path.relative(root, file));
           return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function getDSCodeThemePaths() { return [assets["dscode-light.json"], assets["dscode-dark.json"]]; }' };

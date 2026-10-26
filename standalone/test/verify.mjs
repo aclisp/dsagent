@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { build as bundle } from "esbuild";
+import { verifyWebHandoff } from "../../scripts/web-handoff-smoke.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", `${process.platform}-${process.arch}`)));
@@ -150,6 +151,10 @@ async function check(name, body) {
 }
 const base = ["--base-url", `http://127.0.0.1:${server.address().port}`, "--no-session"];
 try {
+  await check("TUI/Web/TUI continuation in relocated standalone", async () => {
+    await verifyWebHandoff({ executable: path.join(scratch, "dscode"), args: [], parentDirectory: scratch,
+      denyReadPaths: [root, build], restrictPath: true });
+  });
   await check("version", async () => {
     const result = await run("dscode", ["--version"]);
     assert.equal(result.code, 0, result.stderr);

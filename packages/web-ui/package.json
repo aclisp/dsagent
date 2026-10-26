@@ -11,20 +11,22 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "catalog:",
-    "@fastify/multipart": "catalog:",
     "@aclisp/dsagent-chat-client": "workspace:*",
     "@aclisp/dsagent-core": "workspace:*",
     "@aclisp/dsagent-http-adapter": "workspace:*",
     "@aclisp/dsagent-wecom": "workspace:*",
+    "@fastify/cors": "catalog:",
+    "@fastify/multipart": "catalog:",
     "@wecom/aibot-node-sdk": "catalog:",
     "croner": "catalog:",
     "fastify": "catalog:",
     "marked": "catalog:",
+    "qrcode": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/qrcode": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

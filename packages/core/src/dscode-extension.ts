@@ -41,7 +41,7 @@ import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, PatchApplicationError, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
-import { defaultModelForProvider } from "./providers.ts";
+import { defaultModelForProvider, parseSupportedProviderId } from "./providers.ts";
 import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
@@ -50,6 +50,8 @@ import {
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
 import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
 import { registerSessionCommands } from "./session-commands.ts";
+import { getSessionPosition, type DSCodeSessionRuntime } from "./session-handoff.ts";
+import type { WebContinuationController } from "./web-continuation.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
 import {
@@ -139,8 +141,14 @@ const applyPatchParameters = Type.Object({
   }),
 });
 
+export interface DSCodeExtensionHooks {
+  webContinuation?: WebContinuationController;
+  onSessionReady?: (runtime: DSCodeSessionRuntime) => void;
+}
+
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
+  hooks: DSCodeExtensionHooks = {},
 ): InlineExtension {
   const permissionModes = "ask|auto|full";
   return {
@@ -167,6 +175,44 @@ export function createDSCodeExtension(
       let sessionPartition = Promise.resolve();
       const access = new SessionAccessController(options.sandbox, options.network);
       const effectiveAccess = (): EffectiveAccess => access.effective(permission);
+      let currentContext: ExtensionContext;
+      const sessionRuntime: DSCodeSessionRuntime = {
+        get sessionDir() { return currentContext.sessionManager.getSessionDir(); },
+        assertIdle() {
+          if (!currentContext.isIdle() || currentContext.hasPendingMessages()) {
+            throw new Error("Finish the current turn, approval, or queued work before handing off.");
+          }
+          if (processes.list().some((job) => job.running)) {
+            throw new Error("Stop or finish running /jobs before handing off.");
+          }
+        },
+        getPosition: () => getSessionPosition(currentContext.sessionManager),
+        getOptions: () => ({
+          ...options,
+          cwd: currentContext.cwd,
+          providerId: parseSupportedProviderId(currentContext.model?.provider ?? options.providerId),
+          modelId: currentContext.model?.id ?? options.modelId,
+          effort: pi.getThinkingLevel(),
+          permission,
+          activeTools: [...pi.getActiveTools()],
+          toolsExplicit: true,
+          projectTrusted: currentContext.isProjectTrusted(),
+        }),
+        async restoreOptions(snapshot) {
+          if (currentContext.model?.provider !== snapshot.providerId || currentContext.model.id !== snapshot.modelId) {
+            const model = currentContext.modelRegistry.find(snapshot.providerId, snapshot.modelId);
+            if (!model || !await pi.setModel(model)) {
+              throw new Error(`Cannot restore TUI model ${snapshot.providerId}/${snapshot.modelId}`);
+            }
+          }
+          if (snapshot.effort !== undefined) pi.setThinkingLevel(snapshot.effort);
+          permission = snapshot.permission;
+          await webTools.sync(currentContext);
+          pendingRestoredTools = snapshot.activeTools.filter((name) => !pi.getAllTools().some((tool) => tool.name === name));
+          pi.setActiveTools(snapshot.noTools ? [] : snapshot.activeTools);
+          updateStatus(currentContext);
+        },
+      };
 
       const queueSessionPartition = (ctx: ExtensionContext): Promise<void> => {
         const sessionFile = ctx.sessionManager.getSessionFile();
@@ -207,6 +253,7 @@ export function createDSCodeExtension(
       registerLlmMetrics(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
+      hooks.webContinuation?.register(pi, options);
       registerEffortDefaults(pi, options);
       pi.registerTool(createDSCodeReadTool(options.cwd));
       registerCommandTools(
@@ -227,6 +274,7 @@ export function createDSCodeExtension(
       registerDeepSeekFiles(pi);
 
       pi.on("session_start", async (_event, ctx) => {
+        currentContext = ctx;
         const webAvailable = await webTools.sync(ctx);
         const availableSelection = (names: string[]) => names.filter((name) => !isWebTool(name) || webAvailable);
         mcpPermissions.clear();
@@ -251,6 +299,8 @@ export function createDSCodeExtension(
           activateRestoredTools();
         }
         await queueSessionPartition(ctx);
+        hooks.onSessionReady?.(sessionRuntime);
+        if (ctx.mode === "tui") hooks.webContinuation?.attach(sessionRuntime, ctx);
       });
 
       pi.on("session_info_changed", async (_event, ctx) => {
@@ -277,6 +327,10 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
+        if (ctx.mode === "tui") {
+          hooks.webContinuation?.detach();
+          if (_event.reason === "quit") await hooks.webContinuation?.close();
+        }
         mcpPermissions.clear();
         try {
           await queueSessionPartition(ctx);

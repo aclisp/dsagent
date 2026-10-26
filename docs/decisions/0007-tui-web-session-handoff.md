@@ -1,6 +1,6 @@
 # ADR-0007: Manual session handoff between TUI and Web
 
-- Status: Accepted; implementation pending
+- Status: Accepted; implemented
 - Date: 2026-10-26
 - Related: [ADR-0002](0002-web-ui-command-mcp-and-checkpoint-boundaries.md),
   [ADR-0003](0003-standalone-cli.md), and
@@ -138,6 +138,8 @@ restrictions such as no-tools and no-MCP. Use values currently in effect,
 including changes made after TUI startup, rather than blindly reusing startup
 arguments or the standalone Web Server's defaults. Explicitly supplied current
 values take precedence over settings restored from the conversation.
+Carry the current project-trust context too, so the embedded SDK does not enable
+project resources that the TUI has not trusted.
 
 This is a one-time copy when starting Web. Each runtime can subsequently change
 its own settings. There is no live settings synchronization.
@@ -314,6 +316,17 @@ session-replacement APIs, referring to the pinned source in `../pi` during
 implementation. Sharing a live TUI AgentSession or adding a dual-UI approval broker
 is not required by this decision.
 
+The implementation uses Pi's public `newSession` setup callback to load a saved
+file and select its exact leaf before refreshing context. A fresh-session callback
+then reapplies the TUI parameters. This also supports a null root position without
+changing Pi upstream. If the user has moved the TUI to another workspace while Web
+is active, takeback asks them to return to the service's workspace first.
+
+In continuation mode, browser `/reload` retains the Web position at its normal
+DELETE/create boundary, including an unsaved empty session. This prevents later
+writes by the old TUI from redirecting reload to another branch. There is still no
+continuous crash-recovery record or live synchronization.
+
 ## Acceptance criteria
 
 1. TUI history, Web messages and tool results, and resumed TUI history form one
@@ -357,6 +370,8 @@ is not required by this decision.
     without the source tree. Use isolated homes and local mock providers for
     automated verification.
 
-These criteria describe required implementation validation. This ADR itself does
-not indicate that the commands have been implemented or that those checks have
-already passed.
+Unit and integration tests cover the command transitions, branch and parameter
+transfer, network preferences, busy/jobs rejection, and continuation composition.
+`scripts/web-handoff-smoke.mjs` drives a real TUI through browser continuation and
+takeback against a local mock provider. The installed Node package check and the
+standalone verification suite both run this check with isolated homes.

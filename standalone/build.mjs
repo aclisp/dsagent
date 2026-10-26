@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { piAdapter, PI_VERSION } from "./pi-adapter.mjs";
 import { prepareTools, toolVersions } from "./tools-build.mjs";
+import { webAssetPaths } from "../scripts/web-assets.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Linux uses the x64 baseline target per ADR-0003.
@@ -51,6 +52,15 @@ async function buildPlatform(platform) {
     const entry = path.join(work, "cli.mjs");
     fs.writeFileSync(entry, `import ${JSON.stringify(path.join(root, "standalone/cli.mjs"))};\n`);
     const assets = { "package.json": piPackage, ...await prepareTools(platform, work) };
+    for (const [name, file] of Object.entries(webAssetPaths(root))) {
+      // Bun must not see the same Marked module as both executable JS (TUI) and
+      // a file asset (browser). Give the embedded browser copy its own path.
+      if (name === "marked.esm.js") {
+        const browserMarked = path.join(work, "web-marked.js");
+        fs.copyFileSync(file, browserMarked);
+        assets[`web/${name}`] = browserMarked;
+      } else assets[`web/${name}`] = file;
+    }
     assets["quickjs.wasm"] = createRequire(path.join(pi, "index.js")).resolve("quickjs-wasi/quickjs.wasm");
     for (const name of ["light.json", "dark.json"]) assets[name] = path.join(pi, "modes/interactive/theme", name);
     for (const name of ["dscode-light.json", "dscode-dark.json"]) assets[name] = path.join(root, "packages/core/themes", name);

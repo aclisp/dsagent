@@ -46,6 +46,8 @@ export interface DSCodeRuntimeOptions {
   toolsExplicit: boolean;
   noTools: boolean;
   noMcp: boolean;
+  /** Current Pi project-trust context, supplied by an existing runtime on handoff. */
+  projectTrusted?: boolean;
 }
 
 export interface ParsedRuntimeArgs {
@@ -231,6 +233,8 @@ Session and editor features:
 
 DSCode commands:
   /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /doctor
+  /web [--host <address>] [--port <port>] [--url <origin>]
+  /web status /tui                 Hand conversation to Web and take it back
 
 Authentication:
   dscode login [provider]          Sign in to a supported model provider

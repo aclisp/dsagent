@@ -24,6 +24,10 @@
     "./rpc": {
       "types": "./dist/rpc-client.d.ts",
       "import": "./dist/rpc-client.js"
+    },
+    "./session-runtime": {
+      "types": "./dist/session-runtime.d.ts",
+      "import": "./dist/session-runtime.js"
     }
   },
   "files": [
