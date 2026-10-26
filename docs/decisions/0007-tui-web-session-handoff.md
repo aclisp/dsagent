@@ -116,6 +116,20 @@ for inspecting those histories.
 
 ### 4. Copy current runtime parameters to Web only
 
+The current built-in Web clients have no general runtime-settings panel, and the
+HTTP adapter has no dedicated endpoints for editing these parameters. The normal
+Web Server receives runtime options through `RUNTIME_ARGS` at startup. Browser
+chat does dispatch shared Core extension commands: `/effort` can change Thinking
+and `/permissions` can change the permission mode, with browser confirmation when
+required. Permission changes can also affect effective sandbox and network access.
+The Web runtime is therefore not entirely immutable, despite its limited settings
+interface.
+
+This supports the temporary-use boundary: initialize Web from the current TUI
+environment, keep existing Web commands, and leave the TUI's settings independent.
+The handoff feature does not need a new Web settings panel, a general runtime
+configuration API, or synchronization of Web-side changes back to the TUI.
+
 When `/web` starts a service, read the TUI's current runtime parameters and pass
 them to Web through DSCode's existing runtime-option structure. This includes
 the selected provider/model, Thinking level, API endpoint and transport,
@@ -322,7 +336,9 @@ is not required by this decision.
    conversation. A newly cleared, unsaved conversation uses the receiving runtime's
    normal new-session flow; preserving its empty-session ID is not required.
 6. Continuation mode provides browser approvals and files without starting the
-   scheduler or IM providers. Normal server deployments retain those features.
+   scheduler or IM providers. Existing Core commands such as `/effort` and
+   `/permissions` remain available through browser chat. Normal server deployments
+   retain their existing features.
 7. Network defaults, explicit overrides, saved preferences, and browser origins
    work as documented. Wildcard bind addresses require `url`. Unrelated keys
    survive configuration updates; a failed preference save produces a warning
