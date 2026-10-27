@@ -3,6 +3,7 @@ import { elevatedCommand, shellCommandPayload, wrappedCommand } from "./dangerou
 import { makeDangerousMatch, withIntent, type DangerousMatch } from "./dangerous-command/match.ts";
 import { dangerousGitMatch } from "./dangerous-command/git.ts";
 import { dangerousServerMatch } from "./dangerous-command/server.ts";
+import { classifyLiteralCommand } from "./literal-command.ts";
 
 export interface DangerousCommandResult {
   dangerous: boolean;
@@ -18,8 +19,14 @@ export const DEFAULT_DANGEROUS_COMMAND_INTENT = "Potentially destructive operati
  * rule matched, not that execution is safe. Dynamic commands, substitutions,
  * heredocs, non-shell interpreter scripts and stdin are not interpreted.
  * Literal shell -c payloads and known command wrappers are checked recursively. */
-export function detectDangerousCommand(command: string): DangerousCommandResult {
-  const match = findDangerousMatch(command, 0);
+export function detectDangerousCommand(command: string, platform: NodeJS.Platform = process.platform): DangerousCommandResult {
+  // Managed Windows aliases must get the same launch approval as bare dscode.
+  // Use the actual literal parser: the Unix heuristic cannot read Windows paths
+  // and PowerShell quotes reliably. Other PowerShell rules remain out of scope.
+  const literal = platform === "win32" ? classifyLiteralCommand(command, "dscode", platform) : undefined;
+  const match = literal?.kind === "trusted"
+    ? dscodeAgentMatch(literal.command.args, true)
+    : findDangerousMatch(command, 0);
   return match
     ? { dangerous: true, reason: match.reason, intent: match.intent }
     : { dangerous: false };
@@ -27,6 +34,15 @@ export function detectDangerousCommand(command: string): DangerousCommandResult 
 
 const maxDepth = 4;
 const elevatedCommandIntent = "Run a command with elevated privileges";
+
+function dscodeAgentMatch(args: string[], complete: boolean, elevated = false): DangerousMatch | undefined {
+  if (complete && args.length === 1 && ["--help", "--version", "-h", "-V", "version"].includes(args[0]!)) return;
+  return makeDangerousMatch(
+    "dscode starts an agent with independent permissions that can modify files or run commands",
+    "Launch a DSCode agent with independent permissions",
+    elevated,
+  );
+}
 
 /** Risks determined by the executable alone, even with incomplete arguments. */
 const commandIntents: Readonly<Record<string, string>> = {
@@ -108,12 +124,7 @@ function dangerousMatch(
       );
     }
     if (name === "dscode") {
-      if (complete && args.length === 1 && ["-h", "-V", "version"].includes(args[0]!)) return;
-      return makeDangerousMatch(
-        "dscode starts an agent with independent permissions that can modify files or run commands",
-        "Launch a DSCode agent with independent permissions",
-        elevated,
-      );
+      return dscodeAgentMatch(args, complete, elevated);
     }
     const intent = name === "mkfs" || name.startsWith("mkfs.")
       ? "Format the target device or filesystem"

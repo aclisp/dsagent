@@ -128,11 +128,17 @@ node --test standalone/test/tools-install.test.mjs
 node standalone/test/verify.mjs dist/standalone/windows-x64
 ```
 
-The runner checks the artifact's platform and hash, copies only `dscode.exe` into a directory containing Chinese characters and spaces, and runs with an isolated user profile and a PATH containing only Windows system commands. It tests TUI/Web continuation, print/JSON/RPC, image and codemode workers, rg/fd, CLI children, hooks, MCP, and tool upgrades while an executable is running, with retry after exit. Python/Node are provided explicitly to test helpers; the CLI cannot resolve either runtime on PATH.
+The runner checks the artifact's platform and hash, copies only `dscode.exe` into a directory containing Chinese characters, spaces, an apostrophe, and brackets, and runs with an isolated user profile and a PATH containing only Windows system commands. It tests TUI/Web continuation, print/JSON/RPC, image and codemode workers, rg/fd, CLI children through both `dscode` and `DSCode.EXE` with a quoted trailing-backslash working directory, parent launch approval, hooks, MCP, and tool upgrades while an executable is running, with retry after exit. Python/Node are provided explicitly to test helpers; the CLI cannot resolve either runtime on PATH.
 
 The `windows-2025` CI runner validates native Windows execution on Windows Server. It does not establish Windows 11 desktop, clipboard, or physical-keyboard acceptance. Before promoting this preview, run the suite on Windows 11 and manually verify Windows Terminal resize, Shift+Tab, Shift+Enter, Ctrl+C cancellation, Chinese input, and clipboard image paste. Cross-compilation alone is not runtime acceptance.
 
-Deferred by scope: PowerShell-specific destructive-command approval rules, and Windows quoting/`.exe` recognition in managed DSCode child commands. The existing classifier is Unix-oriented: commands such as `Remove-Item` do not trigger its destructive-command rules, and double-quoted Windows paths in child commands can lose backslashes. Use `--permission ask` to require approval for shell tool calls, and single-quoted path arguments with the documented literal `dscode` child command. These limitations do not change direct CLI argument parsing.
+Managed DSCode child commands on Windows accept the bare names `dscode` and `dscode.exe`, case-insensitively, and always relaunch the fixed installation entrypoint. Path arguments retain backslashes, including UNC paths and a trailing backslash inside quotes. The literal parser supports PowerShell's doubled single/double quotes and backtick escapes for literal punctuation/spaces. Variables are never expanded; command substitutions, pipelines, redirects, chaining, and control/Unicode escape expressions are rejected. These aliases keep the existing parent launch approval and child-depth limit. For example, this `exec_command.cmd` starts a child in the selected directory:
+
+```powershell
+dscode.exe -C "C:\项目 files\" --no-session -p 'Inspect O''Brien project files'
+```
+
+PowerShell-specific destructive-command approval rules remain deferred. The existing shell classifier is Unix-oriented: commands such as `Remove-Item` do not trigger its destructive-command rules. Use `--permission ask` to require approval for shell tool calls. These managed-command rules do not change direct CLI argument parsing.
 
 The preview retains standalone's `danger-full-access` default and file credentials. It does not include the experimental native Windows sandbox or its elevated setup commands. Windows ARM64 is outside this target.
 

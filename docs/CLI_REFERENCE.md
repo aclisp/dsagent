@@ -225,6 +225,14 @@ version invocations are exempt.
 
 ### Background CLI children
 
+On Windows, managed commands accept the bare names `dscode` and `dscode.exe`
+case-insensitively; both use the fixed installation entrypoint and the same approval
+and child-depth rules. Windows path arguments keep their backslashes, including UNC
+paths and trailing backslashes inside quotes. Single/double quotes support PowerShell's
+doubled quote characters, and backticks can escape literal punctuation/spaces. Variables
+remain literal inside quotes; command substitution, chaining, pipelines, redirects, and
+control/Unicode escape expressions are rejected. Unix quoting is unchanged.
+
 The [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) provides
 on-demand delegation guidance. Docker seeds it alongside `dscode-vision`. For ordinary
 CLI and standalone installations, manually copy the entire `dscode-delegate` directory

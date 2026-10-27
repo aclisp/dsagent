@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const windows = process.platform === "win32";
 const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", hostPlatform())));
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "dscode-standalone-run-")));
-const scratch = windows ? path.join(temporary, "中文 workspace") : temporary;
+const scratch = windows ? path.join(temporary, "中文 workspace O'Brien [1]") : temporary;
 await fs.mkdir(scratch, { recursive: true });
 const executable = binaryName("dscode");
 const metadata = JSON.parse(await fs.readFile(path.join(build, "build.json"), "utf8"));
@@ -314,9 +314,10 @@ try {
       ? "Get-Location; (Get-Command rg.exe).Source; (Get-Command fd.exe).Source; rg --version; fd --version; if (Get-Command node.exe,bun.exe -ErrorAction SilentlyContinue) { throw 'Runtime unexpectedly available on PATH' }"
       : "pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
-    {name:"exec_command",child:true,args:{cmd:`dscode --base-url ${base[1]} --model standalone-child --effort low --permission auto --tools read,find,grep,exec_command,write_stdin,apply_patch --no-mcp --no-session -p 'Read home/forbidden.js and return file evidence'`,yield_time_ms:0,timeout_ms:0}},
+    ...["dscode", ...(windows ? ["DSCode.EXE"] : [])].map(executable => ({name:"exec_command",child:true,executable,
+      args:{cmd:`${executable} -C "${scratch}${windows ? "\\" : ""}" --base-url ${base[1]} --model standalone-child --effort low --permission auto --tools read,find,grep,exec_command,write_stdin,apply_patch --no-mcp --no-session -p 'Read home/forbidden.js and return file evidence'`,yield_time_ms:0,timeout_ms:0}})),
   ]) {
-    await check(`real tool execution: ${tool.child ? "CLI child" : tool.name}`, async () => {
+    await check(`real tool execution: ${tool.child ? `CLI child (${tool.executable})` : tool.name}`, async () => {
       plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false; childEofSent = false;
       // JSON parent and child must work without extracting a native UI addon.
       const result = await run("dscode", [...base, ...(tool.child ? ["--permission", "full"] : []), "--tools", "read,find,grep,exec_command,write_stdin,apply_patch", "--mode", "json", "-p", "run tool once"], false, false, tool.child === true);
@@ -354,6 +355,13 @@ try {
       }
     });
   }
+  await check("auto permissions deny noninteractive CLI children", async () => {
+    plannedTool = {name:"exec_command",args:{cmd:`${windows ? "DSCode.EXE" : "dscode"} --permission full -p 'must require parent approval'`}};
+    toolIssued=false; toolOutputs=[];
+    const result = await run("dscode",[...base,"--permission","auto","--no-mcp","--mode","json","-p","try CLI child"]);
+    assert.equal(result.code,0,result.stderr);
+    assert.match(JSON.stringify(toolOutputs),/interactive approval UI/);
+  });
   plannedTool = undefined;
   await check("session persistence, resume and embedded HTML export", async () => {
     const args = ["--base-url",base[1]];

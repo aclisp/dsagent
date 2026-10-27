@@ -11,6 +11,14 @@ DSCode CLI processes through `exec_command`, using the trusted literal-command a
 fixed-executable handling shared with `dscode-vision`. Preserve model credentials for
 the fixed CLI executable; ordinary shell commands retain credential stripping.
 
+On Windows, accept the bare names `dscode` and `dscode.exe` case-insensitively for
+this fixed-entrypoint launch. Preserve backslashes in drive/UNC paths and quoted
+trailing-backslash directories. Use a literal PowerShell quoting subset: doubled
+quotes and backtick escapes for literal punctuation/spaces, without expansion or
+shell evaluation. Reject unsupported expressions and chained invocations before
+spawning. Unix command names and escaping retain their existing behavior. Both
+Windows aliases use the same launch approval, environment, and child-depth limit.
+
 Keep delegation instructions in the discoverable `dscode-delegate` skill, following the
 `dscode-vision` skill pattern. Core tool prompts and the engineering contract retain their
 original guidance. This feature must not add or change core system-prompt content,

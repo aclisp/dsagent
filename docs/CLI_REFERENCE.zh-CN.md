@@ -192,6 +192,11 @@ CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI �
 
 ### 后台 CLI 子进程
 
+Windows 的受管命令接受裸名称 `dscode` 和 `dscode.exe`，不区分大小写，均使用固定的安装入口、
+相同的启动审批和子进程深度限制。路径参数保留反斜杠，支持 UNC 路径和引号内以反斜杠结尾的目录。
+单、双引号支持 PowerShell 的双写引号，反引号只用于转义字面标点或空格；引号内变量保持字面文本。
+命令替换、命令连接、管道、重定向及控制字符/Unicode 转义表达式会被拒绝。Unix 引号规则保持原样。
+
 [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) 按需提供委派指导。
 Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 standalone 安装需手动将
 `deploy/default-skills/dscode-delegate` 整个目录复制到 `~/.dscode/skills/`

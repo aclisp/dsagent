@@ -30,6 +30,14 @@ async function harness(permission: string, hasUI: boolean) {
 }
 
 describe("DSCode launch command permissions", () => {
+  it.runIf(process.platform === "win32")("keeps Windows aliases in the same parent approval flow", async () => {
+    const h = await harness("auto", false);
+    expect(await h.call('DSCode.EXE -C "C:\\项目 files\\" --permission full -p task'))
+      .toMatchObject({ block: true, reason: expect.stringContaining("interactive approval UI") });
+    expect(await h.call("dscode.exe --help")).toBeUndefined();
+    expect(await h.call("DSCODE.EXE --version")).toBeUndefined();
+  });
+
   it("requires the parent's auto approval even when the child selects full permissions", async () => {
     const h = await harness("auto", true);
     const cmd = "dscode --permission full --network -p 'perform the task'";
