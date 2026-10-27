@@ -104,7 +104,9 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
         if (file === path.join(pi, "config.js")) {
           source = 'import { assets } from "dscode:assets";\n' + source;
           source = body(source, "export function getQuickJSWasmPath()", 'return assets["quickjs.wasm"];');
-          source = body(source, "export function getCodemodeWorkerSpecifier()", `return new URL(${JSON.stringify(`./${path.basename(codemodeWorker)}`)}, import.meta.url);`);
+          // Bun 1.3 on Windows cannot map an absolute virtual URL back to an
+          // embedded worker. Keep the source-relative string, as Pi does.
+          source = body(source, "export function getCodemodeWorkerSpecifier()", `return ${JSON.stringify(`./${path.basename(codemodeWorker)}`)};`);
           source = body(source, "export function getPackageJsonPath()", 'return assets["package.json"];');
           source = body(source, "export function getThemesDir()", 'return dirname(assets["dark.json"]);');
           source = body(source, "export function getBundledInteractiveAssetPath(name)", 'return assets[name];');
@@ -118,7 +120,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
         }
         if (file === path.join(pi, "utils/image-resize.js")) source = body(source,
           "export async function resizeImage(inputBytes, mimeType, options)",
-          `return resizeImageInWorker(new URL(${JSON.stringify(`./${path.basename(worker)}`)}, import.meta.url), inputBytes, mimeType, options);`);
+          `return resizeImageInWorker(${JSON.stringify(`./${path.basename(worker)}`)}, inputBytes, mimeType, options);`);
         if (file === path.join(pi, "core/resource-loader.js")) {
           source = replace(source, "this.additionalExtensionPaths = options.additionalExtensionPaths ?? [];", "this.additionalExtensionPaths = [];");
           source = replace(source, "this.noExtensions = options.noExtensions ?? false;", "this.noExtensions = true;");

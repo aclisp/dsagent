@@ -43,9 +43,11 @@ async function buildPlatform(platform) {
   const previousCwd = process.cwd();
   try {
     process.chdir(work);
-    const worker = path.join(work, "image-worker.js");
+    // Bun 1.3 resolves relative worker entries by mapping source extensions to
+    // embedded .js modules. A .js specifier skips that mapping and hits disk.
+    const worker = path.join(work, "image-worker.ts");
     fs.writeFileSync(worker, `import ${JSON.stringify(path.join(pi, "utils/image-resize-worker.js"))};\n`);
-    const codemodeWorker = path.join(work, "codemode-worker.js");
+    const codemodeWorker = path.join(work, "codemode-worker.ts");
     fs.writeFileSync(codemodeWorker, `import ${JSON.stringify(path.join(pi, "extensions/codemode/worker.js"))};\n`);
     // Give the embedded entrypoints the same virtual root. Otherwise Bun's
     // worker URL inherits the checkout's path while the worker lives under /tmp.

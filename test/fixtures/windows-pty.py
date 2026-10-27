@@ -23,8 +23,19 @@ inputs = queue.Queue()
 
 def read_input():
     try:
-        for line in sys.stdin.buffer:
-            inputs.put(json.loads(line.decode("utf-8"))["text"])
+        # A daemon blocked in BufferedReader holds stdin's Python I/O lock and
+        # aborts interpreter shutdown after the child exits. Read the raw pipe.
+        pending = b""
+        while True:
+            data = os.read(sys.stdin.fileno(), 65536)
+            if not data:
+                break
+            pending += data
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                inputs.put(json.loads(line.decode("utf-8"))["text"])
+        if pending:
+            inputs.put(json.loads(pending.decode("utf-8"))["text"])
     except Exception as error:
         inputs.put(error)
     finally:
