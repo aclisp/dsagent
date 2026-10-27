@@ -10,6 +10,12 @@ import { ptyInvocation, isolatedRuntimeEnvironment, terminatePty } from "./pty.m
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+export async function removeHandoffFixture(root) {
+  // Windows can retain directory handles briefly after the PTY has closed.
+  // Bound the retry window; a persistent lock must still fail acceptance.
+  await rm(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 10 : 0, retryDelay: 100 });
+}
+
 /** Offline acceptance of the actual TUI commands and the browser HTTP contract. */
 export async function verifyWebHandoff({ executable = process.execPath, args = [path.join(repo, "dist/bundle/cli.js")], parentDirectory = os.tmpdir(), denyReadPaths = [], restrictPath = false } = {}) {
   const root = await mkdtemp(path.join(parentDirectory, "dscode-web-handoff-"));
@@ -43,7 +49,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   const port = reserve.address().port;
   await new Promise(resolve => reserve.close(resolve));
   let output = "", stderr = "", exitCode;
-  let child;
+  let child, verificationError;
   const waitFor = async (predicate, description) => {
     const deadline = Date.now() + (process.platform === "win32" ? 30_000 : 12_000);
     while (!predicate()) {
@@ -152,15 +158,26 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(await finished, 0, stderr);
     await assert.rejects(fetch(nextUrl));
     return "TUI/Web/TUI continuation, current model and effort, files/assets, clear, preferences, fresh URL, and exit cleanup passed";
+  } catch (error) {
+    verificationError = error;
+    throw error;
   } finally {
-    child?.stdin.end();
-    if (child && exitCode === undefined) {
-      terminatePty(child);
-      await new Promise(resolve => child.once("close", resolve));
+    try {
+      child?.stdin.end();
+      if (child && exitCode === undefined) {
+        terminatePty(child);
+        await new Promise(resolve => child.once("close", resolve));
+      }
+      provider.closeAllConnections();
+      await new Promise(resolve => provider.close(resolve));
+      await removeHandoffFixture(root);
+    } catch (cleanupError) {
+      if (verificationError) {
+        throw new AggregateError([verificationError, cleanupError],
+          `${verificationError.message}\nFixture cleanup also failed: ${cleanupError.message}`, { cause: verificationError });
+      }
+      throw cleanupError;
     }
-    provider.closeAllConnections();
-    await new Promise(resolve => provider.close(resolve));
-    await rm(root, { recursive: true, force: true });
   }
 }
 
