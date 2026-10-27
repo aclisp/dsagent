@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { webOrigin, type StartWebContinuationOptions, type WebContinuationService } from "@aclisp/dsagent-core/session-runtime";
 import type { HttpSessionControl } from "@aclisp/dsagent-http-adapter";
@@ -6,7 +5,7 @@ import { DEFAULT_CHAT_AGENT_NAME } from "./chat-page.ts";
 import { createWebUiServer } from "./web-ui-server.ts";
 
 export async function startWebContinuation(options: StartWebContinuationOptions): Promise<WebContinuationService> {
-  const workspaceId = randomBytes(24).toString("base64url");
+  const { workspaceId } = options;
   const url = `${webOrigin(options.network)}/chat/${workspaceId}`;
   const qr = await QRCode.toString(url, { type: "terminal", small: true });
   let control: HttpSessionControl | undefined;

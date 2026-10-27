@@ -1,11 +1,12 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import type { DSCodeSessionRuntime } from "../packages/core/src/session-handoff.ts";
-import { getStoredWebPreferences, saveWebPreferences } from "../packages/core/src/settings.ts";
+import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebPreferences } from "../packages/core/src/settings.ts";
 import {
   parseWebArguments, resolveWebPreferences, webOrigin, WebContinuationController,
   type StartWebContinuationOptions, type WebContinuationService,
@@ -17,12 +18,14 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
 });
 
-async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dscode-handoff-"));
-  roots.push(root);
+async function setup(root?: string) {
+  if (!root) {
+    root = await mkdtemp(path.join(os.tmpdir(), "dscode-handoff-"));
+    roots.push(root);
+  }
   vi.stubEnv("DSCODE_CONFIG_PATH", path.join(root, "config.json"));
   vi.stubEnv("DSCODE_HOME", root);
-  const options = parseRuntimeArgs(["--no-mcp"]).options;
+  const options = { ...parseRuntimeArgs(["--no-mcp"]).options, cwd: root };
   const runtime: DSCodeSessionRuntime = {
     sessionDir: path.join(root, "sessions"),
     assertIdle: vi.fn(), getPosition: vi.fn(() => null),
@@ -78,9 +81,57 @@ describe("Web network preferences", () => {
     });
     expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 9123 });
   });
+
+  it("resolves workspace aliases to the same stored ID and rejects invalid stored IDs", async () => {
+    const { root } = await setup();
+    const workspace = path.join(root, "workspace");
+    const alias = path.join(root, "alias");
+    await mkdir(workspace);
+    await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
+    const id = "a".repeat(32);
+    await saveWebPreferences({ host: "127.0.0.1", port: 9123 }, { cwd: alias, id });
+    expect(getStoredWebWorkspaceId(workspace)).toBe(id);
+    expect(getStoredWebWorkspaceId(alias)).toBe(id);
+    expect(getStoredWebWorkspaceId(root)).toBeUndefined();
+    if (process.platform !== "win32") expect((await stat(path.join(root, "config.json"))).mode & 0o777).toBe(0o600);
+    for (const workspaceIds of [[], "invalid", { [realpathSync(workspace)]: "invalid" }]) {
+      await writeFile(path.join(root, "config.json"), JSON.stringify({ web: { workspaceIds } }));
+      expect(() => getStoredWebWorkspaceId(workspace)).toThrow();
+    }
+  });
 });
 
 describe("TUI Web ownership", () => {
+  it("reuses the workspace ID across handoffs and TUI restarts while passing the current conversation", async () => {
+    const first = await setup();
+    await first.run("web");
+    const id = first.start.mock.calls[0]![0].workspaceId;
+    expect(id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(getStoredWebWorkspaceId(first.root)).toBe(id);
+    await first.run("tui");
+    await first.run("web");
+    expect(first.start.mock.calls[1]![0].workspaceId).toBe(id);
+    await first.controller.close();
+
+    const second = await setup(first.root);
+    const position = { sessionId: "another-conversation", sessionFile: path.join(first.root, "another.jsonl"), leafId: "selected-leaf" };
+    vi.mocked(second.runtime.getPosition).mockReturnValue(position);
+    await second.run("web");
+    expect(second.start.mock.calls[0]![0]).toMatchObject({ workspaceId: id, position });
+    await second.controller.close();
+
+    const otherWorkspace = path.join(first.root, "other");
+    await mkdir(otherWorkspace);
+    vi.mocked(second.runtime.getOptions).mockReturnValue({ ...second.options, cwd: otherWorkspace });
+    await second.run("web");
+    const otherId = second.start.mock.calls[1]![0].workspaceId;
+    expect(otherId).not.toBe(id);
+    expect(getStoredWebWorkspaceId(first.root)).toBe(id);
+    expect(getStoredWebWorkspaceId(otherWorkspace)).toBe(otherId);
+    expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 8899 });
+    await second.controller.close();
+  });
+
   it("copies live parameters once, keeps the reminder across replacement, and keeps repeated /web read-only while busy", async () => {
     const h = await setup();
     await h.run("web");
@@ -118,6 +169,7 @@ describe("TUI Web ownership", () => {
     h.start.mockRejectedValueOnce(new Error("port is in use"));
     await h.run("web");
     expect(h.ui.notify).toHaveBeenLastCalledWith("port is in use", "error");
+    expect(getStoredWebWorkspaceId(h.root)).toBeUndefined();
     await h.run("web", "status");
     expect(h.ui.notify).toHaveBeenLastCalledWith("Web is stopped.", "info");
     await h.run("web");

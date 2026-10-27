@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getStoredWebPreferences, saveWebPreferences } from "./settings.ts";
+import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebPreferences } from "./settings.ts";
 import { loadSessionPosition, type DSCodeSessionRuntime, type SessionPosition } from "./session-handoff.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
 
@@ -18,6 +19,7 @@ export interface WebContinuationService {
 }
 
 export interface StartWebContinuationOptions {
+  workspaceId: string;
   network: WebPreferences;
   runtimeOptions: DSCodeRuntimeOptions;
   position: SessionPosition | null;
@@ -133,9 +135,10 @@ export class WebContinuationController {
             const position = runtime.getPosition();
             const runtimeOptions = runtime.getOptions();
             const network = resolveWebPreferences(getStoredWebPreferences(), overrides);
+            const workspaceId = getStoredWebWorkspaceId(runtimeOptions.cwd) ?? randomBytes(24).toString("base64url");
             let service: WebContinuationService | undefined;
             service = await this.startService({
-              network, position, runtimeOptions, sessionDir: runtime.sessionDir,
+              workspaceId, network, position, runtimeOptions, sessionDir: runtime.sessionDir,
               onStopped: (error) => {
                 if (this.service !== service) return;
                 this.service = undefined;
@@ -157,9 +160,9 @@ export class WebContinuationController {
             this.remind();
             this.notify(`Web is running.\n${service.url}\n${service.qr}\nRun /tui when you return.`);
             try {
-              await saveWebPreferences(network);
+              await saveWebPreferences(network, { cwd: runtimeOptions.cwd, id: workspaceId });
             } catch (error) {
-              this.notify(`Web is running, but network preferences were not saved: ${errorMessage(error)}`, "warning");
+              this.notify(`Web is running, but its settings were not saved; the browser URL may change on the next start: ${errorMessage(error)}`, "warning");
             }
           } finally {
             this.transitioning = false;

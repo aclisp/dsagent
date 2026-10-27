@@ -402,8 +402,12 @@ Replace the example address with the host's LAN address. For a cloud host behind
 an existing HTTPS reverse proxy, use `/web --url https://agent.example.com` and
 configure its listener with `--host` and `--port` as needed. A wildcard host needs
 an explicit browser origin. Successful network settings are reused from
-`$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`); the private URL stays in memory.
-`/web status` shows the active URL. HTTPS uses the external proxy.
+`$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`). The same file stores a random
+ID per canonical workspace path in `web.workspaceIds`. With the same origin, that
+workspace keeps its private URL across handoffs and TUI restarts: refresh the
+saved browser page after `/web` to open the current TUI conversation. `/tui` stops
+access until Web is started again. Keep the URL private; `/web status` shows the
+active URL. HTTPS uses the external proxy.
 
 Handoffs require idle agents and no running `/jobs`. Non-persistent sessions
 cannot be handed off. The service belongs to the TUI process, so keep that process

@@ -20,7 +20,7 @@ export interface DSCodeStorageSettings {
 }
 
 interface DSCodeSettings {
-  web?: Partial<WebPreferences>;
+  web?: Partial<WebPreferences> & { workspaceIds?: Record<string, string> };
   deepseek?: {
     baseUrl?: unknown;
   };
@@ -51,13 +51,28 @@ export function getStoredWebPreferences(settingsPath = getDSCodeSettingsPath()):
   };
 }
 
+export function getStoredWebWorkspaceId(cwd: string, settingsPath = getDSCodeSettingsPath()): string | undefined {
+  const value = readSettingsSync(settingsPath).web?.workspaceIds;
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("web.workspaceIds must be an object");
+  const id = value[fs.realpathSync(cwd)];
+  if (id !== undefined && (typeof id !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(id))) {
+    throw new Error("Stored Web workspace ID must be a 32-character base64url string");
+  }
+  return id;
+}
+
 export async function saveWebPreferences(
   preferences: WebPreferences,
+  workspace?: { cwd: string; id: string },
   settingsPath = getDSCodeSettingsPath(),
 ): Promise<void> {
   const settings = await readSettings(settingsPath);
   settings.web = { ...settings.web, ...preferences };
   if (preferences.url === undefined) delete settings.web.url;
+  if (workspace) {
+    settings.web.workspaceIds = { ...settings.web.workspaceIds, [fs.realpathSync(workspace.cwd)]: workspace.id };
+  }
   await writeSettings(settings, settingsPath);
 }
 

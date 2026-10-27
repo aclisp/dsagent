@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -138,7 +139,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("/web", "Run /tui when you return.");
     const allUrls = output.match(new RegExp(`${origin}/chat/[A-Za-z0-9_-]+`, "g"));
     const nextUrl = allUrls.at(-1);
-    assert.notEqual(nextUrl, privateUrl, "each handoff uses a fresh workspace ID");
+    assert.equal(nextUrl, privateUrl, "the workspace URL survives repeated handoffs");
+    assert.equal((await fetch(privateUrl)).status, 200, "the saved browser URL works after restarting Web");
     const nextWorkspaceId = new URL(nextUrl).pathname.split("/").at(-1);
     const current = await (await fetch(`${origin}/v1/sessions?workspaceId=${nextWorkspaceId}`)).json();
     id = current.sessions[0].session.id;
@@ -150,14 +152,20 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.doesNotMatch(JSON.stringify(requests[3].input), /WEB_CONTINUED|TUI_BEFORE_HANDOFF/);
     assert.equal(requests[3].reasoning.effort, "max");
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
-    assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve", web: { host: "127.0.0.1", port } });
-    assert.ok(!JSON.stringify(preferences).includes(workspaceId));
+    assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
+      web: { host: "127.0.0.1", port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
     await command("/web", "Run /tui when you return.");
+    assert.equal((await fetch(privateUrl)).status, 200, "the saved URL also serves a different conversation in the workspace");
+    const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
+    id = latest.sessions[0].session.id;
+    assert.notEqual(id, cleared.id);
+    assert.match(JSON.stringify(await history()), /TUI_AFTER_CLEAR/);
+    assert.doesNotMatch(JSON.stringify(await history()), /TUI_BEFORE_HANDOFF|WEB_CONTINUED/);
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
     await assert.rejects(fetch(nextUrl));
-    return "TUI/Web/TUI continuation, current model and effort, files/assets, clear, preferences, fresh URL, and exit cleanup passed";
+    return "TUI/Web/TUI continuation, current model and effort, files/assets, clear, preferences, stable workspace URL, and exit cleanup passed";
   } catch (error) {
     verificationError = error;
     throw error;

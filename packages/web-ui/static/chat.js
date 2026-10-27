@@ -1572,6 +1572,7 @@ async function reconnect({ refreshHistory = false } = {}) {
   state.reconnecting = true;
   state.lastReconnectAt = Date.now();
   const shouldRefreshHistory = state.historySyncDue;
+  const previousSessionId = state.sessionId;
   state.historySyncDue = false;
   try {
     state.stream?.close();
@@ -1592,7 +1593,7 @@ async function reconnect({ refreshHistory = false } = {}) {
       state.reconnectDue = true;
       return;
     }
-    if (shouldRefreshHistory && !(await renderHistory({ preserveScroll: true }))) {
+    if ((shouldRefreshHistory || state.sessionId !== previousSessionId) && !(await renderHistory({ preserveScroll: true }))) {
       state.historySyncDue = true;
       state.reconnectDue = true;
       setConnection(false);

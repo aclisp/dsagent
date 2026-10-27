@@ -211,7 +211,10 @@ resolution: `DSCODE_CONFIG_PATH`, or `DSCODE_HOME/config.json` by default. Add a
   "web": {
     "host": "127.0.0.1",
     "port": 8899,
-    "url": "https://agent.example.com"
+    "url": "https://agent.example.com",
+    "workspaceIds": {
+      "/home/me/project": "<random-workspace-id>"
+    }
   }
 }
 ```
@@ -220,24 +223,42 @@ Explicit command arguments override saved preferences; saved preferences overrid
 fresh defaults. A previously saved external bind address is therefore reused by
 `/web` on later TUI starts. Update only these preferences, preserving unrelated
 configuration through the existing atomic settings-write approach. Validate the
-configuration before startup, then attempt to save preferences after the service
-starts successfully. If saving fails, keep the service running and show a warning
-that these preferences were not saved. Preference persistence is not a condition
-for successful handoff.
+configuration before startup, then attempt to save network preferences and the
+workspace ID together after the service starts successfully. If saving fails,
+keep the service running and warn that its settings were not saved and its URL
+may change on the next start. Persistence is not a condition for successful
+handoff.
 
-Persist only the browser origin, not a generated private chat URL or access
-credential. Runtime settings are not network preferences and must not be written
-into this namespace.
+Store workspace IDs separately from network preferences in `web.workspaceIds`,
+keyed by the workspace's canonical absolute path (resolving symbolic links).
+Do not persist complete private chat URLs or runtime settings. The workspace IDs
+are access credentials and use the existing private user-configuration file.
 
 ### 7. HTTPS and access credentials
 
 This feature is a temporary browser entry for one person's own workspace. Reuse
 the existing Web UI workspace-secret URL scheme and access behavior.
 
-For each handoff, generate a random workspace ID and display its private URL and
-QR code after startup succeeds. Keep the ID in memory. `/tui` closes the listener
-and active browser connections; the next handoff uses a new workspace ID. Keep
-generated private URLs out of persistent preferences and model history.
+On the first successful handoff for a workspace, save a random 24-byte base64url
+workspace ID in `web.workspaceIds`. Reuse it on subsequent handoffs, including
+after the TUI restarts, when using the same user configuration. Do not derive the
+access credential from a plain hash of a guessable workspace path. A different
+canonical workspace path gets its own random ID.
+
+With the same browser origin, the private URL stays stable so a phone can refresh
+its existing page or bookmark instead of scanning another QR code. The address
+identifies the workspace, not a particular conversation. Each `/web` still
+activates the invoking TUI's exact current session and branch; refreshing the
+saved URL attaches to that active conversation, even when it differs from the
+previous handoff. An already-open chat page also refreshes its history if it
+reconnects to a different active conversation. Do not fall back to the workspace's
+latest saved session.
+
+Display the private URL and QR code after startup succeeds. `/tui` closes the
+listener and active browser connections; the URL is unavailable until another
+`/web` starts the service. Keep generated private URLs out of model history. The
+saved workspace ID is a long-lived access credential, so the URL must remain
+private. No new login system or automatic credential rotation is introduced.
 
 The service provides HTTP. Any HTTPS endpoint is supplied by an externally
 configured reverse proxy, with its origin passed through `--url`.
@@ -304,7 +325,7 @@ is used so ordinary TUI startup does not eagerly initialize an HTTP server.
 | --- | --- |
 | `packages/core/src/cli-runtime.ts` and TUI command registration | Own the service controller across session replacements, implement commands and reminders, read current runtime parameters for Web, and preserve the TUI's own parameters when resuming Web history. |
 | `packages/core/src/managed-process.ts` | Expose the existing running-job state for handoff preflight. Keep service ownership separate from agent command jobs. |
-| `packages/core/src/settings.ts` | Validate and persist the `web` preferences through the existing user configuration path; report save failures as warnings. |
+| `packages/core/src/settings.ts` | Validate and persist network preferences and random workspace IDs through the existing private user configuration; report save failures as warnings. |
 | `packages/http-adapter` | Resume explicit session/branch positions with supplied runtime parameters, expose busy/job state and the actual active position, and serialize takeback with request admission. |
 | `packages/web-ui` | Provide continuation-mode composition with browser chat, approvals, and files, while skipping scheduler and IM startup. Reuse existing workspace-secret URLs and browser access behavior. |
 | CLI bundles and `standalone/` | Package dependencies and assets, retain lazy startup, and verify installed/relocated execution. |
@@ -356,9 +377,13 @@ continuous crash-recovery record or live synchronization.
    work as documented. Wildcard bind addresses require `url`. Unrelated keys
    survive configuration updates; a failed preference save produces a warning
    while the running service remains usable.
-8. Each handoff generates a fresh private workspace URL. Taking back closes the
-   listener and active browser connections. Private URLs are kept out of user
-   configuration and model history; access follows existing Web UI behavior.
+8. A workspace's random ID survives repeated handoffs and TUI restarts under the
+   same user configuration. With a stable origin, refreshing the saved URL loads
+   the current handoff's exact conversation, including a different conversation
+   in the same workspace. Different workspaces get different IDs. Taking back
+   closes the listener and active browser connections. The private configuration
+   stores workspace IDs, while complete URLs stay out of model history; access
+   follows existing Web UI behavior.
 9. Repeated `/web` is idempotent; status shows running/stopped and the browser URL.
    Startup failures leave the TUI usable. Service crashes or failed resumption
    produce clear errors and point to `/resume` for manual recovery. Browser
