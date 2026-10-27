@@ -19,8 +19,10 @@ function body(source, signature, replacement) {
 
 export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorker, audit, platform, toolVersions }) {
   const standalone = path.join(root, "standalone");
-  const macClipboard = platform === "darwin-arm64"
-    ? fs.realpathSync(path.join(tui, "../native/darwin/prebuilds/darwin-arm64/darwin-platform.node"))
+  const nativePlatforms = { "darwin-arm64": "darwin", "windows-x64": "win32" };
+  const nativePlatform = nativePlatforms[platform];
+  const nativeHelper = nativePlatform
+    ? fs.realpathSync(path.join(tui, `../native/${nativePlatform}/prebuilds/${nativePlatform}-${platform.split("-")[1]}/${nativePlatform}-platform.node`))
     : undefined;
   const replacements = new Map([
     [path.join(root, "packages/core/dist/vision-command.js"), "vision-command.mjs"],
@@ -52,11 +54,12 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
       }));
       build.onLoad({ filter: /\.(?:js|mjs|node)$/ }, ({ path: file }) => {
         if (file.endsWith(".node")) {
-          if (file !== macClipboard) throw new Error(`Unexpected native module: ${file}`);
+          if (file !== nativeHelper) throw new Error(`Unexpected native module: ${file}`);
           audit.inputs.add(file);
           return;
         }
-        if (/\/(?:state|vision-cli)\.js$/.test(file) && file.includes("/core/dist/")) {
+        const normalized = file.replaceAll("\\", "/");
+        if (/\/(?:state|vision-cli)\.js$/.test(normalized) && normalized.includes("/core/dist/")) {
           throw new Error(`Excluded Core module reached standalone graph: ${file}`);
         }
         audit.inputs.add(file);
@@ -79,8 +82,8 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
           audit.adapted.add(path.relative(root, file));
           // Headless CLI children do not need native UI support. Loading on demand
           // also avoids concurrent extraction of the embedded addon by Bun.
-          return { contents: macClipboard
-            ? `let helper;\nexport function getNativePlatformHelper() { return helper ??= require(${JSON.stringify(macClipboard)}); }\nexport function getNativeClipboard() { return getNativePlatformHelper(); }`
+          return { contents: nativeHelper
+            ? `let helper;\nexport function getNativePlatformHelper() { return helper ??= require(${JSON.stringify(nativeHelper)}); }\nexport function getNativeClipboard() { return getNativePlatformHelper(); }`
             : "export function getNativePlatformHelper() {} export function getNativeClipboard() {}", loader: "js" };
         }
         if (file === path.join(pi, "extensions/index.js")) return { contents: "export const builtInExtensions = [];", loader: "js" };

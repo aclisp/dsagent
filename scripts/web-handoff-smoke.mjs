@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
+import { ptyInvocation, isolatedRuntimeEnvironment, terminatePty } from "./pty.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,7 +45,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   let output = "", stderr = "", exitCode;
   let child;
   const waitFor = async (predicate, description) => {
-    const deadline = Date.now() + 12_000;
+    const deadline = Date.now() + (process.platform === "win32" ? 30_000 : 12_000);
     while (!predicate()) {
       if (exitCode !== undefined) throw new Error(`TUI exited (${exitCode}) while waiting for ${description}: ${stderr}\n${output.slice(-12000)}`);
       if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}: ${stderr}\n${output.slice(-16000)}`);
@@ -66,9 +67,10 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
       program = "/usr/bin/sandbox-exec";
       programArgs = ["-p", policy, executable, ...tuiArgs];
     }
-    child = spawn("/usr/bin/python3", ["-B", path.join(repo, "test/fixtures/tui-bridge.py"), program, ...programArgs], {
+    const terminal = ptyInvocation(program, programArgs);
+    child = spawn(terminal.command, terminal.args, {
       cwd: workspace,
-      env: { PATH: restrictPath ? "/usr/bin:/bin" : process.env.PATH, HOME: home, USERPROFILE: home,
+      env: { ...isolatedRuntimeEnvironment(home, root, restrictPath),
         DSCODE_HOME: home, DSCODE_SESSIONS_DIR: path.join(home, "sessions"), DSCODE_CREDENTIALS_STORE: "file",
         DEEPSEEK_API_KEY: "offline-fixture", PI_OFFLINE: "1", PI_TELEMETRY: "0", PI_SKIP_VERSION_CHECK: "1",
         NO_PROXY: "127.0.0.1,localhost", TERM: "xterm-256color", TMPDIR: root,
@@ -153,6 +155,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   } finally {
     child?.stdin.end();
     if (child && exitCode === undefined) {
+      terminatePty(child);
       await new Promise(resolve => child.once("close", resolve));
     }
     provider.closeAllConnections();

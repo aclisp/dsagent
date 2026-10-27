@@ -6,6 +6,9 @@ import { test } from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createToolPreparer, installTools, updateTools } from "../tools-install.mjs";
+import { binaryName } from "../platforms.mjs";
+
+const toolPath = (bin, tool) => path.join(bin, binaryName(tool));
 
 test("concurrent extraction publishes executable tools once and preserves user replacements", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-tool-test-"));
@@ -22,17 +25,20 @@ test("concurrent extraction publishes executable tools once and preserves user r
     await Promise.all(Array.from({ length: 8 }, () => updateTools(home, assets, versions)));
     const bin = path.join(home, "bin");
     for (const tool of ["fd", "rg"]) {
-      assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), tool);
-      assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
+      assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), tool);
+      if (process.platform !== "win32") assert.ok((await fs.stat(toolPath(bin, tool))).mode & 0o111);
       const receipt = (await fs.readdir(bin)).find(name => name.startsWith(`.${tool}-`));
       assert.equal(JSON.parse(await fs.readFile(path.join(bin, receipt), "utf8")).version, versions[tool]);
     }
-    await fs.writeFile(path.join(bin, "rg"), "user rg");
-    await fs.unlink(path.join(bin, "fd"));
-    await fs.symlink("/nonexistent/user/fd", path.join(bin, "fd"));
+    await fs.writeFile(toolPath(bin, "rg"), "user rg");
+    await fs.unlink(toolPath(bin, "fd"));
+    const linkTarget = process.platform === "win32" ? path.join(root, "user-fd") : "/nonexistent/user/fd";
+    if (process.platform === "win32") await fs.mkdir(linkTarget);
+    await fs.symlink(linkTarget, toolPath(bin, "fd"), process.platform === "win32" ? "junction" : "file");
     await updateTools(home, assets, { fd: "3", rg: "3" });
-    assert.equal(await fs.readFile(path.join(bin, "rg"), "utf8"), "user rg");
-    assert.equal(await fs.readlink(path.join(bin, "fd")), "/nonexistent/user/fd");
+    assert.equal(await fs.readFile(toolPath(bin, "rg"), "utf8"), "user rg");
+    if (process.platform === "win32") assert.equal(await fs.realpath(toolPath(bin, "fd")), await fs.realpath(linkTarget));
+    else assert.equal(await fs.readlink(toolPath(bin, "fd")), linkTarget);
     assert.ok(!(await fs.readdir(bin)).some(name => name.startsWith(".extract-")));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
@@ -70,10 +76,10 @@ test("ordinary startup neither reads contents nor waits for the updater lock", a
 
 test("ordinary startup installs only missing tools and leaves older managed tools alone", async t => {
   const { home, bin, newer } = await fixture(t);
-  await fs.unlink(path.join(bin, "fd"));
+  await fs.unlink(toolPath(bin, "fd"));
   await installTools(home, newer.assets, newer.versions);
-  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
-  assert.equal(await fs.readFile(path.join(bin, "rg"), "utf8"), "rg-1.9.0");
+  assert.equal(await fs.readFile(toolPath(bin, "fd"), "utf8"), "fd-1.10.0");
+  assert.equal(await fs.readFile(toolPath(bin, "rg"), "utf8"), "rg-1.9.0");
 });
 
 test("startup and subsequent pi tool requests share preparation per home without reacquiring the lock", async t => {
@@ -90,12 +96,12 @@ test("startup and subsequent pi tool requests share preparation per home without
   const otherHome = `${home}-other`;
   assert.notEqual(prepare(otherHome), startup);
   await prepare(otherHome);
-  assert.equal(await fs.readFile(path.join(otherHome, "bin", "fd"), "utf8"), "fd-1.10.0");
+  assert.equal(await fs.readFile(toolPath(path.join(otherHome, "bin"), "fd"), "utf8"), "fd-1.10.0");
 });
 
 test("failed preparation is evicted so the next request can retry", async t => {
   const { home, bin, newer } = await fixture(t);
-  await fs.unlink(path.join(bin, "fd"));
+  await fs.unlink(toolPath(bin, "fd"));
   const license = newer.assets["tools/fd-LICENSES.txt"];
   await fs.unlink(license);
   const prepare = createToolPreparer(newer.assets, newer.versions);
@@ -105,20 +111,20 @@ test("failed preparation is evicted so the next request can retry", async t => {
   const retry = prepare(home);
   assert.notEqual(retry, failed);
   await retry;
-  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
+  assert.equal(await fs.readFile(toolPath(bin, "fd"), "utf8"), "fd-1.10.0");
 });
 
 test("upgrades receipt-owned tools atomically and never downgrades or rewrites the same version", async t => {
   const { home, bin, old, newer } = await fixture(t);
-  const target = path.join(bin, "fd");
+  const target = toolPath(bin, "fd");
   const oldHandle = await fs.open(target, "r");
   try {
     await updateTools(home, newer.assets, newer.versions);
     assert.equal(await oldHandle.readFile("utf8"), "fd-1.9.0");
   } finally { await oldHandle.close(); }
   for (const tool of ["fd", "rg"]) {
-    assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-1.10.0`);
-    assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
+    assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), `${tool}-1.10.0`);
+    if (process.platform !== "win32") assert.ok((await fs.stat(toolPath(bin, tool))).mode & 0o111);
   }
   const before = await fs.stat(target);
   await updateTools(home, old.assets, old.versions);
@@ -136,7 +142,7 @@ test("independent processes converge on the newest tool version", async t => {
   const results = await Promise.allSettled([newer, newest, old, newer, newest, old].map(bundle =>
     promisify(execFile)(process.execPath, ["--input-type=module", "-e", source, JSON.stringify([home, bundle])])));
   for (const result of results) assert.equal(result.status, "fulfilled", result.reason?.message);
-  for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-2.0.0`);
+  for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), `${tool}-2.0.0`);
   assert.ok(!(await fs.readdir(bin)).includes(".dscode-tools.lock"));
 });
 
@@ -150,7 +156,7 @@ test("missing, malformed, or mismatched receipts never authorize replacement", a
         else await fs.writeFile(path.join(bin, file), receipt);
       }
       await updateTools(home, newer.assets, newer.versions);
-      for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-1.9.0`);
+      for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), `${tool}-1.9.0`);
     });
   }
 });
@@ -167,14 +173,14 @@ test("recovers an abandoned lock and an interrupted publication with a prewritte
   const past = new Date(Date.now() - 60_000);
   await fs.utimes(lock, past, past);
   await updateTools(home, newer.assets, newer.versions);
-  for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(path.join(bin, tool), "utf8"), `${tool}-1.10.0`);
+  for (const tool of ["fd", "rg"]) assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), `${tool}-1.10.0`);
 });
 
 test("preparation failure preserves the old binary and releases the lock for a retry", async t => {
   const { home, bin, newer } = await fixture(t);
   const broken = { ...newer.assets, "tools/fd-LICENSES.txt": "/nonexistent/fixture-license" };
   await assert.rejects(updateTools(home, broken, newer.versions), { code: "ENOENT" });
-  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.9.0");
+  assert.equal(await fs.readFile(toolPath(bin, "fd"), "utf8"), "fd-1.9.0");
   await updateTools(home, newer.assets, newer.versions);
-  assert.equal(await fs.readFile(path.join(bin, "fd"), "utf8"), "fd-1.10.0");
+  assert.equal(await fs.readFile(toolPath(bin, "fd"), "utf8"), "fd-1.10.0");
 });

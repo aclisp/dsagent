@@ -1,6 +1,6 @@
 # ADR-0003: Standalone CLI scope and technical validation
 
-Status: Product scope confirmed. The macOS arm64 and Linux x86_64 production runtime builds are implemented and have passed offline acceptance checks. The release workflow remains to be validated.
+Status: Product scope confirmed. The macOS arm64 and Linux x86_64 production runtime builds are implemented and have passed offline acceptance checks. Windows 11 x64 is added as a preview; target-host and desktop validation must be recorded before claiming acceptance.
 
 ## Goal
 
@@ -13,25 +13,27 @@ Avoid extracting application dependencies such as JS, WASM, and dynamic librarie
 | Area | Decision |
 | --- | --- |
 | Command and configuration | `dscode`, default `~/.dscode`, existing `DSCODE_*` environment variables |
-| Platforms | Linux x86_64 (glibc) and macOS arm64; use Bun's x64 baseline target for Linux; exclude Linux arm64, Windows, Alpine/musl, and Intel Macs |
+| Platforms | Linux x86_64 (glibc), macOS arm64, and Windows 11 x64 preview; use Bun's x64 baseline targets for Linux and Windows; exclude Linux/Windows arm64, Alpine/musl, and Intel Macs |
 | Execution modes | TUI, `-p`, `--mode json`, and `--mode rpc`; retain help, version, and authentication management commands |
 | Default sandbox | Main process and subagents default to `danger-full-access`; this does not imply `permission=full` or `-y` |
 | Approvals | Retain existing permission rules; investigation children have only file-reading/search tools; print/JSON modes reject operations requiring approval when no confirmation interface is available; RPC provides approvals through its protocol |
 | Credentials | Always use file credentials in the standalone distribution, without a keyring dependency |
 | Shared directory | Read existing local Skills and JSONL sessions; do not migrate keyring credentials or rewrite existing configuration to enforce these policies; credentials available only in the keyring require a new login |
 | Images | Retain image paths, `@file` input, and image reads through `read`; embed Photon WASM preprocessing and the image worker |
-| Clipboard | Embed pi's macOS native helper for local TUI image paste; retain ordinary terminal text paste; Linux image paste uses clipboard commands installed by the user; SSH does not expose a local clipboard to a remote CLI |
+| Clipboard | Embed Pi's target-specific macOS/Windows TUI helper for image paste, modifier keys, and Windows VT input; retain ordinary terminal text paste; Linux image paste uses clipboard commands installed by the user; SSH does not expose a local clipboard to a remote CLI |
 | Vision CLI | Exclude `dscode-vision` and its dedicated execution path |
 | Subagents | Retain them by launching the same executable; internal noninteractive execution must not depend on adjacent JS files or system Node |
 | Skills | Support local user and project Skills; users supply the files and any external commands they require |
 | Extensions | Retain the built-in DSCode extension; disable user extensions, including explicit loading entry points |
 | pi package management | Exclude package installation, updates, removal, and loading extensions from packages |
 | MCP | Retain stdio and Streamable HTTP; users provide services, runtimes, and launch commands |
-| Native dependency removal | Exclude keyring, SQLite, Windows helpers, optional native WebSocket accelerators, and Kerberos |
+| Native dependency removal | Exclude keyring, SQLite, the Windows sandbox helper, optional native WebSocket accelerators, and Kerberos; retain the target's macOS/Windows TUI helper |
 | Proxies | Retain ordinary HTTP/HTTPS proxies; exclude Negotiate authentication that depends on the Kerberos module |
 | Static assets | Embed themes and HTML export templates; exclude pi documentation and examples; user-requested HTML exports may be written to disk |
 | Installation and upgrades | Direct downloads or a platform-detecting installer; verify downloads before atomic replacement; no automatic update checks or updates |
-| External tools | Embed pinned rg/fd and their licenses; atomically extract missing binaries to `$DSCODE_HOME/bin` (default `~/.dscode/bin`), upgrade receipt-verified DSCode copies only with `--update-bundled-tools`, without downgrades, preserving user replacements and symlinks; pi and command PATH use this directory without runtime downloads; users supply other tools such as Git, npx, and Python |
+| External tools | Embed pinned rg/fd and their licenses, including Windows MSVC `.exe` builds; atomically extract missing binaries to `$DSCODE_HOME/bin` (default `~/.dscode/bin`), upgrade receipt-verified DSCode copies only with `--update-bundled-tools`, without downgrades, preserving user replacements and symlinks; report Windows executable-in-use failures without deleting the old copy; pi and command PATH use this directory without runtime downloads; users supply other tools such as Git, npx, and Python |
+
+2026-10-27 scope addition: deliver Windows 11 x64 as a portable ZIP with `dscode.exe` and its SHA-256 file, retaining standalone defaults and exclusions. PowerShell-specific destructive-command approval rules and Windows managed-child quoting/`.exe` recognition are deferred and documented as preview limitations. Native Windows sandbox integration and ARM64 are separate work. CI runs native Windows acceptance with ConPTY; Windows 11 desktop and clipboard acceptance remain explicit target-host checks.
 
 ## Technical validation criteria
 

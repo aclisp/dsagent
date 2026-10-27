@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import lockfile from "proper-lockfile";
+import { binaryName } from "./platforms.mjs";
 
 /** Share startup preparation with pi's later, concurrent ensureTool calls. */
 export function createToolPreparer(assets, versions) {
@@ -25,9 +26,17 @@ async function publish(source, target, mode, replace = false) {
   try {
     const staged = path.join(temporary, "file");
     await fs.writeFile(staged, source, { mode });
-    await fs.chmod(staged, mode);
+    if (process.platform !== "win32") await fs.chmod(staged, mode);
     if (replace) {
-      await fs.rename(staged, target);
+      try {
+        await fs.rename(staged, target);
+      } catch (error) {
+        // Windows locks running executable images. Never unlink the old copy.
+        if (process.platform === "win32" && ["EACCES", "EPERM", "EBUSY"].includes(error.code)) {
+          throw new Error(`Cannot replace ${path.basename(target)} (${error.code}). Close processes using this tool and retry --update-bundled-tools.`, { cause: error });
+        }
+        throw error;
+      }
       return true;
     }
     try {
@@ -59,7 +68,7 @@ async function manageTools(home, assets, versions, upgrade) {
   const bin = path.join(home, "bin");
   // Ordinary startup must not read binary contents, receipts, or take a lock
   // when both paths already exist. lstat preserves even dangling symlinks.
-  if (!upgrade && (await Promise.all(["fd", "rg"].map(tool => exists(path.join(bin, tool))))).every(Boolean)) return;
+  if (!upgrade && (await Promise.all(["fd", "rg"].map(tool => exists(path.join(bin, binaryName(tool)))))).every(Boolean)) return;
   await fs.mkdir(bin, { recursive: true, mode: 0o700 });
   // Serialize ownership checks and publication across processes, including old
   // and new releases. Heartbeats allow recovery after an interrupted process.
@@ -78,7 +87,7 @@ async function manageTools(home, assets, versions, upgrade) {
 }
 
 async function installTool(bin, tool, assets, versions, upgrade) {
-  const target = path.join(bin, tool);
+  const target = path.join(bin, binaryName(tool));
   const report = message => ({ tool, message });
   if (!upgrade && await exists(target)) return report("already present");
   const current = await installedFile(target);

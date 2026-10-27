@@ -5,19 +5,30 @@ import path from "node:path";
 import os from "node:os";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { build as bundle } from "esbuild";
 import { verifyWebHandoff } from "../../scripts/web-handoff-smoke.mjs";
+import { ptyInvocation, isolatedRuntimeEnvironment, terminatePty } from "../../scripts/pty.mjs";
+import { hostPlatform, binaryName } from "../platforms.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", `${process.platform}-${process.arch}`)));
-const scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "dscode-standalone-run-")));
+const windows = process.platform === "win32";
+const build = await fs.realpath(path.resolve(process.argv[2] ?? path.join(root, "dist/standalone", hostPlatform())));
+const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "dscode-standalone-run-")));
+const scratch = windows ? path.join(temporary, "中文 workspace") : temporary;
+await fs.mkdir(scratch, { recursive: true });
+const executable = binaryName("dscode");
+const metadata = JSON.parse(await fs.readFile(path.join(build, "build.json"), "utf8"));
+assert.equal(metadata.platform, hostPlatform(), "Run acceptance on the artifact's target OS and architecture");
+const sha256 = createHash("sha256").update(await fs.readFile(path.join(build, executable))).digest("hex");
+assert.equal(sha256, metadata.sha256, "Executable does not match its build metadata");
 const home = path.join(scratch, "home");
 await fs.mkdir(home);
-for (const name of ["dscode"]) {
+for (const name of [executable]) {
   await fs.copyFile(path.join(build, name), path.join(scratch, name));
-  await fs.chmod(path.join(scratch, name), 0o755);
+  if (!windows) await fs.chmod(path.join(scratch, name), 0o755);
 }
 await fs.mkdir(path.join(home, "skills/local-probe"), { recursive: true });
 await fs.writeFile(path.join(home, "skills/local-probe/SKILL.md"),
@@ -106,23 +117,26 @@ const server = http.createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const env = {
-  PATH: "/usr/bin:/bin", HOME: home, DSCODE_HOME: home,
+  ...isolatedRuntimeEnvironment(home, scratch), DSCODE_HOME: home,
   TMPDIR: scratch, PI_OFFLINE: "1", PI_TELEMETRY: "0", PI_SKIP_VERSION_CHECK: "1",
   DEEPSEEK_API_KEY: "offline-fixture", NO_PROXY: "127.0.0.1,localhost",
 };
 const results = [];
 function run(name, args, rpc = false, tui = false, forbidNativeExtraction = false) {
-  const exe = path.join(scratch, name);
+  const exe = path.join(scratch, binaryName(name));
   // On macOS, deny access to both the checkout and build outputs. PATH has no
   // Node/Bun. Permit only scratch writes: any escaped auxiliary-file write fails.
   const policy = `(version 1)(allow default)(deny file-read* (subpath ${JSON.stringify(root)}) (subpath ${JSON.stringify(build)}))(deny file-write* (require-not (require-any (subpath ${JSON.stringify(scratch)}) (literal "/dev/null") (literal "/dev/tty"))))${forbidNativeExtraction ? '(deny file-write* (regex "\\\\.node$"))' : ''}`;
   let command = process.platform === "darwin" ? "/usr/bin/sandbox-exec" : exe;
   let argv = process.platform === "darwin" ? ["-p", policy, exe, ...args] : args;
-  if (tui) { argv = ["-B", path.join(root, "standalone/test/run_pty.py"), command, ...argv]; command = "/usr/bin/python3"; }
+  if (tui) {
+    const terminal = ptyInvocation(command, argv, true);
+    command = terminal.command; argv = terminal.args;
+  }
   return new Promise(resolve => {
     const child = spawn(command, argv, { env: tui ? {...env, TERM:"xterm-256color", ...(tui === "dialog" || tui === "paste" ? {DSCODE_TEST_TUI_DIALOG:"1", ...(tui === "paste" ? {DSCODE_TEST_TUI_PASTE:"1"} : {})} : {PI_STARTUP_BENCHMARK:"1"})} : env, cwd: scratch, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "", timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 20000);
+    const timer = setTimeout(() => { timedOut = true; terminatePty(child); }, windows ? 60_000 : 20_000);
     child.stdout.on("data", chunk => {
       stdout += chunk;
       if (rpc === true && stdout.includes('"id":"probe-state"')) child.stdin.end();
@@ -152,7 +166,7 @@ async function check(name, body) {
 const base = ["--base-url", `http://127.0.0.1:${server.address().port}`, "--no-session"];
 try {
   await check("TUI/Web/TUI continuation in relocated standalone", async () => {
-    await verifyWebHandoff({ executable: path.join(scratch, "dscode"), args: [], parentDirectory: scratch,
+    await verifyWebHandoff({ executable: path.join(scratch, executable), args: [], parentDirectory: scratch,
       denyReadPaths: [root, build], restrictPath: true });
   });
   await check("version", async () => {
@@ -185,17 +199,17 @@ try {
     const expected = {};
     const old = {};
     for (const tool of ["fd", "rg"]) {
-      expected[tool] = await fs.readFile(path.join(bin, tool));
+      expected[tool] = await fs.readFile(path.join(bin, binaryName(tool)));
       const previous = Buffer.from(`#!/bin/sh\necho old-${tool}\n`);
       old[tool] = previous;
       const sha256 = createHash("sha256").update(previous).digest("hex");
-      await fs.writeFile(path.join(bin, tool), previous);
+      await fs.writeFile(path.join(bin, binaryName(tool)), previous);
       await fs.writeFile(path.join(bin, `.${tool}-${sha256}.json`),
         JSON.stringify({ tool, version: "0.0.1", sha256 }));
     }
     let result = await run("dscode", [...base, "-p", "reply once"]);
     assert.equal(result.code, 0, result.stderr);
-    for (const tool of ["fd", "rg"]) assert.deepEqual(await fs.readFile(path.join(bin, tool)), old[tool]);
+    for (const tool of ["fd", "rg"]) assert.deepEqual(await fs.readFile(path.join(bin, binaryName(tool))), old[tool]);
     payload = undefined;
     result = await run("dscode", ["--update-bundled-tools"]);
     assert.equal(result.code, 0, result.stderr);
@@ -204,8 +218,8 @@ try {
     assert.match(result.stdout, /rg: updated to 15\.2\.0/);
     assert.doesNotMatch(result.stdout, /\x1b\[/, "maintenance must not start the TUI");
     for (const tool of ["fd", "rg"]) {
-      assert.deepEqual(await fs.readFile(path.join(bin, tool)), expected[tool]);
-      assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
+      assert.deepEqual(await fs.readFile(path.join(bin, binaryName(tool))), expected[tool]);
+      if (!windows) assert.ok((await fs.stat(path.join(bin, tool))).mode & 0o111);
     }
     result = await run("dscode", ["--update-bundled-tools"]);
     assert.equal(result.code, 0, result.stderr);
@@ -213,6 +227,36 @@ try {
     result = await run("dscode", ["--update-bundled-tools", "-p", "unrelated prompt"]);
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /Usage:/);
+  });
+  if (windows) await check("a running Windows tool survives an update and replacement can be retried after exit", async () => {
+    const target = path.join(home, "bin", binaryName("rg"));
+    const bytes = await fs.readFile(target);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const receipt = path.join(home, "bin", `.rg-${hash}.json`);
+    const savedReceipt = await fs.readFile(receipt);
+    await fs.writeFile(receipt, JSON.stringify({tool:"rg",version:"0.0.1",sha256:hash}));
+    const child = spawn(target, ["--text", "."], { env, stdio:["pipe","ignore","ignore"] });
+    const closed = once(child, "close");
+    try {
+      await once(child, "spawn");
+      const result = await run("dscode", ["--update-bundled-tools"]);
+      // A filesystem/runtime may permit atomic replacement of an open image.
+      // When Windows denies it, the old executable must remain intact.
+      if (result.code !== 0) assert.match(result.stderr, /Cannot replace rg\.exe/);
+      assert.equal(child.exitCode, null, "the updater must not terminate a running tool");
+      assert.deepEqual(await fs.readFile(target), bytes);
+    } finally {
+      child.stdin.end();
+      await closed;
+    }
+    try {
+      const retry = await run("dscode", ["--update-bundled-tools"]);
+      assert.equal(retry.code, 0, retry.stderr);
+      assert.match(retry.stdout, /rg: updated to 15\.2\.0/);
+    } finally {
+      // The probe deliberately used an old receipt for identical executable bytes.
+      await fs.writeFile(receipt, savedReceipt);
+    }
   });
   await check("explicit extensions and package commands rejected", async () => {
     for (const args of [["--extension",forbidden], ["-e",forbidden], ["install","npm:fixture"], ["update"], ["config"]]) {
@@ -232,20 +276,19 @@ try {
     const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
     assert.ok(events.some(event => event.type === "agent_end"));
   });
-  // The PTY probe uses Python stdlib only and runs on both macOS and Linux.
-  if (process.platform === "darwin" || process.platform === "linux") await check("TUI initialization under PTY", async () => {
+  await check("TUI initialization under PTY", async () => {
     const result = await run("dscode", base, false, true);
     assert.equal(result.timedOut, false, result.stdout + result.stderr);
     assert.equal(result.code, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /\x1b\[/);
   });
-  if (process.platform === "darwin" || process.platform === "linux") await check("TUI model reply and clean exit under PTY", async () => {
+  await check("TUI model reply and clean exit under PTY", async () => {
     const result = await run("dscode", [...base,"reply once"], false, "dialog");
     assert.equal(result.timedOut,false,result.stdout+result.stderr);
     assert.equal(result.code,0,result.stdout+result.stderr);
     assert.match(result.stdout,/standalone ok/);
   });
-  if (process.platform === "darwin" && process.env.DSCODE_TEST_CLIPBOARD_IMAGE === "1") await check("TUI image paste from macOS clipboard", async () => {
+  if ((process.platform === "darwin" || windows) && process.env.DSCODE_TEST_CLIPBOARD_IMAGE === "1") await check("TUI image paste from host clipboard", async () => {
     try {
       payload = undefined;
       const result = await run("dscode", base, false, "paste");
@@ -267,7 +310,9 @@ try {
     {name:"read",args:{path:"image.png"}},
     {name:"find",args:{pattern:"image.png"}},
     {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
-    {name:"exec_command",args:{cmd:"pwd; command -v rg; command -v fd; rg --version; fd --version"}},
+    {name:"exec_command",args:{cmd:windows
+      ? "Get-Location; (Get-Command rg.exe).Source; (Get-Command fd.exe).Source; rg --version; fd --version; if (Get-Command node.exe,bun.exe -ErrorAction SilentlyContinue) { throw 'Runtime unexpectedly available on PATH' }"
+      : "pwd; command -v rg; command -v fd; rg --version; fd --version"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
     {name:"exec_command",child:true,args:{cmd:`dscode --base-url ${base[1]} --model standalone-child --effort low --permission auto --tools read,find,grep,exec_command,write_stdin,apply_patch --no-mcp --no-session -p 'Read home/forbidden.js and return file evidence'`,yield_time_ms:0,timeout_ms:0}},
   ]) {
@@ -301,8 +346,9 @@ try {
       }
       else {
         assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
-        assert.match(JSON.stringify(toolOutputs), /home\/bin\/rg/);
-        assert.match(JSON.stringify(toolOutputs), /home\/bin\/fd/);
+        const normalizedOutput = JSON.stringify(toolOutputs).replace(/\\+/g, "/");
+        assert.match(normalizedOutput, /home\/bin\/rg/);
+        assert.match(normalizedOutput, /home\/bin\/fd/);
         assert.match(JSON.stringify(toolOutputs), /ripgrep 15\.2\.0/);
         assert.match(JSON.stringify(toolOutputs), /fd 10\.5\.0/);
       }
@@ -369,13 +415,11 @@ try {
     const promptRecord = path.join(scratch, "ui-prompt-hook.json");
     const endRecord = path.join(scratch, "ui-prompt-end-hook.json");
     const hooksPath = path.join(home, "hooks.json");
-    await fs.writeFile(hooksPath, JSON.stringify({hooks:{uiPromptStart:[{
-      command:"/bin/sh",
-      args:["-c", 'printf "%s" "$1" > "$2"', "ui-prompt-hook", "{payload}", promptRecord],
-    }],uiPromptEnd:[{
-      command:"/bin/sh",
-      args:["-c", 'printf "%s" "$1" > "$2"', "ui-prompt-hook", "{payload}", endRecord],
-    }]}}));
+    // Absolute Node is an explicitly supplied external hook, just like the MCP fixture.
+    const hookScript = path.join(scratch, "record-ui-prompt.mjs");
+    await fs.writeFile(hookScript, 'import fs from "node:fs"; fs.writeFileSync(process.argv[3], process.argv[2]);');
+    const hook = file => ({ command:process.execPath, args:[hookScript,"{payload}",file] });
+    await fs.writeFile(hooksPath, JSON.stringify({hooks:{uiPromptStart:[hook(promptRecord)],uiPromptEnd:[hook(endRecord)]}}));
     async function waitForNotification(file) {
       for (let attempt = 0; attempt < 100; attempt++) {
         try { await fs.access(file); return; }
@@ -433,7 +477,8 @@ try {
   });
 } finally {
   await new Promise(resolve => server.close(resolve));
-  await fs.writeFile(path.join(build, "verification.json"), JSON.stringify({ scratch, results }, null, 2));
+  await fs.writeFile(path.join(build, "verification.json"), JSON.stringify({ platform:hostPlatform(), osRelease:os.release(), sha256,
+    clipboardTested:process.env.DSCODE_TEST_CLIPBOARD_IMAGE === "1" && (process.platform === "darwin" || windows), scratch, results }, null, 2));
   console.log(`Artifacts: ${build}; isolated runtime files: ${scratch}`);
 }
 if (results.some(result => !result.passed)) process.exitCode = 1;

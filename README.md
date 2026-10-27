@@ -39,6 +39,7 @@ Start with a standalone executable. No Node.js, Bun, package manager, or source 
    | --- | --- |
    | macOS with Apple Silicon (M1 or later) | `dscode-v<version>-darwin-arm64.tar.gz` |
    | Linux x86_64 / AMD64 | `dscode-v<version>-linux-x64.tar.gz` |
+   | Windows 11 x64 (preview) | `dscode-v<version>-windows-x64.zip` |
 
 2. Extract the archive and open a terminal in the extracted folder.
 3. Start DSCode:
@@ -47,8 +48,10 @@ Start with a standalone executable. No Node.js, Bun, package manager, or source 
 ./dscode
 ```
 
-Only the `dscode` executable is needed; you can move it to any folder. The included `dscode.sha256`
-file is its checksum. Standalone downloads currently support the two platforms above. The macOS
+On Windows, run `./dscode.exe` from PowerShell or Windows Terminal. Only the executable is needed;
+you can move it to any folder. The included `dscode.sha256` (Windows: `dscode.exe.sha256`) file is
+its checksum. Windows preview limitations and validation steps are listed in the
+[standalone guide](standalone/README.md#windows-11-preview). The macOS
 executable is not notarized, so macOS may ask you to allow it in **System Settings → Privacy & Security**.
 
 For login, first-run guidance, and CLI/runtime details, see the

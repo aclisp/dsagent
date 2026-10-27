@@ -8,20 +8,19 @@ import { createHash } from "node:crypto";
 import { piAdapter, PI_VERSION } from "./pi-adapter.mjs";
 import { prepareTools, toolVersions } from "./tools-build.mjs";
 import { webAssetPaths } from "../scripts/web-assets.mjs";
+import { targets, hostPlatform, binaryName } from "./platforms.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// Linux uses the x64 baseline target per ADR-0003.
-const targets = { "darwin-arm64": "bun-darwin-arm64", "linux-x64": "bun-linux-x64-baseline" };
-const host = `${process.platform}-${process.arch}`;
+const host = hostPlatform();
 if (!Object.hasOwn(targets, host)) {
   throw new Error(`Unsupported standalone build host ${host}; supported: ${Object.keys(targets).join(", ")}.`);
 }
 if (Bun.version !== "1.3.14") throw new Error("Use Bun 1.3.14; upgrade together with standalone validation.");
 const args = process.argv.slice(2);
 if (args.length !== 0 && (args.length !== 2 || args[0] !== "--target" || !Object.hasOwn(targets, args[1]))) {
-  throw new Error("Usage: bun standalone/build.mjs [--target darwin-arm64|linux-x64]");
+  throw new Error(`Usage: bun standalone/build.mjs [--target ${Object.keys(targets).join("|")}]`);
 }
-// This Mac is the release build host. Linux keeps its native build default
+// This Mac can cross-build all targets. Other hosts keep their native default
 // because producing our signed macOS artifact requires macOS codesign.
 const platforms = args.length ? [args[1]] : host === "darwin-arm64" ? Object.keys(targets) : [host];
 if (platforms.includes("darwin-arm64") && process.platform !== "darwin") {
@@ -38,6 +37,7 @@ for (const platform of platforms) await buildPlatform(platform);
 
 async function buildPlatform(platform) {
   const target = targets[platform];
+  const name = binaryName("dscode", platform);
   const out = path.join(root, "dist/standalone", platform);
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "dscode-standalone-build-"));
   const previousCwd = process.cwd();
@@ -70,32 +70,33 @@ async function buildPlatform(platform) {
     const audit = { inputs: new Set(), excluded: new Set(), adapted: new Set() };
     const result = await Bun.build({
       entrypoints: [entry, worker, codemodeWorker],
-      compile: { outfile: path.join(work, "dscode"), target, autoloadBunfig: false, autoloadDotenv: false, autoloadTsconfig: false, autoloadPackageJson: false },
+      compile: { outfile: path.join(work, name), target, autoloadBunfig: false, autoloadDotenv: false, autoloadTsconfig: false, autoloadPackageJson: false },
       target: "bun", minify: { syntax: true, whitespace: true, identifiers: false },
       naming: { asset: "[name].[ext]" },
       define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(version) },
       plugins: [piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorker, audit, platform, toolVersions })],
     });
     if (!result.success) throw new AggregateError(result.logs, "Standalone build failed");
-    const executable = path.join(work, "dscode");
+    const executable = path.join(work, name);
     if (platform === "darwin-arm64") {
       const signed = spawnSync("/usr/bin/codesign", ["--force", "--sign", "-", executable], { encoding: "utf8" });
       if (signed.status !== 0) throw new Error(signed.stderr || "Ad-hoc signing failed");
     }
     const bytes = fs.readFileSync(executable);
     fs.mkdirSync(out, { recursive: true });
-    fs.copyFileSync(executable, path.join(out, "dscode.tmp"));
-    fs.chmodSync(path.join(out, "dscode.tmp"), 0o755);
-    fs.renameSync(path.join(out, "dscode.tmp"), path.join(out, "dscode"));
+    fs.copyFileSync(executable, path.join(out, `${name}.tmp`));
+    if (!platform.startsWith("windows-")) fs.chmodSync(path.join(out, `${name}.tmp`), 0o755);
+    fs.renameSync(path.join(out, `${name}.tmp`), path.join(out, name));
     // A previous acceptance report does not validate this newly built artifact.
     fs.rmSync(path.join(out, "verification.json"), { force: true });
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    fs.writeFileSync(path.join(out, "dscode.sha256"), `${sha256}  dscode\n`);
+    fs.writeFileSync(path.join(out, `${name}.sha256`), `${sha256}  ${name}\n`);
     fs.writeFileSync(path.join(out, "build.json"), JSON.stringify({ version, pi: PI_VERSION, bun: Bun.version,
       platform, target, host, bytes: bytes.length, sha256, tools: toolVersions,
+      nativeModules: [...audit.inputs].filter(file => file.endsWith(".node")).map(file => path.relative(path.join(tui, ".."), file).replaceAll("\\", "/")).sort(),
       inputs: audit.inputs.size, excluded: [...audit.excluded].sort(), adapted: [...audit.adapted].sort(),
     }, null, 2) + "\n");
-    console.log(`Built ${path.join(out, "dscode")} (${(bytes.length / 1024 / 1024).toFixed(1)} MiB)`);
+    console.log(`Built ${path.join(out, name)} (${(bytes.length / 1024 / 1024).toFixed(1)} MiB)`);
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(work, { recursive: true, force: true });
