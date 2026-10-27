@@ -119,9 +119,20 @@ test("upgrades receipt-owned tools atomically and never downgrades or rewrites t
   const target = toolPath(bin, "fd");
   const oldHandle = await fs.open(target, "r");
   try {
-    await updateTools(home, newer.assets, newer.versions);
+    if (process.platform === "win32") {
+      // Windows can deny replacement while a reader holds the destination open.
+      await assert.rejects(updateTools(home, newer.assets, newer.versions), error =>
+        /Cannot replace fd\.exe/.test(error.message) &&
+        ["EACCES", "EPERM", "EBUSY"].includes(error.cause?.code));
+      assert.equal(await fs.readFile(target, "utf8"), "fd-1.9.0");
+      assert.ok(!(await fs.readdir(bin)).some(name =>
+        name === ".dscode-tools.lock" || name.startsWith(".extract-")));
+    } else {
+      await updateTools(home, newer.assets, newer.versions);
+    }
     assert.equal(await oldHandle.readFile("utf8"), "fd-1.9.0");
   } finally { await oldHandle.close(); }
+  if (process.platform === "win32") await updateTools(home, newer.assets, newer.versions);
   for (const tool of ["fd", "rg"]) {
     assert.equal(await fs.readFile(toolPath(bin, tool), "utf8"), `${tool}-1.10.0`);
     if (process.platform !== "win32") assert.ok((await fs.stat(toolPath(bin, tool))).mode & 0o111);
