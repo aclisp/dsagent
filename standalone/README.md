@@ -138,7 +138,11 @@ Managed DSCode child commands on Windows accept the bare names `dscode` and `dsc
 dscode.exe -C "C:\项目 files\" --no-session -p 'Inspect O''Brien project files'
 ```
 
-PowerShell-specific destructive-command approval rules remain deferred. The existing shell classifier is Unix-oriented: commands such as `Remove-Item` do not trigger its destructive-command rules. Use `--permission ask` to require approval for shell tool calls. These managed-command rules do not change direct CLI argument parsing.
+In `--permission auto`, Windows commands use a PowerShell-specific literal classifier. Deletion (`Remove-Item`, `ri`, `del`, `rm`, and related built-in aliases), content clearing/replacement, output-file overwrites, process/service termination, shutdown/restart, and disk/partition changes require the existing destructive-command approval. Names are case-insensitive and may be module-qualified or invoked with `&`. Pipelines, supported control/script blocks, substitutions, and literal `pwsh`/`powershell` command payloads are inspected; comments and quoted data remain data. Literal encoded command payloads are decoded as UTF-16LE without execution.
+
+Known cmdlets with a literal `-WhatIf` or `-WhatIf:$true` preview do not require destructive-command approval; `-WhatIf:$false`, runtime values, quoted flag-like data, and flags after `--` do not grant that exemption. An append to an output file is treated as routine work. Dynamic call operators, runtime `Invoke-Expression`, and PowerShell script/file launches that cannot be inspected literally require approval. `ask` still approves every command, and `full` retains its existing behavior.
+
+This remains a bounded heuristic, like the Unix classifier. Custom alias/function definitions and arbitrary interpreter code are not evaluated, and the classifier is not an OS security boundary. Use `--permission ask` to require approval for every shell tool call. Direct CLI argument parsing is unchanged. Windows acceptance includes noninteractive deny/preview/read checks and RPC deny/allow deletion of an isolated fixture file.
 
 The preview retains standalone's `danger-full-access` default and file credentials. It does not include the experimental native Windows sandbox or its elevated setup commands. Windows ARM64 is outside this target.
 

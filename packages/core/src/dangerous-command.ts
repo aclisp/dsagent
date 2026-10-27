@@ -4,6 +4,8 @@ import { makeDangerousMatch, withIntent, type DangerousMatch } from "./dangerous
 import { dangerousGitMatch } from "./dangerous-command/git.ts";
 import { dangerousServerMatch } from "./dangerous-command/server.ts";
 import { classifyLiteralCommand } from "./literal-command.ts";
+import { powerShellCommands, powerShellName } from "./dangerous-command/powershell-shell.ts";
+import { powerShellPayload, powerShellRule } from "./dangerous-command/powershell.ts";
 
 export interface DangerousCommandResult {
   dangerous: boolean;
@@ -16,17 +18,16 @@ export interface DangerousCommandResult {
 export const DEFAULT_DANGEROUS_COMMAND_INTENT = "Potentially destructive operation";
 
 /** A small shell heuristic, not a security boundary. A negative result means no
- * rule matched, not that execution is safe. Dynamic commands, substitutions,
- * heredocs, non-shell interpreter scripts and stdin are not interpreted.
- * Literal shell -c payloads and known command wrappers are checked recursively. */
+ * rule matched, not that execution is safe. Literal shell payloads and supported
+ * PowerShell expressions/blocks are inspected. Custom definitions, external
+ * script contents, other interpreter code, and stdin are not evaluated. */
 export function detectDangerousCommand(command: string, platform: NodeJS.Platform = process.platform): DangerousCommandResult {
   // Managed Windows aliases must get the same launch approval as bare dscode.
-  // Use the actual literal parser: the Unix heuristic cannot read Windows paths
-  // and PowerShell quotes reliably. Other PowerShell rules remain out of scope.
+  // Use the same literal parser as the managed launcher for DSCode aliases.
   const literal = platform === "win32" ? classifyLiteralCommand(command, "dscode", platform) : undefined;
   const match = literal?.kind === "trusted"
     ? dscodeAgentMatch(literal.command.args, true)
-    : findDangerousMatch(command, 0);
+    : platform === "win32" ? findPowerShellMatch(command, 0) : findDangerousMatch(command, 0);
   return match
     ? { dangerous: true, reason: match.reason, intent: match.intent }
     : { dangerous: false };
@@ -62,6 +63,29 @@ function findDangerousMatch(command: string, depth: number, elevated = false): D
   if (depth > maxDepth) return;
   for (const { words, complete } of simpleCommands(command)) {
     const match = dangerousMatch(words, depth, complete, elevated);
+    if (match) return match;
+  }
+}
+
+function findPowerShellMatch(command: string, depth: number): DangerousMatch | undefined {
+  if (depth > maxDepth) return;
+  for (const entry of powerShellCommands(command)) {
+    const rule = powerShellRule(entry);
+    if (rule.match) return rule.match;
+    if (rule.handled) continue;
+    const [word, ...args] = entry.words;
+    if (!word) continue;
+    const name = powerShellName(word.value);
+    const payload = powerShellPayload(name, args);
+    if (payload.match) return payload.match;
+    if (payload.handled) {
+      const nested = payload.script && findPowerShellMatch(payload.script, depth + 1);
+      if (nested) return nested;
+      continue;
+    }
+    // Reuse the existing Git, server, and native Unix-command rules after the
+    // PowerShell lexer has resolved command boundaries and literal names.
+    const match = dangerousMatch([name, ...args.map(arg => arg.value)], depth, entry.complete);
     if (match) return match;
   }
 }

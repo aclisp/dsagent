@@ -482,6 +482,17 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 | `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
 | `full` | Trusted mode with unrestricted host filesystem and network access |
 
+Windows host commands use a PowerShell literal classifier for destructive approval.
+It recognizes common deletion aliases, file clearing/overwrites, process/service stops,
+power and disk operations, module-qualified names, pipelines, supported executable blocks,
+and literal PowerShell wrapper payloads. Comments and quoted data do not count as commands.
+Known cmdlets with explicit `-WhatIf`/`-WhatIf:$true` previews are exempt from destructive
+approval; disabled/dynamic switches, quoted flag-like operands, and flags after `--` are
+not exemptions. Runtime code invocation and uninspectable PowerShell script launches
+require approval. This is a bounded heuristic, not a security boundary; custom aliases,
+function definitions, and arbitrary interpreter code are not evaluated. `ask` still
+requires approval for every command, and `full` retains its existing behavior.
+
 The default command boundary is `workspace-write` with no network. When a command needs network or host
 access, the TUI offers **Allow once**, **Allow this command for this session**, or **Deny**, then retries
 an approved command with the smallest applicable access. Use `--network` to pre-authorize network for a

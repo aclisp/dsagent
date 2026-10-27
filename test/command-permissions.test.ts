@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as commandRules from "../packages/core/src/dangerous-command.ts";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 
@@ -60,5 +61,45 @@ describe("DSCode launch command permissions", () => {
     const h = await harness("full", false);
     expect(await h.call("dscode --permission full -p 'perform the task'")).toBeUndefined();
     expect(h.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("PowerShell command permissions", () => {
+  const detect = commandRules.detectDangerousCommand;
+  beforeEach(() => {
+    vi.spyOn(commandRules, "detectDangerousCommand").mockImplementation(command => detect(command, "win32"));
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("requires auto approval and honors the user's decision", async () => {
+    const h = await harness("auto", true);
+    const command = "Remove-Item -LiteralPath 'C:\\项目 files\\old.txt' -Confirm:$false";
+    expect(await h.call(command)).toMatchObject({ block: true, reason: "Destructive command denied by user" });
+    expect(h.confirm).toHaveBeenCalledWith("Run destructive command?", expect.stringContaining("Delete the specified files or provider items"));
+    h.confirm.mockResolvedValue(true);
+    expect(await h.call(command)).toBeUndefined();
+  });
+
+  it("blocks destructive noninteractive calls while allowing inspection and previews", async () => {
+    const h = await harness("auto", false);
+    for (const command of ["Remove-Item file", "Clear-Content file", "Stop-Process -Id 123 -WhatIf:$false"]) {
+      expect(await h.call(command)).toMatchObject({ block: true, reason: expect.stringContaining("interactive approval UI") });
+    }
+    for (const command of ["Get-Content file", "Remove-Item file -WhatIf", "Write-Output 'Remove-Item file'"]) {
+      expect(await h.call(command)).toBeUndefined();
+    }
+    expect(h.confirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps full mode available for explicitly trusted commands", async () => {
+    const h = await harness("full", false);
+    expect(await h.call("Remove-Item file")).toBeUndefined();
+    expect(h.confirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps ask mode approval for ordinary PowerShell commands", async () => {
+    const h = await harness("ask", true);
+    expect(await h.call("Get-Content file")).toMatchObject({ block: true });
+    expect(h.confirm).toHaveBeenCalledWith("Allow exec_command?", expect.any(String));
   });
 });

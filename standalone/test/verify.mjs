@@ -362,6 +362,61 @@ try {
     assert.equal(result.code,0,result.stderr);
     assert.match(JSON.stringify(toolOutputs),/interactive approval UI/);
   });
+  if (windows) {
+    const target = path.join(scratch, "审批 target [1].txt");
+    const remove = `Remove-Item -LiteralPath "${target}" -Force -Confirm:$false`;
+    for (const sample of [
+      {name:"deletion requires approval",cmd:remove,blocked:true},
+      {name:"content clearing requires approval",cmd:`Clear-Content -LiteralPath "${target}"`,blocked:true},
+      {name:"pipeline aliases require approval",cmd:`Get-Item -LiteralPath "${target}" | ri -Force`,blocked:true},
+      {name:"disabled WhatIf requires approval",cmd:`${remove} -WhatIf:$false`,blocked:true},
+      {name:"literal WhatIf previews run without approval",cmd:`${remove} -WhatIf`,blocked:false},
+      {name:"read-only commands run without approval",cmd:`Get-Content -LiteralPath "${target}"`,blocked:false},
+    ]) {
+      await check(`PowerShell auto permissions: ${sample.name}`, async () => {
+        await fs.writeFile(target,"APPROVAL_FIXTURE");
+        plannedTool={name:"exec_command",args:{cmd:sample.cmd}}; toolIssued=false; toolOutputs=[];
+        const result=await run("dscode",[...base,"--permission","auto","--no-mcp","--mode","json","-p","try PowerShell command"]);
+        assert.equal(result.code,0,result.stderr);
+        if (sample.blocked) assert.match(JSON.stringify(toolOutputs),/interactive approval UI/);
+        else {
+          const events=result.stdout.trim().split("\n").map(line=>JSON.parse(line));
+          const finished=events.find(event=>event.type==="tool_execution_end" && event.toolName==="exec_command");
+          assert.ok(finished,result.stdout);
+          assert.equal(finished.isError,false,JSON.stringify(finished));
+          assert.equal(finished.result.details.exitCode,0,JSON.stringify(finished));
+        }
+        assert.equal(await fs.readFile(target,"utf8"),"APPROVAL_FIXTURE");
+      });
+    }
+    for (const approved of [false,true]) {
+      await check(`PowerShell RPC approval ${approved ? "allows" : "denies"} deletion`, async () => {
+        await fs.writeFile(target,"APPROVAL_FIXTURE");
+        plannedTool={name:"exec_command",args:{cmd:remove}}; toolIssued=false; toolOutputs=[];
+        let prompted=false;
+        const result=await run("dscode",[...base,"--permission","auto","--no-mcp","--mode","rpc"],{
+          start:[{id:"powershell-approval",type:"prompt",message:"try PowerShell deletion"}],
+          onEvent(event,child) {
+            if (event.type==="extension_ui_request" && event.method==="confirm") {
+              prompted=true;
+              child.stdin.write(JSON.stringify({type:"extension_ui_response",id:event.id,confirmed:approved})+"\n");
+            }
+            if (event.type==="agent_end") child.stdin.end();
+          },
+        });
+        assert.equal(result.timedOut,false,result.stderr);
+        assert.equal(result.code,0,result.stderr);
+        assert.ok(prompted,result.stdout);
+        if (approved) {
+          assert.match(JSON.stringify(toolOutputs),/exit_code: 0/);
+          await assert.rejects(fs.access(target),{code:"ENOENT"});
+        } else {
+          assert.match(JSON.stringify(toolOutputs),/Destructive command denied by user/);
+          assert.equal(await fs.readFile(target,"utf8"),"APPROVAL_FIXTURE");
+        }
+      });
+    }
+  }
   plannedTool = undefined;
   await check("session persistence, resume and embedded HTML export", async () => {
     const args = ["--base-url",base[1]];
