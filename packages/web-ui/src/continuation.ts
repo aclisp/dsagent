@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { webOrigin, type StartWebContinuationOptions, type WebContinuationService } from "@aclisp/dsagent-core/session-runtime";
 import type { HttpSessionControl } from "@aclisp/dsagent-http-adapter";
+import { DEFAULT_CHAT_AGENT_NAME } from "./chat-page.ts";
 import { createWebUiServer } from "./web-ui-server.ts";
 
 export async function startWebContinuation(options: StartWebContinuationOptions): Promise<WebContinuationService> {
@@ -14,9 +15,8 @@ export async function startWebContinuation(options: StartWebContinuationOptions)
     runtimeOptions: options.runtimeOptions,
     sessionDir: options.sessionDir,
     continuationMode: true,
-    chatAgentName: "DSCode",
+    chatAgentName: DEFAULT_CHAT_AGENT_NAME,
     maxUploadBytes: 100 * 1024 * 1024,
-    timezone: "UTC",
     requireWorkspaceIdForSessionList: true,
     onSessionControl: (value) => { control = value; },
   });

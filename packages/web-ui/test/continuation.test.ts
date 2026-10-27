@@ -103,7 +103,7 @@ describe("Web continuation composition", () => {
     const provider = { providerId: "disabled", start: vi.fn(), subscribe: vi.fn(), dispose: vi.fn() };
     const server = await createWebUiServer({
       workspaces: { secret: root }, runtimeOptions: snapshot,
-      continuationMode: true, chatAgentName: "DSCode", maxUploadBytes: 1024, timezone: "UTC",
+      continuationMode: true, chatAgentName: "DSCode", maxUploadBytes: 1024,
       chatProviders: [provider as never],
       onSessionControl: value => { control = value; },
       createHost: async options => {
@@ -161,7 +161,7 @@ describe("Web continuation composition", () => {
     expect(tui.handoff.getPosition()).toBeNull();
     let control: HttpSessionControl | undefined;
     const server = await createWebUiServer({ workspaces: { secret: root }, runtimeOptions: tui.handoff.getOptions(), continuationMode: true,
-      chatAgentName: "DSCode", maxUploadBytes: 1024, timezone: "UTC", onSessionControl: value => { control = value; } });
+      chatAgentName: "DSCode", maxUploadBytes: 1024, onSessionControl: value => { control = value; } });
     try {
       await control!.activate("secret", null);
       const initial = (await server.inject("/v1/sessions?workspaceId=secret")).json().sessions[0].session.id;
@@ -185,7 +185,7 @@ describe("Web continuation composition", () => {
     let control: HttpSessionControl | undefined;
     let web!: AgentSessionHost;
     const server = await createWebUiServer({ workspaces: { secret: root }, runtimeOptions: tui.handoff.getOptions(), continuationMode: true,
-      chatAgentName: "DSCode", maxUploadBytes: 1024, timezone: "UTC", onSessionControl: value => { control = value; },
+      chatAgentName: "DSCode", maxUploadBytes: 1024, onSessionControl: value => { control = value; },
       createHost: async options => web = await createAgentSessionHost(options) });
     try {
       await control!.activate("secret", null);

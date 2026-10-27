@@ -18,6 +18,7 @@ import { registerFileRoutes } from "./files.ts";
 import {
   assertValidScheduleTimezone,
   createTaskScheduler,
+  resolveConfiguredTimezone,
   type ScheduledSourceDeliveryPort,
 } from "./task-scheduler.ts";
 
@@ -25,7 +26,8 @@ export interface CreateWebUiServerOptions
   extends CreateHttpAdapterServerOptions {
   chatAgentName: string;
   maxUploadBytes: number;
-  timezone: string;
+  /** Scheduler timezone; unused in continuation mode. Defaults to TZ or Asia/Shanghai. */
+  timezone?: string;
   /** Preferred multi-Provider form. All Providers share one Session Port. */
   chatProviders?: readonly ChatProvider[];
   onChatProviderStarted?: (providerId: string) => void;
@@ -45,7 +47,6 @@ export async function createWebUiServer(
     continuationMode,
     ...httpAdapterOptions
   } = options;
-  assertValidScheduleTimezone(timezone);
   const firstWorkspaceId = Object.keys(options.workspaces)[0];
   const firstWorkspacePath =
     firstWorkspaceId === undefined ? undefined : options.workspaces[firstWorkspaceId];
@@ -121,6 +122,8 @@ export async function createWebUiServer(
 
   if (continuationMode) return server;
 
+  const schedulerTimezone = resolveConfiguredTimezone(timezone ?? process.env.TZ);
+  assertValidScheduleTimezone(schedulerTimezone);
   const conversationRegistry = await createConversationAliasRegistry({
     filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
   });
@@ -221,7 +224,7 @@ export async function createWebUiServer(
     scheduler = await createTaskScheduler({
       workspaceId: firstWorkspaceId,
       workspacePath: firstWorkspacePath,
-      timezone,
+      timezone: schedulerTimezone,
       sessionPort,
       logger: server.log,
       ...(activeProviders.length > 0 ? { sourceDelivery } : {}),
