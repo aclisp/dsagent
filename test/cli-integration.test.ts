@@ -153,6 +153,7 @@ describe("DSCode Pi integration", () => {
       expect(codemode.description).not.toContain("need_content");
       expect(codemode.description).not.toContain("snapshot_id");
       expect(payload?.input[0]).toMatchObject({ role: "system", content: expect.stringContaining("discover web_search and web_fetch on demand") });
+      expect(payload?.input[0].content).toContain("(shell: ");
     }
     if (!noTools) {
       expect(payload?.tools.find((tool: { name: string }) => tool.name === "apply_patch"))

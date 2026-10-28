@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { stripModelCredentialEnvironment } from "./providers.ts";
 import type { SandboxMode } from "./runtime-options.ts";
-import { hostShellCommand, type ShellSyntax } from "./shell.ts";
+import { hostShellCommand, windowsPowerShellCommand, type ShellSyntax } from "./shell.ts";
 import {
   windowsNativeSandboxCommand,
   windowsNativeSandboxDescription,
@@ -39,6 +39,22 @@ export function sandboxShellSyntax(options: SandboxOptions): ShellSyntax {
   const backend = selectSandboxBackend(options);
   if (backend.kind === "docker") return "posix";
   return backend.kind === "windows-native" || process.platform === "win32" ? "powershell" : "posix";
+}
+
+/** Describe the selected shell without launching it or preparing a sandbox. */
+export function sandboxShellName(options: SandboxOptions): string {
+  const backend = selectSandboxBackend(options);
+  if (backend.kind === "docker") return "/bin/sh";
+  if (backend.kind === "unavailable") return "unavailable";
+  try {
+    const shell = backend.kind === "windows-native"
+      ? windowsPowerShellCommand("", "native-sandbox")
+      : hostShellCommand("");
+    return process.platform === "win32" ? path.win32.basename(shell.command) : shell.command;
+  } catch {
+    // Missing shell installations must not prevent read-only agent work.
+    return "unavailable";
+  }
 }
 
 export function sandboxCommand(

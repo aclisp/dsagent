@@ -49,7 +49,7 @@ import {
   type DangerousCommandResult,
 } from "./dangerous-command.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
-import { executeSandboxedCommand, sandboxDescription, sandboxShellSyntax } from "./sandbox.ts";
+import { executeSandboxedCommand, sandboxDescription, sandboxShellName, sandboxShellSyntax } from "./sandbox.ts";
 import type { ShellSyntax } from "./shell.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { getSessionPosition, type DSCodeSessionRuntime } from "./session-handoff.ts";
@@ -981,9 +981,6 @@ function registerCommandTools(
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
     promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
-      ...(process.platform === "win32"
-        ? ["Use PowerShell syntax for Windows host/native-sandbox commands; Docker commands use /bin/sh syntax."]
-        : []),
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
       "When a process is still running, use write_stdin with its process_id.",
@@ -1426,7 +1423,9 @@ function engineeringInstructions(
   access: EffectiveAccess,
   webAvailable: boolean,
 ): string {
-  const commandSandbox = sandboxDescription({ mode: access.sandbox, network: access.network });
+  const sandbox = { mode: access.sandbox, network: access.network };
+  const commandSandbox = sandboxDescription(sandbox);
+  const commandShell = sandboxShellName(sandbox);
   const instructions = [
     "# DSCode engineering contract",
     "- Work to a verified repository outcome: inspect first, make focused changes, run the narrowest relevant checks, then broaden validation in proportion to risk.",
@@ -1434,7 +1433,7 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
+    `- Commands execute locally in ${commandSandbox} (shell: ${commandShell}); this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
     `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}.`,
     ...(webAvailable ? ["- For web research, use codemode's searchTools()/describeTool() to discover web_search and web_fetch on demand."] : []),
     ...(access.network

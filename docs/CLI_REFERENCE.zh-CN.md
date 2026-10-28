@@ -18,6 +18,9 @@ Windows 主机命令使用 PowerShell，依次查找 `DSCODE_SHELL`、PATH 中�
 Windows 原生沙箱仍验证显式配置并要求 PowerShell 7，不回退到旧版 Windows PowerShell。两条路径共用尽力而为的
 UTF-8 控制台输出设置，并禁用 profile 加载，同时保留各后端原有的启动参数。
 
+默认 engineering system prompt 会在命令后端旁注明实际选中的 shell，例如
+`host access (shell: pwsh.exe)` 或 `Docker workspace-write (shell: /bin/sh)`。
+
 从本地源码 checkout 启动 DSCode：
 
 ```bash

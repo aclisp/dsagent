@@ -22,6 +22,9 @@ is found. The native Windows sandbox validates its override and requires
 PowerShell 7 and never falls back to Windows PowerShell. Both paths share best-effort UTF-8 console
 output setup and disable profile loading, while retaining their existing backend-specific flags.
 
+The default engineering system prompt reports the selected shell alongside the command
+backend, such as `host access (shell: pwsh.exe)` or `Docker workspace-write (shell: /bin/sh)`.
+
 Start DSCode from a local source checkout:
 
 ```bash
