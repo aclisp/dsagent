@@ -16,6 +16,7 @@ export {
   type HttpAdapterHostFactoryOptions,
   type HttpSessionListEntry,
   type PersistedSessionLister,
+  type HttpSessionControl,
 } from "./http-server.ts";
 export type {
   HttpActivityPhase,

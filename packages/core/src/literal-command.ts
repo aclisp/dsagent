@@ -3,21 +3,34 @@ export type LiteralCommandClassification =
   | { kind: "invalid"; reason: string }
   | { kind: "trusted"; command: { args: string[] } };
 
-function startsWithExecutable(command: string, executable: string): boolean {
-  const text = command.trimStart();
-  return text.startsWith(executable) && (text.length === executable.length || /[\s;&|<>]/.test(text[executable.length]!));
+function executableNames(executable: string, windows: boolean): string[] {
+  return windows ? [executable.toLowerCase(), `${executable.toLowerCase()}.exe`] : [executable];
+}
+
+function startsWithExecutable(command: string, executable: string, windows: boolean): boolean {
+  const text = windows ? command.trimStart().toLowerCase() : command.trimStart();
+  return executableNames(executable, windows).some(name =>
+    text.startsWith(name) && (text.length === name.length || /[\s;&|<>()]/.test(text[name.length]!)));
 }
 
 /** Credentials are only forwarded to direct, literal invocations; never to a shell. */
-export function classifyLiteralCommand(command: string, executable: string): LiteralCommandClassification {
-  if (!startsWithExecutable(command, executable)) {
-    return containsChainedCommand(command, executable)
+export function classifyLiteralCommand(
+  command: string,
+  executable: string,
+  platform: NodeJS.Platform = process.platform,
+): LiteralCommandClassification {
+  const windows = platform === "win32";
+  if (!startsWithExecutable(command, executable, windows)) {
+    return containsChainedCommand(command, executable, windows)
       ? { kind: "invalid", reason: `${executable} must be invoked directly without cd or command chaining` }
       : { kind: "other" };
   }
-  const parsed = parseLiteralCommandWords(command);
+  const parsed = parseLiteralCommandWords(command, windows);
   if (!parsed.ok) return { kind: "invalid", reason: parsed.reason };
-  if (parsed.words[0] !== executable) return { kind: "invalid", reason: `the executable must be exactly ${executable}` };
+  const name = windows ? parsed.words[0]?.toLowerCase() : parsed.words[0];
+  if (!name || !executableNames(executable, windows).includes(name)) {
+    return { kind: "invalid", reason: `the executable must be exactly ${executable}${windows ? ` or ${executable}.exe` : ""}` };
+  }
   return { kind: "trusted", command: { args: parsed.words.slice(1) } };
 }
 
@@ -40,13 +53,16 @@ const UNSAFE_UNQUOTED_CHARACTERS = new Set([
   "#",
 ]);
 
-function containsChainedCommand(command: string, executable: string): boolean {
+function containsChainedCommand(command: string, executable: string, windows: boolean): boolean {
   let quote: "'" | '"' | undefined;
+  const escape = windows ? "`" : "\\";
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index]!;
     if (quote !== undefined) {
-      if (character === quote) quote = undefined;
-      if (character === "\\" && quote === '"') index += 1;
+      if (character === quote) {
+        if (windows && command[index + 1] === quote) index += 1;
+        else quote = undefined;
+      } else if (character === escape && quote === '"') index += 1;
       continue;
     }
     if (character === "'") {
@@ -57,7 +73,7 @@ function containsChainedCommand(command: string, executable: string): boolean {
       quote = '"';
       continue;
     }
-    if (character === "\\") {
+    if (character === escape) {
       index += 1;
       continue;
     }
@@ -65,13 +81,14 @@ function containsChainedCommand(command: string, executable: string): boolean {
 
     let commandStart = index + 1;
     while (/\s|[;&|()]/.test(command[commandStart] ?? "")) commandStart += 1;
-    if (startsWithExecutable(command.slice(commandStart), executable)) return true;
+    if (startsWithExecutable(command.slice(commandStart), executable, windows)) return true;
   }
   return false;
 }
 
 function parseLiteralCommandWords(
   command: string,
+  windows: boolean,
 ): { ok: true; words: string[] } | { ok: false; reason: string } {
   const words: string[] = [];
   let current = "";
@@ -92,30 +109,38 @@ function parseLiteralCommandWords(
     }
 
     if (quote === "single") {
-      if (character === "'") quote = undefined;
+      if (character === "'") {
+        if (windows && command[index + 1] === "'") { current += "'"; index += 1; }
+        else quote = undefined;
+      }
       else current += character;
+      continue;
+    }
+
+    // PowerShell uses backticks, not backslashes. Restrict escapes to literal
+    // punctuation/whitespace: control and Unicode escape expressions are outside
+    // this grammar, rather than silently changing their meaning.
+    if (character === (windows ? "`" : "\\")) {
+      const next = command[index + 1];
+      if (next === undefined) return { ok: false, reason: "the command cannot end with an escape" };
+      if (next === "\n" || next === "\r") return { ok: false, reason: "the command must be one physical line" };
+      if (windows && !/[\s'"`$\\;&|<>()*?\[\]{}#@]/.test(next)) {
+        return { ok: false, reason: "only literal PowerShell escapes are allowed" };
+      }
+      current += next;
+      started = true;
+      index += 1;
       continue;
     }
 
     if (quote === "double") {
       if (character === '"') {
-        quote = undefined;
+        if (windows && command[index + 1] === '"') { current += '"'; index += 1; }
+        else quote = undefined;
         continue;
       }
-      if (character === "`" || (character === "$" && command[index + 1] === "(")) {
+      if ((!windows && character === "`") || (character === "$" && command[index + 1] === "(")) {
         return { ok: false, reason: "command substitution is not allowed" };
-      }
-      if (character === "\\") {
-        const next = command[index + 1];
-        if (next === undefined) {
-          return { ok: false, reason: "the command cannot end with an escape" };
-        }
-        if (next === "\n" || next === "\r") {
-          return { ok: false, reason: "the command must be one physical line" };
-        }
-        current += next;
-        index += 1;
-        continue;
       }
       current += character;
       continue;
@@ -135,20 +160,7 @@ function parseLiteralCommandWords(
       started = true;
       continue;
     }
-    if (character === "\\") {
-      const next = command[index + 1];
-      if (next === undefined) {
-        return { ok: false, reason: "the command cannot end with an escape" };
-      }
-      if (next === "\n" || next === "\r") {
-        return { ok: false, reason: "the command must be one physical line" };
-      }
-      current += next;
-      started = true;
-      index += 1;
-      continue;
-    }
-    if (UNSAFE_UNQUOTED_CHARACTERS.has(character)) {
+    if (UNSAFE_UNQUOTED_CHARACTERS.has(character) || (windows && character === "@" && !started)) {
       const reason = "&|;<>()".includes(character)
         ? "shell operators are not allowed"
         : "unquoted shell expansion characters are not allowed";

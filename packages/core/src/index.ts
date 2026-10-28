@@ -2,6 +2,7 @@ export {
   formatDSCodeError,
   runDSCode,
   runDSCodeProcess,
+  type DSCodeCliOptions,
 } from "./cli-runtime.ts";
 export { createDSCodeExtension } from "./dscode-extension.ts";
 export {
@@ -94,3 +95,11 @@ export {
 } from "./vision-cli.ts";
 export { DSCODE_VERSION } from "./version.ts";
 export { createDSCodePiBuiltins } from "./pi-builtins.ts";
+export { loadSessionPosition, type SessionPosition, type DSCodeSessionRuntime } from "./session-handoff.ts";
+export {
+  webOrigin,
+  type WebPreferences,
+  type WebContinuationFactory,
+  type WebContinuationService,
+  type StartWebContinuationOptions,
+} from "./web-continuation.ts";

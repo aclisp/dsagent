@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
-import { sandboxCommand } from "../packages/core/src/sandbox.ts";
+import { sandboxCommand, sandboxShellName } from "../packages/core/src/sandbox.ts";
 import { hostShellCommand } from "../packages/core/src/shell.ts";
 
 describe.skipIf(process.platform === "win32")("Unix command shells", () => {
@@ -46,6 +46,7 @@ describe.skipIf(process.platform === "win32")("Unix command shells", () => {
     const script = "printf '%s' 'a b; $HOME'\nprintf second";
     vi.stubEnv("SHELL", shell);
     expect(hostShellCommand(script)).toEqual({ command: shell, args: ["-c", script], description: "host" });
+    expect(sandboxShellName({ mode: "danger-full-access", network: false })).toBe(shell);
   });
 
   it.each([undefined, "", " \t "])("uses /bin/bash when SHELL is %j, ahead of Bash on PATH", async (shell) => {

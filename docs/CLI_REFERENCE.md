@@ -22,6 +22,9 @@ is found. The native Windows sandbox validates its override and requires
 PowerShell 7 and never falls back to Windows PowerShell. Both paths share best-effort UTF-8 console
 output setup and disable profile loading, while retaining their existing backend-specific flags.
 
+The default engineering system prompt reports the selected shell alongside the command
+backend, such as `on the host (shell: pwsh.exe)` or `in Docker workspace-write (shell: /bin/sh)`.
+
 Start DSCode from a local source checkout:
 
 ```bash
@@ -225,6 +228,14 @@ version invocations are exempt.
 
 ### Background CLI children
 
+On Windows, managed commands accept the bare names `dscode` and `dscode.exe`
+case-insensitively; both use the fixed installation entrypoint and the same approval
+and child-depth rules. Windows path arguments keep their backslashes, including UNC
+paths and trailing backslashes inside quotes. Single/double quotes support PowerShell's
+doubled quote characters, and backticks can escape literal punctuation/spaces. Variables
+remain literal inside quotes; command substitution, chaining, pipelines, redirects, and
+control/Unicode escape expressions are rejected. Unix quoting is unchanged.
+
 The [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) provides
 on-demand delegation guidance. Docker seeds it alongside `dscode-vision`. For ordinary
 CLI and standalone installations, manually copy the entire `dscode-delegate` directory
@@ -371,8 +382,42 @@ Inside the TUI:
 | `/login [provider]` | Choose and authenticate a supported model provider |
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
+| `/web [--host <address>] [--port <port>] [--url <origin>]` | Continue the current TUI conversation in a browser; show its private URL and QR code |
+| `/web status` | Show the TUI-owned Web service's state and browser URL |
+| `/tui` | Stop Web and resume its conversation, retaining the TUI's current runtime settings |
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
+
+Use `/web` when leaving the computer and `/tui` when returning. Web starts from the
+current saved conversation and branch, with a one-time copy of the TUI's current
+model, Thinking, permissions, sandbox/network policy, and active tools. `/tui`
+loads the Web conversation while keeping the TUI's own current settings. The two
+interfaces do not synchronize live. The reminder above the editor stays visible
+while Web is running; run `/tui` before continuing in the TUI.
+
+Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same LAN:
+
+```text
+/web --host 0.0.0.0 --url http://192.168.1.20:8899
+```
+
+Replace the example address with the host's LAN address. For a cloud host behind
+an existing HTTPS reverse proxy, use `/web --url https://agent.example.com` and
+configure its listener with `--host` and `--port` as needed. A wildcard host needs
+an explicit browser origin. Successful network settings are reused from
+`$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`). The same file stores a random
+ID per canonical workspace path in `web.workspaceIds`. With the same origin, that
+workspace keeps its private URL across handoffs and TUI restarts: refresh the
+saved browser page after `/web` to open the current TUI conversation. `/tui` stops
+access until Web is started again. Keep the URL private; `/web status` shows the
+active URL. HTTPS uses the external proxy.
+
+Handoffs require idle agents and no running `/jobs`. Non-persistent sessions
+cannot be handed off. The service belongs to the TUI process, so keep that process
+alive (for example in `tmux` over SSH). Host sleep interrupts browser access;
+DSCode follows the operating system's power settings. Continuation starts neither
+scheduled tasks nor IM bindings. See [ADR-0007](decisions/0007-tui-web-session-handoff.md)
+for the session and access boundaries.
 
 `apply_patch` has fixed UTF-8 content limits: 1 MiB of patch input, 10 MiB per original or resulting
 file, and 50 MiB combined original snapshots plus planned writes per patch. Intermediate writes in
@@ -443,6 +488,25 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 | `ask` | Commands, writes, delegation, and MCP require approval |
 | `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
 | `full` | Trusted mode with unrestricted host filesystem and network access |
+
+Destructive approval follows the actual execution backend: Docker uses POSIX syntax,
+including on Windows; Windows host/native-sandbox commands use PowerShell. Switching
+shell syntax after access escalation triggers reassessment before the retry runs.
+The PowerShell literal classifier recognizes common deletion aliases, file clearing/overwrites, process/service stops,
+power and disk operations, module-qualified names, pipelines, supported executable blocks,
+and literal PowerShell wrapper payloads. Comments and quoted data do not count as commands.
+`Remove-Item`/`Clear-Item` with explicit session-provider targets (`Env:`, `Variable:`,
+`Alias:`, `Function:`) run automatically, including name expansion after the fixed
+provider prefix (`Remove-Item "env:$v"`) and comma lists of explicit session paths.
+Unknown targets, file/registry targets, splats, and computed arrays retain approval.
+Known cmdlets with explicit `-WhatIf`/`-WhatIf:$true` previews (also `-wi`), and
+`Out-File -NoClobber`/`-NoOverwrite`, are exempt from destructive
+approval; disabled/dynamic switches, quoted flag-like operands, and flags after `--` are
+not exemptions. Overwriting redirects are checked independently.
+Runtime code invocation and uninspectable PowerShell script launches
+require approval. This is a bounded heuristic, not a security boundary; custom aliases,
+function definitions, and arbitrary interpreter code are not evaluated. `ask` still
+requires approval for every command, and `full` retains its existing behavior.
 
 The default command boundary is `workspace-write` with no network. When a command needs network or host
 access, the TUI offers **Allow once**, **Allow this command for this session**, or **Deny**, then retries

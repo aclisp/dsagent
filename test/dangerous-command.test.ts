@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { detectDangerousCommand } from "../packages/core/src/dangerous-command.ts";
 
+it("uses execution syntax independently of the Windows host", () => {
+  expect(detectDangerousCommand('"rm" file.txt', "win32", "posix").dangerous).toBe(true);
+  expect(detectDangerousCommand('"rm" file.txt', "win32", "powershell").dangerous).toBe(false);
+});
+
+it("keeps native Windows child approval when the ordinary backend uses POSIX syntax", () => {
+  expect(detectDangerousCommand("DSCode.EXE -p task", "win32", "posix").dangerous).toBe(true);
+  expect(detectDangerousCommand("DSCode.EXE --help", "win32", "posix").dangerous).toBe(false);
+});
+
 describe("dangerous command rules", () => {
+  it.each(["dscode", "dscode.exe", "DSCode.EXE"])("requires existing launch approval for Windows alias %s", executable => {
+    expect(detectDangerousCommand(`${executable} -C "C:\\项目 files\\" -p 'inspect the project'`, "win32"))
+      .toMatchObject({ dangerous: true, intent: "Launch a DSCode agent with independent permissions" });
+    for (const flag of ["--help", "--version", "-h", "-V", "version"]) {
+      expect(detectDangerousCommand(`${executable} ${flag}`, "win32")).toEqual({ dangerous: false });
+      expect(detectDangerousCommand(`${executable} -- ${flag}`, "win32")).toMatchObject({ dangerous: true });
+    }
+  });
+
   it.each([
     "dscode", "dscode -p 'inspect the project'", "dscode --permission full --network --mode rpc",
     "dscode --permission ask --sandbox read-only -p 'read files'",

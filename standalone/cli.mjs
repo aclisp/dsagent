@@ -25,5 +25,10 @@ if (flags.includes("--update-bundled-tools")) {
   process.stderr.write("Package management is not supported in the standalone CLI. Upgrade by replacing the executable.\n");
   process.exitCode = 1;
 } else {
-  await runDSCodeProcess(args);
+  await runDSCodeProcess(args, {
+    startWebContinuation: async (options) => {
+      const { startWebContinuation } = await import("../packages/web-ui/dist/continuation.js");
+      return startWebContinuation(options);
+    },
+  });
 }

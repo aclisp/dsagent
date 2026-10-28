@@ -14,13 +14,18 @@ import { installDSCodeRuntimeBranding } from "./runtime-branding.ts";
 import { ensureDSCodeUiDefaults } from "./ui-defaults.ts";
 import { getDSCodeThemePaths } from "./themes.ts";
 import { DSCODE_VERSION } from "./version.ts";
+import { WebContinuationController, type WebContinuationFactory } from "./web-continuation.ts";
 import {
   parseWindowsSandboxLifecycleCommand,
   runWindowsSandboxLifecycle,
 } from "./windows-sandbox.ts";
 
 /** Run one DSCode CLI, JSON, or RPC process using the shared runtime. */
-export async function runDSCode(argv: string[]): Promise<void> {
+export interface DSCodeCliOptions {
+  startWebContinuation?: WebContinuationFactory;
+}
+
+export async function runDSCode(argv: string[], cliOptions: DSCodeCliOptions = {}): Promise<void> {
   const windowsSandboxCommand = parseWindowsSandboxLifecycleCommand(argv);
   if (windowsSandboxCommand) {
     runWindowsSandboxLifecycle(windowsSandboxCommand);
@@ -67,15 +72,22 @@ export async function runDSCode(argv: string[]): Promise<void> {
   await installDSCodeCredentialStore();
 
   const { main } = await import("@earendil-works/pi-coding-agent");
-  await main([...getDSCodeThemePaths().flatMap((themePath) => ["--theme", themePath]), ...parsed.piArgs], {
-    extensionFactories: [...await createDSCodePiBuiltins(parsed.options), createDSCodeExtension(parsed.options)],
-  });
+  const webContinuation = cliOptions.startWebContinuation ? new WebContinuationController(cliOptions.startWebContinuation) : undefined;
+  try {
+    await main([...getDSCodeThemePaths().flatMap((themePath) => ["--theme", themePath]), ...parsed.piArgs], {
+      extensionFactories: [...await createDSCodePiBuiltins(parsed.options), createDSCodeExtension(parsed.options, {
+        ...(webContinuation ? { webContinuation } : {}),
+      })],
+    });
+  } finally {
+    await webContinuation?.close();
+  }
 }
 
 /** Process-oriented wrapper used by the terminal and bundled RPC entry points. */
-export async function runDSCodeProcess(argv: string[]): Promise<void> {
+export async function runDSCodeProcess(argv: string[], cliOptions: DSCodeCliOptions = {}): Promise<void> {
   try {
-    await runDSCode(argv);
+    await runDSCode(argv, cliOptions);
   } catch (error) {
     process.stderr.write(`${pc.red("error:")} ${formatDSCodeError(error)}\n`);
     process.exitCode = 1;

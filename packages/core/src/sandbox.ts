@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { stripModelCredentialEnvironment } from "./providers.ts";
 import type { SandboxMode } from "./runtime-options.ts";
-import { hostShellCommand } from "./shell.ts";
+import { hostShellCommand, windowsPowerShellCommand, type ShellSyntax } from "./shell.ts";
 import {
   windowsNativeSandboxCommand,
   windowsNativeSandboxDescription,
@@ -22,21 +22,57 @@ export interface SandboxedCommand {
   description: string;
 }
 
+type SandboxBackend =
+  | { kind: "host" | "windows-native" | "seatbelt" | "unavailable" }
+  | { kind: "docker"; image: string };
+
+function selectSandboxBackend(options: SandboxOptions): SandboxBackend {
+  if (options.mode === "danger-full-access") return { kind: "host" };
+  if (windowsNativeSandboxEnabled()) return { kind: "windows-native" };
+  if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) return { kind: "seatbelt" };
+  const image = process.env.DSCODE_SANDBOX_IMAGE;
+  return image && commandExists("docker") ? { kind: "docker", image } : { kind: "unavailable" };
+}
+
+/** Use the execution backend's syntax without resolving or launching its shell. */
+export function sandboxShellSyntax(options: SandboxOptions): ShellSyntax {
+  const backend = selectSandboxBackend(options);
+  if (backend.kind === "docker") return "posix";
+  return backend.kind === "windows-native" || process.platform === "win32" ? "powershell" : "posix";
+}
+
+/** Describe the selected shell without launching it or preparing a sandbox. */
+export function sandboxShellName(options: SandboxOptions): string {
+  const backend = selectSandboxBackend(options);
+  if (backend.kind === "docker") return "/bin/sh";
+  if (backend.kind === "unavailable") return "unavailable";
+  try {
+    const shell = backend.kind === "windows-native"
+      ? windowsPowerShellCommand("", "native-sandbox")
+      : hostShellCommand("");
+    return process.platform === "win32" ? path.win32.basename(shell.command) : shell.command;
+  } catch {
+    // Missing shell installations must not prevent read-only agent work.
+    return "unavailable";
+  }
+}
+
 export function sandboxCommand(
   shellCommand: string,
   cwd: string,
   options: SandboxOptions,
   processOptions: { stdinOpen?: boolean } = {},
 ): SandboxedCommand {
-  if (options.mode === "danger-full-access") {
+  const backend = selectSandboxBackend(options);
+  if (backend.kind === "host") {
     return hostShellCommand(shellCommand);
   }
 
-  if (windowsNativeSandboxEnabled()) {
+  if (backend.kind === "windows-native") {
     return windowsNativeSandboxCommand(shellCommand, cwd, options);
   }
 
-  if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
+  if (backend.kind === "seatbelt") {
     const shell = hostShellCommand(shellCommand);
     const workspace = fs.realpathSync(cwd);
     const temporary = fs.realpathSync(os.tmpdir());
@@ -63,8 +99,8 @@ export function sandboxCommand(
     };
   }
 
-  const image = process.env.DSCODE_SANDBOX_IMAGE;
-  if (image && commandExists("docker")) {
+  if (backend.kind === "docker") {
+    const { image } = backend;
     const networkArgs = options.network ? [] : ["--network", "none"];
     const userArgs =
       typeof process.getuid === "function" && typeof process.getgid === "function"
@@ -111,12 +147,13 @@ export function sandboxCommand(
 }
 
 export function sandboxDescription(options: SandboxOptions): string {
-  if (options.mode === "danger-full-access") return "host access";
-  if (windowsNativeSandboxEnabled()) return windowsNativeSandboxDescription(options);
-  if (process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec")) {
+  const backend = selectSandboxBackend(options);
+  if (backend.kind === "host") return "host access";
+  if (backend.kind === "windows-native") return windowsNativeSandboxDescription(options);
+  if (backend.kind === "seatbelt") {
     return `Seatbelt ${options.mode}${options.network ? " + network" : ""}`;
   }
-  if (process.env.DSCODE_SANDBOX_IMAGE && commandExists("docker")) {
+  if (backend.kind === "docker") {
     return `Docker ${options.mode}${options.network ? " + network" : ""}`;
   }
   return `unavailable (${options.mode})`;

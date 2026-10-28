@@ -32,6 +32,8 @@ const STALE_MS = 90_000;
 const WATCHDOG_MS = 15_000;
 const RECONNECT_GAP_MS = 10_000;
 const NEAR_BOTTOM_PX = 90;
+const BOTTOM_EPSILON_PX = 2;
+const JUMP_LATEST_DISTANCE_PX = 960;
 const MAX_INPUT_HEIGHT = 88;
 const HEADER_GESTURE_THRESHOLD_PX = 14;
 const TIME_SEPARATOR_INTERVAL_MS = 5 * 60_000;
@@ -121,6 +123,7 @@ if (!state.clientId) {
 
 let followLatestFrame = null;
 let pointerScrollTop = null;
+let lastScrollTop = scroller.scrollTop;
 let previousTouchY = null;
 let headerGestureDistance = 0;
 const compactHeaderMedia = window.matchMedia(
@@ -157,13 +160,28 @@ function isNearBottom() {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < NEAR_BOTTOM_PX;
 }
 
+function isAtBottom() {
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= BOTTOM_EPSILON_PX;
+}
+
+function updateJumpLatestButton() {
+  const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  jumpLatestButton.hidden = state.followLatest || distanceFromBottom < JUMP_LATEST_DISTANCE_PX;
+}
+
 function scheduleFollowLatest() {
-  if (!state.followLatest || followLatestFrame !== null) return;
+  if (
+    !state.followLatest
+    || followLatestFrame !== null
+    || previousTouchY !== null
+    || isAtBottom()
+  ) return;
   followLatestFrame = requestAnimationFrame(() => {
     followLatestFrame = null;
-    if (!state.followLatest) return;
+    // Leave active dragging and native bottom overscroll to the browser.
+    if (!state.followLatest || previousTouchY !== null || isAtBottom()) return;
     scroller.scrollTop = scroller.scrollHeight;
-    jumpLatestButton.hidden = true;
+    updateJumpLatestButton();
   });
 }
 
@@ -175,18 +193,31 @@ function afterContentChange(force = false) {
     state.scrollIntent = null;
   }
   trimTimelineIfNeeded();
-  if (state.followLatest) {
-    scheduleFollowLatest();
-  } else {
-    jumpLatestButton.hidden = false;
-  }
+  if (state.followLatest) scheduleFollowLatest();
+  updateJumpLatestButton();
 }
 
 function stopFollowingLatest() {
   if (scroller.scrollHeight <= scroller.clientHeight) return;
   state.followLatest = false;
   state.jumpingToLatest = false;
-  jumpLatestButton.hidden = false;
+  if (followLatestFrame !== null) cancelAnimationFrame(followLatestFrame);
+  followLatestFrame = null;
+  updateJumpLatestButton();
+}
+
+function recordScrollIntent(intent) {
+  state.scrollIntent = intent;
+  state.scrollingToEarliest = false;
+  if (intent === "older") {
+    stopFollowingLatest();
+  } else if (isAtBottom()) {
+    // Resuming follow intent does not require another scroll to the same place.
+    state.followLatest = true;
+    state.jumpingToLatest = false;
+    state.scrollIntent = null;
+    updateJumpLatestButton();
+  }
 }
 
 function isBackForwardNavigation() {
@@ -224,10 +255,7 @@ function updateHeaderFromTouch(delta) {
 function scrollToEarliest() {
   setHeaderCollapsed(false);
   if (scroller.scrollHeight <= scroller.clientHeight) return;
-  state.followLatest = false;
-  state.jumpingToLatest = false;
-  state.scrollIntent = "older";
-  jumpLatestButton.hidden = false;
+  recordScrollIntent("older");
   if (scroller.scrollTop <= 1) {
     state.scrollingToEarliest = false;
     return;
@@ -1544,17 +1572,16 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   if (preserveBrowserScroll) {
     requestAnimationFrame(() => {
       state.followLatest = isNearBottom();
-      jumpLatestButton.hidden = state.followLatest;
+      updateJumpLatestButton();
     });
   } else if (preserveScroll) {
     requestAnimationFrame(() => {
       if (previousFollowLatest) {
         scroller.scrollTop = scroller.scrollHeight;
-        jumpLatestButton.hidden = true;
       } else {
         scroller.scrollTop = previousScrollTop;
-        jumpLatestButton.hidden = false;
       }
+      updateJumpLatestButton();
     });
   } else {
     afterContentChange(true);
@@ -1572,6 +1599,7 @@ async function reconnect({ refreshHistory = false } = {}) {
   state.reconnecting = true;
   state.lastReconnectAt = Date.now();
   const shouldRefreshHistory = state.historySyncDue;
+  const previousSessionId = state.sessionId;
   state.historySyncDue = false;
   try {
     state.stream?.close();
@@ -1592,7 +1620,7 @@ async function reconnect({ refreshHistory = false } = {}) {
       state.reconnectDue = true;
       return;
     }
-    if (shouldRefreshHistory && !(await renderHistory({ preserveScroll: true }))) {
+    if ((shouldRefreshHistory || state.sessionId !== previousSessionId) && !(await renderHistory({ preserveScroll: true }))) {
       state.historySyncDue = true;
       state.reconnectDue = true;
       setConnection(false);
@@ -1849,32 +1877,38 @@ async function boot() {
 // Treat following as sticky user intent. On iOS, content and composer resizing
 // can emit scroll events even though the user did not move toward older messages.
 scroller.addEventListener("scroll", () => {
+  const scrollingDown = scroller.scrollTop > lastScrollTop;
+  lastScrollTop = scroller.scrollTop;
   if (scroller.scrollTop <= 1) setHeaderCollapsed(false);
   if (state.scrollingToEarliest) {
     state.followLatest = false;
-    jumpLatestButton.hidden = false;
+    updateJumpLatestButton();
     if (scroller.scrollTop <= 1) state.scrollingToEarliest = false;
     return;
   }
   if (pointerScrollTop !== null && scroller.scrollTop !== pointerScrollTop) {
-    state.scrollIntent = scroller.scrollTop < pointerScrollTop ? "older" : "newer";
+    recordScrollIntent(scroller.scrollTop < pointerScrollTop ? "older" : "newer");
     pointerScrollTop = scroller.scrollTop;
   }
-  if (isNearBottom()) {
+  if (state.scrollIntent === "older") {
+    stopFollowingLatest();
+  } else if (
+    isAtBottom()
+    && (state.followLatest || (state.scrollIntent === "newer" && scrollingDown))
+  ) {
     state.followLatest = true;
     state.jumpingToLatest = false;
     state.scrollIntent = null;
     trimTimelineIfNeeded();
-  } else if (state.scrollIntent === "older") {
-    stopFollowingLatest();
   }
-  jumpLatestButton.hidden = state.followLatest;
+  updateJumpLatestButton();
 });
 
-scroller.addEventListener("pointerdown", () => {
+scroller.addEventListener("pointerdown", (event) => {
   state.jumpingToLatest = false;
   state.scrollingToEarliest = false;
-  pointerScrollTop = scroller.scrollTop;
+  // Touch direction comes from touchmove; an automatic scroll must not overwrite it.
+  pointerScrollTop = event.pointerType === "touch" ? null : scroller.scrollTop;
 });
 
 scroller.addEventListener("pointerup", () => {
@@ -1888,7 +1922,7 @@ scroller.addEventListener("pointercancel", () => {
 });
 
 scroller.addEventListener("wheel", (event) => {
-  state.scrollIntent = event.deltaY < 0 ? "older" : "newer";
+  if (event.deltaY !== 0) recordScrollIntent(event.deltaY < 0 ? "older" : "newer");
 }, { passive: true });
 
 scroller.addEventListener("touchstart", (event) => {
@@ -1903,7 +1937,7 @@ scroller.addEventListener("touchmove", (event) => {
     && previousTouchY !== null
     && currentTouchY !== previousTouchY
   ) {
-    state.scrollIntent = currentTouchY > previousTouchY ? "older" : "newer";
+    recordScrollIntent(currentTouchY > previousTouchY ? "older" : "newer");
     updateHeaderFromTouch(previousTouchY - currentTouchY);
   }
   previousTouchY = currentTouchY;
@@ -1912,19 +1946,15 @@ scroller.addEventListener("touchmove", (event) => {
 scroller.addEventListener("touchend", () => {
   headerGestureDistance = 0;
   previousTouchY = null;
-  if (isNearBottom()) {
-    state.scrollIntent = null;
-    trimTimelineIfNeeded();
-  }
+  if (isNearBottom()) trimTimelineIfNeeded();
+  scheduleFollowLatest();
 }, { passive: true });
 
 scroller.addEventListener("touchcancel", () => {
   headerGestureDistance = 0;
   previousTouchY = null;
-  if (isNearBottom()) {
-    state.scrollIntent = null;
-    trimTimelineIfNeeded();
-  }
+  if (isNearBottom()) trimTimelineIfNeeded();
+  scheduleFollowLatest();
 }, { passive: true });
 
 jumpLatestButton.addEventListener("click", () => {
@@ -1932,7 +1962,7 @@ jumpLatestButton.addEventListener("click", () => {
   state.jumpingToLatest = true;
   state.scrollingToEarliest = false;
   state.scrollIntent = null;
-  jumpLatestButton.hidden = true;
+  updateJumpLatestButton();
   trimTimelineIfNeeded();
   scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
 });
@@ -2035,6 +2065,7 @@ updateComposer();
 renderStatus();
 const layoutResizeObserver = new ResizeObserver(() => {
   positionJumpButton();
+  updateJumpLatestButton();
   scheduleFollowLatest();
 });
 function observeChatLayout() {

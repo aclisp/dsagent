@@ -23,7 +23,7 @@ describe("trusted dscode CLI command", () => {
     const resolved = resolveDSCodeExecutable();
     expect(resolved.executable).toBe(process.execPath);
     expect(resolved.prefix).toHaveLength(1);
-    expect(resolved.prefix[0]).toMatch(/\/(?:dist\/bundle\/cli|packages\/core\/dist\/rpc-entry)\.js$/);
+    expect(resolved.prefix[0]?.replaceAll("\\", "/")).toMatch(/\/(?:dist\/bundle\/cli|packages\/core\/dist\/rpc-entry)\.js$/);
   });
 
   it("forwards credentials and CLI environment defaults without preload hooks or unrelated secrets", () => {

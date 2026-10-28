@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { verifyWebHandoff } from "./web-handoff-smoke.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cliPackage = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
@@ -119,6 +120,9 @@ try {
     throw new Error("Retained unbundled CLI returned the wrong version");
   }
   run(process.execPath, [path.join(projectRoot, "scripts/cli-bundle-smoke.mjs"), installedPackageRoot], cliInstall);
+  if (process.platform !== "win32") {
+    process.stdout.write(`${await verifyWebHandoff({ args: [installedCli], parentDirectory: scratch })}\n`);
+  }
   const visionHelp = run(process.execPath, [installedVisionCli, "--help"], cliInstall);
   if (!visionHelp.includes("dscode-vision --image <path>")) {
     throw new Error("Installed vision CLI help is unavailable");

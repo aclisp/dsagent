@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { getDSCodeHome } from "./home.ts";
 import { isStandalone } from "./distribution.ts";
+import type { WebPreferences } from "./web-continuation.ts";
 
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 export const DEFAULT_WEB_SNAPSHOT_RETENTION_DAYS = 30;
@@ -19,6 +20,7 @@ export interface DSCodeStorageSettings {
 }
 
 interface DSCodeSettings {
+  web?: Partial<WebPreferences> & { workspaceIds?: Record<string, string> };
   deepseek?: {
     baseUrl?: unknown;
   };
@@ -36,6 +38,42 @@ interface DSCodeSettings {
 
 export function getDSCodeSettingsPath(): string {
   return process.env.DSCODE_CONFIG_PATH ?? path.join(getDSCodeHome(), "config.json");
+}
+
+export function getStoredWebPreferences(settingsPath = getDSCodeSettingsPath()): Partial<WebPreferences> {
+  const value = readSettingsSync(settingsPath).web;
+  if (value === undefined) return {};
+  if (!isRecord(value)) throw new Error("web preferences must be an object");
+  return {
+    ...(value.host !== undefined ? { host: value.host } : {}),
+    ...(value.port !== undefined ? { port: value.port } : {}),
+    ...(value.url !== undefined ? { url: value.url } : {}),
+  };
+}
+
+export function getStoredWebWorkspaceId(cwd: string, settingsPath = getDSCodeSettingsPath()): string | undefined {
+  const value = readSettingsSync(settingsPath).web?.workspaceIds;
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("web.workspaceIds must be an object");
+  const id = value[fs.realpathSync(cwd)];
+  if (id !== undefined && (typeof id !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(id))) {
+    throw new Error("Stored Web workspace ID must be a 32-character base64url string");
+  }
+  return id;
+}
+
+export async function saveWebPreferences(
+  preferences: WebPreferences,
+  workspace?: { cwd: string; id: string },
+  settingsPath = getDSCodeSettingsPath(),
+): Promise<void> {
+  const settings = await readSettings(settingsPath);
+  settings.web = { ...settings.web, ...preferences };
+  if (preferences.url === undefined) delete settings.web.url;
+  if (workspace) {
+    settings.web.workspaceIds = { ...settings.web.workspaceIds, [fs.realpathSync(workspace.cwd)]: workspace.id };
+  }
+  await writeSettings(settings, settingsPath);
 }
 
 export function getWebSnapshotRetentionDays(settingsPath = getDSCodeSettingsPath()): number {
@@ -95,6 +133,11 @@ export async function saveDeepSeekBaseUrl(
   const normalized = normalizeDeepSeekBaseUrl(baseUrl);
   const settings = await readSettings(settingsPath);
   settings.deepseek = { ...(settings.deepseek ?? {}), baseUrl: normalized };
+  await writeSettings(settings, settingsPath);
+  return normalized;
+}
+
+async function writeSettings(settings: DSCodeSettings, settingsPath: string): Promise<void> {
   const directory = path.dirname(settingsPath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700).catch(() => undefined);
@@ -107,7 +150,6 @@ export async function saveDeepSeekBaseUrl(
   } finally {
     await unlink(temporaryPath).catch(() => undefined);
   }
-  return normalized;
 }
 
 export function normalizeDeepSeekBaseUrl(value: string): string {

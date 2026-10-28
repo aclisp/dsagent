@@ -41,15 +41,19 @@ import { isMcpResourceTool, isMcpTool } from "./pi-builtins.ts";
 import { applyWorkspacePatch, PatchApplicationError, type ApplyPatchResult } from "./patch.ts";
 import { discoverProjectCommands } from "./project-profile.ts";
 import { registerDSCodeProjectTrust } from "./project-trust.ts";
-import { defaultModelForProvider } from "./providers.ts";
+import { defaultModelForProvider, parseSupportedProviderId } from "./providers.ts";
 import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts";
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
+  type DangerousCommandResult,
 } from "./dangerous-command.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
-import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
+import { executeSandboxedCommand, sandboxDescription, sandboxShellName, sandboxShellSyntax } from "./sandbox.ts";
+import type { ShellSyntax } from "./shell.ts";
 import { registerSessionCommands } from "./session-commands.ts";
+import { getSessionPosition, type DSCodeSessionRuntime } from "./session-handoff.ts";
+import type { WebContinuationController } from "./web-continuation.ts";
 import { formatStatusReport } from "./status.ts";
 import { normalizeDeepSeekBaseUrl, saveDeepSeekBaseUrl } from "./settings.ts";
 import {
@@ -139,8 +143,14 @@ const applyPatchParameters = Type.Object({
   }),
 });
 
+export interface DSCodeExtensionHooks {
+  webContinuation?: WebContinuationController;
+  onSessionReady?: (runtime: DSCodeSessionRuntime) => void;
+}
+
 export function createDSCodeExtension(
   options: DSCodeRuntimeOptions,
+  hooks: DSCodeExtensionHooks = {},
 ): InlineExtension {
   const permissionModes = "ask|auto|full";
   return {
@@ -149,6 +159,11 @@ export function createDSCodeExtension(
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       let approvalQueue = Promise.resolve();
+      const enqueueApproval = <T>(handler: () => Promise<T>): Promise<T> => {
+        const approval = approvalQueue.then(handler);
+        approvalQueue = approval.then(() => {}, () => {});
+        return approval;
+      };
       const mcpPermissions = new McpSessionPermissions();
       let pendingRestoredTools: string[] = [];
       const activateRestoredTools = () => {
@@ -167,6 +182,44 @@ export function createDSCodeExtension(
       let sessionPartition = Promise.resolve();
       const access = new SessionAccessController(options.sandbox, options.network);
       const effectiveAccess = (): EffectiveAccess => access.effective(permission);
+      let currentContext: ExtensionContext;
+      const sessionRuntime: DSCodeSessionRuntime = {
+        get sessionDir() { return currentContext.sessionManager.getSessionDir(); },
+        assertIdle() {
+          if (!currentContext.isIdle() || currentContext.hasPendingMessages()) {
+            throw new Error("Finish the current turn, approval, or queued work before handing off.");
+          }
+          if (processes.list().some((job) => job.running)) {
+            throw new Error("Stop or finish running /jobs before handing off.");
+          }
+        },
+        getPosition: () => getSessionPosition(currentContext.sessionManager),
+        getOptions: () => ({
+          ...options,
+          cwd: currentContext.cwd,
+          providerId: parseSupportedProviderId(currentContext.model?.provider ?? options.providerId),
+          modelId: currentContext.model?.id ?? options.modelId,
+          effort: pi.getThinkingLevel(),
+          permission,
+          activeTools: [...pi.getActiveTools()],
+          toolsExplicit: true,
+          projectTrusted: currentContext.isProjectTrusted(),
+        }),
+        async restoreOptions(snapshot) {
+          if (currentContext.model?.provider !== snapshot.providerId || currentContext.model.id !== snapshot.modelId) {
+            const model = currentContext.modelRegistry.find(snapshot.providerId, snapshot.modelId);
+            if (!model || !await pi.setModel(model)) {
+              throw new Error(`Cannot restore TUI model ${snapshot.providerId}/${snapshot.modelId}`);
+            }
+          }
+          if (snapshot.effort !== undefined) pi.setThinkingLevel(snapshot.effort);
+          permission = snapshot.permission;
+          await webTools.sync(currentContext);
+          pendingRestoredTools = snapshot.activeTools.filter((name) => !pi.getAllTools().some((tool) => tool.name === name));
+          pi.setActiveTools(snapshot.noTools ? [] : snapshot.activeTools);
+          updateStatus(currentContext);
+        },
+      };
 
       const queueSessionPartition = (ctx: ExtensionContext): Promise<void> => {
         const sessionFile = ctx.sessionManager.getSessionFile();
@@ -207,6 +260,7 @@ export function createDSCodeExtension(
       registerLlmMetrics(pi);
       registerNaturalExit(pi);
       registerSessionCommands(pi);
+      hooks.webContinuation?.register(pi, options);
       registerEffortDefaults(pi, options);
       pi.registerTool(createDSCodeReadTool(options.cwd));
       registerCommandTools(
@@ -215,6 +269,13 @@ export function createDSCodeExtension(
         () => permission,
         access,
         updateStatus,
+        async (command, ctx, shell) => {
+          if (permission === "full") return;
+          const assessment = detectDangerousCommand(command, process.platform, shell);
+          if (!assessment.dangerous) return;
+          const result = await enqueueApproval(async () => permission === "full" ? undefined : requestDestructiveCommandApproval(command, assessment, ctx));
+          if (result?.block) throw new Error(result.reason);
+        },
       );
       registerPatchTool(pi, checkpoints);
       registerEntryRenderers(pi);
@@ -227,6 +288,7 @@ export function createDSCodeExtension(
       registerDeepSeekFiles(pi);
 
       pi.on("session_start", async (_event, ctx) => {
+        currentContext = ctx;
         const webAvailable = await webTools.sync(ctx);
         const availableSelection = (names: string[]) => names.filter((name) => !isWebTool(name) || webAvailable);
         mcpPermissions.clear();
@@ -244,13 +306,17 @@ export function createDSCodeExtension(
             ctx.sessionManager.buildSessionProjection().messages,
           )?.toolsAdded?.map((tool) => tool.name);
           pendingRestoredTools = availableSelection(restored ?? []).filter((name) => !options.noMcp || !isMcpTool(name));
-          // Pi's MCP session_start runs first and activates discovery from server exposure.
-          const discoveryTools = pi.getActiveTools().filter((name) => name === "codemode" || name === "tool_search");
+          // Pi can finish connecting direct MCP tools during the awaits above.
+          // Keep its active tools whether discovery completed before or after us.
+          const nativeTools = pi.getActiveTools().filter((name) =>
+            name === "codemode" || name === "tool_search" || (!options.noMcp && isMcpTool(name)));
           const selectedTools = restored ? [...pendingRestoredTools] : [...options.activeTools];
-          pi.setActiveTools(options.noTools ? [] : [...new Set([...availableSelection(selectedTools), ...discoveryTools])]);
+          pi.setActiveTools(options.noTools ? [] : [...new Set([...availableSelection(selectedTools), ...nativeTools])]);
           activateRestoredTools();
         }
         await queueSessionPartition(ctx);
+        hooks.onSessionReady?.(sessionRuntime);
+        if (ctx.mode === "tui") hooks.webContinuation?.attach(sessionRuntime, ctx);
       });
 
       pi.on("session_info_changed", async (_event, ctx) => {
@@ -277,6 +343,10 @@ export function createDSCodeExtension(
       });
 
       pi.on("session_shutdown", async (_event, ctx) => {
+        if (ctx.mode === "tui") {
+          hooks.webContinuation?.detach();
+          if (_event.reason === "quit") await hooks.webContinuation?.close();
+        }
         mcpPermissions.clear();
         try {
           await queueSessionPartition(ctx);
@@ -326,7 +396,10 @@ export function createDSCodeExtension(
           typeof event.input.cmd === "string"
             ? event.input.cmd
             : undefined;
-        const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
+        const commandAccess = command !== undefined ? access.forCommand(permission, command) : undefined;
+        const commandAssessment = command !== undefined && commandAccess !== undefined
+          ? detectDangerousCommand(command, process.platform, sandboxShellSyntax({ mode: commandAccess.sandbox, network: commandAccess.network }))
+          : undefined;
         const dangerousCommand = commandAssessment?.dangerous === true;
         const needsApproval =
           permission === "ask" ||
@@ -353,7 +426,7 @@ export function createDSCodeExtension(
         }
         // Codemode can request several actions concurrently. Keep approval UI serial.
         const mcpEpoch = mcpPermissions.epoch;
-        const approval = approvalQueue.then(async () => {
+        return enqueueApproval(async () => {
           const staleMcpApproval = () => externalMcp && mcpEpoch !== mcpPermissions.epoch;
           const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
           if (staleMcpApproval()) return stale;
@@ -380,17 +453,7 @@ export function createDSCodeExtension(
             if (choice === "deny") return { block: true, reason: "Denied by user" };
             if (choice === "tool" || choice === "server") mcpPermissions.grant(mcpInfo, choice);
           } else if (dangerousCommand) {
-            const assessment = commandAssessment!;
-            const details = [
-              command,
-              "",
-              assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
-              assessment.reason ?? "This command may affect files or system state",
-            ].join("\n");
-            const approved = ctx.mode === "tui"
-              ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
-              : await ctx.ui.confirm("Run destructive command?", details);
-            if (!approved) return { block: true, reason: "Destructive command denied by user" };
+            return requestDestructiveCommandApproval(command!, commandAssessment!, ctx);
           } else if (
             event.toolName === "apply_patch" &&
             isRecord(event.input) &&
@@ -408,8 +471,6 @@ export function createDSCodeExtension(
             if (!approved) return { block: true, reason: "Denied by user" };
           }
         });
-        approvalQueue = approval.then(() => {}, () => {});
-        return approval;
       });
 
       pi.on("user_bash", (_event, ctx) => {
@@ -889,12 +950,29 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
   });
 }
 
+async function requestDestructiveCommandApproval(
+  command: string,
+  assessment: DangerousCommandResult,
+  ctx: ExtensionContext,
+): Promise<{ block: true; reason: string } | undefined> {
+  if (!ctx.hasUI) {
+    return { block: true, reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run." };
+  }
+  const details = [command, "", assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+    assessment.reason ?? "This command may affect files or system state"].join("\n");
+  const approved = ctx.mode === "tui"
+    ? await confirmDestructiveCommand(ctx.ui, command, assessment)
+    : await ctx.ui.confirm("Run destructive command?", details);
+  if (!approved) return { block: true, reason: "Destructive command denied by user" };
+}
+
 function registerCommandTools(
   pi: ExtensionAPI,
   registry: ManagedProcessRegistry,
   getPermission: () => PermissionMode,
   accessController: SessionAccessController,
   onAccessChanged: (ctx: ExtensionContext) => void,
+  approveShellChange: (command: string, ctx: ExtensionContext, shell: ShellSyntax) => Promise<void>,
 ): void {
   pi.registerTool({
     name: "exec_command",
@@ -903,9 +981,6 @@ function registerCommandTools(
       "Run a shell command in a managed OS sandbox. Long-running commands yield a process_id for write_stdin.",
     promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
-      ...(process.platform === "win32"
-        ? ["On Windows, execute commands using PowerShell syntax."]
-        : []),
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
       "When a process is still running, use write_stdin with its process_id.",
@@ -915,6 +990,7 @@ function registerCommandTools(
     executionMode: "sequential",
     async execute(_id, params, signal, _onUpdate, ctx) {
       let commandAccess = accessController.forCommand(getPermission(), params.cmd);
+      let shell = sandboxShellSyntax({ mode: commandAccess.sandbox, network: commandAccess.network });
       if (!commandAccess.network && commandNeedsNetwork(params.cmd)) {
         commandAccess = await requestCommandAccess(
           "network",
@@ -926,15 +1002,23 @@ function registerCommandTools(
           onAccessChanged,
         );
       }
-      const run = (current: EffectiveAccess) => registry.start(params.cmd, {
-        cwd: ctx.cwd,
-        sandbox: { mode: current.sandbox, network: current.network },
-        yieldTimeMs: params.yield_time_ms ?? 10_000,
-        timeoutMs: params.timeout_ms ?? 120_000,
-        thinkingLevel: pi.getThinkingLevel(),
-        stdinOpen: params.stdin_open ?? false,
-        ...(signal ? { signal } : {}),
-      });
+      const run = async (current: EffectiveAccess) => {
+        const sandbox = { mode: current.sandbox, network: current.network };
+        const nextShell = sandboxShellSyntax(sandbox);
+        if (nextShell !== shell) {
+          await approveShellChange(params.cmd, ctx, nextShell);
+          shell = nextShell;
+        }
+        return registry.start(params.cmd, {
+          cwd: ctx.cwd,
+          sandbox,
+          yieldTimeMs: params.yield_time_ms ?? 10_000,
+          timeoutMs: params.timeout_ms ?? 120_000,
+          thinkingLevel: pi.getThinkingLevel(),
+          stdinOpen: params.stdin_open ?? false,
+          ...(signal ? { signal } : {}),
+        });
+      };
       let result = await run(commandAccess);
       const boundary = detectSandboxBoundary(params.cmd, result, commandAccess);
       if (boundary) {
@@ -1339,7 +1423,14 @@ function engineeringInstructions(
   access: EffectiveAccess,
   webAvailable: boolean,
 ): string {
-  const commandSandbox = sandboxDescription({ mode: access.sandbox, network: access.network });
+  const sandbox = { mode: access.sandbox, network: access.network };
+  const commandSandbox = sandboxDescription(sandbox);
+  const commandShell = sandboxShellName(sandbox);
+  const commandEnvironment = commandSandbox.includes("unavailable")
+    ? `- Local command environment: ${commandSandbox} (shell: ${commandShell}).`
+    : access.sandbox === "danger-full-access"
+      ? `- Commands execute locally on the host (shell: ${commandShell}).`
+      : `- Commands execute locally in ${commandSandbox} (shell: ${commandShell}); this is the DSCode OS sandbox, not a model-provider cloud sandbox.`;
   const instructions = [
     "# DSCode engineering contract",
     "- Work to a verified repository outcome: inspect first, make focused changes, run the narrowest relevant checks, then broaden validation in proportion to risk.",
@@ -1347,7 +1438,7 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    `- Commands execute locally in ${commandSandbox}; this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
+    commandEnvironment,
     `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}.`,
     ...(webAvailable ? ["- For web research, use codemode's searchTools()/describeTool() to discover web_search and web_fetch on demand."] : []),
     ...(access.network

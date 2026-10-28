@@ -20,7 +20,8 @@ describe("trusted dscode-vision command", () => {
     ).toEqual({
       args: ["--image", "screen shot.png", "--prompt", "read all text"],
     });
-    expect(parseTrustedVisionCommand("dscode-vision --image screen\\ shot.png")).toEqual({
+    const escapedSpace = process.platform === "win32" ? "screen` shot.png" : "screen\\ shot.png";
+    expect(parseTrustedVisionCommand(`dscode-vision --image ${escapedSpace}`)).toEqual({
       args: ["--image", "screen shot.png"],
     });
     expect(
@@ -42,6 +43,11 @@ describe("trusted dscode-vision command", () => {
         "请详细描述这张图片的内容，包括其中的文字、数据、界面或图表。这是什么？",
       ],
     });
+  });
+
+  it.runIf(process.platform === "win32")("preserves Windows image paths through the shared literal parser", () => {
+    expect(parseTrustedVisionCommand(String.raw`DSCode-Vision.EXE --image "C:\图片 files\screen.png" --prompt 'Read O''Brien text'`))
+      .toEqual({ args: ["--image", "C:\\图片 files\\screen.png", "--prompt", "Read O'Brien text"] });
   });
 
   it("rejects shell syntax, wrappers, malformed quoting, and unsupported arguments", () => {

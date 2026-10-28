@@ -8,6 +8,7 @@ import {
   type CreateAgentSessionFromServicesOptions,
   type CreateAgentSessionRuntimeFactory,
   SessionManager,
+  SettingsManager,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
@@ -17,9 +18,14 @@ import {
   createDSCodeExtension,
   createDSCodePiBuiltins,
   getDSCodeSessionsDir,
+  getSessionPosition,
   initializeDSCodeHome,
   parseRuntimeArgs,
-} from "@aclisp/dsagent-core";
+  loadSessionPosition,
+  type DSCodeRuntimeOptions,
+  type DSCodeSessionRuntime,
+  type SessionPosition,
+} from "@aclisp/dsagent-core/session-runtime";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
@@ -29,7 +35,7 @@ import {
 export type AgentSessionStorage =
   | { type: "memory" }
   | { type: "persistent"; id?: string }
-  | { type: "resume"; id: string };
+  | { type: "resume"; id: string; position?: SessionPosition };
 
 export class PersistedSessionAlreadyExistsError extends Error {
   readonly sessionId: string;
@@ -54,14 +60,17 @@ export class PersistedSessionNotFoundError extends Error {
 export interface CreateAgentSessionHostOptions {
   cwd: string;
   runtimeArgs?: readonly string[];
+  runtimeOptions?: DSCodeRuntimeOptions;
   uiBroker?: HttpUiBroker;
   session?: AgentSessionStorage;
+  sessionDir?: string;
 }
 
 export interface AgentSessionHost {
   readonly session: AgentSession;
   readonly diagnostics: readonly AgentSessionRuntimeDiagnostic[];
   readonly uiBroker: HttpUiBroker;
+  readonly handoff: DSCodeSessionRuntime;
   prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
@@ -73,13 +82,17 @@ export async function createAgentSessionHost(
   options: CreateAgentSessionHostOptions,
 ): Promise<AgentSessionHost> {
   const cwd = path.resolve(options.cwd);
-  const parsed = parseHttpRuntimeArgs(options.runtimeArgs ?? [], cwd);
-  const thinkingLevel = getThinkingLevel(parsed.piArgs);
+  const parsed = options.runtimeOptions
+    ? { options: { ...options.runtimeOptions, cwd }, piArgs: [] }
+    : parseHttpRuntimeArgs(options.runtimeArgs ?? [], cwd);
+  const thinkingLevel = options.runtimeOptions?.effort ?? getThinkingLevel(parsed.piArgs);
+  let sessionState: DSCodeSessionRuntime | undefined;
 
   const agentDir = await initializeDSCodeHome();
-  ensureThemeInitialized();
+  // The TUI owns the process-global theme during continuation.
+  if (!options.runtimeOptions) ensureThemeInitialized();
   const uiBroker = options.uiBroker ?? createHttpUiBroker();
-  const sessionManager = await createSessionManager(cwd, options.session);
+  const sessionManager = await createSessionManager(cwd, options.session, options.sessionDir);
 
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({
     cwd: runtimeCwd,
@@ -91,8 +104,13 @@ export async function createAgentSessionHost(
     const services = await createAgentSessionServices({
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
+      ...(runtimeOptions.projectTrusted !== undefined ? {
+        settingsManager: SettingsManager.create(runtimeCwd, runtimeAgentDir, { projectTrusted: runtimeOptions.projectTrusted }),
+      } : {}),
       resourceLoaderOptions: {
-        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions)],
+        extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, {
+          onSessionReady: (state) => { sessionState = state; },
+        })],
       },
     });
     const model = services.modelRuntime.getModel(
@@ -143,7 +161,10 @@ export async function createAgentSessionHost(
         uiBroker.publishExtensionError(error);
       },
     });
-    return createHost(runtime, uiBroker, unsubscribe);
+    // A handoff supplies the exact live tool selection rather than the usual
+    // transcript/MCP startup defaults. Other HTTP hosts keep their current behavior.
+    if (options.runtimeOptions) await sessionState!.restoreOptions(options.runtimeOptions);
+    return createHost(runtime, uiBroker, unsubscribe, () => sessionState!);
   } catch (error) {
     unsubscribe?.();
     uiBroker.dispose();
@@ -156,6 +177,7 @@ function createHost(
   runtime: AgentSessionRuntime,
   uiBroker: HttpUiBroker,
   unsubscribe: () => void,
+  getSessionState: () => DSCodeSessionRuntime,
 ): AgentSessionHost {
   let disposePromise: Promise<void> | undefined;
   let disposalStarted = false;
@@ -173,6 +195,15 @@ function createHost(
       return runtime.diagnostics;
     },
     uiBroker,
+    handoff: {
+      get sessionDir() { return getSessionState().sessionDir; },
+      assertIdle: () => getSessionState().assertIdle(),
+      // The manager remains readable after disposal, allowing /reload to retain
+      // the final branch after abort/cleanup has finished writing its transcript.
+      getPosition: () => getSessionPosition(runtime.session.sessionManager),
+      getOptions: () => getSessionState().getOptions(),
+      restoreOptions: (snapshot) => getSessionState().restoreOptions(snapshot),
+    },
     async prompt(message) {
       assertActive();
       assertPromptSupported(message);
@@ -262,10 +293,10 @@ export function parseHttpRuntimeArgs(args: readonly string[], cwd = process.cwd(
 async function createSessionManager(
   cwd: string,
   storage: AgentSessionStorage | undefined,
+  sessionDir = getDSCodeSessionsDir(),
 ): Promise<SessionManager> {
   if (!storage || storage.type === "memory") return SessionManager.inMemory(cwd);
 
-  const sessionDir = getDSCodeSessionsDir();
   if (storage.type === "persistent") {
     if (storage.id !== undefined) {
       const existing = (await SessionManager.list(cwd, sessionDir)).some(
@@ -280,6 +311,12 @@ async function createSessionManager(
     );
   }
 
+  if (storage.position) {
+    if (storage.position.sessionId !== storage.id) throw new Error("Handoff session ID does not match the resumed session");
+    const manager = SessionManager.create(cwd, sessionDir);
+    loadSessionPosition(manager, storage.position);
+    return manager;
+  }
   const matches = (await SessionManager.list(cwd, sessionDir)).filter(
     (session) => session.id === storage.id,
   );
@@ -299,8 +336,8 @@ export interface PersistedSessionSummary {
 }
 
 /** List persisted sessions for a workspace, most recently modified first. */
-export async function listPersistedSessions(cwd: string): Promise<PersistedSessionSummary[]> {
-  const infos = await SessionManager.list(cwd, getDSCodeSessionsDir());
+export async function listPersistedSessions(cwd: string, sessionDir = getDSCodeSessionsDir()): Promise<PersistedSessionSummary[]> {
+  const infos = await SessionManager.list(cwd, sessionDir);
   return infos.map((info) => ({
     id: info.id,
     ...(info.name !== undefined ? { name: info.name } : {}),

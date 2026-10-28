@@ -18,6 +18,9 @@ Windows 主机命令使用 PowerShell，依次查找 `DSCODE_SHELL`、PATH 中�
 Windows 原生沙箱仍验证显式配置并要求 PowerShell 7，不回退到旧版 Windows PowerShell。两条路径共用尽力而为的
 UTF-8 控制台输出设置，并禁用 profile 加载，同时保留各后端原有的启动参数。
 
+默认 engineering system prompt 会在命令后端旁注明实际选中的 shell，例如
+`on the host (shell: pwsh.exe)` 或 `in Docker workspace-write (shell: /bin/sh)`。
+
 从本地源码 checkout 启动 DSCode：
 
 ```bash
@@ -192,6 +195,11 @@ CLI 和 Web/HTTP agent 都可以通过 `exec_command` 启动普通 DSCode CLI �
 
 ### 后台 CLI 子进程
 
+Windows 的受管命令接受裸名称 `dscode` 和 `dscode.exe`，不区分大小写，均使用固定的安装入口、
+相同的启动审批和子进程深度限制。路径参数保留反斜杠，支持 UNC 路径和引号内以反斜杠结尾的目录。
+单、双引号支持 PowerShell 的双写引号，反引号只用于转义字面标点或空格；引号内变量保持字面文本。
+命令替换、命令连接、管道、重定向及控制字符/Unicode 转义表达式会被拒绝。Unix 引号规则保持原样。
+
 [dscode-delegate skill](../deploy/default-skills/dscode-delegate/SKILL.md) 按需提供委派指导。
 Docker 与 `dscode-vision` 一样自动初始化该 skill；普通 CLI 和 standalone 安装需手动将
 `deploy/default-skills/dscode-delegate` 整个目录复制到 `~/.dscode/skills/`
@@ -341,6 +349,21 @@ checkpoint 读取和 `/undo` 使用相同的有界读取与内容预算；`/undo
 | `ask` | 命令、写入和 MCP 都需要批准 |
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |
+
+破坏性命令审批根据实际执行后端选择解析器：Docker 始终使用 POSIX 语法，包括 Windows 宿主机；
+Windows 宿主机和原生沙箱使用 PowerShell。访问授权导致 shell 语法切换时，会在重试执行前重新判断。
+PowerShell 专用的字面语法识别覆盖常见删除别名、清空/覆盖文件、
+停止进程/服务、电源及磁盘操作，也识别模块限定名称、管道、受支持的执行块和字面 PowerShell 包装命令。
+注释和引号中的普通数据不作为命令。`Remove-Item` / `Clear-Item` 的目标明确限定为 `Env:`、
+`Variable:`、`Alias:`、`Function:` 时，视为普通会话状态准备并自动执行；支持固定 provider 前缀后的
+名称展开，例如 `Remove-Item "env:$v"`，以及全部目标明确限定为会话 provider 的逗号列表。
+未知或混合目标、参数 splat、动态数组表达式仍需审批。
+已知 cmdlet 明确使用 `-WhatIf` / `-WhatIf:$true`（含 `-wi` 别名）预览，以及明确启用
+`Out-File -NoClobber` / `-NoOverwrite` 禁止覆盖时，不触发破坏性命令审批；关闭或动态的开关值、
+带引号的参数文本及 `--` 后的内容不能获得该豁免。覆盖输出文件的重定向独立检查。
+动态代码调用和无法按字面分析的 PowerShell 脚本启动需要审批。这仍是有范围限制的启发式识别，
+不构成安全边界；不会求值自定义别名、函数定义或任意解释器代码。`ask` 仍要求每条命令审批，
+`full` 保持原有行为。
 
 默认命令边界是 `workspace-write` 且禁止联网。命令需要联网或宿主机访问时，TUI 会提供
 **仅本次允许 / 本次会话始终允许这条命令 / 拒绝**，然后用最小必要权限自动重试。`--network`

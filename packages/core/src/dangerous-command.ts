@@ -3,6 +3,10 @@ import { elevatedCommand, shellCommandPayload, wrappedCommand } from "./dangerou
 import { makeDangerousMatch, withIntent, type DangerousMatch } from "./dangerous-command/match.ts";
 import { dangerousGitMatch } from "./dangerous-command/git.ts";
 import { dangerousServerMatch } from "./dangerous-command/server.ts";
+import { classifyLiteralCommand } from "./literal-command.ts";
+import { powerShellCommands, powerShellName } from "./dangerous-command/powershell-shell.ts";
+import { powerShellPayload, powerShellRule } from "./dangerous-command/powershell.ts";
+import type { ShellSyntax } from "./shell.ts";
 
 export interface DangerousCommandResult {
   dangerous: boolean;
@@ -15,11 +19,22 @@ export interface DangerousCommandResult {
 export const DEFAULT_DANGEROUS_COMMAND_INTENT = "Potentially destructive operation";
 
 /** A small shell heuristic, not a security boundary. A negative result means no
- * rule matched, not that execution is safe. Dynamic commands, substitutions,
- * heredocs, non-shell interpreter scripts and stdin are not interpreted.
- * Literal shell -c payloads and known command wrappers are checked recursively. */
-export function detectDangerousCommand(command: string): DangerousCommandResult {
-  const match = findDangerousMatch(command, 0);
+ * rule matched, not that execution is safe. Literal shell payloads and supported
+ * PowerShell expressions/blocks are inspected. Custom definitions, external
+ * script contents, other interpreter code, and stdin are not evaluated.
+ * `shell` follows the execution backend; `platform` identifies native managed
+ * DSCode aliases, which launch outside the ordinary command sandbox. */
+export function detectDangerousCommand(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  shell: ShellSyntax = platform === "win32" ? "powershell" : "posix",
+): DangerousCommandResult {
+  // Managed Windows aliases must get the same launch approval as bare dscode.
+  // Use the same literal parser as the managed launcher for DSCode aliases.
+  const literal = platform === "win32" ? classifyLiteralCommand(command, "dscode", platform) : undefined;
+  const match = literal?.kind === "trusted"
+    ? dscodeAgentMatch(literal.command.args, true)
+    : shell === "powershell" ? findPowerShellMatch(command, 0) : findDangerousMatch(command, 0);
   return match
     ? { dangerous: true, reason: match.reason, intent: match.intent }
     : { dangerous: false };
@@ -27,6 +42,15 @@ export function detectDangerousCommand(command: string): DangerousCommandResult 
 
 const maxDepth = 4;
 const elevatedCommandIntent = "Run a command with elevated privileges";
+
+function dscodeAgentMatch(args: string[], complete: boolean, elevated = false): DangerousMatch | undefined {
+  if (complete && args.length === 1 && ["--help", "--version", "-h", "-V", "version"].includes(args[0]!)) return;
+  return makeDangerousMatch(
+    "dscode starts an agent with independent permissions that can modify files or run commands",
+    "Launch a DSCode agent with independent permissions",
+    elevated,
+  );
+}
 
 /** Risks determined by the executable alone, even with incomplete arguments. */
 const commandIntents: Readonly<Record<string, string>> = {
@@ -46,6 +70,29 @@ function findDangerousMatch(command: string, depth: number, elevated = false): D
   if (depth > maxDepth) return;
   for (const { words, complete } of simpleCommands(command)) {
     const match = dangerousMatch(words, depth, complete, elevated);
+    if (match) return match;
+  }
+}
+
+function findPowerShellMatch(command: string, depth: number): DangerousMatch | undefined {
+  if (depth > maxDepth) return;
+  for (const entry of powerShellCommands(command)) {
+    const rule = powerShellRule(entry);
+    if (rule.match) return rule.match;
+    if (rule.handled) continue;
+    const [word, ...args] = entry.words;
+    if (!word) continue;
+    const name = powerShellName(word.value);
+    const payload = powerShellPayload(name, args);
+    if (payload.match) return payload.match;
+    if (payload.handled) {
+      const nested = payload.script && findPowerShellMatch(payload.script, depth + 1);
+      if (nested) return nested;
+      continue;
+    }
+    // Reuse the existing Git, server, and native Unix-command rules after the
+    // PowerShell lexer has resolved command boundaries and literal names.
+    const match = dangerousMatch([name, ...args.map(arg => arg.value)], depth, entry.complete);
     if (match) return match;
   }
 }
@@ -108,12 +155,7 @@ function dangerousMatch(
       );
     }
     if (name === "dscode") {
-      if (complete && args.length === 1 && ["-h", "-V", "version"].includes(args[0]!)) return;
-      return makeDangerousMatch(
-        "dscode starts an agent with independent permissions that can modify files or run commands",
-        "Launch a DSCode agent with independent permissions",
-        elevated,
-      );
+      return dscodeAgentMatch(args, complete, elevated);
     }
     const intent = name === "mkfs" || name.startsWith("mkfs.")
       ? "Format the target device or filesystem"

@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent-core",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Reusable multi-provider DSCode agent runtime with local sessions, tools, and RPC.",
   "type": "module",
@@ -24,6 +24,10 @@
     "./rpc": {
       "types": "./dist/rpc-client.d.ts",
       "import": "./dist/rpc-client.js"
+    },
+    "./session-runtime": {
+      "types": "./dist/session-runtime.d.ts",
+      "import": "./dist/session-runtime.js"
     }
   },
   "files": [

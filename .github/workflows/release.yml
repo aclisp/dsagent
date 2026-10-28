@@ -147,6 +147,8 @@ jobs:
             platform: darwin-arm64
           - os: ubuntu-22.04
             platform: linux-x64
+          - os: windows-2025
+            platform: windows-x64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out release
@@ -174,14 +176,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up Python for Windows ConPTY acceptance
+        if: runner.os == 'Windows'
+        id: python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Windows ConPTY test dependency
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --only-binary=:all: -r standalone/test/requirements-windows.txt
+
       - name: Build and validate standalone executable
+        shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
+          DSCODE_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
         run: |
+          node --test standalone/test/tools-install.test.mjs
           pnpm build:standalone --target "$PLATFORM"
           node standalone/test/verify.mjs "dist/standalone/$PLATFORM"
 
       - name: Package and upload standalone executable
+        if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -191,6 +209,18 @@ jobs:
           asset="dist/standalone/dscode-${RELEASE_TAG}-${PLATFORM}.tar.gz"
           tar -czf "$asset" -C "dist/standalone/$PLATFORM" dscode dscode.sha256
           gh release upload "$RELEASE_TAG" "$asset" --clobber
+
+      - name: Package and upload Windows standalone executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          $asset = "dist/standalone/dscode-$env:RELEASE_TAG-windows-x64.zip"
+          Compress-Archive -LiteralPath dist/standalone/windows-x64/dscode.exe,dist/standalone/windows-x64/dscode.exe.sha256 -DestinationPath $asset -Force
+          gh release upload $env:RELEASE_TAG $asset --clobber
 
   publish:
     needs: release

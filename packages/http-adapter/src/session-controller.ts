@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { DSCodeSessionRuntime, SessionPosition } from "@aclisp/dsagent-core";
 import type { ServerResponse } from "node:http";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type {
@@ -20,6 +21,7 @@ export interface HttpAdapterServerHost {
     readonly messages: readonly AgentMessage[];
   };
   readonly uiBroker: Pick<HttpUiBroker, "respond">;
+  readonly handoff?: Pick<DSCodeSessionRuntime, "assertIdle" | "getPosition">;
   prompt(message: string): Promise<string | undefined>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
@@ -202,6 +204,18 @@ export class SessionController {
 
   get messages(): readonly AgentMessage[] {
     return this.host.session.messages;
+  }
+
+  prepareTakeback(): SessionPosition | null {
+    if (this.activeTurn) throw new Error("Finish the Web turn or approval before running /tui.");
+    if (!this.host.handoff) throw new Error("This host does not support session handoff.");
+    this.host.handoff.assertIdle();
+    return this.getPosition();
+  }
+
+  getPosition(): SessionPosition | null {
+    if (!this.host.handoff) throw new Error("This host does not support session handoff.");
+    return this.host.handoff.getPosition();
   }
 
   private closeEventStream(response: ServerResponse): void {

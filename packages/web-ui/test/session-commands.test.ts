@@ -127,3 +127,16 @@ describe.each(["chat", "app"] as const)("%s internal session commands", (page) =
     expect(browser.renderHistory).not.toHaveBeenCalled();
   });
 });
+
+describe("chat workspace reconnection", () => {
+  it("refreshes history when the same workspace address now has a different active conversation", async () => {
+    const browser = harness("chat", "");
+    browser.api.mockResolvedValueOnce({ ok: true, status: 200,
+      body: { sessions: [{ workspaceId: "ws", active: true, session: { id: "another", status: "idle" } }] } });
+    await browser.retry();
+    expect(browser.inspect().sessionId).toBe("another");
+    expect(browser.jsonPost).not.toHaveBeenCalled();
+    expect(browser.renderHistory).toHaveBeenCalledExactlyOnceWith({ preserveScroll: true });
+    expect(browser.openStream).toHaveBeenCalledOnce();
+  });
+});
