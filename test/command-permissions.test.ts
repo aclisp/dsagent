@@ -97,9 +97,18 @@ describe("PowerShell command permissions", () => {
     expect(h.confirm).not.toHaveBeenCalled();
   });
 
+  it("does not request auto approval for process-local cleanup, with or without UI", async () => {
+    for (const hasUI of [false, true]) {
+      const h = await harness("auto", hasUI);
+      expect(await h.call('Remove-Item "Env:$name"')).toBeUndefined();
+      expect(h.confirm).not.toHaveBeenCalled();
+    }
+  });
+
   it("keeps ask mode approval for ordinary PowerShell commands", async () => {
     const h = await harness("ask", true);
     expect(await h.call("Get-Content file")).toMatchObject({ block: true });
+    expect(await h.call("Remove-Item Env:DSCODE_TEST_VALUE")).toMatchObject({ block: true });
     expect(h.confirm).toHaveBeenCalledWith("Allow exec_command?", expect.any(String));
   });
 });

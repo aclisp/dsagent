@@ -1,5 +1,5 @@
 import { makeDangerousMatch, type DangerousMatch } from "./match.ts";
-import { powerShellName, type PowerShellCommand, type PowerShellWord } from "./powershell-shell.ts";
+import { powerShellCommands, powerShellName, type PowerShellCommand, type PowerShellWord } from "./powershell-shell.ts";
 
 const aliases: Readonly<Record<string, string>> = {
   ri: "remove-item", del: "remove-item", erase: "remove-item", rd: "remove-item", rm: "remove-item", rmdir: "remove-item",
@@ -38,10 +38,11 @@ const nativeIntents: Readonly<Record<string, string>> = {
 
 /** Only a full, unquoted, explicitly enabled switch is a safe exemption.
  * Quoted '-WhatIf' is data; :$false and runtime values must not grant approval. */
-function enabledSwitch(args: PowerShellWord[], name: string): boolean {
+function enabledSwitch(args: PowerShellWord[], name: string, aliases: string[] = []): boolean {
   if (args.some(arg => arg.raw.startsWith("@") || arg.raw.startsWith("--%"))) return false;
-  const switches = parameterWords(args).filter(arg => new RegExp(`^-${name}(?::|$)`, "i").test(arg.raw));
-  return switches.length === 1 && new RegExp(`^-${name}(?::\\$true)?$`, "i").test(switches[0]!.raw);
+  const names = [name, ...aliases].join("|");
+  const switches = parameterWords(args).filter(arg => new RegExp(`^-(?:${names})(?::|$)`, "i").test(arg.raw));
+  return switches.length === 1 && new RegExp(`^-(?:${names})(?::\\$true)?$`, "i").test(switches[0]!.raw);
 }
 
 function parameterWords(args: PowerShellWord[]): PowerShellWord[] {
@@ -51,6 +52,51 @@ function parameterWords(args: PowerShellWord[]): PowerShellWord[] {
 
 export function isPowerShellCmdlet(word: PowerShellWord): boolean {
   return !/[/!:]|^(?:\.|\\)|\.(?:exe|com|cmd|bat|ps1)$/i.test(word.value);
+}
+
+const itemPathParameters = new Set(["path", "literalpath", "pspath", "lp"]);
+const itemValueParameters = new Set([
+  "filter", "include", "exclude", "credential", "erroraction", "ea", "warningaction", "wa",
+  "informationaction", "infa", "progressaction", "proga", "errorvariable", "ev", "warningvariable", "wv",
+  "informationvariable", "iv", "outvariable", "ov", "outbuffer", "ob", "pipelinevariable", "pv",
+]);
+const itemSwitchParameters = new Set(["force", "recurse", "confirm", "cf", "whatif", "wi", "verbose", "vb", "debug", "db"]);
+
+/** Only explicit session-provider paths are exempt. A name may expand after the
+ * fixed provider prefix ("Env:$name"); an unknown path or splat may also target
+ * files or the registry. Do not infer paths from pipeline input or shell state. */
+function sessionItemTargets(command: PowerShellCommand, args: PowerShellWord[]): boolean {
+  if (!command.complete) return false;
+  let targets = 0, parameters = true, index = 0;
+  const sessionPath = (raw: string): boolean => {
+    // A trailing comma continues into the next argument. Never exempt a prefix
+    // when its next item is missing (including continuation onto another line).
+    while (raw.endsWith(",")) {
+      const next = args[++index];
+      if (!next) return false;
+      raw += ` ${next.raw}`;
+    }
+    const parsed = powerShellCommands(`__target ${raw}`, true).at(-1);
+    return !!parsed?.complete && parsed.words[0]?.value === "__target" && !parsed.redirects.length &&
+      parsed.words.length > 1 && parsed.words.slice(1).every(target =>
+        /^(?:(?:env|variable|alias|function):|(?:Microsoft\.PowerShell\.Core\\)?(?:Environment|Variable|Alias|Function)::)/i.test(target.value));
+  };
+  for (; index < args.length; index++) {
+    const arg = args[index]!;
+    if (parameters && arg.raw === "--") { parameters = false; continue; }
+    const parameter = parameters && /^-([a-z]+)(?::([\s\S]*))?$/i.exec(arg.raw);
+    if (parameter) {
+      const name = parameter[1]!.toLowerCase();
+      if (itemSwitchParameters.has(name)) continue;
+      if (!itemPathParameters.has(name) && !itemValueParameters.has(name)) return false;
+      const value = parameter[2] ?? args[++index]?.raw;
+      if (value === undefined) return false;
+      if (itemValueParameters.has(name)) continue;
+      if (!sessionPath(value)) return false;
+    } else if (!sessionPath(arg.raw)) return false;
+    targets++;
+  }
+  return targets > 0;
 }
 
 export function powerShellRule(command: PowerShellCommand): { handled: boolean; match?: DangerousMatch } {
@@ -75,16 +121,18 @@ export function powerShellRule(command: PowerShellCommand): { handled: boolean; 
   const intent = cmdlet && Object.hasOwn(cmdletIntents, name) ? cmdletIntents[name] : undefined;
   if (intent) {
     const help = parameterWords(args).some(arg => arg.raw === "-?");
-    const preview = command.complete && (help || enabledSwitch(args, "whatif"));
-    const append = name === "out-file" && command.complete && enabledSwitch(args, "append");
-    return preview || append ? { handled: true } : {
+    const preview = command.complete && (help || enabledSwitch(args, "whatif", ["wi"]));
+    const output = name === "out-file" && command.complete &&
+      (enabledSwitch(args, "append") || enabledSwitch(args, "noclobber", ["nooverwrite"]));
+    const session = ["remove-item", "clear-item"].includes(name) && sessionItemTargets(command, args);
+    return preview || output || session ? { handled: true } : {
       handled: true, match: makeDangerousMatch(`${name} can delete data or alter files/system state`, intent, false),
     };
   }
   const parameters = parameterWords(args);
   if (cmdlet && name === "start-process" && parameters.some((arg, index) =>
     /^-verb:runas$/i.test(arg.raw) || (/^-verb$/i.test(arg.raw) && /^runas$/i.test(parameters[index + 1]?.value ?? "")))) {
-    return command.complete && enabledSwitch(args, "whatif") ? { handled: true } : {
+    return command.complete && enabledSwitch(args, "whatif", ["wi"]) ? { handled: true } : {
       handled: true, match: makeDangerousMatch("Start-Process -Verb RunAs requests elevated privileges", "Run a process with elevated privileges", true, true),
     };
   }

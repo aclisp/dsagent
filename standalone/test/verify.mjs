@@ -371,6 +371,12 @@ try {
       {name:"pipeline aliases require approval",cmd:`Get-Item -LiteralPath "${target}" | ri -Force`,blocked:true},
       {name:"disabled WhatIf requires approval",cmd:`${remove} -WhatIf:$false`,blocked:true},
       {name:"literal WhatIf previews run without approval",cmd:`${remove} -WhatIf`,blocked:false},
+      {name:"WhatIf aliases run without approval",cmd:`${remove} -wi`,blocked:false},
+      {name:"environment cleanup runs without approval",cmd:'$env:DSCODE_APPROVAL_TEST="old"; $names=@("DSCODE_APPROVAL_TEST"); foreach ($v in $names) { Remove-Item "env:$v" -ErrorAction SilentlyContinue }; if (Test-Path Env:DSCODE_APPROVAL_TEST) { throw "environment cleanup failed" }; "ENV_CLEANUP_OK"',blocked:false,output:"ENV_CLEANUP_OK"},
+      {name:"environment clearing runs without approval",cmd:'$env:DSCODE_APPROVAL_TEST="old"; Clear-Item Env:DSCODE_APPROVAL_TEST; if ($env:DSCODE_APPROVAL_TEST) { throw "environment clearing failed" }; "ENV_CLEAR_OK"',blocked:false,output:"ENV_CLEAR_OK"},
+      {name:"environment path lists run without approval",cmd:'$env:DSCODE_APPROVAL_TEST="one"; $env:DSCODE_APPROVAL_OTHER="two"; Remove-Item Env:DSCODE_APPROVAL_TEST, Env:DSCODE_APPROVAL_OTHER; if ($env:DSCODE_APPROVAL_TEST -or $env:DSCODE_APPROVAL_OTHER) { throw "environment list cleanup failed" }; "ENV_LIST_OK"',blocked:false,output:"ENV_LIST_OK"},
+      {name:"NoClobber output runs without approval",cmd:`try { Out-File -LiteralPath "${target}" -InputObject replacement -NoClobber -ErrorAction Stop; throw "NoClobber unexpectedly overwrote file" } catch { if ((Get-Content -LiteralPath "${target}" -Raw) -ne "APPROVAL_FIXTURE") { throw } }; "NO_CLOBBER_OK"`,blocked:false,output:"NO_CLOBBER_OK"},
+      {name:"mixed environment and file deletion requires approval",cmd:`Remove-Item "Env:DSCODE_APPROVAL_TEST","${target}" -ErrorAction SilentlyContinue`,blocked:true},
       {name:"read-only commands run without approval",cmd:`Get-Content -LiteralPath "${target}"`,blocked:false},
     ]) {
       await check(`PowerShell auto permissions: ${sample.name}`, async () => {
@@ -385,6 +391,7 @@ try {
           assert.ok(finished,result.stdout);
           assert.equal(finished.isError,false,JSON.stringify(finished));
           assert.equal(finished.result.details.exitCode,0,JSON.stringify(finished));
+          if (sample.output) assert.ok(JSON.stringify(finished.result).includes(sample.output),JSON.stringify(finished));
         }
         assert.equal(await fs.readFile(target,"utf8"),"APPROVAL_FIXTURE");
       });

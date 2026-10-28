@@ -95,6 +95,71 @@ describe("PowerShell destructive-command approval", () => {
     expect(assess("C:\\tools\\rm.exe --help").dangerous).toBe(false);
   });
 
+  it.each([
+    ["Remove-Item Env:TEST_TOKEN", false],
+    ["Clear-Item Env:TEST_TOKEN", false],
+    ["Remove-Item Variable:temporary", false],
+    ["Remove-Item Alias:temporary", false],
+    ["Remove-Item Function:temporary", false],
+    ["Remove-Item FileSystem::Env:TEST_TOKEN", true],
+    ["C:\\tools\\rm.exe Env:TEST_TOKEN", true],
+  ])("distinguishes session providers from persistent targets: %s", (command, dangerous) => {
+    expect(assess(command).dangerous).toBe(dangerous);
+  });
+
+  it.each([
+    "ri Env:TEST_TOKEN",
+    "Remove-Item -LiteralPath Env:TEST_TOKEN",
+    "Remove-Item -Path:Env:TEST_TOKEN",
+    "Remove-Item -ErrorAction SilentlyContinue Env:TEST_TOKEN",
+    "Remove-Item Microsoft.PowerShell.Core\\Environment::TEST_TOKEN",
+    'Remove-Item "Env:$name"',
+    "Remove-Item Env:${name}",
+    'foreach ($name in \'A\',\'B\') { Remove-Item "Env:$name" }',
+  ])("recognizes an explicit session provider through supported syntax: %s", command => {
+    expect(assess(command)).toEqual({ dangerous: false });
+  });
+
+  it.each([
+    ["Remove-Item Env:A,Env:B", false],
+    ["Remove-Item Env:A, Env:B", false],
+    ["Remove-Item 'Env:A,file.txt'", false],
+    ["Remove-Item Env:A, file.txt", true],
+    ["Remove-Item Env:A, HKCU:\\Software\\fixture", true],
+    ["Remove-Item Env:A,\nfile.txt", true],
+  ])("requires every comma-separated target to be session-local: %s", (command, dangerous) => {
+    expect(assess(command).dangerous).toBe(dangerous);
+  });
+
+  it.each([
+    "Remove-Item $path",
+    "Remove-Item Env:A @options",
+    "Get-Item Env:A | Remove-Item",
+    'Remove-Item "Env:$name',
+    "Remove-Item Env:A; Remove-Item file.txt",
+    'Remove-Item "Env:$(Remove-Item file.txt)"',
+    "Remove-Item Env:A > log.txt",
+  ])("does not extend the session exemption to unknown targets or other effects: %s", command => {
+    expect(assess(command).dangerous).toBe(true);
+  });
+
+  it.each([
+    ["Remove-Item file -wi", false],
+    ["Remove-Item file -wi:$false", true],
+    ["Remove-Item file -WhatIf -wi:$false", true],
+  ])("normalizes preview aliases without accepting disabled or duplicate switches: %s", (command, dangerous) => {
+    expect(assess(command).dangerous).toBe(dangerous);
+  });
+
+  it.each([
+    ["Out-File result.txt -NoClobber", false],
+    ["Out-File result.txt -NoOverwrite", false],
+    ["Out-File result.txt -NoClobber:$false", true],
+    ["Out-File result.txt -NoClobber -NoOverwrite:$false", true],
+  ])("only exempts output that explicitly prevents overwrites: %s", (command, dangerous) => {
+    expect(assess(command).dangerous).toBe(dangerous);
+  });
+
   it("keeps Unix command behavior unchanged", () => {
     expect(detectDangerousCommand("Remove-Item file", "linux").dangerous).toBe(false);
     expect(detectDangerousCommand("rm --help", "linux").dangerous).toBe(false);

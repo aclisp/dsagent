@@ -490,9 +490,15 @@ Windows host commands use a PowerShell literal classifier for destructive approv
 It recognizes common deletion aliases, file clearing/overwrites, process/service stops,
 power and disk operations, module-qualified names, pipelines, supported executable blocks,
 and literal PowerShell wrapper payloads. Comments and quoted data do not count as commands.
-Known cmdlets with explicit `-WhatIf`/`-WhatIf:$true` previews are exempt from destructive
+`Remove-Item`/`Clear-Item` with explicit session-provider targets (`Env:`, `Variable:`,
+`Alias:`, `Function:`) run automatically, including name expansion after the fixed
+provider prefix (`Remove-Item "env:$v"`) and comma lists of explicit session paths.
+Unknown targets, file/registry targets, splats, and computed arrays retain approval.
+Known cmdlets with explicit `-WhatIf`/`-WhatIf:$true` previews (also `-wi`), and
+`Out-File -NoClobber`/`-NoOverwrite`, are exempt from destructive
 approval; disabled/dynamic switches, quoted flag-like operands, and flags after `--` are
-not exemptions. Runtime code invocation and uninspectable PowerShell script launches
+not exemptions. Overwriting redirects are checked independently.
+Runtime code invocation and uninspectable PowerShell script launches
 require approval. This is a bounded heuristic, not a security boundary; custom aliases,
 function definitions, and arbitrary interpreter code are not evaluated. `ask` still
 requires approval for every command, and `full` retains its existing behavior.

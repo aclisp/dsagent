@@ -23,7 +23,7 @@ export function powerShellName(value: string): string {
 
 /** Bounded literal syntax only. No shell is launched and no variables, custom
  * aliases, function bodies, or external scripts are evaluated. */
-export function powerShellCommands(source: string): PowerShellCommand[] {
+export function powerShellCommands(source: string, splitCommas = false): PowerShellCommand[] {
   const commands: PowerShellCommand[] = [];
 
   function scan(start: number, closing = "", inspect = true, depth = 0): { end: number; complete: boolean } {
@@ -120,6 +120,15 @@ export function powerShellCommands(source: string): PowerShellCommand[] {
         begin(index); const nested = scan(index + 2, ")", inspect, depth + 1);
         value += source.slice(index, nested.end); literal = false; complete &&= nested.complete; index = nested.end; continue;
       }
+      if (char === "$" && source[index + 1] === "{") {
+        // Braced variable names are part of this argument, not script blocks.
+        begin(index);
+        let end = index + 2;
+        while (end < source.length && source[end] !== "}") end += source[end] === "`" ? 2 : 1;
+        if (end >= source.length) complete = false;
+        end = Math.min(end + 1, source.length);
+        value += source.slice(index, end); literal = false; index = end; continue;
+      }
       if (char === "(" || char === "{") {
         flushWord(index);
         const name = contextName();
@@ -151,7 +160,8 @@ export function powerShellCommands(source: string): PowerShellCommand[] {
         index += (char === "&" || char === "|") && source[index + 1] === char ? 2 : 1;
         continue;
       }
-      if (/\s/.test(char)) { flushWord(index); index++; continue; }
+      // Argument probes can request individual comma-separated path evidence.
+      if (/\s/.test(char) || (splitCommas && char === ",")) { flushWord(index); index++; continue; }
       if (char === ")" || char === "}") { emit(index); index++; continue; }
       begin(index); value += char;
       if (char === "$" || (char === "@" && value === "@")) literal = false;

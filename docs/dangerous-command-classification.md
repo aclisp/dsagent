@@ -73,6 +73,31 @@ This is limited structural context, not a shell grammar validator. `case`,
 Substitutions and heredocs still stop the scan, including any later commands;
 no attempt is made to find a recovery point or evaluate a dynamic loop list.
 
+## PowerShell session and preview exemptions
+
+On Windows, the literal PowerShell scanner distinguishes explicit session-provider
+targets from persistent data. `Remove-Item`/`Clear-Item` and their built-in aliases
+can operate on `Env:`, `Variable:`, `Alias:`, and `Function:` without destructive
+approval. Provider-qualified forms such as `Environment::NAME` are equivalent.
+The provider prefix must be known, but the item name may expand at runtime:
+`foreach ($v in $map.Values) { Remove-Item "env:$v" -ErrorAction SilentlyContinue }`.
+No variable values or private profile files are read by the classifier.
+
+This exemption requires explicit targets and known parameter arities. Unknown
+providers/paths, pipeline-only targets, splats, and computed arrays remain gated.
+Comma lists are exempt only when every target has an explicit session-provider
+prefix. A command containing both session and file/registry targets remains
+gated. Executable substitutions, later commands, and overwrite redirects are
+inspected independently; an environment cleanup does not exempt the whole script.
+
+The documented `-wi` alias has the same preview exemption as `-WhatIf`. `Out-File`
+with literal `-NoClobber`/`-NoOverwrite` is routine output because it cannot replace
+an existing file. Switch aliases share duplicate/disabled/dynamic-value checks;
+quoted flag-like data, splats, and arguments after `--` cannot grant an exemption.
+These semantics follow Microsoft's [Environment provider](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_provider),
+[common parameters](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_commonparameters),
+and [Out-File](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/out-file) documentation.
+
 ## Code organization
 
 - `packages/core/src/dangerous-command.ts`: public result, command dispatch,
