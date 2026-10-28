@@ -33,6 +33,7 @@ const WATCHDOG_MS = 15_000;
 const RECONNECT_GAP_MS = 10_000;
 const NEAR_BOTTOM_PX = 90;
 const BOTTOM_EPSILON_PX = 2;
+const JUMP_LATEST_DISTANCE_PX = 960;
 const MAX_INPUT_HEIGHT = 88;
 const HEADER_GESTURE_THRESHOLD_PX = 14;
 const TIME_SEPARATOR_INTERVAL_MS = 5 * 60_000;
@@ -163,13 +164,24 @@ function isAtBottom() {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= BOTTOM_EPSILON_PX;
 }
 
+function updateJumpLatestButton() {
+  const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  jumpLatestButton.hidden = state.followLatest || distanceFromBottom < JUMP_LATEST_DISTANCE_PX;
+}
+
 function scheduleFollowLatest() {
-  if (!state.followLatest || followLatestFrame !== null) return;
+  if (
+    !state.followLatest
+    || followLatestFrame !== null
+    || previousTouchY !== null
+    || isAtBottom()
+  ) return;
   followLatestFrame = requestAnimationFrame(() => {
     followLatestFrame = null;
-    if (!state.followLatest) return;
+    // Leave active dragging and native bottom overscroll to the browser.
+    if (!state.followLatest || previousTouchY !== null || isAtBottom()) return;
     scroller.scrollTop = scroller.scrollHeight;
-    jumpLatestButton.hidden = true;
+    updateJumpLatestButton();
   });
 }
 
@@ -181,11 +193,8 @@ function afterContentChange(force = false) {
     state.scrollIntent = null;
   }
   trimTimelineIfNeeded();
-  if (state.followLatest) {
-    scheduleFollowLatest();
-  } else {
-    jumpLatestButton.hidden = false;
-  }
+  if (state.followLatest) scheduleFollowLatest();
+  updateJumpLatestButton();
 }
 
 function stopFollowingLatest() {
@@ -194,7 +203,7 @@ function stopFollowingLatest() {
   state.jumpingToLatest = false;
   if (followLatestFrame !== null) cancelAnimationFrame(followLatestFrame);
   followLatestFrame = null;
-  jumpLatestButton.hidden = false;
+  updateJumpLatestButton();
 }
 
 function recordScrollIntent(intent) {
@@ -203,7 +212,11 @@ function recordScrollIntent(intent) {
   if (intent === "older") {
     stopFollowingLatest();
   } else if (isAtBottom()) {
-    afterContentChange(true);
+    // Resuming follow intent does not require another scroll to the same place.
+    state.followLatest = true;
+    state.jumpingToLatest = false;
+    state.scrollIntent = null;
+    updateJumpLatestButton();
   }
 }
 
@@ -1559,17 +1572,16 @@ async function renderHistory({ preserveScroll = false, preserveBrowserScroll = f
   if (preserveBrowserScroll) {
     requestAnimationFrame(() => {
       state.followLatest = isNearBottom();
-      jumpLatestButton.hidden = state.followLatest;
+      updateJumpLatestButton();
     });
   } else if (preserveScroll) {
     requestAnimationFrame(() => {
       if (previousFollowLatest) {
         scroller.scrollTop = scroller.scrollHeight;
-        jumpLatestButton.hidden = true;
       } else {
         scroller.scrollTop = previousScrollTop;
-        jumpLatestButton.hidden = false;
       }
+      updateJumpLatestButton();
     });
   } else {
     afterContentChange(true);
@@ -1870,7 +1882,7 @@ scroller.addEventListener("scroll", () => {
   if (scroller.scrollTop <= 1) setHeaderCollapsed(false);
   if (state.scrollingToEarliest) {
     state.followLatest = false;
-    jumpLatestButton.hidden = false;
+    updateJumpLatestButton();
     if (scroller.scrollTop <= 1) state.scrollingToEarliest = false;
     return;
   }
@@ -1889,7 +1901,7 @@ scroller.addEventListener("scroll", () => {
     state.scrollIntent = null;
     trimTimelineIfNeeded();
   }
-  jumpLatestButton.hidden = state.followLatest;
+  updateJumpLatestButton();
 });
 
 scroller.addEventListener("pointerdown", (event) => {
@@ -1935,12 +1947,14 @@ scroller.addEventListener("touchend", () => {
   headerGestureDistance = 0;
   previousTouchY = null;
   if (isNearBottom()) trimTimelineIfNeeded();
+  scheduleFollowLatest();
 }, { passive: true });
 
 scroller.addEventListener("touchcancel", () => {
   headerGestureDistance = 0;
   previousTouchY = null;
   if (isNearBottom()) trimTimelineIfNeeded();
+  scheduleFollowLatest();
 }, { passive: true });
 
 jumpLatestButton.addEventListener("click", () => {
@@ -1948,7 +1962,7 @@ jumpLatestButton.addEventListener("click", () => {
   state.jumpingToLatest = true;
   state.scrollingToEarliest = false;
   state.scrollIntent = null;
-  jumpLatestButton.hidden = true;
+  updateJumpLatestButton();
   trimTimelineIfNeeded();
   scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
 });
@@ -2051,6 +2065,7 @@ updateComposer();
 renderStatus();
 const layoutResizeObserver = new ResizeObserver(() => {
   positionJumpButton();
+  updateJumpLatestButton();
   scheduleFollowLatest();
 });
 function observeChatLayout() {
