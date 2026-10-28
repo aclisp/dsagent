@@ -1,31 +1,44 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as commandRules from "../packages/core/src/dangerous-command.ts";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
+import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
+import * as sandbox from "../packages/core/src/sandbox.ts";
+import { createTestTheme } from "./fixtures/theme.ts";
 
 vi.mock("../packages/core/src/hooks.ts", () => ({ registerHooks: vi.fn() }));
 
-async function harness(permission: string, hasUI: boolean) {
+async function harness(permission: string, hasUI: boolean, args: string[] = []) {
   const handlers: ((event: any, ctx: ExtensionContext) => any)[] = [];
+  const tools = new Map<string, ToolDefinition>();
   const pi = new Proxy({
     on(name: string, handler: (event: any, ctx: ExtensionContext) => any) {
       if (name === "tool_call") handlers.push(handler);
     },
-    getAllTools: () => [],
+    registerTool(tool: ToolDefinition) { tools.set(tool.name, tool); },
+    getAllTools: () => [...tools.values()],
     getActiveTools: () => [],
+    getThinkingLevel: () => "low",
   }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
-  const extension = createDSCodeExtension(parseRuntimeArgs(["--permission", permission]).options);
+  const extension = createDSCodeExtension(parseRuntimeArgs(["--permission", permission, ...args]).options);
   await (typeof extension === "function" ? extension : extension.factory)(pi);
   const confirm = vi.fn().mockResolvedValue(false);
-  const ctx = { cwd: process.cwd(), mode: "rpc", hasUI, ui: { confirm } } as unknown as ExtensionContext;
+  const select = vi.fn().mockResolvedValue("Allow once");
+  const ui = { confirm, select, theme: createTestTheme(), setWorkingVisible() {}, setStatus() {}, setTitle() {}, notify() {} };
+  const ctx = { cwd: process.cwd(), mode: "rpc", hasUI, ui } as unknown as ExtensionToolContext;
+  const call = async (cmd: string) => {
+    for (const handler of handlers) {
+      const result = await handler({ toolName: "exec_command", input: { cmd } }, ctx);
+      if (result?.block) return result;
+    }
+  };
   return {
-    confirm,
-    async call(cmd: string) {
-      for (const handler of handlers) {
-        const result = await handler({ toolName: "exec_command", input: { cmd } }, ctx);
-        if (result?.block) return result;
-      }
+    confirm, select, call,
+    async execute(cmd: string) {
+      const result = await call(cmd);
+      if (result?.block) throw new Error(result.reason);
+      return tools.get("exec_command")!.execute("fixture", { cmd }, undefined, undefined, ctx);
     },
   };
 }
@@ -67,7 +80,8 @@ describe("DSCode launch command permissions", () => {
 describe("PowerShell command permissions", () => {
   const detect = commandRules.detectDangerousCommand;
   beforeEach(() => {
-    vi.spyOn(commandRules, "detectDangerousCommand").mockImplementation(command => detect(command, "win32"));
+    vi.spyOn(sandbox, "sandboxShellSyntax").mockReturnValue("powershell");
+    vi.spyOn(commandRules, "detectDangerousCommand").mockImplementation((command, _platform, shell) => detect(command, "win32", shell));
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -110,5 +124,54 @@ describe("PowerShell command permissions", () => {
     expect(await h.call("Get-Content file")).toMatchObject({ block: true });
     expect(await h.call("Remove-Item Env:DSCODE_TEST_VALUE")).toMatchObject({ block: true });
     expect(h.confirm).toHaveBeenCalledWith("Allow exec_command?", expect.any(String));
+  });
+
+  it("uses the POSIX parser when Windows commands execute in Docker", async () => {
+    vi.mocked(sandbox.sandboxShellSyntax).mockReturnValue("posix");
+    const h = await harness("auto", true);
+    expect(await h.call('"rm" file.txt')).toMatchObject({ block: true });
+    expect(h.confirm).toHaveBeenCalledWith("Run destructive command?", expect.stringContaining("Delete the specified files"));
+  });
+
+  it.each([false, true])("honors destructive approval after switching to the host shell (approved=%s)", async approved => {
+    vi.mocked(sandbox.sandboxShellSyntax).mockImplementation(options => options.mode === "danger-full-access" ? "powershell" : "posix");
+    const start = vi.spyOn(ManagedProcessRegistry.prototype, "start")
+      .mockResolvedValueOnce({ processId: "1", running: false, output: "Permission denied", exitCode: 1, sandbox: "Docker" })
+      .mockResolvedValue({ processId: "2", running: false, output: "", exitCode: 0, sandbox: "host" });
+    const h = await harness("auto", true, ["--sandbox", "workspace-write", "--network"]);
+    h.confirm.mockResolvedValue(approved);
+    const result = h.execute("echo data > output.txt");
+    if (approved) await expect(result).resolves.toBeDefined();
+    else await expect(result).rejects.toThrow("Destructive command denied by user");
+    expect(h.select).toHaveBeenCalledWith(expect.stringContaining("Allow unrestricted host access?"), expect.any(Array));
+    expect(h.confirm).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledTimes(approved ? 2 : 1);
+    if (approved) expect(start.mock.calls[1]![1].sandbox.mode).toBe("danger-full-access");
+  });
+
+  it("uses an existing command-scoped host grant for the initial assessment", async () => {
+    vi.mocked(sandbox.sandboxShellSyntax).mockImplementation(options => options.mode === "danger-full-access" ? "powershell" : "posix");
+    vi.spyOn(ManagedProcessRegistry.prototype, "start")
+      .mockResolvedValueOnce({ processId: "1", running: false, output: "Permission denied", exitCode: 1, sandbox: "Docker" })
+      .mockResolvedValue({ processId: "2", running: false, output: "", exitCode: 0, sandbox: "host" });
+    const h = await harness("auto", true, ["--sandbox", "workspace-write", "--network"]);
+    h.select.mockResolvedValue("Allow this command for this session");
+    h.confirm.mockResolvedValueOnce(true);
+    await h.execute("echo data > output.txt");
+    expect(await h.call("echo data > output.txt")).toMatchObject({ block: true });
+    expect(h.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not repeat destructive approval for a network-only retry in the same shell", async () => {
+    vi.mocked(sandbox.sandboxShellSyntax).mockReturnValue("posix");
+    const start = vi.spyOn(ManagedProcessRegistry.prototype, "start")
+      .mockResolvedValueOnce({ processId: "1", running: false, output: "Network is unreachable", exitCode: 1, sandbox: "Docker" })
+      .mockResolvedValue({ processId: "2", running: false, output: "", exitCode: 0, sandbox: "Docker" });
+    const h = await harness("auto", true, ["--sandbox", "workspace-write"]);
+    h.confirm.mockResolvedValue(true);
+    await h.execute('"rm" file.txt');
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(h.select).toHaveBeenCalledWith(expect.stringContaining("Allow network access?"), expect.any(Array));
+    expect(h.confirm).toHaveBeenCalledOnce();
   });
 });

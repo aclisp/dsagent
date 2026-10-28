@@ -6,6 +6,7 @@ import { dangerousServerMatch } from "./dangerous-command/server.ts";
 import { classifyLiteralCommand } from "./literal-command.ts";
 import { powerShellCommands, powerShellName } from "./dangerous-command/powershell-shell.ts";
 import { powerShellPayload, powerShellRule } from "./dangerous-command/powershell.ts";
+import type { ShellSyntax } from "./shell.ts";
 
 export interface DangerousCommandResult {
   dangerous: boolean;
@@ -20,14 +21,20 @@ export const DEFAULT_DANGEROUS_COMMAND_INTENT = "Potentially destructive operati
 /** A small shell heuristic, not a security boundary. A negative result means no
  * rule matched, not that execution is safe. Literal shell payloads and supported
  * PowerShell expressions/blocks are inspected. Custom definitions, external
- * script contents, other interpreter code, and stdin are not evaluated. */
-export function detectDangerousCommand(command: string, platform: NodeJS.Platform = process.platform): DangerousCommandResult {
+ * script contents, other interpreter code, and stdin are not evaluated.
+ * `shell` follows the execution backend; `platform` identifies native managed
+ * DSCode aliases, which launch outside the ordinary command sandbox. */
+export function detectDangerousCommand(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  shell: ShellSyntax = platform === "win32" ? "powershell" : "posix",
+): DangerousCommandResult {
   // Managed Windows aliases must get the same launch approval as bare dscode.
   // Use the same literal parser as the managed launcher for DSCode aliases.
   const literal = platform === "win32" ? classifyLiteralCommand(command, "dscode", platform) : undefined;
   const match = literal?.kind === "trusted"
     ? dscodeAgentMatch(literal.command.args, true)
-    : platform === "win32" ? findPowerShellMatch(command, 0) : findDangerousMatch(command, 0);
+    : shell === "powershell" ? findPowerShellMatch(command, 0) : findDangerousMatch(command, 0);
   return match
     ? { dangerous: true, reason: match.reason, intent: match.intent }
     : { dangerous: false };

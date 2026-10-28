@@ -347,7 +347,9 @@ checkpoint 读取和 `/undo` 使用相同的有界读取与内容预算；`/undo
 | `auto` | 普通工作区操作自动执行；破坏性命令、联网、宿主机访问和外部 MCP 仍受控 |
 | `full` | 可信模式，命令拥有不受限的宿主机文件系统和网络访问 |
 
-Windows 宿主机命令使用 PowerShell 专用的字面语法识别，覆盖常见删除别名、清空/覆盖文件、
+破坏性命令审批根据实际执行后端选择解析器：Docker 始终使用 POSIX 语法，包括 Windows 宿主机；
+Windows 宿主机和原生沙箱使用 PowerShell。访问授权导致 shell 语法切换时，会在重试执行前重新判断。
+PowerShell 专用的字面语法识别覆盖常见删除别名、清空/覆盖文件、
 停止进程/服务、电源及磁盘操作，也识别模块限定名称、管道、受支持的执行块和字面 PowerShell 包装命令。
 注释和引号中的普通数据不作为命令。`Remove-Item` / `Clear-Item` 的目标明确限定为 `Env:`、
 `Variable:`、`Alias:`、`Function:` 时，视为普通会话状态准备并自动执行；支持固定 provider 前缀后的

@@ -4,6 +4,14 @@ In auto mode, `dangerous` triggers destructive-command approval. Other command
 classifications do not trigger that approval; sandbox and network controls are
 separate. This detector is a small heuristic, not a guarantee of safe execution.
 
+The parser follows the command's execution backend: Docker uses POSIX syntax on
+every host, Windows host/native-sandbox commands use PowerShell, and Unix host
+commands use POSIX syntax. Backend selection is shared with command execution
+and includes command-scoped host grants. A retry that changes shell syntax is
+classified again before launch; a network-only retry in the same shell does not
+repeat destructive approval. Managed DSCode children still use native host
+aliases and their existing launch approval, independently of the default backend.
+
 `git rm` is flagged when forced (`-f`/`--force`, including combined short flags),
 except for dry runs (`-n`/`--dry-run`) or index-only removal (`--cached`). Plain
 `git rm` is not flagged by this rule. Like forced checkout/reset rules, this

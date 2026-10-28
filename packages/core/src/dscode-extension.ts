@@ -46,9 +46,11 @@ import { confirmDestructiveCommand } from "./destructive-command-confirmation.ts
 import {
   DEFAULT_DANGEROUS_COMMAND_INTENT,
   detectDangerousCommand,
+  type DangerousCommandResult,
 } from "./dangerous-command.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
-import { executeSandboxedCommand, sandboxDescription } from "./sandbox.ts";
+import { executeSandboxedCommand, sandboxDescription, sandboxShellSyntax } from "./sandbox.ts";
+import type { ShellSyntax } from "./shell.ts";
 import { registerSessionCommands } from "./session-commands.ts";
 import { getSessionPosition, type DSCodeSessionRuntime } from "./session-handoff.ts";
 import type { WebContinuationController } from "./web-continuation.ts";
@@ -157,6 +159,11 @@ export function createDSCodeExtension(
       registerDSCodeProjectTrust(pi);
       const processes = new ManagedProcessRegistry();
       let approvalQueue = Promise.resolve();
+      const enqueueApproval = <T>(handler: () => Promise<T>): Promise<T> => {
+        const approval = approvalQueue.then(handler);
+        approvalQueue = approval.then(() => {}, () => {});
+        return approval;
+      };
       const mcpPermissions = new McpSessionPermissions();
       let pendingRestoredTools: string[] = [];
       const activateRestoredTools = () => {
@@ -262,6 +269,13 @@ export function createDSCodeExtension(
         () => permission,
         access,
         updateStatus,
+        async (command, ctx, shell) => {
+          if (permission === "full") return;
+          const assessment = detectDangerousCommand(command, process.platform, shell);
+          if (!assessment.dangerous) return;
+          const result = await enqueueApproval(async () => permission === "full" ? undefined : requestDestructiveCommandApproval(command, assessment, ctx));
+          if (result?.block) throw new Error(result.reason);
+        },
       );
       registerPatchTool(pi, checkpoints);
       registerEntryRenderers(pi);
@@ -382,7 +396,10 @@ export function createDSCodeExtension(
           typeof event.input.cmd === "string"
             ? event.input.cmd
             : undefined;
-        const commandAssessment = command !== undefined ? detectDangerousCommand(command) : undefined;
+        const commandAccess = command !== undefined ? access.forCommand(permission, command) : undefined;
+        const commandAssessment = command !== undefined && commandAccess !== undefined
+          ? detectDangerousCommand(command, process.platform, sandboxShellSyntax({ mode: commandAccess.sandbox, network: commandAccess.network }))
+          : undefined;
         const dangerousCommand = commandAssessment?.dangerous === true;
         const needsApproval =
           permission === "ask" ||
@@ -409,7 +426,7 @@ export function createDSCodeExtension(
         }
         // Codemode can request several actions concurrently. Keep approval UI serial.
         const mcpEpoch = mcpPermissions.epoch;
-        const approval = approvalQueue.then(async () => {
+        return enqueueApproval(async () => {
           const staleMcpApproval = () => externalMcp && mcpEpoch !== mcpPermissions.epoch;
           const stale = { block: true, reason: "MCP approval context changed. Retry the tool call." };
           if (staleMcpApproval()) return stale;
@@ -436,17 +453,7 @@ export function createDSCodeExtension(
             if (choice === "deny") return { block: true, reason: "Denied by user" };
             if (choice === "tool" || choice === "server") mcpPermissions.grant(mcpInfo, choice);
           } else if (dangerousCommand) {
-            const assessment = commandAssessment!;
-            const details = [
-              command,
-              "",
-              assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
-              assessment.reason ?? "This command may affect files or system state",
-            ].join("\n");
-            const approved = ctx.mode === "tui"
-              ? await confirmDestructiveCommand(ctx.ui, command!, assessment)
-              : await ctx.ui.confirm("Run destructive command?", details);
-            if (!approved) return { block: true, reason: "Destructive command denied by user" };
+            return requestDestructiveCommandApproval(command!, commandAssessment!, ctx);
           } else if (
             event.toolName === "apply_patch" &&
             isRecord(event.input) &&
@@ -464,8 +471,6 @@ export function createDSCodeExtension(
             if (!approved) return { block: true, reason: "Denied by user" };
           }
         });
-        approvalQueue = approval.then(() => {}, () => {});
-        return approval;
       });
 
       pi.on("user_bash", (_event, ctx) => {
@@ -945,12 +950,29 @@ function registerDeepSeekProvider(pi: ExtensionAPI, options: DSCodeRuntimeOption
   });
 }
 
+async function requestDestructiveCommandApproval(
+  command: string,
+  assessment: DangerousCommandResult,
+  ctx: ExtensionContext,
+): Promise<{ block: true; reason: string } | undefined> {
+  if (!ctx.hasUI) {
+    return { block: true, reason: "This action requires an interactive approval UI. Use --permission full for an explicitly trusted non-interactive run." };
+  }
+  const details = [command, "", assessment.intent ?? DEFAULT_DANGEROUS_COMMAND_INTENT,
+    assessment.reason ?? "This command may affect files or system state"].join("\n");
+  const approved = ctx.mode === "tui"
+    ? await confirmDestructiveCommand(ctx.ui, command, assessment)
+    : await ctx.ui.confirm("Run destructive command?", details);
+  if (!approved) return { block: true, reason: "Destructive command denied by user" };
+}
+
 function registerCommandTools(
   pi: ExtensionAPI,
   registry: ManagedProcessRegistry,
   getPermission: () => PermissionMode,
   accessController: SessionAccessController,
   onAccessChanged: (ctx: ExtensionContext) => void,
+  approveShellChange: (command: string, ctx: ExtensionContext, shell: ShellSyntax) => Promise<void>,
 ): void {
   pi.registerTool({
     name: "exec_command",
@@ -960,7 +982,7 @@ function registerCommandTools(
     promptSnippet: "Run tests, builds, git, and other shell commands in an OS sandbox",
     promptGuidelines: [
       ...(process.platform === "win32"
-        ? ["On Windows, execute commands using PowerShell syntax."]
+        ? ["Use PowerShell syntax for Windows host/native-sandbox commands; Docker commands use /bin/sh syntax."]
         : []),
       "Use rg or rg --files first for repository search.",
       "Use focused checks first, then broader validation.",
@@ -971,6 +993,7 @@ function registerCommandTools(
     executionMode: "sequential",
     async execute(_id, params, signal, _onUpdate, ctx) {
       let commandAccess = accessController.forCommand(getPermission(), params.cmd);
+      let shell = sandboxShellSyntax({ mode: commandAccess.sandbox, network: commandAccess.network });
       if (!commandAccess.network && commandNeedsNetwork(params.cmd)) {
         commandAccess = await requestCommandAccess(
           "network",
@@ -982,15 +1005,23 @@ function registerCommandTools(
           onAccessChanged,
         );
       }
-      const run = (current: EffectiveAccess) => registry.start(params.cmd, {
-        cwd: ctx.cwd,
-        sandbox: { mode: current.sandbox, network: current.network },
-        yieldTimeMs: params.yield_time_ms ?? 10_000,
-        timeoutMs: params.timeout_ms ?? 120_000,
-        thinkingLevel: pi.getThinkingLevel(),
-        stdinOpen: params.stdin_open ?? false,
-        ...(signal ? { signal } : {}),
-      });
+      const run = async (current: EffectiveAccess) => {
+        const sandbox = { mode: current.sandbox, network: current.network };
+        const nextShell = sandboxShellSyntax(sandbox);
+        if (nextShell !== shell) {
+          await approveShellChange(params.cmd, ctx, nextShell);
+          shell = nextShell;
+        }
+        return registry.start(params.cmd, {
+          cwd: ctx.cwd,
+          sandbox,
+          yieldTimeMs: params.yield_time_ms ?? 10_000,
+          timeoutMs: params.timeout_ms ?? 120_000,
+          thinkingLevel: pi.getThinkingLevel(),
+          stdinOpen: params.stdin_open ?? false,
+          ...(signal ? { signal } : {}),
+        });
+      };
       let result = await run(commandAccess);
       const boundary = detectSandboxBoundary(params.cmd, result, commandAccess);
       if (boundary) {

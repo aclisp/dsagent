@@ -130,7 +130,7 @@ jobs:
         run: pnpm build:standalone --target windows-x64
 
       - name: Validate Windows commands and approvals
-        run: pnpm exec vitest run test/literal-command.test.ts test/dscode-command.test.ts test/vision-command.test.ts test/command-permissions.test.ts test/dangerous-command-powershell.test.ts test/windows-child-process.test.ts test/web-handoff-smoke.test.mjs
+        run: pnpm exec vitest run test/literal-command.test.ts test/dscode-command.test.ts test/vision-command.test.ts test/command-permissions.test.ts test/dangerous-command-powershell.test.ts test/sandbox-shell.test.ts test/windows-child-process.test.ts test/web-handoff-smoke.test.mjs
 
       - name: Validate relocated Windows executable
         env:

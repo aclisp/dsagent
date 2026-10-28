@@ -486,8 +486,10 @@ Permissions decide when DSCode asks. The sandbox decides what a command can actu
 | `auto` | Routine workspace work runs automatically; destructive commands, network, host access, and external MCP remain gated |
 | `full` | Trusted mode with unrestricted host filesystem and network access |
 
-Windows host commands use a PowerShell literal classifier for destructive approval.
-It recognizes common deletion aliases, file clearing/overwrites, process/service stops,
+Destructive approval follows the actual execution backend: Docker uses POSIX syntax,
+including on Windows; Windows host/native-sandbox commands use PowerShell. Switching
+shell syntax after access escalation triggers reassessment before the retry runs.
+The PowerShell literal classifier recognizes common deletion aliases, file clearing/overwrites, process/service stops,
 power and disk operations, module-qualified names, pipelines, supported executable blocks,
 and literal PowerShell wrapper payloads. Comments and quoted data do not count as commands.
 `Remove-Item`/`Clear-Item` with explicit session-provider targets (`Env:`, `Variable:`,

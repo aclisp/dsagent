@@ -4,6 +4,8 @@ import path from "node:path";
 const WINDOWS_POWERSHELL_UTF8_OUTPUT_PREFIX =
   "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
 
+export type ShellSyntax = "posix" | "powershell";
+
 export interface ShellInvocation {
   command: string;
   args: string[];
