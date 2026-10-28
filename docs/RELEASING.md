@@ -9,7 +9,7 @@ repository. The repository's npm packages remain private and are not published.
 - `main`: protected release branch and GitHub default branch
 
 The root package and `packages/core/package.json` must keep the same version.
-The current version is `1.5.0`; all existing release tags are immutable. Pick
+The current version is `1.6.0`; all existing release tags are immutable. Pick
 the next version following semver based on the shipped changes.
 
 ## Normal release flow
