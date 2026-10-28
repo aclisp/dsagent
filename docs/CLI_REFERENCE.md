@@ -23,7 +23,7 @@ PowerShell 7 and never falls back to Windows PowerShell. Both paths share best-e
 output setup and disable profile loading, while retaining their existing backend-specific flags.
 
 The default engineering system prompt reports the selected shell alongside the command
-backend, such as `host access (shell: pwsh.exe)` or `Docker workspace-write (shell: /bin/sh)`.
+backend, such as `on the host (shell: pwsh.exe)` or `in Docker workspace-write (shell: /bin/sh)`.
 
 Start DSCode from a local source checkout:
 

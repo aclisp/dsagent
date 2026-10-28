@@ -1426,6 +1426,11 @@ function engineeringInstructions(
   const sandbox = { mode: access.sandbox, network: access.network };
   const commandSandbox = sandboxDescription(sandbox);
   const commandShell = sandboxShellName(sandbox);
+  const commandEnvironment = commandSandbox.includes("unavailable")
+    ? `- Local command environment: ${commandSandbox} (shell: ${commandShell}).`
+    : access.sandbox === "danger-full-access"
+      ? `- Commands execute locally on the host (shell: ${commandShell}).`
+      : `- Commands execute locally in ${commandSandbox} (shell: ${commandShell}); this is the DSCode OS sandbox, not a model-provider cloud sandbox.`;
   const instructions = [
     "# DSCode engineering contract",
     "- Work to a verified repository outcome: inspect first, make focused changes, run the narrowest relevant checks, then broaden validation in proportion to risk.",
@@ -1433,7 +1438,7 @@ function engineeringInstructions(
     "- Before changing files below nested directories, discover applicable AGENTS.md and CLAUDE.md files and obey them from broadest to most specific scope.",
     "- Preserve user changes and unrelated dirty-worktree edits. Never use destructive Git recovery commands unless explicitly requested.",
     "- Prefer rg and rg --files for search. Use apply_patch for focused writes so changes are checkpointed and undoable.",
-    `- Commands execute locally in ${commandSandbox} (shell: ${commandShell}); this is the DSCode OS sandbox, not a model-provider cloud sandbox.`,
+    commandEnvironment,
     `- Network access for commands and web tools is ${access.network ? "enabled" : "disabled; commands require scoped approval and web tools are unavailable"}.`,
     ...(webAvailable ? ["- For web research, use codemode's searchTools()/describeTool() to discover web_search and web_fetch on demand."] : []),
     ...(access.network
