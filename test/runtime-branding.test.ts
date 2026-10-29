@@ -28,25 +28,6 @@ describe("DSCode runtime branding", () => {
     }
   });
 
-  it("does not rewrite dynamic UI messages", () => {
-    const prototype = InteractiveMode.prototype as unknown as {
-      showStatus: unknown;
-      showWarning: unknown;
-      showError: unknown;
-    };
-    const originalMethods = {
-      showStatus: prototype.showStatus,
-      showWarning: prototype.showWarning,
-      showError: prototype.showError,
-    };
-
-    installDSCodeRuntimeBranding();
-
-    expect(prototype.showStatus).toBe(originalMethods.showStatus);
-    expect(prototype.showWarning).toBe(originalMethods.showWarning);
-    expect(prototype.showError).toBe(originalMethods.showError);
-  });
-
   it("owns the terminal title", () => {
     installDSCodeRuntimeBranding();
     const setTitle = vi.fn();

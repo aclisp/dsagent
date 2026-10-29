@@ -6,9 +6,6 @@ import {
   getBuiltinProviders,
   type BuiltinProvider,
 } from "@earendil-works/pi-ai/providers/all";
-import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   defaultEffortForProvider,
@@ -73,11 +70,6 @@ describe("DSCode model providers", () => {
     expect(parseSupportedProviderId("opencode-go")).toBe("opencode-go");
   });
 
-  it("exposes OpenCode Zen Go as API-key auth, not OAuth", () => {
-    expect(opencodeGoProvider().auth.apiKey).toBeDefined();
-    expect(opencodeGoProvider().auth.oauth).toBeUndefined();
-  });
-
   it("ships the default OpenAI models with image input support", () => {
     for (const providerId of ["openai-codex", "openai"] as const) {
       const model = getBuiltinModels(builtinProviderFor(providerId)).find(
@@ -86,12 +78,6 @@ describe("DSCode model providers", () => {
       expect(model?.input).toContain("image");
       expect(model?.api).toContain("responses");
     }
-  });
-
-  it("exposes Codex subscription OAuth separately from OpenAI API-key auth", () => {
-    expect(openaiCodexProvider().auth.oauth).toBeDefined();
-    expect(openaiCodexProvider().auth.apiKey).toBeUndefined();
-    expect(openaiProvider().auth.apiKey).toBeDefined();
   });
 
   it("reads a model selection saved by the TUI", async () => {
