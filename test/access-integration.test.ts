@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createAssistantMessageEventStream, validateToolArguments, type AssistantMessage, type JsonObject, type Message, type Model } from "@earendil-works/pi-ai";
 import { runAgentLoop, type AgentEvent, type StreamFn } from "@earendil-works/pi-agent-core";
-import { SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionToolContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
-import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
+import { ManagedProcessRegistry, type ManagedProcessResult } from "../packages/core/src/managed-process.ts";
 import type { DSCodeRuntimeOptions } from "../packages/core/src/runtime-options.ts";
 import { createTestTheme } from "./fixtures/theme.ts";
 
@@ -33,57 +34,104 @@ describe("command access escalation", () => {
   });
 
   let root: string | undefined;
+  let shutdown: (() => Promise<void>) | undefined;
 
   afterEach(async () => {
-    vi.restoreAllMocks();
-    if (root) await fs.rm(root, { recursive: true, force: true });
-    root = undefined;
+    try {
+      await shutdown?.();
+    } finally {
+      shutdown = undefined;
+      vi.restoreAllMocks();
+      if (root) await fs.rm(root, { recursive: true, force: true });
+      root = undefined;
+    }
   });
 
-  it.each<{ input: JsonObject; wait: number }>([
-    { input: {}, wait: 30_000 },
-    { input: { chars: "" }, wait: 30_000 },
-    { input: { yield_time_ms: 0 }, wait: 5_000 },
-    { input: { yield_time_ms: 1_000 }, wait: 5_000 },
-    { input: { yield_time_ms: 60_000 }, wait: 60_000 },
-    { input: { chars: "input" }, wait: 5_000 },
-    { input: { eof: true }, wait: 5_000 },
-    { input: { terminate: true }, wait: 5_000 },
-    { input: { chars: "input", yield_time_ms: 0 }, wait: 0 },
-    { input: { eof: true, yield_time_ms: 0 }, wait: 0 },
-    { input: { terminate: true, yield_time_ms: 0 }, wait: 0 },
-    { input: { chars: "last input", eof: true, yield_time_ms: 60_000 }, wait: 60_000 },
-  ])("validates and forwards write_stdin wait options ($input)", async ({ input, wait }) => {
-    const tools = new Map<string, any>();
+  async function processTools() {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-process-tools-"));
+    const tools = new Map<string, ToolDefinition<any, ManagedProcessResult>>();
+    const handlers: Array<(event: any, ctx: ExtensionContext) => any> = [];
     const pi = new Proxy({
-      registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
-    }, {
-      get(target, key) { return key in target ? target[key as keyof typeof target] : () => undefined; },
-    }) as unknown as ExtensionAPI;
-    await runExtensionFactory(options(process.cwd()), pi);
-    const interact = vi.spyOn(ManagedProcessRegistry.prototype, "interact").mockResolvedValue({
-      processId: "background-process",
-      running: true,
-      output: "",
-      sandbox: "host",
-    });
-    const tool = tools.get("write_stdin");
-    const args = validateToolArguments(tool, {
-      type: "toolCall",
-      id: "poll",
-      name: "write_stdin",
-      arguments: { process_id: "background-process", ...input },
-    });
+      registerTool(tool: ToolDefinition<any, ManagedProcessResult>) { tools.set(tool.name, tool); },
+      on(name: string, handler: (event: any, ctx: ExtensionContext) => any) {
+        if (name === "session_shutdown") handlers.push(handler);
+      },
+      getThinkingLevel: () => "low",
+    }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined }) as unknown as ExtensionAPI;
+    const ctx = { cwd: root, mode: "rpc", hasUI: false, sessionManager: SessionManager.inMemory(root) } as unknown as ExtensionToolContext;
+    await runExtensionFactory({ ...options(root), permission: "full", sandbox: "danger-full-access", network: true }, pi);
+    shutdown = async () => {
+      for (const handler of handlers) await handler({ type: "session_shutdown", reason: "quit" }, ctx);
+    };
+    return async (name: "exec_command" | "write_stdin", input: JsonObject, signal?: AbortSignal) => {
+      const tool = tools.get(name)!;
+      const args = validateToolArguments(tool, { type: "toolCall", id: "fixture", name, arguments: input });
+      return tool.execute("fixture", args, signal, undefined, ctx);
+    };
+  }
 
-    const controller = new AbortController();
-    await tool.execute("poll", args, controller.signal);
-    const { yield_time_ms: _yieldTimeMs, ...action } = input;
-    expect(interact).toHaveBeenLastCalledWith("background-process", {
-      yieldTimeMs: wait,
-      terminate: false,
-      signal: controller.signal,
-      ...action,
+  it.each([
+    { input: { eof: true }, expected: "head" },
+    { input: { chars: "tail", eof: true, yield_time_ms: 60_000 }, expected: "headtail" },
+  ])("delivers input followed by EOF to a background command ($input)", async ({ input, expected }) => {
+    const execute = await processTools();
+    const started = await execute("exec_command", {
+      cmd: nodeCommand("let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(input));"),
+      stdin_open: true, yield_time_ms: 0,
     });
+    const processId = started.details.processId;
+    await expect(execute("write_stdin", { process_id: processId, chars: "head", yield_time_ms: 0 }))
+      .resolves.toMatchObject({ details: { running: true } });
+    await expect(execute("write_stdin", { process_id: processId, ...input }))
+      .resolves.toMatchObject({ details: { running: false, exitCode: 0, output: expected } });
+  });
+
+  it.each<JsonObject>([{}, { chars: "" }, { yield_time_ms: 0 }])("collects a background command's final output when polling with %j", async (input) => {
+    const execute = await processTools();
+    const started = await execute("exec_command", {
+      cmd: nodeCommand("const fs = require('node:fs'); const timer = setInterval(() => { if (fs.existsSync('finish')) { clearInterval(timer); process.stdout.write('finished'); } }, 10);"),
+      yield_time_ms: 0,
+    });
+    const polled = execute("write_stdin", { process_id: started.details.processId, ...input });
+    await fs.writeFile(path.join(root!, "finish"), "");
+    await expect(polled).resolves.toMatchObject({ details: { running: false, exitCode: 0, output: "finished" } });
+  });
+
+  it("returns a command's response after writing input without EOF", async () => {
+    const execute = await processTools();
+    const started = await execute("exec_command", {
+      cmd: nodeCommand("process.stdin.once('data', data => { process.stdout.write(data); process.stdin.destroy(); });"),
+      stdin_open: true, yield_time_ms: 0,
+    });
+    await expect(execute("write_stdin", { process_id: started.details.processId, chars: "hello\n" }))
+      .resolves.toMatchObject({ details: { running: false, exitCode: 0, output: "hello\n" } });
+  });
+
+  it("terminates a background command through write_stdin", async () => {
+    const execute = await processTools();
+    const started = await execute("exec_command", {
+      cmd: nodeCommand("process.stdin.resume();"), stdin_open: true, yield_time_ms: 0,
+    });
+    await expect(execute("write_stdin", { process_id: started.details.processId, terminate: true, yield_time_ms: 1_000 }))
+      .resolves.toMatchObject({ details: { running: false } });
+  });
+
+  it("cancels polling without losing the process or writing input from an aborted call", async () => {
+    const execute = await processTools();
+    const started = await execute("exec_command", {
+      cmd: nodeCommand("let input = ''; process.stdin.on('data', data => input += data); process.stdin.on('end', () => process.stdout.write(input));"),
+      stdin_open: true, yield_time_ms: 0,
+    });
+    const processId = started.details.processId;
+    const controller = new AbortController();
+    const canceled = expect(execute("write_stdin", { process_id: processId }, controller.signal))
+      .rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await canceled;
+    await expect(execute("write_stdin", { process_id: processId, chars: "discarded", eof: true }, controller.signal))
+      .rejects.toMatchObject({ name: "AbortError" });
+    await expect(execute("write_stdin", { process_id: processId, chars: "still alive", eof: true }))
+      .resolves.toMatchObject({ details: { running: false, exitCode: 0, output: "still alive" } });
   });
 
   it("requires approval for EOF but still allows polling in ask mode", async () => {
@@ -396,4 +444,10 @@ function runExtensionFactory(
 ): void | Promise<void> {
   const extension = createDSCodeExtension(extensionOptions);
   return typeof extension === "function" ? extension(pi) : extension.factory(pi);
+}
+
+function nodeCommand(script: string): string {
+  return process.platform === "win32"
+    ? `& '${process.execPath.replaceAll("'", "''")}' '-e' '${script.replaceAll("'", "''")}'`
+    : `'${process.execPath.replaceAll("'", "'\\''")}' -e '${script.replaceAll("'", "'\\''")}'`;
 }
