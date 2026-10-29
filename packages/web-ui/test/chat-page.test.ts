@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_CHAT_AGENT_NAME,
   renderChatPage,
   resolveChatAgentName,
 } from "../src/chat-page.ts";
 
 describe("chat page identity", () => {
-  it("uses Steve Code when CHAT_AGENT_NAME is empty", () => {
-    expect(resolveChatAgentName(undefined)).toBe(DEFAULT_CHAT_AGENT_NAME);
-    expect(resolveChatAgentName("   ")).toBe(DEFAULT_CHAT_AGENT_NAME);
+  it.each([undefined, "", "   "])("uses Steve Code when CHAT_AGENT_NAME is %j", (value) => {
+    expect(resolveChatAgentName(value)).toBe("Steve Code");
   });
 
   it("trims a configured agent name", () => {
