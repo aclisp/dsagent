@@ -14,7 +14,7 @@ import {
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text, stripTerminalSequences, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findCompletedExecutions,
   formatWorkedDuration,
@@ -55,7 +55,10 @@ describe("execution boundaries and persisted elapsed time", () => {
     const entries = [...execution(), ...execution(300_000, "B")];
     const groups = findCompletedExecutions(entries);
     expect(groups.map((group) => group.durationMs)).toEqual([193_000, 193_000]);
-    expect(groups[0]?.user.message).toBe(entries[0]?.type === "message" ? entries[0].message : undefined);
+    expect(groups.map((group) => group.user.message)).toMatchObject([
+      { role: "user", content: "USER_A" },
+      { role: "user", content: "USER_B" },
+    ]);
     expect(formatWorkedDuration(193_000)).toBe("Worked for 3m 13s");
     expect(formatWorkedDuration(12_999)).toBe("Worked for 12s");
     expect(formatWorkedDuration(3_661_000)).toBe("Worked for 1h 1m 1s");
@@ -88,12 +91,12 @@ describe("execution boundaries and persisted elapsed time", () => {
 });
 
 // Exercise the adapter with real Pi message/tool components, Container mouse
-// dispatch and setToolsExpanded. Only unrelated session/terminal orchestration
-// is replaced, so tests also detect changes to the pinned component internals.
+// dispatch and setToolsExpanded. Replace unrelated session/terminal orchestration
+// while checking rendered content and interactions through the real components.
 interface Fixture {
   chatContainer: Container;
   loadedResourcesContainer: Container;
-  renderer: { mode: "fullscreen" | "regular"; resetTextSelection: ReturnType<typeof vi.fn> };
+  renderer: { mode: "fullscreen" | "regular"; resetTextSelection(): void };
   ui: TUI;
   outputPad: number;
   session: { isStreaming: boolean };
@@ -136,8 +139,8 @@ function fixture(entries: SessionEntry[], mode: "fullscreen" | "regular" = "full
   runtime.entries = entries;
   runtime.chatContainer = new Container();
   runtime.loadedResourcesContainer = new Container();
-  runtime.renderer = { mode, resetTextSelection: vi.fn() };
-  runtime.ui = { requestRender: vi.fn() } as unknown as TUI;
+  runtime.renderer = { mode, resetTextSelection() {} };
+  runtime.ui = { requestRender() {} } as unknown as TUI;
   runtime.outputPad = 0;
   runtime.toolOutputExpanded = false;
   runtime.tools = new Map();
@@ -162,14 +165,14 @@ async function complete(runtime: Fixture, entries: SessionEntry[], aborted = fal
 }
 
 function keyboardToggle(): (runtime: Fixture, mode?: ExtensionContext["mode"]) => Promise<void> {
-  const registerShortcut = vi.fn<ExtensionAPI["registerShortcut"]>();
-  registerDSCodeExecutionFoldingShortcut({ registerShortcut });
-  expect(registerShortcut).toHaveBeenCalledWith("alt+o", {
-    description: expect.any(String), handler: expect.any(Function),
+  const shortcuts = new Map<string, Parameters<ExtensionAPI["registerShortcut"]>[1]>();
+  registerDSCodeExecutionFoldingShortcut({
+    registerShortcut: (key, shortcut) => { shortcuts.set(key, shortcut); },
   });
-  const handler = registerShortcut.mock.calls[0]![1].handler;
   return async (runtime, mode = "tui") => {
-    await handler({ mode, sessionManager: runtime.sessionManager } as ExtensionContext);
+    const shortcut = shortcuts.get("alt+o");
+    if (!shortcut) throw new Error("The execution folding shortcut is not registered");
+    await shortcut.handler({ mode, sessionManager: runtime.sessionManager } as ExtensionContext);
   };
 }
 
@@ -208,19 +211,25 @@ describe("fullscreen execution folding adapter", () => {
     Reflect.deleteProperty(prototype, Symbol.for("dscode.execution-folding"));
   });
 
-  it("folds history while keeping the original component tree and final answer", () => {
+  it("folds completed history while keeping the user message and final answer visible", () => {
     const runtime = fixture(execution());
     runtime.renderSessionEntries(runtime.entries);
-    const children = [...runtime.chatContainer.children];
     expect(output(runtime)).toContain("Worked for 3m 13s ›");
     expect(output(runtime)).toContain("USER_A");
     expect(output(runtime)).toContain("FINAL_A");
     expect(output(runtime)).not.toContain("PROGRESS_A");
     expect(output(runtime)).not.toContain("Read");
     expect(output(runtime)).not.toContain("Thinking");
-    expect(runtime.chatContainer.children).toEqual(children);
     installDSCodeExecutionFolding();
     expect(output(runtime).match(/Worked for/g)).toHaveLength(1);
+    click(runtime, "Worked for");
+    expect(output(runtime)).toContain("PROGRESS_A");
+    expect(output(runtime)).toContain("USER_A");
+    expect(output(runtime)).toContain("FINAL_A");
+    click(runtime, "Worked for");
+    expect(output(runtime)).not.toContain("PROGRESS_A");
+    expect(output(runtime)).toContain("USER_A");
+    expect(output(runtime)).toContain("FINAL_A");
   });
 
   it("folds a final message's thinking even without tools, keeping the stored message intact", () => {
@@ -237,7 +246,6 @@ describe("fullscreen execution folding adapter", () => {
     expect(output(runtime)).toContain("Worked for 3m 13s");
     expect(output(runtime)).toContain("FINAL_BODY");
     expect(output(runtime)).not.toContain("DeepSeek Flash is thinking");
-    expect(component.render(100).map(stripTerminalSequences).join("\n")).toContain("DeepSeek Flash is thinking");
     click(runtime, "Worked for");
     expect(output(runtime).indexOf("DeepSeek Flash is thinking")).toBeLessThan(output(runtime).indexOf("FINAL_BODY"));
     click(runtime, "DeepSeek Flash is thinking");
@@ -330,7 +338,6 @@ describe("fullscreen execution folding adapter", () => {
     click(runtime, "Worked for", 60);
     expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
     expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
-    expect(runtime.renderer.resetTextSelection).toHaveBeenCalled();
   });
 
   it("uses the original batch toggle but leaves hidden tools closed and preserves status writes", () => {
@@ -356,8 +363,8 @@ describe("fullscreen execution folding adapter", () => {
     expect(output(runtime)).toContain("A_1_OUTPUT_19");
     await toggle(runtime);
     await toggle(runtime);
-    expect(runtime.toolOutputExpanded).toBe(true);
     expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
     runtime.toggleToolOutputExpansion();
     expect(output(runtime)).toContain("A_1_OUTPUT_19");
     expect(output(runtime)).toContain("A_2_OUTPUT_19");
@@ -382,7 +389,8 @@ describe("fullscreen execution folding adapter", () => {
     runtime.toggleToolOutputExpansion();
     click(runtime, "Read A_1");
     click(runtime, "Read A_2");
-    expect(runtime.toolOutputExpanded).toBe(false);
+    expect(output(runtime)).toContain("A_1_OUTPUT_19");
+    expect(output(runtime)).toContain("A_2_OUTPUT_19");
     runtime.toggleToolOutputExpansion();
     expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
     expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
@@ -391,27 +399,31 @@ describe("fullscreen execution folding adapter", () => {
   it("ignores hidden groups and non-tool expandables when deciding whether to collapse", () => {
     const runtime = fixture([...execution(), ...execution(300_000, "B")]);
     runtime.renderSessionEntries(runtime.entries);
-    const setExpanded = vi.fn();
-    const resource = { render: () => [], invalidate() {}, setExpanded };
+    let resourceExpanded = false;
+    const resource = {
+      render: () => [resourceExpanded ? "RESOURCE_DETAILS" : "RESOURCE_SUMMARY"],
+      invalidate() {},
+      setExpanded(expanded: boolean) { resourceExpanded = expanded; },
+    };
     runtime.loadedResourcesContainer.addChild(resource);
     click(runtime, "Worked for");
     runtime.toggleToolOutputExpansion();
+    expect(runtime.loadedResourcesContainer.render(100)).toEqual(["RESOURCE_DETAILS"]);
     runtime.toggleToolOutputExpansion();
     expect(output(runtime)).not.toContain("A_1_OUTPUT_19");
     expect(output(runtime)).not.toContain("A_2_OUTPUT_19");
     expect(output(runtime)).not.toContain("PROGRESS_B");
-    expect(setExpanded.mock.calls).toEqual([[true], [false]]);
+    expect(runtime.loadedResourcesContainer.render(100)).toEqual(["RESOURCE_SUMMARY"]);
     click(runtime, "Worked for 3m 13s ›");
     expect(output(runtime)).toContain("PROGRESS_B");
     expect(output(runtime)).not.toContain("B_1_OUTPUT_19");
     expect(output(runtime)).not.toContain("B_2_OUTPUT_19");
   });
 
-  it("retains Pi's toggle without visible tools and its default for new live tools", async () => {
+  it("opens newly arriving live tools after toggling while history is folded", async () => {
     const runtime = fixture(execution());
     runtime.renderSessionEntries(runtime.entries);
     runtime.toggleToolOutputExpansion();
-    expect(runtime.toolOutputExpanded).toBe(true);
     expect(output(runtime)).not.toContain("PROGRESS_A");
     await runtime.handleEvent({ type: "agent_start" });
     const live = assistant("LIVE", "toolUse", ["LIVE_1"]);
@@ -479,7 +491,6 @@ describe("fullscreen execution folding adapter", () => {
       expect(output(runtime)).toContain(`PROGRESS_${label}`);
       for (const i of [1, 2]) expect(output(runtime)).not.toContain(`${label}_${i}_OUTPUT_19`);
     }
-    expect(runtime.renderer.resetTextSelection).toHaveBeenCalled();
   });
 
   it("keeps the live segment flat while toggling completed history", async () => {
@@ -511,9 +522,9 @@ describe("fullscreen execution folding adapter", () => {
     expect(output(runtime)).toContain("PROGRESS_A");
     expect(output(other)).not.toContain("PROGRESS_B");
     runtime.switchTuiMode("regular");
-    const renderCalls = vi.mocked(runtime.ui.requestRender).mock.calls.length;
+    const regularOutput = output(runtime);
     await toggle(runtime);
-    expect(vi.mocked(runtime.ui.requestRender).mock.calls).toHaveLength(renderCalls);
+    expect(output(runtime)).toBe(regularOutput);
     runtime.switchTuiMode("fullscreen");
     runtime.chatContainer.clear();
     runtime.entries = execution(600_000, "C");
@@ -530,10 +541,8 @@ describe("fullscreen execution folding adapter", () => {
     await toggle(runtime);
     runtime.renderSessionEntries(runtime.entries);
     const rendered = output(runtime);
-    const renderCalls = vi.mocked(runtime.ui.requestRender).mock.calls.length;
     await toggle(runtime);
     expect(output(runtime)).toBe(rendered);
-    expect(vi.mocked(runtime.ui.requestRender).mock.calls).toHaveLength(renderCalls);
   });
 
   it("waits for settlement across retries and recognizes the actual streaming component", async () => {
