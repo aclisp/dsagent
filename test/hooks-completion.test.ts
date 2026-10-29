@@ -5,7 +5,6 @@ import { fauxAssistantMessage, fauxProvider, InMemoryModelsStore, type FauxRespo
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHooks } from "../packages/core/src/hooks.ts";
-import * as processes from "../packages/core/src/process.ts";
 
 describe("completed hooks with Pi sessions", () => {
   let root: string | undefined;
@@ -24,9 +23,13 @@ describe("completed hooks with Pi sessions", () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-completion-hooks-"));
     const agentDir = path.join(root, "agent");
     await fs.mkdir(agentDir);
+    await fs.writeFile(path.join(root, "completed.jsonl"), "");
     vi.stubEnv("DSCODE_HOME", agentDir);
     await fs.writeFile(path.join(agentDir, "hooks.json"), JSON.stringify({ hooks: {
-      completed: [{ command: "notify-completed", args: ["{payload}"] }],
+      completed: [{
+        command: process.execPath,
+        args: ["-e", "require('fs').appendFileSync('completed.jsonl', process.argv[1] + '\\n')", "{payload}"],
+      }],
     } }));
     const settingsManager = SettingsManager.inMemory({
       retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 },
@@ -54,10 +57,12 @@ describe("completed hooks with Pi sessions", () => {
     }));
     const errors: unknown[] = [];
     await session.bindExtensions({ mode: "rpc", onError: (error) => { errors.push(error); } });
-    const notify = vi.spyOn(processes, "runProcess").mockResolvedValue({
-      stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false,
-    });
-    return { session, faux, notify, errors };
+    return { session, faux, errors };
+  }
+
+  async function notifications() {
+    const log = await fs.readFile(path.join(root!, "completed.jsonl"), "utf8");
+    return log.split("\n").filter(Boolean).map(line => JSON.parse(line));
   }
 
   const transientError = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" });
@@ -67,22 +72,21 @@ describe("completed hooks with Pi sessions", () => {
     { name: "successful automatic retry", responses: [transientError(), fauxAssistantMessage("recovered")] },
     { name: "exhausted retries", responses: [transientError(), transientError()] },
   ])("notifies only after $name settles", async ({ responses }) => {
-    const { session, faux, notify, errors } = await setup((pi) => {
-      pi.on("agent_end", () => { expect(notify).not.toHaveBeenCalled(); });
+    const { session, faux, errors } = await setup((pi) => {
+      pi.on("agent_end", async () => { expect(await notifications()).toEqual([]); });
     });
     faux.setResponses(responses);
     await session.prompt("Do the work");
     expect(faux.state.callCount).toBe(responses.length);
-    expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0]![1].join(" ")).toContain('{"event":"completed"}');
+    expect(await notifications()).toEqual([{ event: "completed" }]);
     expect(errors).toEqual([]);
   });
 
   it("waits for a queued continuation before notifying", async () => {
     let queued = false;
-    const { session, faux, notify, errors } = await setup((pi) => {
-      pi.on("agent_end", () => {
-        expect(notify).not.toHaveBeenCalled();
+    const { session, faux, errors } = await setup((pi) => {
+      pi.on("agent_end", async () => {
+        expect(await notifications()).toEqual([]);
         if (queued) return;
         queued = true;
         pi.sendUserMessage("Also finish the follow-up", { deliverAs: "followUp" });
@@ -91,12 +95,12 @@ describe("completed hooks with Pi sessions", () => {
     faux.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("follow-up done")]);
     await session.prompt("Start the work");
     expect(faux.state.callCount).toBe(2);
-    expect(notify).toHaveBeenCalledTimes(1);
+    expect(await notifications()).toEqual([{ event: "completed" }]);
     expect(errors).toEqual([]);
   });
 
   it("does not notify when Esc aborts after a successful response", async () => {
-    const { session, faux, notify, errors } = await setup((pi) => {
+    const { session, faux, errors } = await setup((pi) => {
       pi.on("agent_before_settle", (_event, ctx) => { ctx.abort(); });
     });
     const settled: boolean[] = [];
@@ -106,7 +110,7 @@ describe("completed hooks with Pi sessions", () => {
     faux.setResponses([fauxAssistantMessage("done")]);
     await session.prompt("Start the work");
     expect(settled).toEqual([true]);
-    expect(notify).not.toHaveBeenCalled();
+    expect(await notifications()).toEqual([]);
     expect(errors).toEqual([]);
   });
 

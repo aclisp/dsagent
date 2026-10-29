@@ -4,9 +4,16 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionHandler, InputEvent, InputEventResult, ToolCallEvent, ToolCallEventResult, ToolResultEvent, ToolResultEventResult, UIPromptEndEvent, UIPromptStartEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHooks } from "../packages/core/src/hooks.ts";
-import * as processes from "../packages/core/src/process.ts";
 
 const promptIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function nodeHook(script: string, ...args: string[]) {
+  return { command: process.execPath, args: ["-e", script, ...args] };
+}
+
+function recordHook(message: string) {
+  return nodeHook("require('fs').appendFileSync('hooks.log', process.argv[1] + '\\n')", message);
+}
 
 describe("DSCode hooks", () => {
   let root: string | undefined;
@@ -18,11 +25,12 @@ describe("DSCode hooks", () => {
     root = undefined;
   });
 
-  async function hookSetup(globalHooks: object, projectHooks: object = {}, trusted = true) {
+  async function hookSetup(globalHooks: object, projectHooks: object = {}, trusted = true, initialize = true) {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-input-hooks-"));
     const home = path.join(root, "home");
     await fs.mkdir(home);
     await fs.mkdir(path.join(root, ".dscode"));
+    await fs.writeFile(path.join(root, "hooks.log"), "");
     vi.stubEnv("DSCODE_HOME", home);
     await fs.writeFile(path.join(home, "hooks.json"), JSON.stringify({ hooks: globalHooks }));
     await fs.writeFile(path.join(root, ".dscode", "hooks.json"), JSON.stringify({ hooks: projectHooks }));
@@ -30,8 +38,12 @@ describe("DSCode hooks", () => {
     registerHooks({ on } as unknown as ExtensionAPI, () => ({ sandbox: "danger-full-access", network: false }));
     const ctx = { cwd: root, mode: "tui", isProjectTrusted: () => trusted } as unknown as ExtensionContext;
     const start = on.mock.calls.find(([name]) => name === "session_start")![1];
-    await start({ type: "session_start" }, ctx);
+    if (initialize) await start({ type: "session_start" }, ctx);
     return { on, ctx };
+  }
+
+  async function hookLog() {
+    return fs.readFile(path.join(root!, "hooks.log"), "utf8");
   }
 
   async function inputSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true) {
@@ -87,8 +99,8 @@ describe("DSCode hooks", () => {
     ["uiPromptStart", "ui_prompt_start"],
     ["uiPromptEnd", "ui_prompt_end"],
   ] as const)("%s", (hookName, eventType) => {
-    async function promptSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true) {
-      const { on, ctx } = await hookSetup({ [hookName]: globalHooks }, { [hookName]: projectHooks }, trusted);
+    async function promptSetup(globalHooks: unknown[], projectHooks: unknown[] = [], trusted = true, initialize = true) {
+      const { on, ctx } = await hookSetup({ [hookName]: globalHooks }, { [hookName]: projectHooks }, trusted, initialize);
       const prompt = on.mock.calls.find(([name]) => name === eventType)![1] as ExtensionHandler<UIPromptStartEvent | UIPromptEndEvent>;
       return async (kind: UIPromptStartEvent["kind"], title?: string, mode: ExtensionContext["mode"] = "tui") => {
         if (eventType === "ui_prompt_end") {
@@ -115,43 +127,36 @@ describe("DSCode hooks", () => {
     });
 
     it("runs global prompt hooks before trusted project prompt hooks", async () => {
-      const prompt = await promptSetup([{ command: "global" }], [{ command: "project" }]);
-      const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "ignored", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+      const prompt = await promptSetup([recordHook("global")], [recordHook("project")]);
       await expect(prompt("confirm", "Approve?")).resolves.toBeUndefined();
-      expect(run).toHaveBeenCalledTimes(2);
-      expect(JSON.stringify(run.mock.calls[0])).toContain("global");
-      expect(JSON.stringify(run.mock.calls[1])).toContain("project");
+      expect(await hookLog()).toBe("global\nproject\n");
     });
 
     it("ignores untrusted project prompt hooks but still runs global hooks", async () => {
-      const prompt = await promptSetup([{ command: "global" }], [{ command: "must-not-run" }], false);
-      const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+      const prompt = await promptSetup([recordHook("global")], [recordHook("project")], false);
       await prompt("custom");
-      expect(run).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(run.mock.calls)).not.toContain("must-not-run");
+      expect(await hookLog()).toBe("global\n");
     });
 
-    it("defaults to no prompt hooks for existing configuration", async () => {
+    it("accepts prompts without prompt hooks configured", async () => {
       const { on, ctx } = await hookSetup({ input: [] });
-      const run = vi.spyOn(processes, "runProcess");
-      await on.mock.calls.find(([name]) => name === eventType)![1]({ type: eventType, kind: "confirm" }, ctx);
-      expect(run).not.toHaveBeenCalled();
+      if (eventType === "ui_prompt_end") {
+        await on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind: "confirm" }, ctx);
+      }
+      await expect(on.mock.calls.find(([name]) => name === eventType)![1]({ type: eventType, kind: "confirm" }, ctx)).resolves.toBeUndefined();
     });
 
     it("does not load or run prompt hooks before session_start", async () => {
-      const on = vi.fn();
-      registerHooks({ on } as unknown as ExtensionAPI, () => ({ sandbox: "danger-full-access", network: false }));
-      const run = vi.spyOn(processes, "runProcess");
-      await on.mock.calls.find(([name]) => name === eventType)![1]({ type: eventType, kind: "select" }, { mode: "tui" });
-      expect(run).not.toHaveBeenCalled();
+      const prompt = await promptSetup([recordHook("prompt")], [], true, false);
+      await prompt("select");
+      expect(await hookLog()).toBe("");
     });
 
     it.each([
-      { exitCode: 7, stderr: "sound failed", expected: "sound failed" },
-      { timedOut: true, expected: "timed out" },
-    ])("reports prompt hook failure without returning an approval decision: $expected", async ({ expected, ...result }) => {
-      const prompt = await promptSetup([{ command: "hook" }]);
-      vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false, ...result });
+      { hook: nodeHook("process.stderr.write('sound failed'); process.exitCode = 7"), expected: "sound failed" },
+      { hook: { ...nodeHook("setTimeout(() => {}, 1000)"), timeoutMs: 100 }, expected: "timed out" },
+    ])("reports prompt hook failure without returning an approval decision: $expected", async ({ expected, hook }) => {
+      const prompt = await promptSetup([hook]);
       await expect(prompt("confirm")).rejects.toThrow(expected);
     });
   });
@@ -193,48 +198,38 @@ describe("DSCode hooks", () => {
   });
 
   it("ignores unmatched and duplicate end events", async () => {
-    const { on, ctx } = await hookSetup({ uiPromptEnd: [{ command: "clear" }] });
-    const run = vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const { on, ctx } = await hookSetup({ uiPromptEnd: [recordHook("cleared")] });
     const start = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1];
     const end = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1];
     await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
-    expect(run).not.toHaveBeenCalled();
+    expect(await hookLog()).toBe("");
     await start({ type: "ui_prompt_start", kind: "confirm" }, ctx);
     await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
     await end({ type: "ui_prompt_end", kind: "confirm" }, ctx);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(await hookLog()).toBe("cleared\n");
   });
 
   it("finishes start hooks before running end hooks", async () => {
     const { on, ctx } = await hookSetup({
-      uiPromptStart: [{ command: "create-reminder" }],
-      uiPromptEnd: [{ command: "clear-reminder" }],
+      uiPromptStart: [nodeHook("setTimeout(() => require('fs').appendFileSync('hooks.log', 'created\\n'), 150)")],
+      uiPromptEnd: [recordHook("cleared")],
     });
-    const success = { stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false };
-    let finishStart!: (result: typeof success) => void;
-    const run = vi.spyOn(processes, "runProcess")
-      .mockImplementationOnce(() => new Promise(resolve => { finishStart = resolve; }))
-      .mockResolvedValueOnce(success);
     const started = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind: "confirm" }, ctx);
     const ended = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1]({ type: "ui_prompt_end", kind: "confirm" }, ctx);
-    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
-    expect(JSON.stringify(run.mock.calls[0])).toContain("create-reminder");
-    finishStart(success);
     await Promise.all([started, ended]);
-    expect(run).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(run.mock.calls[1])).toContain("clear-reminder");
+    expect(await hookLog()).toBe("created\ncleared\n");
   });
 
   it("still runs cleanup after a start hook fails", async () => {
-    const { on, ctx } = await hookSetup({ uiPromptStart: [{ command: "create" }], uiPromptEnd: [{ command: "clear" }] });
-    const run = vi.spyOn(processes, "runProcess")
-      .mockRejectedValueOnce(new Error("creation failed"))
-      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const { on, ctx } = await hookSetup({
+      uiPromptStart: [nodeHook("process.stderr.write('creation failed'); process.exitCode = 7")],
+      uiPromptEnd: [recordHook("cleared")],
+    });
     const started = on.mock.calls.find(([name]) => name === "ui_prompt_start")![1]({ type: "ui_prompt_start", kind: "confirm" }, ctx);
     const ended = on.mock.calls.find(([name]) => name === "ui_prompt_end")![1]({ type: "ui_prompt_end", kind: "confirm" }, ctx);
     await expect(started).rejects.toThrow("creation failed");
     await expect(ended).resolves.toBeUndefined();
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(await hookLog()).toBe("cleared\n");
   });
 
   it("runs end hooks even when the turn signal has been aborted", async () => {
@@ -264,50 +259,44 @@ describe("DSCode hooks", () => {
   });
 
   it("chains global and trusted project text replacements", async () => {
-    const input = await inputSetup([{ command: "global", args: ["{payload}"] }], [{ command: "project", args: ["{payload}"] }]);
-    const run = vi.spyOn(processes, "runProcess")
-      .mockResolvedValueOnce({ stdout: "hello global", stderr: "", exitCode: 0, timedOut: false, truncated: false })
-      .mockResolvedValueOnce({ stdout: "hello global project", stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const append = "process.stdout.write(JSON.parse(process.argv[1]).text + process.argv[2])";
+    const input = await inputSetup(
+      [nodeHook(append, "{payload}", " global")],
+      [nodeHook(append, "{payload}", " project")],
+    );
     await expect(input({ type: "input", text: "hello", source: "rpc", streamingBehavior: "followUp" }))
       .resolves.toEqual({ action: "transform", text: "hello global project" });
-    expect(JSON.stringify(run.mock.calls[1])).toContain("hello global");
-    expect(JSON.stringify(run.mock.calls[1])).not.toContain("followUp");
   });
 
   it("ignores project hooks in an untrusted workspace", async () => {
-    const input = await inputSetup([], [{ command: "must-not-run" }], false);
-    const run = vi.spyOn(processes, "runProcess");
+    const input = await inputSetup([], [recordHook("project")], false);
     await expect(input({ type: "input", text: "hello", source: "interactive" })).resolves.toEqual({ action: "continue" });
-    expect(run).not.toHaveBeenCalled();
+    expect(await hookLog()).toBe("");
   });
 
   it.each(["", " \n\t"])("keeps the input on empty or whitespace-only stdout: %s", async (stdout) => {
-    const input = await inputSetup([{ command: "hook" }]);
-    vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout, stderr: "", exitCode: 0, timedOut: false, truncated: false });
+    const input = await inputSetup([nodeHook("process.stdout.write(process.argv[1])", stdout)]);
     await expect(input({ type: "input", text: "hello", source: "interactive" })).resolves.toEqual({ action: "continue" });
   });
 
   it("does not customize extension-generated input", async () => {
-    const input = await inputSetup([{ command: "must-not-run" }]);
-    const run = vi.spyOn(processes, "runProcess");
+    const input = await inputSetup([recordHook("input")]);
     await expect(input({ type: "input", text: "hello", source: "extension" })).resolves.toEqual({ action: "continue" });
-    expect(run).not.toHaveBeenCalled();
+    expect(await hookLog()).toBe("");
   });
 
   it("treats JSON as plain text rather than Pi actions", async () => {
-    const input = await inputSetup([{ command: "hook" }]);
-    const stdout = JSON.stringify({ action: "handled", images: [] });
-    vi.spyOn(processes, "runProcess").mockResolvedValue({ stdout, stderr: "", exitCode: 0, timedOut: false, truncated: false });
-    await expect(input({ type: "input", text: "hello", source: "rpc" })).resolves.toEqual({ action: "transform", text: stdout });
+    const input = await inputSetup([nodeHook("process.stdout.write(process.argv[1])", '{"action":"handled","images":[]}')]);
+    await expect(input({ type: "input", text: "hello", source: "rpc" }))
+      .resolves.toEqual({ action: "transform", text: '{"action":"handled","images":[]}' });
   });
 
   it.each([
-    { stdout: "", exitCode: 7, stderr: "hook failed", expected: "hook failed" },
-    { stdout: "", timedOut: true, expected: "timed out" },
-    { stdout: "replacement", truncated: true, expected: "truncated" },
-  ])("reports failed input hooks: $expected", async ({ expected, ...result }) => {
-    const input = await inputSetup([{ command: "hook" }]);
-    vi.spyOn(processes, "runProcess").mockResolvedValue({ stderr: "", exitCode: 0, timedOut: false, truncated: false, ...result });
+    { hook: nodeHook("process.stderr.write('hook failed'); process.exitCode = 7"), expected: "hook failed" },
+    { hook: { ...nodeHook("setTimeout(() => {}, 1000)"), timeoutMs: 100 }, expected: "timed out" },
+    { hook: nodeHook("process.stdout.write('x'.repeat(20001))"), expected: "truncated" },
+  ])("reports failed input hooks: $expected", async ({ expected, hook }) => {
+    const input = await inputSetup([hook]);
     await expect(input({ type: "input", text: "hello", source: "rpc" })).rejects.toThrow(expected);
   });
 
