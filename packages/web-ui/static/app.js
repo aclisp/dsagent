@@ -1,6 +1,8 @@
 import { Termino } from "./termino.js";
 
-const term = Termino(document.getElementById("terminal"));
+const terminalElement = document.getElementById("terminal");
+const term = Termino(terminalElement);
+const consoleElement = document.querySelector(".termino-console");
 const stopButton = document.getElementById("stop");
 const uploadButton = document.getElementById("upload");
 const fileInput = document.getElementById("file-input");
@@ -83,6 +85,95 @@ const WORKING_PHASE_LABELS = {
   executing: "Running",
   compaction: "Compacting",
 };
+
+// Follow output until the reader scrolls up. Only an explicit return to the
+// bottom (or submitting input) resumes following; layout changes do not.
+let followLatest = true;
+let followFrame = null;
+let previousTouchY = null;
+let pointerScrollTop = null;
+let scrollIntent = null;
+let lastScrollTop = consoleElement.scrollTop;
+
+function isAtBottom() {
+  return consoleElement.scrollHeight - consoleElement.scrollTop - consoleElement.clientHeight <= 2;
+}
+
+function scheduleFollowLatest() {
+  if (!followLatest || followFrame !== null || previousTouchY !== null || isAtBottom()) return;
+  followFrame = requestAnimationFrame(() => {
+    followFrame = null;
+    if (followLatest && previousTouchY === null && !isAtBottom()) {
+      consoleElement.scrollTop = consoleElement.scrollHeight;
+    }
+  });
+}
+
+function recordScrollIntent(intent) {
+  if (consoleElement.scrollHeight <= consoleElement.clientHeight) return;
+  scrollIntent = intent;
+  if (intent === "older") {
+    followLatest = false;
+    if (followFrame !== null) cancelAnimationFrame(followFrame);
+    followFrame = null;
+  } else if (isAtBottom()) {
+    followLatest = true;
+    scrollIntent = null;
+  }
+}
+
+consoleElement.addEventListener("wheel", (event) => {
+  if (event.deltaY !== 0) recordScrollIntent(event.deltaY < 0 ? "older" : "newer");
+}, { passive: true });
+
+consoleElement.addEventListener("touchstart", (event) => {
+  previousTouchY = event.touches[0]?.clientY ?? null;
+}, { passive: true });
+
+consoleElement.addEventListener("touchmove", (event) => {
+  const y = event.touches[0]?.clientY ?? null;
+  if (y !== null && previousTouchY !== null && y !== previousTouchY) {
+    recordScrollIntent(y > previousTouchY ? "older" : "newer");
+  }
+  previousTouchY = y;
+}, { passive: true });
+
+for (const event of ["touchend", "touchcancel"]) {
+  consoleElement.addEventListener(event, () => {
+    previousTouchY = null;
+    scheduleFollowLatest();
+  }, { passive: true });
+}
+
+consoleElement.addEventListener("pointerdown", (event) => {
+  // Touch direction comes from touchmove, not delayed programmatic scroll events.
+  pointerScrollTop = event.pointerType === "touch" ? null : consoleElement.scrollTop;
+});
+for (const event of ["pointerup", "pointercancel"]) {
+  window.addEventListener(event, () => { pointerScrollTop = null; });
+}
+
+consoleElement.addEventListener("scroll", () => {
+  const top = consoleElement.scrollTop;
+  const scrollingDown = top > lastScrollTop;
+  lastScrollTop = top;
+  if (pointerScrollTop !== null && top !== pointerScrollTop) {
+    recordScrollIntent(top < pointerScrollTop ? "older" : "newer");
+    pointerScrollTop = top;
+  }
+  if (scrollIntent === "newer" && scrollingDown && isAtBottom()) {
+    followLatest = true;
+    scrollIntent = null;
+  }
+});
+
+terminalElement.addEventListener("keydown", (event) => {
+  // These are Termino's existing shortcuts for scrolling the transcript.
+  if (event.key === "ArrowUp") recordScrollIntent("older");
+  if (event.key === "ArrowDown") recordScrollIntent("newer");
+});
+inputElement.addEventListener("input", scheduleFollowLatest);
+window.addEventListener("resize", scheduleFollowLatest);
 
 // --- helpers -----------------------------------------------------------
 
@@ -198,7 +289,6 @@ function linkifyFilePaths(text, workspaceId) {
 // content appends below it; appendChild on an existing child moves it to the end.
 function reAnchorPrompt() {
   if (!pendingPrompt) return;
-  const consoleElement = document.querySelector(".termino-console");
   if (pendingPrompt[pendingPrompt.length - 1] === consoleElement.lastElementChild) return;
   for (const el of pendingPrompt) consoleElement.appendChild(el);
 }
@@ -210,11 +300,11 @@ function reAnchorPrompt() {
 function outHtml(html) {
   const template = document.createElement("template");
   template.innerHTML = html;
-  document.querySelector(".termino-console").appendChild(template.content);
+  consoleElement.appendChild(template.content);
   streamBlock = null;
   streamText = "";
   reAnchorPrompt();
-  term.scroll_to_bottom();
+  scheduleFollowLatest();
 }
 
 function out(text) {
@@ -241,19 +331,24 @@ function outCheckpointDiff(event) {
 async function ask(question, className = null) {
   term.enable_input();
   document.querySelector(".termino-input").focus();
-  const prompt = term.input(escapeHtml(question));
-  const promptElement = document.querySelector(".termino-console").lastElementChild;
+  const prompt = term.input(escapeHtml(question), { autoScroll: false });
+  const promptElement = consoleElement.lastElementChild;
   if (className) {
     promptElement.classList.add(className);
-    // The class changes the prompt height after Termino's initial scroll.
-    term.scroll_to_bottom();
   }
+  scheduleFollowLatest();
   // Keep chatLoop's blank line (the element right above the prompt) with it so the
   // pair stays together when re-anchored; dialogs and the picker have no blank.
   const prev = promptElement.previousElementSibling;
   pendingPrompt = prev && /^\s*$/.test(prev.textContent) ? [prev, promptElement] : [promptElement];
   try {
-    return await prompt;
+    const value = await prompt;
+    if (value !== undefined) {
+      followLatest = true;
+      scrollIntent = null;
+      scheduleFollowLatest();
+    }
+    return value;
   } finally {
     pendingPrompt = null;
     term.disable_input();
@@ -295,11 +390,11 @@ function showIndicator(text) {
   indicator.className = "indicator";
   indicator.id = "indicator";
   indicator.textContent = text;
-  document.querySelector(".termino-console").appendChild(indicator);
+  consoleElement.appendChild(indicator);
   streamBlock = null;
   streamText = "";
   reAnchorPrompt();
-  term.scroll_to_bottom();
+  scheduleFollowLatest();
 }
 
 function hideIndicator() {
@@ -353,13 +448,13 @@ function appendDelta(delta) {
   if (!streamBlock) {
     streamText = "";
     streamBlock = document.createElement("pre");
-    document.querySelector(".termino-console").appendChild(streamBlock);
+    consoleElement.appendChild(streamBlock);
   }
   streamText += delta;
   streamBlock.textContent = streamText;
   lastTextBlock = streamBlock;
   reAnchorPrompt();
-  term.scroll_to_bottom();
+  scheduleFollowLatest();
 }
 
 function endStream() {

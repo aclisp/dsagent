@@ -445,3 +445,6 @@ Local modifications so far:
 - `cancel_input()` settles a pending `input()` question without keypress input — it
   resolves `undefined` (like an empty answer) and detaches the question's keypress
   listener. The page uses it to drop a dialog prompt when its turn ends.
+- `input(question, { autoScroll: false })` lets the debug page manage scrolling.
+  Output follows the bottom until the reader scrolls up, pauses during touch
+  dragging, and resumes when the reader returns to the bottom or submits input.
