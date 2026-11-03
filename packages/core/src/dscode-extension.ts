@@ -112,9 +112,10 @@ const execCommandParameters = Type.Object({
   ),
   timeout_ms: Type.Optional(
     Type.Union([
-      Type.Literal(0),
+      // Report numeric bounds before the zero alternative when validation fails.
       Type.Integer({ minimum: 1_000, maximum: 600_000 }),
-    ], { description: "Process deadline in milliseconds (default 120000); 0 disables the deadline" }),
+      Type.Literal(0),
+    ], { description: "Process deadline in milliseconds (default 120000). Use 0 to disable the deadline for commands that may exceed the maximum timeout." }),
   ),
 });
 
