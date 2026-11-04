@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, keyHint, keyText, Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, type Component } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
@@ -179,6 +179,7 @@ describe("checkpoint extension commands", () => {
         args: {}, toolCallId: "partial", invalidate() {}, lastComponent: undefined, state: undefined,
         cwd: root, executionStarted: true, argsComplete: true, isPartial: false, expanded: true,
         showImages: false, isError: true, durationMs: 0, outputPad: 0,
+        keyText, keyHint,
       }).render(200).join("\n");
     expect(rendered).toContain("write failed.txt: disk full");
     expect(rendered).toContain("- write saved.txt");

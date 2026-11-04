@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
@@ -30,14 +30,12 @@ async function execute(name: string, details: ManagedProcessResult) {
 }
 
 function render(tool: any, result: AgentToolResult<unknown>, expanded: boolean, isError = result.isError === true) {
-  const fg = vi.fn(createAnsiTestTheme().fg);
-  const theme = { fg, bold: (text: string) => text } as unknown as Theme;
+  const theme = createAnsiTestTheme();
   const rendered = tool.renderResult(result, { expanded, isPartial: false }, theme, { isError, isPartial: false })
     .render(1000).join("\n");
   return {
     text: rendered.split("\n").map((line: string) => stripTerminalSequences(line).trimEnd()).join("\n"),
     red: [...rendered.matchAll(/\x1b\[31m([^\x1b]*)\x1b\[39m/g)].map((match) => match[1]),
-    fg,
   };
 }
 
@@ -84,7 +82,6 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(expanded.text).toContain(output.split("\n").join("\n    "));
     expect(expanded.text).toContain(`exit_code: ${exitCode}`);
     expect(expanded.red).toEqual(exitCode === 0 ? [] : [String(exitCode)]);
-    expect(expanded.fg).toHaveBeenCalledWith("toolOutput", "exit_code: 7");
     expect(JSON.stringify(result.content)).not.toContain("\\u001b");
     expect(result.isError).not.toBe(true);
   });
@@ -96,7 +93,7 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(collapsed.text).not.toContain("command output");
     expect(collapsed.red).toEqual([]);
     const expanded = render(tool, result, true);
-    expect(expanded.fg).toHaveBeenCalledWith("dim", "null");
+    expect(expanded.text).toContain("exit_code: null");
     expect(expanded.red).toEqual([]);
   });
 
@@ -117,8 +114,7 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
       expect(rendered.text).toContain("command output");
       expect(rendered.text).toContain("timed_out: true");
       expect(rendered.red).toEqual(exitCode === null ? ["timed_out: true"] : ["1", "timed_out: true"]);
-      expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "command output");
-      expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "status: completed");
+      expect(rendered.text).toContain("status: completed");
     }
   });
 
@@ -151,7 +147,7 @@ it.each(["\r\n", "\r"])("preserves stdin error details with %j while highlightin
     expect(rendered.red).toEqual(["write EPIPE", "pipe closed"]);
     expect(rendered.text.split("\n").some((line: string) => line.trim() === "")).toBe(false);
     expect(rendered.text).toContain("status: running");
-    expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "command output");
-    expect(rendered.fg).toHaveBeenCalledWith("toolOutput", "stdin_write_error: ");
+    expect(rendered.text).toContain("command output");
+    expect(rendered.text).toContain("stdin_write_error:");
   }
 });

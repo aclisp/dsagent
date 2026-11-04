@@ -166,7 +166,7 @@ export function Termino(terminalSelector, keyCodes, settings) {
     let InputState = false;
     let cancelActiveQuestion = null;
 
-    function termInput(question) {
+    function termInput(question, { autoScroll = true } = {}) {
       return new Promise(function(resolve) {
 
         /// show the question while waiting for input
@@ -176,7 +176,7 @@ export function Termino(terminalSelector, keyCodes, settings) {
 
         termClearValue()
 
-        scrollTerminalToBottom()
+        if (autoScroll) scrollTerminalToBottom()
 
         InputState = true;
 
@@ -194,7 +194,7 @@ export function Termino(terminalSelector, keyCodes, settings) {
             if (value.length != 0) {
               /// fold the answer into the question line; append() adds a text node, so the value is not parsed as html
               questionElement.append(value)
-              scrollTerminalToBottom()
+              if (autoScroll) scrollTerminalToBottom()
               resolve(value)
             } else {
               resolve()
