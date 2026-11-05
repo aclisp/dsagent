@@ -608,8 +608,11 @@ DSCode
   the TUI.** Both `exec_command` and `write_stdin` keep ordinary completed results collapsed,
   including non-zero exits. Color only a non-zero exit number red in the summary and expanded
   `exit_code` field. Expanded command output and ordinary metadata remain neutral; `null` remains
-  unavailable rather than being classified as a crash. Highlight the generated `timed_out: true`
-  field and stdin error messages red, retaining automatic exposure of these failures. Preserve
+  unavailable rather than being classified as a crash. Timeouts stay collapsed by default for
+  both tools, using the ordinary exit summary's output line count, sandbox, and expansion hint,
+  with a red `timed out` in place of `exit N`. Keep the output body and detailed process metadata
+  hidden until manually expanded; highlight the generated `timed_out: true` field red in the
+  expanded view. Highlight stdin error messages red and retain their automatic exposure. Preserve
   existing error presentation for genuine process/tool failures, including unavailable backends,
   process launch errors, unknown IDs, access denials, and capacity rejection.
 

@@ -1094,7 +1094,7 @@ function registerCommandTools(
 }
 
 function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
-  if (result.running) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
+  if (result.running && !result.timedOut) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
   const output = normalizeDisplayText(result.output).trimEnd();
   const lines = result.outputLineCount === 0 || !output ? 0 : output.split("\n").length;
   const exitCode = theme.fg(
@@ -1105,7 +1105,8 @@ function managedProcessSummary(result: ManagedProcessResult, theme: Theme): stri
     lines > 0 ? `${lines} output ${lines === 1 ? "line" : "lines"}` : "no output",
     result.sandbox,
   ].join(" · ");
-  return theme.fg("dim", "exit ") + exitCode + theme.fg("dim", ` · ${rest}`);
+  const status = result.timedOut ? theme.fg("error", "timed out") : theme.fg("dim", "exit ") + exitCode;
+  return status + theme.fg("dim", ` · ${rest}`);
 }
 
 function renderManagedProcessResult(
@@ -1125,7 +1126,7 @@ function renderManagedProcessResult(
   const styled = { ...result, content: [{ type: "text" as const, text: formatManagedResult(details, theme) }] };
   return renderCollapsibleToolResult(styled, options, theme, context, {
     collapsedSummary: () => managedProcessSummary(details, theme),
-    forceError: Boolean(details.writeError) || details.timedOut === true,
+    forceError: Boolean(details.writeError),
     renderLine: (line) => line,
   });
 }
