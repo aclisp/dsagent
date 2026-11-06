@@ -762,6 +762,7 @@ function toolResultOutcome(result, isError) {
 }
 
 function updateWorkProcess(process) {
+  process.details.dataset.status = process.running ? "running" : (process.status ?? "unknown");
   const count = process.steps.size;
   if (process.running) {
     process.summaryText.textContent = `正在处理 · ${count} 项操作`;
@@ -956,9 +957,14 @@ function renderStatus() {
     return;
   }
   const label = WORKING_PHASE_LABELS[state.workingPhase] ?? "正在处理";
-  statusText.textContent = state.workingSeconds === null
-    ? label
-    : `${label} · ${state.workingSeconds} 秒`;
+  if (state.workingSeconds === null) {
+    statusText.textContent = label;
+    return;
+  }
+  const seconds = document.createElement("span");
+  seconds.className = "status-seconds";
+  seconds.textContent = String(state.workingSeconds);
+  statusText.replaceChildren(`${label} · `, seconds, " 秒");
 }
 
 function focusMessageInput() {
