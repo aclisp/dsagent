@@ -763,7 +763,7 @@ input {
 .composer {
   grid-row: 4;
   min-width: 0;
-  padding: 12px calc(var(--page-gutter) + var(--safe-right)) calc(20px + var(--safe-bottom))
+  padding: 0 calc(var(--page-gutter) + var(--safe-right)) calc(20px + var(--safe-bottom))
     calc(var(--page-gutter) + var(--safe-left));
   background: var(--composer-background);
   z-index: 5;
@@ -874,21 +874,18 @@ input {
 .composer-form {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 4px;
-  padding: 8px;
-  background: var(--chat-background);
-  border: 1px solid var(--border);
+  column-gap: 4px;
+  padding: 0 8px 6px;
+  background: var(--muted);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  box-shadow: 0 2px 6px rgb(0 0 0 / 3%);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .icon-button,
 .action-button {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 36px;
+  height: 36px;
   position: relative;
   display: grid;
   place-items: center;
@@ -903,7 +900,7 @@ input {
   width: 32px;
   height: 32px;
   position: absolute;
-  inset: 6px;
+  inset: 2px;
   border-radius: 50%;
 }
 
@@ -939,9 +936,9 @@ input {
   grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
-  min-height: 52px;
+  min-height: 43px;
   max-height: 88px;
-  padding: 10px 8px;
+  padding: 10px 8px 9px;
   resize: none;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1173,8 +1170,8 @@ input {
 
 .modal-button {
   min-width: 0;
-  min-height: 44px;
-  padding: 9px 16px;
+  min-height: 40px;
+  padding: 7px 16px;
   color: var(--foreground);
   background: var(--chat-background);
   border: 1px solid var(--border);
@@ -1202,9 +1199,9 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
-.composer-form:focus-within {
+.composer-form:has(#message-input:focus-visible) {
   border-color: var(--ring);
-  box-shadow: 0 0 0 3px rgb(0 0 0 / 4%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 30%, transparent);
 }
 
 @media (hover: hover) {
@@ -1235,7 +1232,6 @@ a:focus-visible {
   }
 
   .composer {
-    padding-top: 8px;
     padding-bottom: calc(12px + var(--safe-bottom));
   }
 
