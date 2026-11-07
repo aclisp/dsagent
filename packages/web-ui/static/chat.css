@@ -763,7 +763,7 @@ input {
 .composer {
   grid-row: 4;
   min-width: 0;
-  padding: 0 calc(var(--page-gutter) + var(--safe-right)) calc(20px + var(--safe-bottom))
+  padding: 3px calc(var(--page-gutter) + var(--safe-right)) calc(20px + var(--safe-bottom))
     calc(var(--page-gutter) + var(--safe-left));
   background: var(--composer-background);
   z-index: 5;

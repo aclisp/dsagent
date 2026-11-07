@@ -968,6 +968,7 @@ function renderStatus() {
 }
 
 function focusMessageInput() {
+  if (!window.matchMedia("(pointer: fine)").matches) return;
   if (state.booting || !state.connected || state.running || state.submitting) return;
   requestAnimationFrame(() => {
     if (state.booting || !state.connected || state.running || state.submitting) return;
