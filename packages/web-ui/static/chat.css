@@ -619,10 +619,6 @@ input {
   border-radius: 50%;
 }
 
-.work-process[open] summary::before {
-  background: var(--muted);
-}
-
 .work-steps {
   margin: 2px 0 8px 7px;
   padding: 0 0 0 22px;
@@ -668,7 +664,7 @@ input {
 }
 
 .work-process[open] summary::after {
-  transform: rotate(45deg);
+  transform: translateY(-1px) rotate(45deg);
 }
 
 .work-process[data-status="running"] summary::before {
