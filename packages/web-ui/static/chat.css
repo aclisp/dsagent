@@ -88,7 +88,6 @@ input {
   display: flex;
   align-items: center;
   background: var(--header-background);
-  border-bottom: 1px solid var(--border);
   z-index: 5;
 }
 
@@ -735,29 +734,42 @@ input {
 }
 
 .jump-latest {
-  min-height: 36px;
+  width: 36px;
+  height: 36px;
   position: absolute;
-  right: calc(var(--page-gutter) + var(--safe-right));
+  inset-inline: 0;
+  margin-inline: auto;
   bottom: 150px;
   z-index: 4;
-  padding: 7px 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   color: var(--foreground);
-  background: var(--chat-background);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
   cursor: pointer;
-  font-size: 12px;
-  line-height: 20px;
 }
 
 .jump-latest::before {
-  content: "↓";
-  font-size: 14px;
-  line-height: 1;
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--chat-background);
+  border: 1px solid var(--border);
+  border-radius: inherit;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+}
+
+.jump-latest svg {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .composer {
@@ -1248,8 +1260,7 @@ a:focus-visible {
       min-height 180ms ease,
       max-height 180ms ease,
       padding-top 180ms ease,
-      padding-bottom 180ms ease,
-      border-color 180ms ease;
+      padding-bottom 180ms ease;
   }
 
   .chat-app.is-header-collapsed .chat-header {
@@ -1257,7 +1268,6 @@ a:focus-visible {
     max-height: 0;
     padding-top: 0;
     padding-bottom: 0;
-    border-bottom-color: transparent;
   }
 
   .chat-app.is-header-collapsed .scroll-earliest {

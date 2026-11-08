@@ -31,7 +31,11 @@
       <div id="messages" class="messages" aria-live="polite"></div>
     </section>
 
-    <button id="jump-latest" class="jump-latest" type="button" hidden>回到最新消息</button>
+    <button id="jump-latest" class="jump-latest" type="button" aria-label="回到最新消息" title="回到最新消息" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v14m-6-6 6 6 6-6"/>
+      </svg>
+    </button>
 
     <footer class="composer">
       <form id="composer-form" class="composer-form">
