@@ -38,7 +38,10 @@ describe("managed process timeout diagnostics", () => {
     const stdio = ["ignore", stream === "stdout" ? 1 : "ignore", stream === "stderr" ? 2 : "ignore"];
     const started = await start([
       "const { spawn } = require('node:child_process');",
-      `spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ${JSON.stringify(stdio)} });`,
+      // Otherwise libuv's Windows job kills the descendant when this parent exits.
+      `spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {`,
+      `  stdio: ${JSON.stringify(stdio)}, detached: process.platform === 'win32', windowsHide: true,`,
+      "});",
       `process.exit(${exitCode});`,
     ].join("\n"), 1_500);
     let waiting = started;
