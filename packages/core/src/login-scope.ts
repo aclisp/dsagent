@@ -10,7 +10,7 @@ export const LOGIN_PROVIDER_CHOICES: ReadonlyArray<{
   label: string;
 }> = [
   { providerId: "deepseek", label: "DeepSeek — API key" },
-  { providerId: "openai-codex", label: "OpenAI Codex — ChatGPT plan (legacy)" },
+  { providerId: "openai-codex", label: "OpenAI Codex — ChatGPT plan" },
   { providerId: "openai", label: "OpenAI — ChatGPT account or API key" },
   { providerId: "anthropic", label: "Anthropic — Claude account or API key" },
   { providerId: "openrouter", label: "OpenRouter — account or API key" },
@@ -23,7 +23,7 @@ export const LOGIN_PROVIDER_CHOICES: ReadonlyArray<{
 
 const LOGIN_DESCRIPTIONS: Record<SupportedProviderId, string> = {
   deepseek: "API key",
-  "openai-codex": "ChatGPT plan (legacy)",
+  "openai-codex": "ChatGPT plan",
   openai: "ChatGPT account or API key",
   anthropic: "Claude account or API key",
   openrouter: "Account or API key",

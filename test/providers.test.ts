@@ -33,13 +33,13 @@ describe("DSCode model providers", () => {
     expect(defaultModelForProvider("openai-codex")).toBe("gpt-5.6-sol");
     expect(defaultEffortForProvider("openai-codex")).toBe("medium");
     expect(defaultModelForProvider("openai")).toBe("gpt-5.6-sol");
-    expect(defaultModelForProvider("anthropic")).toBe("claude-opus-4-8");
-    expect(defaultModelForProvider("openrouter")).toBe("moonshotai/kimi-k2.6");
+    expect(defaultModelForProvider("anthropic")).toBe("claude-opus-5-5");
+    expect(defaultModelForProvider("openrouter")).toBe("moonshotai/kimi-k2.7-code");
     expect(defaultModelForProvider("zai")).toBe("glm-5.3");
     expect(defaultModelForProvider("kimi-coding")).toBe("kimi-for-coding");
-    expect(defaultModelForProvider("minimax")).toBe("MiniMax-M2.7");
+    expect(defaultModelForProvider("minimax")).toBe("MiniMax-M3");
     expect(defaultModelForProvider("xai")).toBe("grok-4.5");
-    expect(defaultModelForProvider("opencode-go")).toBe("kimi-k3");
+    expect(defaultModelForProvider("opencode-go")).toBe("kimi-k3.1-pro");
     expect(defaultEffortForProvider("opencode-go")).toBe("medium");
   });
 
