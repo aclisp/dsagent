@@ -69,6 +69,42 @@ describe("patch checkpoints", () => {
     await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each(["\uFEFFfirst\r\nold\nlast\r", "\uFEFFfirst\r\nold\nlast"])(
+    "restores mixed line endings and the BOM exactly after an edited move: %j",
+    async (original) => {
+      await fs.writeFile(path.join(root, "existing.txt"), original);
+      const patch = [
+        "*** Begin Patch", "*** Update File: existing.txt", "*** Move to: moved.txt",
+        "@@", "-old", "+NEW", "*** End Patch",
+      ].join("\n");
+      const checkpoint = await capturePatchCheckpoint(workspace, patch, async (budget) => {
+        await applyWorkspacePatch(workspace, patch, budget);
+      });
+
+      await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe(original.replace("old", "NEW"));
+      await restoreCheckpoint(workspace, checkpoint);
+      await expect(fs.readFile(path.join(root, "existing.txt"))).resolves.toEqual(Buffer.from(original));
+      await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("restores an unterminated file exactly after deleting its last line and moving it", async () => {
+    const original = "\uFEFFfirst\r\nbefore\rlast";
+    await fs.writeFile(path.join(root, "existing.txt"), original);
+    const patch = [
+      "*** Begin Patch", "*** Update File: existing.txt", "*** Move to: moved.txt",
+      "@@", "-last", "*** End of File", "*** End Patch",
+    ].join("\n");
+    const checkpoint = await capturePatchCheckpoint(workspace, patch, async (budget) => {
+      await applyWorkspacePatch(workspace, patch, budget);
+    });
+
+    await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("\uFEFFfirst\r\nbefore\r");
+    await restoreCheckpoint(workspace, checkpoint);
+    await expect(fs.readFile(path.join(root, "existing.txt"))).resolves.toEqual(Buffer.from(original));
+    await expect(fs.access(path.join(root, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it.skipIf(process.platform === "win32")("preserves executable permissions through an edited move and undo", async () => {
     const source = path.join(root, "existing.txt");
     const destination = path.join(root, "moved.sh");

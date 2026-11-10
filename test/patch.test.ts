@@ -550,9 +550,12 @@ describe("applyWorkspacePatch", () => {
     ["CRLF with a CRLF patch", "alpha\r\nbeta\r\ngamma\r\n", "\r\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
     ["CRLF without a final newline", "alpha\r\nbeta\r\ngamma", "\n", "alpha\r\nBETA\r\nGAMMA"],
     ["LF with a CRLF patch", "alpha\nbeta\ngamma\n", "\r\n", "alpha\nBETA\nGAMMA\n"],
-    ["mixed endings starting with CRLF", "alpha\r\nbeta\ngamma\n", "\n", "alpha\r\nBETA\r\nGAMMA\r\n"],
-    ["mixed endings starting with LF", "alpha\nbeta\r\ngamma\r\n", "\n", "alpha\nBETA\nGAMMA\n"],
-  ])("uses the file's first newline convention: %s", async (_name, original, patchEnding, expected) => {
+    ["mixed endings starting with CRLF", "alpha\r\nbeta\ngamma\n", "\n", "alpha\r\nBETA\nGAMMA\n"],
+    ["mixed endings starting with LF", "alpha\nbeta\r\ngamma\r\n", "\n", "alpha\nBETA\r\nGAMMA\r\n"],
+    ["lone CR", "alpha\rbeta\rgamma\r", "\n", "alpha\rBETA\rGAMMA\r"],
+    ["lone CR without a final newline", "alpha\rbeta\rgamma", "\n", "alpha\rBETA\rGAMMA"],
+    ["mixed CRLF, CR and LF", "alpha\r\nbeta\rgamma\n", "\n", "alpha\r\nBETA\rGAMMA\n"],
+  ])("preserves each line's ending across separate replacements: %s", async (_name, original, patchEnding, expected) => {
     await fs.writeFile(path.join(root, "value.txt"), original);
     const result = await applyWorkspacePatch(workspace, [
       "*** Begin Patch",
@@ -569,6 +572,64 @@ describe("applyWorkspacePatch", () => {
 
     await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
     expect(result).toMatchObject({ additions: 2, deletions: 2 });
+  });
+
+  it.each([
+    { original: "before\r\nold1\nold2\r\nafter\r", expected: "before\r\nNEW1\nNEW2\nNEW3\r\nafter\r" },
+    { original: "before\nold1\r\nold2\nafter\r\n", expected: "before\nNEW1\r\nNEW2\r\nNEW3\nafter\r\n" },
+    { original: "before\rold1\rold2\rafter\n", expected: "before\rNEW1\nNEW2\nNEW3\rafter\n" },
+  ])("uses the replacement start's ending for new line breaks in $original", async ({ original, expected }) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@",
+      " before", "-old1", "-old2", "+NEW1", "+NEW2", "+NEW3", " after", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+  });
+
+  it.each([
+    { original: "before\r\nnext\nlast\r\n", expected: "before\r\nnew1\nnew2\nnext\nlast\r\n" },
+    { original: "before\nnext\r\nlast\n", expected: "before\nnew1\r\nnew2\r\nnext\r\nlast\n" },
+  ])("uses the insertion position's ending without rewriting surrounding lines: $original", async ({ original, expected }) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@",
+      " before", "+new1", "+new2", " next", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+  });
+
+  it("preserves mixed endings across repeated updates and a move", async () => {
+    await fs.writeFile(path.join(root, "value.txt"), "\uFEFFfirst\r\nold\nlast\r");
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", "-old", "+OLD",
+      "*** Update File: value.txt", "*** Move to: moved.txt", "@@", "-last", "+LAST", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "moved.txt"), "utf8")).resolves.toBe("\uFEFFfirst\r\nOLD\nLAST\r");
+    await expect(fs.access(path.join(root, "value.txt"))).rejects.toThrow();
+  });
+
+  it("preserves mixed endings in a no-op replacement", async () => {
+    const original = "first\r\nsecond\nthird\r";
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@",
+      "-first", "-second", "+first", "+second", " third", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(original);
+  });
+
+  it.each([
+    { name: "insertion", original: "a\rb\n", hunk: [" a", "+", " b"] },
+    { name: "deletion", original: "a\rb\n\nc\n", hunk: [" a", "-b", " ", " c"] },
+  ])("keeps adjacent CR and LF line breaks separate after $name", async ({ name, original, hunk }) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", ...hunk, "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(
+      name === "insertion" ? "a\r\n\nb\n" : "a\r\n\nc\n",
+    );
   });
 
   it.each(["alpha\r\nbeta\r\n", "alpha\r\nbeta\ngamma"])(
@@ -593,7 +654,11 @@ describe("applyWorkspacePatch", () => {
     ["alpha\r\nbeta\r\n", "alpha\r\nbeta\r\ngamma\r\n"],
     ["alpha", "alpha\ngamma"],
     ["", "gamma"],
-  ])("uses the detected ending for EOF insertion: %j", async (original, expected) => {
+    ["alpha\r\nbeta\nlast", "alpha\r\nbeta\nlast\ngamma"],
+    ["alpha\nbeta\r\nlast", "alpha\nbeta\r\nlast\r\ngamma"],
+    ["alpha\rbeta", "alpha\rbeta\rgamma"],
+    ["alpha\rbeta\r", "alpha\rbeta\rgamma\r"],
+  ])("uses the nearby ending for EOF insertion: %j", async (original, expected) => {
     await fs.writeFile(path.join(root, "value.txt"), original);
     await applyWorkspacePatch(workspace, [
       "*** Begin Patch",
@@ -605,6 +670,47 @@ describe("applyWorkspacePatch", () => {
     ].join("\r\n"));
 
     await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+  });
+
+  it.each([
+    { original: "a\nb", hunk: [" a", "-b"], expected: "a\n" },
+    { original: "a\r\nb", hunk: [" a", "-b"], expected: "a\r\n" },
+    { original: "a\rb", hunk: [" a", "-b"], expected: "a\r" },
+    { original: "\uFEFFa\r\nb\nc", hunk: [" a", "-b", "-c"], expected: "\uFEFFa\r\n" },
+    { original: "a\nb\r\nc", hunk: ["-c"], expected: "a\nb\r\n" },
+    { original: "a\r\n\nb", hunk: ["-b"], expected: "a\r\n\n" },
+    { original: "a\nb", hunk: ["-a", "+A", "@@", "-b"], expected: "A\n" },
+    { original: "a\nb\n", hunk: [" a", "-b"], expected: "a\n" },
+    { original: "a", hunk: ["-a"], expected: "" },
+    { original: "\uFEFFa", hunk: ["-a"], expected: "\uFEFF" },
+  ])("preserves the surviving line's terminator when deleting at EOF: $original", async ({ original, hunk, expected }) => {
+    await fs.writeFile(path.join(root, "value.txt"), original);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", ...hunk,
+      "*** End of File", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(expected);
+  });
+
+  it.each(["\n", "\r\n", "\r"])("retains the EOF terminator across successive edits with %j endings", async (ending) => {
+    await fs.writeFile(path.join(root, "value.txt"), `a${ending}b`);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", " a", "-b", "*** End of File",
+      "*** Update File: value.txt", "@@", "+c", "*** End of File", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(`a${ending}c${ending}`);
+  });
+
+  it.each(["\n", "\r\n", "\r"])("retains appended separators after deleting the appended lines with %j endings", async (ending) => {
+    await fs.writeFile(path.join(root, "value.txt"), `before${ending}a`);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", " a", "+b", "+c", "*** End of File", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(`before${ending}a${ending}b${ending}c`);
+    await applyWorkspacePatch(workspace, [
+      "*** Begin Patch", "*** Update File: value.txt", "@@", "-b", "-c", "*** End of File", "*** End Patch",
+    ].join("\n"));
+    await expect(fs.readFile(path.join(root, "value.txt"), "utf8")).resolves.toBe(`before${ending}a${ending}`);
   });
 
   it("defaults new files to LF even with a CRLF patch", async () => {
@@ -749,7 +855,7 @@ describe("applyWorkspacePatch", () => {
     });
   });
 
-  it.each(["\n", "\r\n"])("preserves original context whitespace with %j endings", async (ending) => {
+  it.each(["\n", "\r\n", "\r"])("preserves original context whitespace with %j endings", async (ending) => {
     const original = ["\uFEFF\tbefore();  ", "\told();", "\tbetween();\t", "\tremove();", "\tafter();  ", ""].join(ending);
     await fs.writeFile(path.join(root, "value.txt"), original);
     await applyWorkspacePatch(workspace, [

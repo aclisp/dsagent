@@ -29,6 +29,7 @@ interface PatchHunk {
 }
 
 type PatchAction = AddAction | DeleteAction | UpdateAction;
+type LineEnding = "\n" | "\r\n" | "\r";
 
 export interface ApplyPatchResult {
   files: string[];
@@ -303,7 +304,8 @@ function applyUpdate(content: string, action: UpdateAction): string {
   // Keep the leading UTF-8 BOM out of hunk matching and restore it after editing.
   const bom = content.startsWith("\uFEFF") ? "\uFEFF" : "";
   const file = splitFile(content.slice(bom.length));
-  const output = [...file.lines];
+  const output = file.lines;
+  const endings = file.endings;
   let cursor = 0;
 
   for (const hunk of action.hunks) {
@@ -323,23 +325,82 @@ function applyUpdate(content: string, action: UpdateAction): string {
     }
 
     const newLines: string[] = [];
+    const newEndings: Array<LineEnding | ""> = [];
     let originalIndex = matchIndex;
+    let changeStart = originalIndex;
+    const added: string[] = [];
+    const flushChanges = (): void => {
+      if (added.length > 0) {
+        const ending = lineEndingAt(endings, changeStart);
+        const unchanged = added.length === originalIndex - changeStart &&
+          added.every((line, index) => line === output[changeStart + index]);
+        // Replacements retain their final terminator. Appending to an
+        // unterminated file moves the absent terminator to the last added line.
+        const lastEnding = originalIndex > changeStart ? endings[originalIndex - 1]! :
+          originalIndex === output.length && !endings.at(-1) ? "" : ending;
+        for (const [index, line] of added.entries()) {
+          newLines.push(line);
+          // The last replaced line's terminator lies outside the replacement
+          // text. Keep it, along with every terminator in a no-op replacement.
+          newEndings.push(unchanged ? endings[changeStart + index]! :
+            index === added.length - 1 ? lastEnding : ending);
+        }
+      }
+      added.length = 0;
+      changeStart = originalIndex;
+    };
     for (const line of hunk.lines) {
       if (line.startsWith("+")) {
-        newLines.push(line.slice(1));
-      } else {
-        // Context is unchanged, even when matching ignored trailing whitespace.
-        if (line.startsWith(" ")) newLines.push(output[originalIndex]!);
+        added.push(line.slice(1));
+      } else if (line.startsWith("-")) {
         originalIndex += 1;
+      } else {
+        flushChanges();
+        // Context is unchanged, even when matching ignored trailing whitespace.
+        newLines.push(output[originalIndex]!);
+        newEndings.push(endings[originalIndex]!);
+        originalIndex += 1;
+        changeStart = originalIndex;
       }
     }
+    flushChanges();
 
     output.splice(matchIndex, oldLines.length, ...newLines);
+    endings.splice(matchIndex, oldLines.length, ...newEndings);
     cursor = matchIndex + newLines.length;
+    // An insertion may move an unterminated EOF line inward. Give it a
+    // separator now so subsequent hunks see the actual line-ending state.
+    for (let index = Math.max(0, matchIndex - 1); index < Math.min(cursor, output.length - 1); index += 1) {
+      if (!endings[index]) endings[index] = lineEndingAt(endings, index);
+    }
   }
 
-  const trailingNewline = file.trailingNewline;
-  return bom + output.join(file.lineEnding) + (trailingNewline && output.length > 0 ? file.lineEnding : "");
+  const parts: string[] = [];
+  let endsWithCr = false;
+  for (const [index, line] of output.entries()) {
+    const part = line + endings[index]!;
+    if (!part) continue;
+    // Keep a retained lone CR and a following LF as two line breaks, rather
+    // than merging them into a single CRLF after an insertion or deletion.
+    if (endsWithCr && part.startsWith("\n")) parts.push("\n");
+    parts.push(part);
+    endsWithCr = part.endsWith("\r");
+  }
+  return bom + parts.join("");
+}
+
+/** Like Pi 1.5.1: prefer the current/next LF or CRLF, then the preceding one.
+ * Lone CR supplies the insertion style only in files without any LF. */
+function lineEndingAt(endings: readonly (LineEnding | "")[], index: number): LineEnding {
+  for (let position = index; position < endings.length; position += 1) {
+    const ending = endings[position];
+    if (ending === "\n" || ending === "\r\n") return ending;
+  }
+  for (let position = Math.min(index - 1, endings.length - 1); position >= 0; position -= 1) {
+    const ending = endings[position];
+    if (ending === "\n" || ending === "\r\n") return ending;
+  }
+  return endings.includes("\r") ? "\r" : "\n";
 }
 
 function findSequence(
@@ -406,16 +467,21 @@ function normalizeLine(value: string, mode: "exact" | "trimEnd"): string {
 
 function splitFile(content: string): {
   lines: string[];
-  trailingNewline: boolean;
-  lineEnding: "\r\n" | "\n";
+  endings: Array<LineEnding | "">;
 } {
-  // Use the first newline's convention, defaulting to LF when none exists.
-  const firstNewline = content.indexOf("\n");
-  const lineEnding = firstNewline > 0 && content[firstNewline - 1] === "\r" ? "\r\n" : "\n";
-  const normalized = content.replaceAll("\r\n", "\n");
-  const trailingNewline = normalized.endsWith("\n");
-  const body = trailingNewline ? normalized.slice(0, -1) : normalized;
-  return { lines: normalized ? body.split("\n") : [], trailingNewline, lineEnding };
+  const lines: string[] = [];
+  const endings: Array<LineEnding | ""> = [];
+  let start = 0;
+  for (const match of content.matchAll(/\r\n|\r|\n/g)) {
+    lines.push(content.slice(start, match.index));
+    endings.push(match[0] as LineEnding);
+    start = match.index + match[0].length;
+  }
+  if (start < content.length) {
+    lines.push(content.slice(start));
+    endings.push("");
+  }
+  return { lines, endings };
 }
 
 function isActionHeader(line: string): boolean {
