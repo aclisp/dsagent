@@ -639,7 +639,8 @@ Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing D
 服务随 TUI 进程退出而停止，SSH 使用时可通过 tmux 保持进程。
 
 wecom 读取启动 TUI 时继承的 `IM_WECOM_*` 环境变量；wechat 读取同一 `DSCODE_HOME` 下由
-`dscode channels login wechat` 保存的绑定。任务管理指南随 CLI 内置，Web 与 IM 可用自然语言管理任务。
+`dscode channels login wechat` 保存的绑定。CLI 内置 `scheduled-tasks` skill，初始只展示名称、描述和路径，任务需要时再读取正文。
+已有同名 skill 优先；`--no-skills` 禁用自动发现，显式 `--skill` 路径仍按 Pi 原有规则加载并传递到 Web。
 任务归属于工作目录，在本次 Web 会话中执行；错过的任务不补跑。浏览器创建的任务把结果保存在 Web，
 IM 创建的任务回投当前 IM 对话。时区使用 `TZ`，缺省为 `Asia/Shanghai`。
 

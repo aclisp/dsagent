@@ -46,6 +46,8 @@ export interface DSCodeRuntimeOptions {
   toolsExplicit: boolean;
   noTools: boolean;
   noMcp: boolean;
+  noSkills?: boolean;
+  additionalSkillPaths?: string[];
   /** Current Pi project-trust context, supplied by an existing runtime on handoff. */
   projectTrusted?: boolean;
 }
@@ -84,6 +86,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
   let toolsExplicit = false;
   let noTools = false;
   let noMcp = false;
+  let noSkills = false;
+  const additionalSkillPaths: string[] = [];
   let help = false;
   let version = false;
   let yolo = false;
@@ -136,6 +140,14 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
     } else if (flag === "--no-mcp") {
       if (inlineValue !== undefined) throw new Error("--no-mcp does not accept a value");
       noMcp = true;
+    } else if (flag === "--no-skills") {
+      if (inlineValue !== undefined) throw new Error("--no-skills does not accept a value");
+      noSkills = true;
+      forwarded.push("--no-skills");
+    } else if (flag === "--skill") {
+      const file = takeValue();
+      additionalSkillPaths.push(file);
+      forwarded.push("--skill", file);
     } else if (flag === "--no-resume") {
       // Pi starts a new persisted session unless --continue/--resume is passed.
     } else if (flag === "--help" || flag === "-h") {
@@ -189,6 +201,8 @@ export function parseRuntimeArgs(argv: string[]): ParsedRuntimeArgs {
       toolsExplicit,
       noTools,
       noMcp,
+      ...(noSkills ? { noSkills: true } : {}),
+      ...(additionalSkillPaths.length ? { additionalSkillPaths } : {}),
     },
     piArgs: forwarded,
     help,

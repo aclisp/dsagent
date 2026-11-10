@@ -430,8 +430,11 @@ DSCode follows the operating system's power settings.
 uses inherited `IM_WECOM_*` variables; WeChat reads the same `DSCODE_HOME` binding.
 All enabled workspace tasks run in the current Web conversation, with no catch-up
 of missed occurrences. Browser task results stay in Web; IM tasks return to their
-originating conversation. Task-management instructions are included, and approvals
-use the browser. `/tui` stops all components and can interrupt unfinished IM delivery.
+originating conversation. Task management uses the bundled `scheduled-tasks` skill: the
+initial prompt contains metadata and instructions are read on demand. Existing same-name
+skills take precedence; `--no-skills` disables automatic discovery, while explicit
+`--skill` paths stay available. Approvals use the browser. `/tui` stops all components
+and can interrupt unfinished IM delivery.
 
 Local initialization or ownership conflicts roll back startup; authentication happens
 in the background. Later channel faults are isolated and shown by `/web status`.

@@ -81,6 +81,10 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
           audit.adapted.add(path.relative(root, file));
           return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function getDSCodeThemePaths() { return [assets["dscode-light.json"], assets["dscode-dark.json"]]; }' };
         }
+        if (file === path.join(root, "packages/core/dist/skill-assets.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function scheduledTasksAssetPath() { return assets["skills/scheduled-tasks/SKILL.md"]; }' };
+        }
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));
           return { contents: `export * from ${JSON.stringify(path.join(standalone, replacements.get(file)))};`, loader: "js" };

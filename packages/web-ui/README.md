@@ -20,8 +20,11 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
 Run `/web` in the DSCode TUI to continue its selected conversation in a browser and
 start this workspace's scheduler and configured WeCom/WeChat channels. `/web status`
-shows Scheduler and IM state. The existing task-management instructions are embedded
-in the Web runtime, including the installed Node and standalone CLIs.
+shows Scheduler and IM state. The bundled `scheduled-tasks` skill is discovered through Pi: the initial prompt contains
+its name, description and file path, and the Agent reads its instructions on demand.
+This works in installed Node and standalone CLIs. Existing same-name skills take precedence.
+`--no-skills` disables automatic discovery; explicit `--skill` paths retain Pi's behavior
+and are carried into Web on handoff.
 
 WeCom reads the TUI's inherited `IM_WECOM_*` variables. WeChat uses the binding saved
 by `dscode channels login wechat` under the same `DSCODE_HOME`. Local initialization
@@ -347,6 +350,10 @@ volume's `/root/.dscode/skills/`.
 `dscode-delegate` loads child-launch guidance on demand. It uses the same discovery and
 seeding mechanism as `dscode-vision`; ordinary CLI and standalone users install its
 directory manually into their skills directory.
+
+`scheduled-tasks` is also a built-in fallback for Web runtimes with a Scheduler,
+including `/web` in Node and standalone CLIs. Existing seeded or user-installed
+copies win; the fallback uses the same canonical Markdown source.
 
 ### Prompt profiles and protected prompt files
 

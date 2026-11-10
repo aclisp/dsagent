@@ -10,7 +10,6 @@ import type { HttpSessionControl } from "../../http-adapter/src/http-server.ts";
 import { createWebUiServer } from "../src/web-ui-server.ts";
 import type { WebBackgroundServices } from "../src/background-services.ts";
 import type { ChatProvider, ChatProviderListener } from "@aclisp/dsagent-chat-client";
-import { SCHEDULED_TASKS_GUIDE } from "../../core/src/scheduled-tasks-guide.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -45,7 +44,7 @@ async function setup() {
 }
 
 describe("Web continuation composition", () => {
-  it("restores the selected conversation before producers start and packages the task guide in its prompt", async () => {
+  it("restores the selected conversation before producers start and exposes only task skill metadata", async () => {
     const { root, tui } = await setup();
     tui.session.sessionManager.appendMessage({ role: "user", content: "selected conversation", timestamp: 1 });
     tui.session.sessionManager.appendMessage(assistant("selected answer"));
@@ -86,12 +85,15 @@ describe("Web continuation composition", () => {
       expect((await server.inject("/health")).statusCode).toBe(503);
       control!.openAdmission(); background!.start(); await input;
       await vi.waitFor(() => expect(replies).toHaveBeenCalledOnce());
-      expect(prompts[0]).toContain(JSON.stringify(SCHEDULED_TASKS_GUIDE).slice(1, -1));
+      expect(prompts[0]).toContain("<name>scheduled-tasks</name>");
+      expect(prompts[0]).not.toContain("Manage the current workspace's");
+      const skill = web!.session.resourceLoader.getSkills().skills.find(skill => skill.name === "scheduled-tasks")!;
+      expect(skill.filePath).toMatch(/scheduled-tasks[/\\]SKILL\.md$/);
       expect(JSON.stringify(web!.session.messages)).toContain("selected conversation");
       expect(control!.prepareTakeback("secret")?.sessionId).toBe(position.sessionId);
       expect((await server.inject("/health")).statusCode).toBe(503);
       const deploymentGuide = await readFile(new URL("../../../deploy/default-skills/scheduled-tasks/SKILL.md", import.meta.url), "utf8");
-      expect(SCHEDULED_TASKS_GUIDE).toBe(deploymentGuide.split("---").slice(2).join("---").trim());
+      expect(await readFile(skill.filePath, "utf8")).toBe(deploymentGuide);
     } finally { await server.close(); await tui.dispose(); }
   });
 

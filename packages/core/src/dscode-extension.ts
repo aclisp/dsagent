@@ -1,4 +1,4 @@
-import { SCHEDULED_TASKS_GUIDE } from "./scheduled-tasks-guide.ts";
+import { getScheduledTasksSkillPath } from "./builtin-skills.ts";
 import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   getCurrentSystemMessage,
@@ -264,6 +264,12 @@ export function createDSCodeExtension(
       registerNaturalExit(pi);
       registerSessionCommands(pi);
       hooks.webContinuation?.register(pi, options);
+      if (hooks.scheduledTasks && !options.noSkills) {
+        pi.on("resources_discover", async () => {
+          if (pi.getCommands().some(command => command.source === "skill" && command.name === "skill:scheduled-tasks")) return;
+          return { skillPaths: [await getScheduledTasksSkillPath()] };
+        });
+      }
       registerEffortDefaults(pi, options);
       pi.registerTool(createDSCodeReadTool(options.cwd));
       registerCommandTools(
@@ -359,7 +365,6 @@ export function createDSCodeExtension(
       });
 
       pi.on("before_agent_start", async (event, ctx) => {
-        if (hooks.scheduledTasks) event.systemPromptOptions.sections.scheduled_tasks = SCHEDULED_TASKS_GUIDE;
         await webTools.sync(ctx);
         activateRestoredTools();
         lastAgentFailed = false;

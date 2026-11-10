@@ -64,6 +64,7 @@ export interface CreateAgentSessionHostOptions {
   uiBroker?: HttpUiBroker;
   session?: AgentSessionStorage;
   sessionDir?: string;
+  scheduledTasks?: boolean;
 }
 
 export interface AgentSessionHost {
@@ -108,8 +109,10 @@ export async function createAgentSessionHost(
         settingsManager: SettingsManager.create(runtimeCwd, runtimeAgentDir, { projectTrusted: runtimeOptions.projectTrusted }),
       } : {}),
       resourceLoaderOptions: {
+        noSkills: runtimeOptions.noSkills ?? false,
+        additionalSkillPaths: [...runtimeOptions.additionalSkillPaths ?? []],
         extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, {
-          scheduledTasks: true,
+          scheduledTasks: options.scheduledTasks ?? false,
           onSessionReady: (state) => { sessionState = state; },
         })],
       },
@@ -371,11 +374,13 @@ const VALUE_RUNTIME_FLAGS = new Set([
   "--thinking",
   "--model",
   "--tools",
+  "--skill",
 ]);
 const BOOLEAN_RUNTIME_FLAGS = new Set([
   "--network",
   "--no-tools",
   "--no-mcp",
+  "--no-skills",
   "--no-resume",
 ]);
 const THINKING_LEVELS: readonly ThinkingLevel[] = [

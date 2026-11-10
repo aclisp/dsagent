@@ -53,11 +53,24 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     requests.push(JSON.parse(Buffer.concat(chunks)));
-    if (JSON.stringify(requests.at(-1).input.filter(item => item.role === "user").at(-1)).includes("IM_CREATE_SCHEDULE_FIXTURE")) {
+    const current = requests.at(-1);
+    const lastUser = JSON.stringify(current.input.filter(item => item.role === "user").at(-1));
+    if (lastUser.includes("IM_CREATE_SCHEDULE_FIXTURE")) {
       await writeFile(path.join(workspace, ".dscode/schedules.yaml"), `version: 1\ntasks:\n  - id: handoff-source\n    enabled: true\n    type: once\n    at: "${new Date(Date.now() + 1500).toISOString()}"\n    delivery: source\n    prompt: IM_SCHEDULED_FIXTURE\n`);
     }
+    const readSkill = lastUser.includes("SKILL_READ_FIXTURE") && !current.input.some(item => item.type === "function_call_output" && item.call_id === "call_skill_probe");
+    let skillPath;
+    if (readSkill) {
+      const strings = value => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+      const match = strings(current).join("\n").match(/<name>scheduled-tasks<\/name>[\s\S]*?<location>([^<]+)<\/location>/);
+      if (!match) { response.writeHead(500); response.end("Missing task skill metadata"); return; }
+      const entities = { amp: "&", apos: "'", quot: '"', lt: "<", gt: ">" };
+      skillPath = match[1].replace(/&(amp|apos|quot|lt|gt);/g, (_all, name) => entities[name]);
+    }
     const text = `handoff reply ${requests.length}`;
-    const message = { id: "msg_handoff", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text, annotations: [], logprobs: [] }] };
+    const message = readSkill
+      ? { id: "fc_skill_probe", call_id: "call_skill_probe", type: "function_call", status: "completed", name: "read", arguments: JSON.stringify({ path: skillPath }) }
+      : { id: "msg_handoff", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text, annotations: [], logprobs: [] }] };
     const events = [
       { type: "response.created", response: { id: "resp_handoff", status: "in_progress", output: [] } },
       { type: "response.output_item.added", output_index: 0, item: { ...message, status: "in_progress", content: [] } },
@@ -66,7 +79,10 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
       { type: "response.completed", response: { id: "resp_handoff", status: "completed", output: [message], usage: { input_tokens: 10, input_tokens_details: { cached_tokens: 0 }, output_tokens: 3, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 13 } } },
     ];
     response.writeHead(200, { "content-type": "text/event-stream" });
-    for (const event of events) response.write(`data: ${JSON.stringify(event)}\n\n`);
+    for (const event of events) {
+      if (readSkill && event.type === "response.output_text.delta") continue;
+      response.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
     response.end();
   });
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
@@ -120,6 +136,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("/model deepseek/deepseek-v4-pro", "DeepSeek V4 Pro");
     await command("TUI_BEFORE_HANDOFF", "handoff reply 1");
     assert.equal(requests[0].model, "deepseek-v4-pro");
+    assert.doesNotMatch(JSON.stringify(requests[0]), /<name>scheduled-tasks<\/name>/);
     const failedStart = output.length;
     send(`/web --port ${provider.address().port}\r`);
     await waitFor(() => output.slice(failedStart).toLowerCase().includes("in use"), "occupied-port rollback");
@@ -156,7 +173,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests[1].model, "deepseek-v4-pro");
     assert.match(JSON.stringify(requests[1].input), /TUI_BEFORE_HANDOFF/);
     assert.equal(requests[1].reasoning.effort, "low");
-    assert.match(JSON.stringify(requests[1]), /Manage the current workspace's/);
+    assert.match(JSON.stringify(requests[1]), /<name>scheduled-tasks<\/name>/);
+    assert.doesNotMatch(JSON.stringify(requests[1]), /Manage the current workspace's/);
     await command("/effort max", "Thinking effort: max");
     // /reload must retain Web's branch even after the old TUI appended settings
     // to its stale branch. This reproduces the two-runtime last-written hazard.
@@ -217,12 +235,17 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await waitFor(() => wecomFrames.some(frame => frame.cmd === "aibot_send_msg" && frame.body?.chatid === "offline-owner"), "WeCom scheduled source delivery");
     assert.equal(requests.length, beforeIm + 2);
     assert.match(JSON.stringify(requests.at(-1).input), /IM_SCHEDULED_FIXTURE/);
+    const beforeRead = requests.length;
+    await turn("SKILL_READ_FIXTURE");
+    assert.equal(requests.length, beforeRead + 2, "task instructions load through the real read tool on demand");
+    assert.doesNotMatch(JSON.stringify(requests[beforeRead]), /Manage the current workspace's/);
+    assert.match(JSON.stringify(requests[beforeRead + 1]), /Manage the current workspace's/);
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
     await assert.rejects(fetch(nextUrl));
     await waitFor(() => authenticated.size === 0, "IM exit cleanup");
-    return "TUI/Web/TUI continuation, startup rollback, scheduled tasks and embedded guide, WeCom SDK input/reply/source delivery, WeChat SQLite/fault isolation, current model and effort, files/assets, clear, preferences, stable workspace URL, and exit cleanup passed";
+    return "TUI/Web/TUI continuation, startup rollback, scheduled tasks and progressive skill read, WeCom SDK input/reply/source delivery, WeChat SQLite/fault isolation, current model and effort, files/assets, clear, preferences, stable workspace URL, and exit cleanup passed";
   } catch (error) {
     try {
       const status = JSON.parse(await readFile(path.join(workspace, ".dscode/schedules.status.json"), "utf8"));

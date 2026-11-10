@@ -59,6 +59,7 @@ export async function createWebUiServer(
   let sessionControl: import("@aclisp/dsagent-http-adapter").HttpSessionControl | undefined;
   const { server, sessionPort } = createHttpAdapter({
     ...httpAdapterOptions,
+    scheduledTaskWorkspaces: continuationMode ? [] : [firstWorkspaceId],
     onSessionControl: control => { sessionControl = control; httpAdapterOptions.onSessionControl?.(control); },
   });
   await server.register(multipart);

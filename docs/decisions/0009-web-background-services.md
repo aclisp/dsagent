@@ -53,10 +53,24 @@ current Web-side Session. Overdue one-time tasks are skipped; cron resumes at it
 occurrence. Startup preparation crossing a deadline also does not trigger catch-up.
 Timezone uses `TZ`, defaulting to `Asia/Shanghai`.
 
-The existing scheduled-task guide is embedded in HTTP-hosted Agent instructions,
-including installed Node and relocated standalone CLIs. Its text is checked against
-the deployment skill. It preserves natural-language task management, YAML validation,
-status verification, and Scheduler-owned source binding without rewriting user skills.
+The `scheduled-tasks` skill uses Pi's native progressive disclosure. Its name,
+description and readable file path appear in the available-skills summary; the body
+enters model context only when the Agent reads it or the user invokes `/skill:scheduled-tasks`.
+Loaded content then follows ordinary conversation history/compaction behavior.
+
+`deploy/default-skills/scheduled-tasks/SKILL.md` is the single maintained source. Core's
+build copies it into `dist/builtin-skills`, which ships in Node packages and the Docker
+Server. The standalone executable embeds the same file and atomically publishes it
+into `DSCODE_HOME/builtin-skills/<content-hash>/scheduled-tasks/SKILL.md`. Versions use
+separate cache paths; an existing mismatched file fails validation instead of being
+overwritten. The cache is separate from user-installed skills.
+
+The Core extension registers the resource through `resources_discover`, only for the
+workspace with the composed Scheduler. Bare HTTP hosts and browser-only embeddings
+do not automatically register it. Existing same-name skills take precedence. Docker's
+existing seeded/user copies retain that precedence. `--no-skills` is explicitly carried
+through the TUI snapshot and HTTP loader to suppress automatic skill discovery; explicit
+`--skill` paths remain available under Pi's normal rules and also survive handoff.
 
 Browser-created tasks use `delivery: session`. IM-created tasks use `delivery: source`
 and return to the originating IM conversation. There is no browser target picker.
@@ -93,8 +107,8 @@ Tests cover deferred input, selected-branch restoration, strict startup rollback
 activation failure, runtime fault isolation, workspace aliases, partial-lock rollback,
 cross-process exclusion, stale crash recovery, scheduling and missed occurrences.
 Existing shared busy, source delivery, WeCom and WeChat recovery tests remain applicable.
-The real PTY handoff smoke exercises occupied-port rollback, scheduling and embedded
-instructions, the WeCom SDK against an offline protocol fixture, and exit cleanup.
+The real PTY handoff smoke exercises occupied-port rollback, scheduling and progressive
+skill discovery/read, the WeCom SDK against an offline protocol fixture, and exit cleanup.
 Packed Node and relocated standalone verification use the same smoke.
 The Bun 1.3.14 standalone adapter maps the WeChat store's small synchronous SQLite
 API to `bun:sqlite`; Node continues to use `node:sqlite`. Schema and database files

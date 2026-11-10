@@ -37,6 +37,7 @@ export interface HttpAdapterHostFactoryOptions {
   sessionDir?: string;
   runtimeArgs?: readonly string[];
   runtimeOptions?: DSCodeRuntimeOptions;
+  scheduledTasks?: boolean;
   session:
     | { type: "persistent"; id: string }
     | { type: "resume"; id: string; position?: SessionPosition };
@@ -55,6 +56,8 @@ export interface CreateHttpAdapterServerOptions {
   sessionDir?: string;
   runtimeArgs?: readonly string[];
   runtimeOptions?: DSCodeRuntimeOptions;
+  /** Internal capability supplied by the Scheduler composition layer. */
+  scheduledTaskWorkspaces?: readonly string[];
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
   /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
@@ -307,6 +310,7 @@ export function createHttpAdapter(
     session: HttpAdapterHostFactoryOptions["session"],
   ): Promise<SessionController> => {
     const host = await createHost({
+      ...(options.scheduledTaskWorkspaces?.includes(workspaceId) ? { scheduledTasks: true } : {}),
       cwd,
       session,
       ...(options.runtimeArgs !== undefined

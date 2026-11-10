@@ -8,6 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 # The root postinstall references scripts/postinstall.mjs.
 COPY scripts ./scripts
 COPY packages ./packages
+COPY deploy/default-skills/scheduled-tasks ./deploy/default-skills/scheduled-tasks
 COPY src ./src
 RUN pnpm install --frozen-lockfile
 # Build all server packages, the bundled web server, and the standalone vision CLI.
@@ -65,6 +66,7 @@ COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static
 COPY --from=build /app/dist/bundle ./dist/bundle
 COPY --from=build /app/packages/core/package.json ./packages/core/package.json
 COPY --from=build /app/packages/core/themes ./packages/core/themes
+COPY --from=build /app/packages/core/dist/builtin-skills ./packages/core/dist/builtin-skills
 COPY --from=build /app/packages/wechat/LICENSE.tencent ./third-party/openclaw-weixin.LICENSE
 COPY --from=build /app/dist/vision-cli.js ./dist/vision-cli.js
 RUN chmod 0555 /app/dist/vision-cli.js /app/dist/bundle/cli.js \
