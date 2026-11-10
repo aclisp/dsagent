@@ -33,6 +33,13 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
   return {
     name: "dscode-standalone",
     setup(build) {
+      build.onResolve({ filter: /^node:sqlite$/ }, args => {
+        if (args.importer !== path.join(root, "packages/wechat/dist/state.js")) {
+          throw new Error(`Unreviewed standalone SQLite consumer: ${args.importer}`);
+        }
+        audit.adapted.add("packages/wechat/dist/state.js: node:sqlite");
+        return { path: path.join(standalone, "wechat-sqlite.mjs") };
+      });
       build.onResolve({ filter: /^dscode:tool-versions$/ }, () => ({ path: "tool-versions", namespace: "dscode" }));
       build.onLoad({ filter: /^tool-versions$/, namespace: "dscode" }, () => ({
         loader: "js", contents: `export const versions = ${JSON.stringify(toolVersions)};`,

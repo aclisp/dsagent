@@ -39,7 +39,7 @@
   },
   "scripts": {
     "build:standalone": "pnpm build:packages && bun standalone/build.mjs",
-    "check:standalone": "pnpm build:standalone && node standalone/test/verify.mjs",
+    "check:standalone": "pnpm build:standalone && bun standalone/test/wechat-state.mjs && node standalone/test/verify.mjs",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
     "bundle:cli": "node scripts/bundle-cli.mjs",

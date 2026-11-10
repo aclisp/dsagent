@@ -16,6 +16,31 @@ node packages/web-ui/dist/server.js
 
 Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
+## Temporary service from the TUI
+
+Run `/web` in the DSCode TUI to continue its selected conversation in a browser and
+start this workspace's scheduler and configured WeCom/WeChat channels. `/web status`
+shows Scheduler and IM state. The existing task-management instructions are embedded
+in the Web runtime, including the installed Node and standalone CLIs.
+
+WeCom reads the TUI's inherited `IM_WECOM_*` variables. WeChat uses the binding saved
+by `dscode channels login wechat` under the same `DSCODE_HOME`. Local initialization
+failure rolls back the entire handoff; network authentication happens in the background.
+Runtime channel faults are isolated and reported in the TUI.
+
+Tasks are workspace-scoped and run in the current Web conversation. Missed occurrences
+are not replayed. Browser-created tasks keep their result in Web; IM-created tasks return
+to their originating conversation. Permissions come from the TUI and approvals stay in
+the browser. The original TUI remains independently usable, with the existing advisory
+reminder and possible history branching.
+
+`/tui` and TUI exit stop HTTP, Scheduler and IM together. Takeback checks Agent and
+managed-job idleness; it may interrupt file delivery or pending scheduled submission.
+New-version CLI and Server instances sharing the local coordination directory reject
+conflicting workspace/account ownership. Crash-abandoned locks expire after 30 seconds;
+separate hosts or isolated containers require separate deployment coordination.
+See [ADR-0009](../../docs/decisions/0009-web-background-services.md).
+
 ## Configuration (environment)
 
 | Variable | Default | Meaning |

@@ -23,7 +23,8 @@
     "marked": "catalog:",
     "qrcode": "catalog:",
     "yaml": "catalog:",
-    "@aclisp/dsagent-wechat": "workspace:*"
+    "@aclisp/dsagent-wechat": "workspace:*",
+    "proper-lockfile": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

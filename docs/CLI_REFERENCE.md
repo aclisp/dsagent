@@ -392,7 +392,7 @@ Inside the TUI:
 | `/model` | Select a configured model; the choice is saved |
 | `/effort ...` | Change the active model's reasoning effort |
 | `/web [--host <address>] [--port <port>] [--url <origin>]` | Continue the current TUI conversation in a browser; show its private URL and QR code |
-| `/web status` | Show the TUI-owned Web service's state and browser URL |
+| `/web status` | Show the browser URL and Scheduler/IM state of the TUI-owned service |
 | `/tui` | Stop Web and resume its conversation, retaining the TUI's current runtime settings |
 
 Type `/` for all commands and `/hotkeys` for keyboard shortcuts.
@@ -424,9 +424,22 @@ active URL. HTTPS uses the external proxy.
 Handoffs require idle agents and no running `/jobs`. Non-persistent sessions
 cannot be handed off. The service belongs to the TUI process, so keep that process
 alive (for example in `tmux` over SSH). Host sleep interrupts browser access;
-DSCode follows the operating system's power settings. Continuation starts neither
-scheduled tasks nor IM bindings. See [ADR-0007](decisions/0007-tui-web-session-handoff.md)
-for the session and access boundaries.
+DSCode follows the operating system's power settings.
+
+`/web` starts the workspace scheduler and configured WeCom/WeChat channels. WeCom
+uses inherited `IM_WECOM_*` variables; WeChat reads the same `DSCODE_HOME` binding.
+All enabled workspace tasks run in the current Web conversation, with no catch-up
+of missed occurrences. Browser task results stay in Web; IM tasks return to their
+originating conversation. Task-management instructions are included, and approvals
+use the browser. `/tui` stops all components and can interrupt unfinished IM delivery.
+
+Local initialization or ownership conflicts roll back startup; authentication happens
+in the background. Later channel faults are isolated and shown by `/web status`.
+New-version CLI and Server processes sharing the local coordination directory reject
+duplicate workspace/account consumers. Crash-abandoned locks expire after 30 seconds;
+isolated containers and different machines are separate deployments. See
+[ADR-0007](decisions/0007-tui-web-session-handoff.md) and
+[ADR-0009](decisions/0009-web-background-services.md).
 
 `apply_patch` has fixed UTF-8 content limits: 1 MiB of patch input, 10 MiB per original or resulting
 file, and 50 MiB combined original snapshots plus planned writes per patch. Intermediate writes in

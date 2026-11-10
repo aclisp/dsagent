@@ -114,6 +114,12 @@ export type ChatProviderListener = (
  */
 export interface ChatProvider extends ChatDelivery {
   readonly providerId: string;
+  /** Stable, credential-free account identity for local process coordination. */
+  readonly resourceKey?: string;
+  getStatus?(): string;
+  subscribeStatus?(listener: (status: string) => void): () => void;
+  /** Prepare local resources without consuming input; return a synchronous commit. */
+  prepare?(): (() => void) | Promise<() => void>;
   subscribe(listener: ChatProviderListener): () => void;
   start?(): void | Promise<void>;
   dispose?(): void | Promise<void>;

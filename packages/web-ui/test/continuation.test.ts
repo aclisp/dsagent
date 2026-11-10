@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -8,6 +8,9 @@ import { loadSessionPosition } from "../../core/src/session-handoff.ts";
 import { createAgentSessionHost, type AgentSessionHost } from "../../http-adapter/src/agent-session-host.ts";
 import type { HttpSessionControl } from "../../http-adapter/src/http-server.ts";
 import { createWebUiServer } from "../src/web-ui-server.ts";
+import type { WebBackgroundServices } from "../src/background-services.ts";
+import type { ChatProvider, ChatProviderListener } from "@aclisp/dsagent-chat-client";
+import { SCHEDULED_TASKS_GUIDE } from "../../core/src/scheduled-tasks-guide.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -42,6 +45,56 @@ async function setup() {
 }
 
 describe("Web continuation composition", () => {
+  it("restores the selected conversation before producers start and packages the task guide in its prompt", async () => {
+    const { root, tui } = await setup();
+    tui.session.sessionManager.appendMessage({ role: "user", content: "selected conversation", timestamp: 1 });
+    tui.session.sessionManager.appendMessage(assistant("selected answer"));
+    tui.session.refreshContext();
+    const position = tui.handoff.getPosition()!;
+    let control: HttpSessionControl | undefined;
+    let background: WebBackgroundServices | undefined;
+    let web: AgentSessionHost | undefined;
+    let listener: ChatProviderListener;
+    const replies = vi.fn(async () => ({ status: "delivered" as const }));
+    const prompts: string[] = [];
+    let input: Promise<unknown> | undefined;
+    const provider: ChatProvider = {
+      providerId: "fixture", subscribe: value => { listener = value; return () => {}; },
+      start() {
+        expect(web!.handoff.getPosition()?.sessionId).toBe(position.sessionId);
+        input = listener({ dedupeKey: "fixture", messageId: "one", text: "IM continuation",
+          conversation: { providerId: "fixture", type: "direct", address: "owner" }, sender: { providerId: "fixture", address: "owner" } });
+      }, reply: replies, send: replies,
+    };
+    const server = await createWebUiServer({ workspaces: { secret: root }, runtimeOptions: tui.handoff.getOptions(),
+      initialPosition: position, deferAdmission: true, deferBackgroundServices: true, strictBackgroundStartup: true,
+      chatProviders: [provider], chatAgentName: "DSCode", maxUploadBytes: 1024,
+      onSessionControl: value => { control = value; }, onBackgroundServices: value => { background = value; },
+      createHost: async options => {
+        web = await createAgentSessionHost(options);
+        web.session.agent.streamFunction = (_model, context) => {
+          prompts.push(JSON.stringify(context.messages));
+          const stream = createAssistantMessageEventStream();
+          queueMicrotask(() => { stream.push({ type: "done", reason: "stop", message: assistant("IM reply") }); stream.end(); });
+          return stream;
+        };
+        return web;
+      },
+    });
+    try {
+      expect(prompts).toEqual([]);
+      expect((await server.inject("/health")).statusCode).toBe(503);
+      control!.openAdmission(); background!.start(); await input;
+      await vi.waitFor(() => expect(replies).toHaveBeenCalledOnce());
+      expect(prompts[0]).toContain(JSON.stringify(SCHEDULED_TASKS_GUIDE).slice(1, -1));
+      expect(JSON.stringify(web!.session.messages)).toContain("selected conversation");
+      expect(control!.prepareTakeback("secret")?.sessionId).toBe(position.sessionId);
+      expect((await server.inject("/health")).statusCode).toBe(503);
+      const deploymentGuide = await readFile(new URL("../../../deploy/default-skills/scheduled-tasks/SKILL.md", import.meta.url), "utf8");
+      expect(SCHEDULED_TASKS_GUIDE).toBe(deploymentGuide.split("---").slice(2).join("---").trim());
+    } finally { await server.close(); await tui.dispose(); }
+  });
+
   it("keeps the source runtime's project trust instead of enabling project resources by default", async () => {
     const { root, tui } = await setup();
     let web: AgentSessionHost | undefined;

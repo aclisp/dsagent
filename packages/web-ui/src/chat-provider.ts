@@ -14,6 +14,7 @@ export interface BindWebUiChatProviderOptions {
   provider: ChatProvider;
   conversationRegistry: ConversationAliasRegistry;
   logger?: ChatClientLogger;
+  waitForAdmission?: () => Promise<boolean>;
 }
 
 export interface WebUiChatProviderBinding {
@@ -39,9 +40,12 @@ export function bindWebUiChatProvider(
 
   let unsubscribe: () => void;
   try {
-    unsubscribe = options.provider.subscribe((message) =>
-      client.handleMessage(message),
-    );
+    unsubscribe = options.provider.subscribe(async (message) => {
+      if (options.waitForAdmission && !await options.waitForAdmission()) {
+        throw new Error("Web service closed before admitting this message");
+      }
+      return client.handleMessage(message);
+    });
   } catch (error) {
     client.dispose();
     throw error;

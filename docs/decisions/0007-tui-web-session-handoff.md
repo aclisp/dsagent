@@ -1,6 +1,7 @@
 # ADR-0007: Manual session handoff between TUI and Web
 
 - Status: Accepted; implemented
+- Producer policy superseded by [ADR-0009](0009-web-background-services.md) on 2026-11-10
 - Date: 2026-10-26
 - Related: [ADR-0002](0002-web-ui-command-mcp-and-checkpoint-boundaries.md),
   [ADR-0003](0003-standalone-cli.md), and
@@ -162,13 +163,9 @@ as runtime parameters.
 ### 5. Browser continuation mode
 
 Reuse the existing Web chat, browser approval UI, file uploads, and file previews.
-The TUI-launched service runs in a continuation mode with scheduled-task execution
-and IM/WeCom bindings disabled. Their configuration must not implicitly start
-those producers when the user runs `/web`.
-
-The existing independently deployed Web Server retains its current behavior and
-configuration. This ADR adds a distinct startup mode for TUI continuation; it does
-not remove scheduled tasks or provider bindings from normal server deployments.
+The original browser-only producer policy has been superseded by ADR-0009: `/web`
+also starts the workspace scheduler and configured IM Providers. They stop on
+takeback or TUI exit. Exact session restoration precedes background admission.
 
 ### 6. Networking and persistent preferences
 
@@ -327,7 +324,7 @@ is used so ordinary TUI startup does not eagerly initialize an HTTP server.
 | `packages/core/src/managed-process.ts` | Expose the existing running-job state for handoff preflight. Keep service ownership separate from agent command jobs. |
 | `packages/core/src/settings.ts` | Validate and persist network preferences and random workspace IDs through the existing private user configuration; report save failures as warnings. |
 | `packages/http-adapter` | Resume explicit session/branch positions with supplied runtime parameters, expose busy/job state and the actual active position, and serialize takeback with request admission. |
-| `packages/web-ui` | Provide continuation-mode composition with browser chat, approvals, and files, while skipping scheduler and IM startup. Reuse existing workspace-secret URLs and browser access behavior. |
+| `packages/web-ui` | Compose browser chat, approvals, files, scheduler and configured IM Providers under ADR-0009. Reuse existing workspace-secret URLs and browser access behavior. |
 | CLI bundles and `standalone/` | Package dependencies and assets, retain lazy startup, and verify installed/relocated execution. |
 
 Keep dependency direction explicit: Web and HTTP packages already depend on Core.
@@ -369,10 +366,9 @@ continuous crash-recovery record or live synchronization.
 5. After Web `/reload` or `/clear`, normal takeback uses Web's actual current
    conversation. A newly cleared, unsaved conversation uses the receiving runtime's
    normal new-session flow; preserving its empty-session ID is not required.
-6. Continuation mode provides browser approvals and files without starting the
-   scheduler or IM providers. Existing Core commands such as `/effort` and
-   `/permissions` remain available through browser chat. Normal server deployments
-   retain their existing features.
+6. Continuation provides browser approvals and files, plus scheduler and configured
+   IM Providers under ADR-0009. Existing Core commands such as `/effort` and
+   `/permissions` remain available through browser chat.
 7. Network defaults, explicit overrides, saved preferences, and browser origins
    work as documented. Wildcard bind addresses require `url`. Unrelated keys
    survive configuration updates; a failed preference save produces a warning

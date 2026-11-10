@@ -1,3 +1,4 @@
+import { SCHEDULED_TASKS_GUIDE } from "./scheduled-tasks-guide.ts";
 import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   getCurrentSystemMessage,
@@ -146,6 +147,7 @@ const applyPatchParameters = Type.Object({
 
 export interface DSCodeExtensionHooks {
   webContinuation?: WebContinuationController;
+  scheduledTasks?: boolean;
   onSessionReady?: (runtime: DSCodeSessionRuntime) => void;
 }
 
@@ -357,6 +359,7 @@ export function createDSCodeExtension(
       });
 
       pi.on("before_agent_start", async (event, ctx) => {
+        if (hooks.scheduledTasks) event.systemPromptOptions.sections.scheduled_tasks = SCHEDULED_TASKS_GUIDE;
         await webTools.sync(ctx);
         activateRestoredTools();
         lastAgentFailed = false;

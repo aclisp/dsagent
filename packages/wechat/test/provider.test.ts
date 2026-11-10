@@ -8,7 +8,7 @@ import { createWeChatChatProviderFromHome } from "../src/wechat-chat-provider.ts
 import type { ChatConversation } from "../../chat-client/src/index.ts";
 
 const harnesses: Awaited<ReturnType<typeof createHarness>>[] = [];
-async function harness(root?: string) { const h = await createHarness(root); harnesses.push(h); return h; }
+async function harness(root?: string, deferStart = false) { const h = await createHarness(root, deferStart); harnesses.push(h); return h; }
 afterEach(async () => {
   const active = harnesses.splice(0);
   for (const h of active) await h.close(false);
@@ -18,6 +18,18 @@ afterEach(async () => {
 const conversation: ChatConversation = { providerId: "wechat", type: "direct", address: "owner" };
 
 describe("WeChat Provider over the shared Chat Client", () => {
+  it("prepares private state without polling, consuming messages or notifying the server before commit", async () => {
+    const h = await harness(undefined, true);
+    const commit = h.provider.prepare();
+    h.api.push([raw("held")]);
+    expect(h.api.cursors).toEqual([]); expect(h.api.notify).not.toHaveBeenCalled();
+    expect(h.port.prompts).toEqual([]); expect(h.provider.resourceKey).toBe("wechat:bot");
+    const states: string[] = []; h.provider.subscribeStatus(status => states.push(status));
+    commit();
+    await vi.waitFor(() => expect(h.port.prompts).toHaveLength(1));
+    expect(states).toContain("connecting"); expect(h.provider.getStatus()).toBe("connected");
+  });
+
   it("uses opaque prompt identities, reports typing and replies with the original token", async () => {
     const h = await harness(); h.api.push([raw("first", [text("检查项目")])]);
     await vi.waitFor(() => expect(h.port.prompts).toHaveLength(1));

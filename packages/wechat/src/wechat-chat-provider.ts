@@ -26,6 +26,19 @@ export interface WeChatChatProviderOptions {
 export class WeChatChatProvider implements ChatProvider {
   readonly providerId = "wechat";
   readonly notifyOnFailure = true;
+  get resourceKey(): string { return `wechat:${this.credentials.accountId}`; }
+  private status = "stopped";
+  private readonly statusListeners = new Set<(status: string) => void>();
+  getStatus(): string { return this.status; }
+  subscribeStatus(listener: (status: string) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => { this.statusListeners.delete(listener); };
+  }
+  private setStatus(status: string): void {
+    if (this.status === status) return;
+    this.status = status;
+    for (const listener of this.statusListeners) try { listener(status); } catch { /* Diagnostic observer. */ }
+  }
   private readonly credentials: WeChatCredentials;
   private readonly api: WeChatApi;
   private readonly lifetime = new AbortController();
@@ -56,13 +69,14 @@ export class WeChatChatProvider implements ChatProvider {
   private onApiError = (error: unknown): void => {
     if (error instanceof WeChatApiError && error.code === -14) {
       this.pausedUntil = Date.now() + 60 * 60 * 1000;
+      this.setStatus("paused (session expired; log in again)");
       this.log("WeChat session expired; API calls paused for one hour. Log in again and restart the service if needed.");
     }
   };
 
-  start(): void {
+  prepare(): () => void {
     if (this.disposed) throw new Error("WeChat Provider is disposed");
-    if (this.started) return;
+    if (this.state) return () => this.start();
     this.state = new WeChatStateStore(this.options.stateDirectory, this.credentials.accountId, this.credentials.ownerId);
     this.delivery = new WeChatDelivery({
       api: this.api, state: this.state, accountId: this.credentials.accountId, ownerId: this.credentials.ownerId,
@@ -72,9 +86,18 @@ export class WeChatChatProvider implements ChatProvider {
     });
     this.typing = new WeChatTyping({ api: this.api, signal: this.lifetime.signal, isPaused: this.isPaused,
       onError: this.onApiError, ...(this.options.typingIntervalMs === undefined ? {} : { intervalMs: this.options.typingIntervalMs }) });
+    return () => this.start();
+  }
+
+  start(): void {
+    if (this.disposed) throw new Error("WeChat Provider is disposed");
+    if (this.started) return;
+    this.prepare();
     this.started = true;
-    if (this.state.interruptedCount) this.log(`WeChat retained ${this.state.interruptedCount} interrupted request(s); automatic replay is disabled.`);
-    for (const record of this.state.pending()) this.enqueue(record);
+    this.setStatus("connecting");
+    const state = this.state!;
+    if (state.interruptedCount) this.log(`WeChat retained ${state.interruptedCount} interrupted request(s); automatic replay is disabled.`);
+    for (const record of state.pending()) this.enqueue(record);
     this.pollTask = this.poll();
     void this.api.notify("start", this.lifetime.signal).catch(this.onApiError);
   }
@@ -141,6 +164,7 @@ export class WeChatChatProvider implements ChatProvider {
         if (this.isPaused()) { await waitWeChat(Math.min(this.pausedUntil - Date.now(), 60_000), signal); continue; }
         const response = await this.api.getUpdates(this.state!.cursor, signal, timeout);
         signal.throwIfAborted();
+        if (!this.isPaused()) this.setStatus("connected");
         if (response.longpolling_timeout_ms && response.longpolling_timeout_ms > 0) {
           timeout = Math.max(1000, Math.min(120_000, response.longpolling_timeout_ms + 5000));
         }
@@ -155,6 +179,7 @@ export class WeChatChatProvider implements ChatProvider {
         if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) continue;
         this.onApiError(error);
         if (!this.isPaused()) {
+          this.setStatus("reconnecting");
           this.log(`WeChat polling failed${error instanceof WeChatApiError ? ` (code ${error.code})` : ""}; reconnecting.`);
           await waitWeChat(++failures > 3 ? 30_000 : 5000, signal).catch(() => undefined);
         }
@@ -243,12 +268,15 @@ export class WeChatChatProvider implements ChatProvider {
   }
 
   private stopForStorageError(): void {
+    this.setStatus("failed (private state storage)");
     this.log("WeChat stopped because private state could not be persisted; other Providers remain available.");
     this.lifetime.abort();
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.setStatus("stopped");
+    this.statusListeners.clear();
     clearTimeout(this.quietTimer); clearTimeout(this.hardTimer);
     this.batch = [];
     this.lifetime.abort();
@@ -263,6 +291,7 @@ export class WeChatChatProvider implements ChatProvider {
 
 export function createWeChatChatProviderFromHome(options: {
   homePath: string; workspacePath: string; maxUploadBytes?: number; enabled?: string;
+  logger?: { error(message: string): void };
 }): WeChatChatProvider | undefined {
   if (options.enabled && !/^(true|false|1|0)$/u.test(options.enabled)) throw new Error("IM_WECHAT_ENABLED must be true or false");
   if (options.enabled === "false" || options.enabled === "0") return undefined;
@@ -273,6 +302,7 @@ export function createWeChatChatProviderFromHome(options: {
   }
   return new WeChatChatProvider({
     credentials, workspacePath: options.workspacePath, stateDirectory: weChatDirectory(options.homePath),
+    ...(options.logger ? { logger: options.logger } : {}),
     ...(options.maxUploadBytes === undefined ? {} : { maxUploadBytes: options.maxUploadBytes }),
   });
 }

@@ -62,7 +62,7 @@ export const image = (): MessageItem => ({ type: 2, image_item: { media: { encry
 export const file = (name = "input.txt"): MessageItem => ({ type: 4, file_item: { file_name: name, media: { encrypt_query_param: "signed", aes_key: "key" } } });
 export const text = (body: string): MessageItem => ({ type: 1, text_item: { text: body } });
 
-export async function createHarness(existingRoot?: string) {
+export async function createHarness(existingRoot?: string, deferStart = false) {
   const root = existingRoot ?? await fs.mkdtemp(path.join(os.tmpdir(), "dscode-wechat-provider-"));
   const workspace = path.join(root, "workspace"); await fs.mkdir(workspace, { recursive: true });
   const api = new FakeWeChatApi(); const port = new FakeSessionPort(); const logger = { error: vi.fn() };
@@ -73,7 +73,7 @@ export async function createHarness(existingRoot?: string) {
   const registry = await createConversationAliasRegistry({ filePath: path.join(root, "conversations.json") });
   const client = createHeadlessChatClient({ workspaceId: "main", providerId: "wechat", conversationRegistry: registry, sessionPort: port, delivery: provider, logger: { error: vi.fn() } });
   provider.subscribe(message => client.handleMessage(message));
-  provider.start();
+  if (!deferStart) provider.start();
   return { root, workspace, api, port, logger, provider, client, async close(remove = true) {
     client.dispose(); await provider.dispose(); if (remove) await fs.rm(root, { recursive: true, force: true });
   } };

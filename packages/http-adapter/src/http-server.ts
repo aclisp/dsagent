@@ -62,12 +62,16 @@ export interface CreateHttpAdapterServerOptions {
   /** Browser origins allowed to call /health and routes under /v1; omitted disables CORS. */
   corsOrigins?: readonly string[];
   logger?: boolean | FastifyLoggerOptions;
+  /** Prepare a continuation without accepting HTTP or producer submissions yet. */
+  deferAdmission?: boolean;
   /** Internal composition hook; not exposed as an HTTP configuration API. */
   onSessionControl?: (control: HttpSessionControl) => void;
 }
 
 export interface HttpSessionControl {
   activate(workspaceId: string, position: SessionPosition | null): Promise<void>;
+  openAdmission(): void;
+  closeAdmission(): void;
   prepareTakeback(workspaceId: string): SessionPosition | null;
 }
 
@@ -242,6 +246,7 @@ export function createHttpAdapter(
   const terminalTurnListeners = new Set<SessionPortTurnListener>();
   const turnStartedListeners = new Set<SessionPortTurnStartedListener>();
   let closing = false;
+  let accepting = !options.deferAdmission;
 
   const getSession = (sessionId: string): SessionController | undefined =>
     sessions.get(sessionId);
@@ -400,11 +405,12 @@ export function createHttpAdapter(
       return { sessionId: controller.id };
     },
     async submitTurn(workspaceId, message, context) {
+      if (closing || !accepting) throw new Error("HTTP adapter is not accepting requests");
       if (message.trim().length === 0) {
         throw new Error("Turn message must not be blank");
       }
       const controller = await activateWorkspace(workspaceId);
-      if (closing) throw new Error("HTTP adapter is closing");
+      if (closing || !accepting) throw new Error("HTTP adapter is not accepting requests");
       const turn = controller.startTurn(message, undefined, context);
       if (!turn) return { status: "busy" };
       publishTurnStarted({
@@ -428,6 +434,11 @@ export function createHttpAdapter(
   // All admission checks and prepareTakeback's state change run synchronously on
   // the event loop. Requests already admitted are represented by the sets/turns.
   options.onSessionControl?.({
+    closeAdmission() { closing = true; },
+    openAdmission() {
+      if (closing) throw new Error("HTTP adapter is closing");
+      accepting = true;
+    },
     async activate(workspaceId, position) {
       if (closing) throw new Error("HTTP adapter is closing");
       const cwd = workspaces.get(workspaceId);
@@ -449,7 +460,7 @@ export function createHttpAdapter(
   });
 
   server.addHook("onRequest", async (request, reply) => {
-    if (closing) return reply.code(503).send({ error: "server_closing" });
+    if (closing || !accepting) return reply.code(503).send({ error: closing ? "server_closing" : "server_starting" });
   });
 
   server.get("/health", async () => ({ status: "ok" }));

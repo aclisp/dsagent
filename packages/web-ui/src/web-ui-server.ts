@@ -1,38 +1,37 @@
-import path from "node:path";
 import multipart from "@fastify/multipart";
 import {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
 } from "@aclisp/dsagent-http-adapter";
-import {
-  createConversationAliasRegistry,
-  type ChatProvider,
-} from "@aclisp/dsagent-chat-client";
+import type { ChatProvider } from "@aclisp/dsagent-chat-client";
+import type { SessionPosition } from "@aclisp/dsagent-core/session-runtime";
 import type { FastifyInstance } from "fastify";
 import { renderChatPage } from "./chat-page.ts";
 import { readWebAsset } from "./web-assets.ts";
-import {
-  bindWebUiChatProvider,
-} from "./chat-provider.ts";
+import { prepareBackgroundServices, type WebBackgroundServices } from "./background-services.ts";
 import { registerFileRoutes } from "./files.ts";
 import {
   assertValidScheduleTimezone,
-  createTaskScheduler,
   resolveConfiguredTimezone,
-  type ScheduledSourceDeliveryPort,
 } from "./task-scheduler.ts";
 
 export interface CreateWebUiServerOptions
   extends CreateHttpAdapterServerOptions {
   chatAgentName: string;
   maxUploadBytes: number;
-  /** Scheduler timezone; unused in continuation mode. Defaults to TZ or Asia/Shanghai. */
+  /** Scheduler timezone. Defaults to TZ or Asia/Shanghai. */
   timezone?: string;
   /** Preferred multi-Provider form. All Providers share one Session Port. */
   chatProviders?: readonly ChatProvider[];
   onChatProviderStarted?: (providerId: string) => void;
-  /** Personal TUI continuation starts no scheduler or IM producers. */
+  /** Browser-only embedding, without background services. */
   continuationMode?: boolean;
+  deferBackgroundServices?: boolean;
+  strictBackgroundStartup?: boolean;
+  coordinationDirectory?: string;
+  onBackgroundServices?: (services: WebBackgroundServices) => void;
+  onBackgroundNotice?: (message: string) => void;
+  initialPosition?: SessionPosition | null;
 }
 
 export async function createWebUiServer(
@@ -44,7 +43,9 @@ export async function createWebUiServer(
     timezone,
     chatProviders,
     onChatProviderStarted,
-    continuationMode,
+    continuationMode, deferBackgroundServices, strictBackgroundStartup,
+    coordinationDirectory, onBackgroundServices, onBackgroundNotice,
+    initialPosition,
     ...httpAdapterOptions
   } = options;
   const firstWorkspaceId = Object.keys(options.workspaces)[0];
@@ -55,7 +56,11 @@ export async function createWebUiServer(
   }
 
   const providers = chatProviders === undefined ? [] : [...chatProviders];
-  const { server, sessionPort } = createHttpAdapter(httpAdapterOptions);
+  let sessionControl: import("@aclisp/dsagent-http-adapter").HttpSessionControl | undefined;
+  const { server, sessionPort } = createHttpAdapter({
+    ...httpAdapterOptions,
+    onSessionControl: control => { sessionControl = control; httpAdapterOptions.onSessionControl?.(control); },
+  });
   await server.register(multipart);
   registerFileRoutes(server, options.workspaces, { maxUploadBytes });
 
@@ -124,127 +129,27 @@ export async function createWebUiServer(
 
   const schedulerTimezone = resolveConfiguredTimezone(timezone ?? process.env.TZ);
   assertValidScheduleTimezone(schedulerTimezone);
-  const conversationRegistry = await createConversationAliasRegistry({
-    filePath: path.join(firstWorkspacePath, ".dscode", "conversations.json"),
-  });
-  const activeProviders: Array<{
-    provider: ChatProvider;
-    binding: Awaited<ReturnType<typeof bindWebUiChatProvider>>;
-  }> = [];
-  const providerId = (provider: ChatProvider): string => {
-    try {
-      return provider.providerId;
-    } catch {
-      return "unknown";
-    }
-  };
-  for (const provider of providers) {
-    let binding: Awaited<ReturnType<typeof bindWebUiChatProvider>> | undefined;
-    try {
-      binding = bindWebUiChatProvider({
-        workspaceId: firstWorkspaceId,
-        sessionPort,
-        provider,
-        conversationRegistry,
-      });
-      await provider.start?.();
-      activeProviders.push({ provider, binding });
-      onChatProviderStarted?.(providerId(provider));
-    } catch (error) {
-      try {
-        binding?.dispose();
-      } catch (disposeError) {
-        server.log.error(
-          { err: disposeError, providerId: providerId(provider) },
-          "Chat Provider cleanup failed after startup error",
-        );
-      }
-      try {
-        await provider.dispose?.();
-      } catch (disposeError) {
-        server.log.error(
-          { err: disposeError, providerId: providerId(provider) },
-          "Chat Provider disposal failed after startup error",
-        );
-      }
-      server.log.error(
-        { err: error, providerId: providerId(provider) },
-        "Chat Provider isolated after startup failure",
-      );
-    }
-  }
-
-  const disposeProviders = async (): Promise<void> => {
-    for (const { provider, binding } of activeProviders) {
-      try {
-        binding.dispose();
-      } catch (error) {
-        server.log.error(
-          { err: error, providerId: providerId(provider) },
-          "Chat Provider binding disposal failed",
-        );
-      }
-      try {
-        await provider.dispose?.();
-      } catch (error) {
-        server.log.error(
-          { err: error, providerId: providerId(provider) },
-          "Chat Provider disposal failed",
-        );
-      }
-    }
-  };
-  const sourceDelivery: ScheduledSourceDeliveryPort = {
-    registerTurnForSourceDelivery(turnId, conversationAlias, listener) {
-      const resolved = conversationRegistry.resolveConversation(conversationAlias);
-      if (resolved.status !== "resolved") return "unavailable";
-      const active = activeProviders.find(
-        ({ provider }) => providerId(provider) === resolved.reference.providerId,
-      );
-      if (active === undefined) return "unavailable";
-      try {
-        return active.binding.registerTurnForDelivery(
-          turnId,
-          resolved.reference,
-          listener,
-        )
-          ? "registered"
-          : "failed";
-      } catch (error) {
-        server.log.error(
-          { err: error, turnId, providerId: resolved.reference.providerId },
-          "Scheduled source delivery registration failed",
-        );
-        return "failed";
-      }
-    },
-  };
-  let scheduler: Awaited<ReturnType<typeof createTaskScheduler>>;
+  let background: WebBackgroundServices | undefined;
+  server.addHook("preClose", async () => { await background?.close(); });
   try {
-    scheduler = await createTaskScheduler({
-      workspaceId: firstWorkspaceId,
-      workspacePath: firstWorkspacePath,
-      timezone: schedulerTimezone,
-      sessionPort,
+    if (initialPosition !== undefined) await sessionControl!.activate(firstWorkspaceId, initialPosition);
+    background = await prepareBackgroundServices({
+      workspaceId: firstWorkspaceId, workspacePath: firstWorkspacePath, sessionPort,
+      providers, timezone: schedulerTimezone, strict: strictBackgroundStartup ?? false,
       logger: server.log,
-      ...(activeProviders.length > 0 ? { sourceDelivery } : {}),
+      ...(coordinationDirectory ? { coordinationDirectory } : {}),
+      ...(onChatProviderStarted ? { onProviderStarted: onChatProviderStarted } : {}),
+      ...(onBackgroundNotice ? { onNotice: onBackgroundNotice } : {}),
+      onOwnershipLost: error => {
+        onBackgroundNotice?.(error.message);
+        void server.close().catch(() => undefined);
+      },
     });
+    onBackgroundServices?.(background);
+    if (!deferBackgroundServices) background.start();
+    return server;
   } catch (error) {
-    try {
-      await disposeProviders();
-    } finally {
-      await server.close();
-    }
+    await server.close();
     throw error;
   }
-
-  server.addHook("preClose", async () => {
-    try {
-      await scheduler.dispose();
-    } finally {
-      await disposeProviders();
-    }
-  });
-
-  return server;
 }

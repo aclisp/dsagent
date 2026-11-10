@@ -109,6 +109,7 @@ export async function createAgentSessionHost(
       } : {}),
       resourceLoaderOptions: {
         extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, {
+          scheduledTasks: true,
           onSessionReady: (state) => { sessionState = state; },
         })],
       },
