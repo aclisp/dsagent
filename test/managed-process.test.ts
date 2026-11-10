@@ -17,6 +17,23 @@ describe("ManagedProcessRegistry", () => {
     } finally { await registry.dispose(); }
   });
 
+  it("truncates Unicode output without splitting characters at either boundary", async () => {
+    const registry = new ManagedProcessRegistry();
+    const script = "process.stdout.write('x'.repeat(59999) + '😀' + 'y'.repeat(40000) + '😀' + 'z'.repeat(19999));";
+    try {
+      const result = await registry.start(nodeCommand(script), {
+        cwd: os.tmpdir(), sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 0, outputLineCount: 3 });
+      const notice = "\n... output truncated; tail follows ...\n";
+      expect(result.output.length).toBe(59999 + notice.length + 19999);
+      expect(result.output.startsWith("x".repeat(59999) + notice)).toBe(true);
+      expect(result.output.endsWith("z".repeat(19999))).toBe(true);
+      expect(/[\uD800-\uDFFF]/u.test(result.output)).toBe(false);
+    } finally { await registry.dispose(); }
+  });
+
   it.each(["(process completed)", "first\nsecond\n"])("counts actual output lines for %j", async (output) => {
     const registry = new ManagedProcessRegistry();
     try {
