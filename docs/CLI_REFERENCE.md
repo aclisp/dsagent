@@ -433,7 +433,11 @@ of missed occurrences. Browser task results stay in Web; IM tasks return to thei
 originating conversation. Task management uses the bundled `scheduled-tasks` skill: the
 initial prompt contains metadata and instructions are read on demand. Existing same-name
 skills take precedence; `--no-skills` disables automatic discovery, while explicit
-`--skill` paths stay available. Approvals use the browser. `/tui` stops all components
+`--skill` paths stay available. Browser requests use browser approvals. IM and scheduled
+work immediately reject new approvals and cancel other interactive requests, reporting
+unperformed operations in the result and in Scheduler's `lastRun.warnings`. A `completed`
+turn with warnings is not full task success. Resubmit in the browser to handle the required
+interaction; rejected runs are not automatically replayed. `/tui` stops all components
 and can interrupt unfinished IM delivery.
 
 Local initialization or ownership conflicts roll back startup; authentication happens

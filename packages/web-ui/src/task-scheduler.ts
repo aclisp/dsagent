@@ -96,6 +96,7 @@ interface RuntimeRun {
   finishedAt?: string;
   turnId?: string;
   errorCode?: string;
+  warnings?: readonly string[];
   cancelled: boolean;
   cancelWait?: () => void;
 }
@@ -230,6 +231,9 @@ function copyRun(value: unknown): RuntimeRun | undefined {
     ...(typeof value.errorCode === "string"
       ? { errorCode: value.errorCode }
       : {}),
+    ...(Array.isArray(value.warnings) && value.warnings.every(warning => typeof warning === "string")
+      ? { warnings: [...value.warnings] }
+      : {}),
   };
 }
 
@@ -261,6 +265,7 @@ function publicRun(run: RuntimeRun): Record<string, unknown> {
     ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
     ...(run.turnId !== undefined ? { turnId: run.turnId } : {}),
     ...(run.errorCode !== undefined ? { errorCode: run.errorCode } : {}),
+    ...(run.warnings !== undefined ? { warnings: run.warnings } : {}),
   };
 }
 
@@ -1220,6 +1225,7 @@ class DefaultTaskScheduler implements TaskScheduler {
       this.turnContexts.delete(event.turnId);
       const { runtime, run } = context;
       run.status = event.status;
+      if (event.status === "completed" && event.warnings?.length) run.warnings = [...event.warnings];
       run.finishedAt = this.now().toISOString();
       if (event.status !== "completed" && run.deliveryStatus === "pending") {
         run.deliveryStatus = "not_applicable";

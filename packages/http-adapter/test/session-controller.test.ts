@@ -224,7 +224,10 @@ async function expectActivity(
 }
 
 describe("SessionController", () => {
-  it("immediately rejects interactive UI requests for headless Turns", async () => {
+  it.each([
+    { name: "scheduled", context: undefined, output: undefined },
+    { name: "IM", context: { source: { type: "im" as const, conversationAlias: "conv-1" } }, output: "Model result" },
+  ])("immediately rejects interactive UI requests for $name Turns and reports unfinished operations", async ({ context, output }) => {
     const broker = createHttpUiBroker();
     const results: unknown[] = [];
     const observedMethods: string[] = [];
@@ -233,7 +236,9 @@ describe("SessionController", () => {
     });
     const harness = createHarness({
       broker,
-      prompt: async () => {
+      ...(output !== undefined ? { output } : {}),
+      prompt: async message => {
+        if (message !== "Headless request") return;
         results.push(await broker.uiContext.confirm("Confirm", "Details"));
         results.push(await broker.uiContext.select("Select", ["one", "two"]));
         results.push(await broker.uiContext.input("Input"));
@@ -241,12 +246,49 @@ describe("SessionController", () => {
       },
     });
 
-    startTurn(harness.controller, "Headless request");
+    const turn = startTurn(harness.controller, "Headless request", undefined, context);
 
     await vi.waitFor(() => expect(harness.terminalEvents).toHaveLength(1));
     expect(results).toEqual([false, undefined, undefined, undefined]);
     expect(observedMethods).toEqual(["confirm", "select", "input", "editor"]);
-    expect(harness.terminalEvents[0]?.status).toBe("completed");
+    const completed = harness.terminalEvents[0]!;
+    expect(completed.status).toBe("completed");
+    if (completed.status !== "completed") throw new Error("Expected completed Turn");
+    expect(completed.warnings).toHaveLength(1);
+    const warning = completed.warnings![0]!;
+    expect(warning).toContain("部分操作未执行");
+    for (const title of ["Confirm", "Select", "Input", "Editor"]) expect(warning).toContain(`- ${title}`);
+    expect(completed.output).toBe(output ? `${output}\n\n${warning}` : warning);
+    expect(completed.context).toEqual(context);
+    expect(harness.controller.descriptor.status).toBe("idle");
+
+    const replay = await openEventStream(harness.controller);
+    expect(await replay.next()).toMatchObject({ type: "turn", turnId: turn.id, output: completed.output, warnings: [warning] });
+    replay.close();
+
+    startTurn(harness.controller, "Next request");
+    await vi.waitFor(() => expect(harness.terminalEvents).toHaveLength(2));
+    expect(harness.terminalEvents[1]).toMatchObject({ status: "completed", output: output ?? null });
+    expect(harness.terminalEvents[1]).not.toHaveProperty("warnings");
+  });
+
+  it("keeps browser approvals pending until the user responds, without headless warnings", async () => {
+    const broker = createHttpUiBroker();
+    let requestId: string | undefined;
+    broker.subscribe(event => { if (event.type === "ui_request") requestId = event.request.id; });
+    let approved: boolean | undefined;
+    const harness = createHarness({ broker, output: "Done", prompt: async () => {
+      approved = await broker.uiContext.confirm("Allow tool?", "Details");
+    } });
+    const turn = startTurn(harness.controller, "Browser request", "browser");
+    await vi.waitFor(() => expect(requestId).toBeDefined());
+    expect(approved).toBeUndefined();
+    expect(harness.terminalEvents).toEqual([]);
+    expect(harness.controller.descriptor.status).toBe("running");
+    harness.controller.respond({ requestId: requestId!, confirmed: true });
+    await vi.waitFor(() => expect(harness.terminalEvents).toHaveLength(1));
+    expect(approved).toBe(true);
+    expect(harness.terminalEvents).toEqual([{ status: "completed", turnId: turn.id, output: "Done" }]);
   });
 
   it("owns the descriptor, messages, and one-active-Turn guard", async () => {

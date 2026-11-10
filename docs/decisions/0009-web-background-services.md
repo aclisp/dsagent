@@ -77,8 +77,17 @@ and return to the originating IM conversation. There is no browser target picker
 Saved WeChat context remains subject to server acceptance and expiry.
 
 Model, tools, permissions, sandbox and network policy come from the TUI snapshot.
-Approval requests, including those originating in IM or scheduled work, wait for the
-existing browser UI. No IM approval protocol is introduced.
+Browser-initiated requests retain the existing browser approval UI. IM and scheduled
+work run with existing permissions and grants, but new approval requests are immediately
+denied and other interactive requests are cancelled, even when a browser is connected.
+They never wait for browser approval. No IM approval protocol is introduced.
+
+When an otherwise completed turn had an interactive request rejected, its result includes
+a warning listing the requests that could not be handled. Scheduler persists these in
+`lastRun.warnings`: `completed` means the Agent turn finished, not that every requested
+operation succeeded. Users must explicitly resubmit work in the browser to handle the
+required permissions or interaction. The rejected run is not automatically replayed;
+normal future cron occurrences remain scheduled.
 
 Takeback retains ADR-0007's Agent/approval/job checks. Attachment preparation, outbound
 delivery and scheduled submission retry are not new takeback blockers. Taking back
@@ -107,6 +116,8 @@ Tests cover deferred input, selected-branch restoration, strict startup rollback
 activation failure, runtime fault isolation, workspace aliases, partial-lock rollback,
 cross-process exclusion, stale crash recovery, scheduling and missed occurrences.
 Existing shared busy, source delivery, WeCom and WeChat recovery tests remain applicable.
+Tests also cover immediate headless rejection, completion warnings and their persistence
+across restart without replay, and unchanged interactive browser approvals.
 The real PTY handoff smoke exercises occupied-port rollback, scheduling and progressive
 skill discovery/read, the WeCom SDK against an offline protocol fixture, and exit cleanup.
 Packed Node and relocated standalone verification use the same smoke.

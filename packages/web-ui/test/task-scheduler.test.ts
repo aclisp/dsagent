@@ -244,6 +244,39 @@ tasks:
     expect(status.tasks[0].currentRun).toBeUndefined();
   });
 
+  it("preserves completion warnings across restart without replaying the task", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
+    const workspacePath = await workspace();
+    await writeSchedules(workspacePath, `version: 1
+tasks:
+  - id: needs-approval
+    enabled: true
+    type: once
+    at: "2026-08-24T12:00:01Z"
+    delivery: session
+    prompt: Update the report
+`);
+    const port = new FakeSessionPort();
+    const options = { workspaceId: "main", workspacePath, timezone: "UTC", logger: logger(), watch: false };
+    const first = await createTaskScheduler({ ...options, sessionPort: port });
+    schedulers.push(first);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await waitForSubmission(port, 1);
+    const warnings = ["部分操作未执行：Apply report.txt? 已自动拒绝。"];
+    await port.emit({ status: "completed", turnId: "turn-1", output: warnings[0]!, warnings });
+    expect((await readStatus(workspacePath)).tasks[0].lastRun).toMatchObject({ status: "completed", warnings });
+    expect((await readStatus(workspacePath)).tasks[0].currentRun).toBeUndefined();
+    await first.dispose();
+
+    const secondPort = new FakeSessionPort();
+    schedulers.push(await createTaskScheduler({ ...options, sessionPort: secondPort }));
+    expect((await readStatus(workspacePath)).tasks[0].lastRun).toMatchObject({ status: "completed", warnings });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(port.submissions).toHaveLength(1);
+    expect(secondPort.submissions).toEqual([]);
+  });
+
   it("does not schedule a source task until an IM source context binds it", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
