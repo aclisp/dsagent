@@ -1094,7 +1094,10 @@ function registerCommandTools(
 }
 
 function managedProcessSummary(result: ManagedProcessResult, theme: Theme): string {
-  if (result.running && !result.timedOut) return theme.fg("dim", `running · process ${result.processId} · ${result.sandbox}`);
+  if (result.running && !result.timedOut) {
+    const status = result.exitedAfterMs === undefined ? "running" : "waiting for output";
+    return theme.fg("dim", `${status} · process ${result.processId} · ${result.sandbox}`);
+  }
   const output = normalizeDisplayText(result.output).trimEnd();
   const lines = result.outputLineCount === 0 || !output ? 0 : output.split("\n").length;
   const exitCode = theme.fg(
@@ -1105,7 +1108,9 @@ function managedProcessSummary(result: ManagedProcessResult, theme: Theme): stri
     lines > 0 ? `${lines} output ${lines === 1 ? "line" : "lines"}` : "no output",
     result.sandbox,
   ].join(" · ");
-  const status = result.timedOut ? theme.fg("error", "timed out") : theme.fg("dim", "exit ") + exitCode;
+  const status = result.timedOut
+    ? theme.fg("error", result.timeoutReason === "output_open" ? "timed out waiting for output" : "timed out")
+    : theme.fg("dim", "exit ") + exitCode;
   return status + theme.fg("dim", ` · ${rest}`);
 }
 
@@ -1415,7 +1420,12 @@ function formatManagedResult(result: ManagedProcessResult, theme?: Theme): strin
       String(result.exitCode),
       result.exitCode === null ? "dim" : result.exitCode !== 0 ? "error" : "toolOutput",
     )]),
+    ...(result.exitSignal ? [paint(`exit_signal: ${result.exitSignal}`)] : []),
+    ...(result.exitedAfterMs === undefined ? [] : [paint(`process_exited_after_ms: ${result.exitedAfterMs}`)]),
     ...(result.timedOut ? [paint("timed_out: true", "error")] : []),
+    ...(result.timeoutReason ? [paint("timeout_reason: " + (result.timeoutReason === "output_open"
+      ? "output pipes were still open after the main process exited; background processes may hold them."
+      : "main process was still running at the deadline."))] : []),
     paint(`sandbox: ${result.sandbox}`),
   ].join("\n");
 }

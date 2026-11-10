@@ -562,6 +562,18 @@ DSCode
   deliberately long-running tasks. Yielding or polling does not reset the process deadline.
   No runtime, tool argument, or instruction changes are needed.
 
+  **Diagnostic follow-up (2026-11-10):** record the direct child's exit code, signal, and elapsed
+  time on `exit`, while retaining `close` as the point at which the job and output collection
+  complete. At the deadline, snapshot whether the process was still running or had already exited
+  with output pipes open, before sending termination signals. Expose `exitSignal`, `exitedAfterMs`,
+  and `timeoutReason` in structured results, and return the exit code as soon as it is observed.
+  Both command tools explain the distinction in model-visible text and expanded results; collapsed
+  summaries distinguish waiting for output and timing out while waiting for output. An open pipe
+  only suggests a background process may hold it, without claiming it is actively writing.
+  Keep the deadline, polling, output collection, and process-tree cleanup behavior unchanged.
+  Regression coverage includes inherited stdout/stderr, zero and non-zero exits, delayed output,
+  exits caused by termination after the deadline, signal termination, and both tool renderers.
+
 - [x] **EX-07 — Large output and visible truncation.** Codex has bounded byte buffers and
   model-facing output-token budgets with omission notices. At the comparison baseline, DSCode
   accumulated output in a `BoundedOutput`, but returned a separate `pending` string truncated with

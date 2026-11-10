@@ -157,6 +157,50 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(collapsed.red).toEqual(["timed out"]);
   });
 
+  it("distinguishes waiting for output from a main process that is still running", async () => {
+    const details = { ...base, running: true, exitedAfterMs: 200 };
+    const { tool, result } = await execute(name, details);
+    expect(render(tool, result, false).text).toContain("waiting for output · process 1 · host");
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain("status: running");
+    expect(expanded.text).toContain("exit_code: 0");
+    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    expect(expanded.text).not.toContain("timeout_reason:");
+    expect(result.details).toEqual(details);
+  });
+
+  it.each([0, 3])("explains a timeout after the main process exited with code %i", async (exitCode) => {
+    const details: ManagedProcessResult = {
+      ...base, exitCode, exitedAfterMs: 200, timedOut: true, timeoutReason: "output_open",
+    };
+    const { tool, result } = await execute(name, details);
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toContain("timed out waiting for output · 1 output line · host");
+    expect(collapsed.red).toEqual(["timed out waiting for output"]);
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain(`exit_code: ${exitCode}`);
+    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    expect(expanded.text).toContain("timeout_reason: output pipes were still open after the main process exited; background processes may hold them.");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("output pipes were still open") });
+    expect(result.details).toEqual(details);
+    expect(JSON.stringify(result.content)).not.toContain("\\u001b");
+  });
+
+  it("explains a deadline reached before the main process exited", async () => {
+    const details: ManagedProcessResult = {
+      ...base, exitCode: null, exitSignal: "SIGTERM", exitedAfterMs: 1_010,
+      timedOut: true, timeoutReason: "process_running",
+    };
+    const { tool, result } = await execute(name, details);
+    expect(render(tool, result, false).text).toContain("timed out · 1 output line · host");
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain("exit_signal: SIGTERM");
+    expect(expanded.text).toContain("process_exited_after_ms: 1010");
+    expect(expanded.text).toContain("timeout_reason: main process was still running at the deadline.");
+    expect(expanded.text).not.toContain("background processes");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
+  });
+
   it.each([false, true])("preserves error presentation for process launch failures with timedOut=%s", async (timedOut) => {
     const { tool, result } = await execute(name, {
       ...base, output: "[error] spawn ENOENT", exitCode: -2, processError: "spawn ENOENT", timedOut,
