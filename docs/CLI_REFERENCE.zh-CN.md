@@ -3,7 +3,7 @@
 ## 微信通道登录
 
 `dscode channels login wechat` 在终端显示二维码，并在需要时接收手机微信显示的数字。
-凭据保存在当前 `DSCODE_HOME` 下的通道私有目录；登录后在服务空闲时手动重启。
+凭据保存在当前 `DSCODE_HOME` 下的通道私有目录；登录后重启服务生效。
 Docker 部署在容器内运行 `docker compose exec -it dscode dscode channels login wechat`。
 已保存绑定会在服务启动时自动启用，`IM_WECHAT_ENABLED=false` 可禁用。
 支持 `--qr-output /absolute/path/to/new-file.png` 和 `--timeout 480`；二维码目标文件必须尚不存在。
@@ -644,11 +644,8 @@ wecom 读取启动 TUI 时继承的 `IM_WECOM_*` 环境变量；wechat 读取同
 任务归属于工作目录，在本次 Web 会话中执行；错过的任务不补跑。浏览器创建的任务把结果保存在 Web，
 IM 创建的任务回投当前 IM 对话。时区使用 `TZ`，缺省为 `Asia/Shanghai`。
 
-Web 继承 TUI 当时的模型、工具、权限、沙箱和网络设置。浏览器发起的请求仍在浏览器审批；
-IM 和定时任务遇到新增审批会立即拒绝，其他交互请求会取消，不等待浏览器。
-结果会明确提示未执行的操作，定时任务同时保存在 `lastRun.warnings`；带警告的 `completed`
-只表示 Agent 回合结束，不代表任务全部成功。需要这些操作时，请在浏览器中重新发起请求并处理权限或交互，
-本次不会自动重跑；周期任务之后仍按计划触发。
+Web 继承 TUI 当时的模型、工具、权限、沙箱和网络设置。浏览器请求在浏览器审批；
+IM 和定时任务拒绝新增审批、取消其他交互请求，并在结果中列出未执行的操作。
 TUI 仍可独立工作，可能产生历史分支，接回不合并并发工作。`/tui` 仍要求 Agent 和后台命令空闲，
 但允许中断尚未完成的 IM 回传或待提交定时任务。
 

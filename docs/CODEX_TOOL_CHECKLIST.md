@@ -171,10 +171,6 @@ DSCode
   DSCode preserves unchanged line endings and a UTF-8 BOM, with final-newline handling determined
   by each edit boundary rather than a file-wide final-newline flag.
 
-  **Previous decision (2026-10-21, superseded 2026-11-10):** follow Pi's former strategy of
-  reconstructing the entire file using its first newline convention. That behavior and its
-  mixed-ending tests originated in `cd7c435` (`fix: preserve file line endings in apply_patch`).
-
   **Decision (2026-11-10): align with Pi 1.5.1's line-ending preservation.** Match logical lines
   across LF, CRLF, and lone CR, retaining their original terminators. Keep context and lines
   outside each changed block intact. New internal line breaks use the replacement/insertion
@@ -184,22 +180,19 @@ DSCode
   logical line breaks cannot merge into one CRLF, matching Pi's boundary handling.
 
   **Illustration:** changing `b` to `B` in `a\r\nb\n` produces `a\r\nB\n`; the same edit in
-  `a\nb\r\n` produces `a\nB\r\n`. Retain DSCode's UTF-8 BOM. Move-only patches preserve
+  `a\nb\r\n` produces `a\nB\r\n`. Move-only patches preserve
   content exactly, and newly added files continue to use LF.
 
-  **EOF refinement (2026-11-10):** preserve the surviving lines' terminators when deleting at EOF.
-  Deleting `b` from `a\nb` produces `a\n`, not `a`; do not strip an untouched line's terminator
-  to retain the original file's absence of a final newline. Editing the middle of a file does not
+  **EOF behavior:** preserve the surviving lines' terminators when deleting at EOF.
+  Deleting `b` from `a\nb` produces `a\n`. Editing the middle of a file does not
   change its final newline, and replacing an unterminated final line keeps it unterminated.
   Appending to an unterminated file adds the needed separators while keeping the last appended
   line unterminated; appending to an empty existing file follows the same rule. Each hunk updates
   the line-ending state for later edits. Deleting all text leaves an empty file, retaining a BOM
-  if present. Regression tests cover LF/CRLF/CR, mixed endings, blank lines, multiple hunks and
-  updates, appending followed by deletion, and byte-exact checkpoint restoration after a move.
+  if present.
 
   **Pi reference:** [v1.5.1 edit-diff.ts](https://github.com/earendil-works/pi/blob/v1.5.1/packages/coding-agent/src/core/tools/edit-diff.ts)
-  applies replacements to the original text instead of rewriting every line ending. DSCode keeps
-  its line-oriented patch format, anchors, mutation plan, size limits, and checkpoint behavior.
+  applies replacements to the original text, preserving unchanged line endings.
   See [patch implementation](../packages/core/src/patch.ts), [patch tests](../test/patch.test.ts),
   and [checkpoint tests](../test/checkpoint.test.ts). Coverage includes mixed endings, lone CR,
   multiple replacements, insertions, CR/LF boundaries, BOMs, EOF, moves, and exact undo restoration.
@@ -568,9 +561,7 @@ DSCode
   with output pipes open, before sending termination signals. Expose `exitSignal`, `exitedAfterMs`,
   and `timeoutReason` in structured results, and return the exit code as soon as it is observed.
   Both command tools explain the distinction in model-visible text and expanded results; collapsed
-  summaries distinguish waiting for output and timing out while waiting for output. An open pipe
-  only suggests a background process may hold it, without claiming it is actively writing.
-  Keep the deadline, polling, output collection, and process-tree cleanup behavior unchanged.
+  summaries distinguish waiting for output and timing out while waiting for output.
   Regression coverage includes inherited stdout/stderr, zero and non-zero exits, delayed output,
   exits caused by termination after the deadline, signal termination, and both tool renderers.
 

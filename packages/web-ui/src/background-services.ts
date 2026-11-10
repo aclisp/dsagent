@@ -72,7 +72,7 @@ export async function prepareBackgroundServices(options: {
       }
     } finally {
       try { await release?.(); }
-      catch { options.logger.error({}, "Service resource release failed; stale ownership will expire"); }
+      catch { options.logger.error({}, "Service resource release failed"); }
     }
   })();
   try {

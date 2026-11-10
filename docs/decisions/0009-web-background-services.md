@@ -34,9 +34,8 @@ commit activates the services and opens admission. Failed startup closes the pre
 runtime and every component and releases resource ownership.
 
 Any configured component's local initialization failure, invalid initial schedule,
-or occupied resource fails the entire `/web` startup. First network authentication
-is not a startup prerequisite. Initial output and `/web status` show connecting versus
-connected states rather than treating initialization as proof of authentication.
+or occupied resource fails the entire `/web` startup. Network authentication runs in
+the background; initial output and `/web status` show connecting or connected states.
 
 After commit, authentication, connectivity and private-state faults stay isolated
 to the affected channel. Existing reconnection and WeChat session-expiry pauses apply.
@@ -77,17 +76,11 @@ and return to the originating IM conversation. There is no browser target picker
 Saved WeChat context remains subject to server acceptance and expiry.
 
 Model, tools, permissions, sandbox and network policy come from the TUI snapshot.
-Browser-initiated requests retain the existing browser approval UI. IM and scheduled
-work run with existing permissions and grants, but new approval requests are immediately
-denied and other interactive requests are cancelled, even when a browser is connected.
-They never wait for browser approval. No IM approval protocol is introduced.
-
-When an otherwise completed turn had an interactive request rejected, its result includes
-a warning listing the requests that could not be handled. Scheduler persists these in
-`lastRun.warnings`: `completed` means the Agent turn finished, not that every requested
-operation succeeded. Users must explicitly resubmit work in the browser to handle the
-required permissions or interaction. The rejected run is not automatically replayed;
-normal future cron occurrences remain scheduled.
+Browser requests use the existing browser approval UI. IM and scheduled work use existing
+permissions and grants, immediately reject new approvals, and cancel other interactive
+requests. Their results list unperformed operations and direct users to retry in the browser.
+Scheduler persists these warnings in `lastRun.warnings`; `completed` means the Agent turn
+finished and may include unperformed operations.
 
 Takeback retains ADR-0007's Agent/approval/job checks. Attachment preparation, outbound
 delivery and scheduled submission retry are not new takeback blockers. Taking back

@@ -81,7 +81,7 @@ describe("WeChat Provider over the shared Chat Client", () => {
     h.api.push([raw("good", [file("good.txt")]), raw("bad", [file("bad.txt")]), raw("compare", [text("比较文件")])]);
     await vi.waitFor(() => expect(h.api.sendItem).toHaveBeenCalled());
     expect(h.port.prompts).toEqual([]);
-    expect(h.api.sendItem.mock.calls[0]![1].text_item?.text).toContain("尚未开始处理");
+    expect(h.api.sendItem.mock.calls[0]![1].text_item?.text).toContain("附件读取失败");
     expect(h.api.sendItem.mock.calls[0]![1].text_item?.text).not.toContain("private");
   });
 
@@ -187,7 +187,7 @@ describe("WeChat Provider over the shared Chat Client", () => {
     const h = await harness();
     vi.spyOn(WeChatStateStore.prototype, "admit").mockImplementationOnce(() => { throw new Error("disk full"); });
     h.api.push([raw("request")]);
-    await vi.waitFor(() => expect(h.logger.error).toHaveBeenCalledWith(expect.stringContaining("could not be persisted")));
+    await vi.waitFor(() => expect(h.logger.error).toHaveBeenCalledWith(expect.stringContaining("could not save private state")));
     expect(h.port.prompts).toEqual([]);
   });
 

@@ -184,7 +184,7 @@ find and remove the `@BOT_NAME` mention from group messages. Direct messages do 
 
 After starting the container, run `docker compose exec -it dscode dscode channels login wechat`
 from the deployment directory. Scan with the owner's WeChat and enter the phone verification digits
-if requested. The private binding is saved in the persistent home volume. Restart the service when idle
+if requested. The private binding is saved in the persistent home volume. Restart the service
 to enable it; set `IM_WECHAT_ENABLED=false` in the deployment environment to disable a saved binding.
 See `packages/wechat/README.md` for supported messages, recovery and delivery limits.
 

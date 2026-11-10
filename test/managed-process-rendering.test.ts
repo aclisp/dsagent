@@ -180,7 +180,7 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     const expanded = render(tool, result, true);
     expect(expanded.text).toContain(`exit_code: ${exitCode}`);
     expect(expanded.text).toContain("process_exited_after_ms: 200");
-    expect(expanded.text).toContain("timeout_reason: output pipes were still open after the main process exited; background processes may hold them.");
+    expect(expanded.text).toContain("timeout_reason: output pipes were still open after the main process exited.");
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining("output pipes were still open") });
     expect(result.details).toEqual(details);
     expect(JSON.stringify(result.content)).not.toContain("\\u001b");

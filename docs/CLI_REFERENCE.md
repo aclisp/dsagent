@@ -3,7 +3,7 @@
 ## WeChat channel login
 
 Run `dscode channels login wechat` to display the QR code and enter phone verification digits when requested.
-The binding is stored under the current `DSCODE_HOME`; restart the server when idle to enable it.
+The binding is stored under the current `DSCODE_HOME`; restart the server to enable it.
 In Docker, run `docker compose exec -it dscode dscode channels login wechat` in the service container.
 Saved bindings auto-enable on server startup; `IM_WECHAT_ENABLED=false` disables them.
 Options: `--qr-output /absolute/path/to/new-file.png` (must not already exist) and `--timeout 480`.
@@ -434,11 +434,8 @@ originating conversation. Task management uses the bundled `scheduled-tasks` ski
 initial prompt contains metadata and instructions are read on demand. Existing same-name
 skills take precedence; `--no-skills` disables automatic discovery, while explicit
 `--skill` paths stay available. Browser requests use browser approvals. IM and scheduled
-work immediately reject new approvals and cancel other interactive requests, reporting
-unperformed operations in the result and in Scheduler's `lastRun.warnings`. A `completed`
-turn with warnings is not full task success. Resubmit in the browser to handle the required
-interaction; rejected runs are not automatically replayed. `/tui` stops all components
-and can interrupt unfinished IM delivery.
+work reject new approvals and cancel other interactive requests, listing unperformed
+operations in the result. `/tui` stops all components and can interrupt unfinished IM delivery.
 
 Local initialization or ownership conflicts roll back startup; authentication happens
 in the background. Later channel faults are isolated and shown by `/web status`.

@@ -556,9 +556,8 @@ export class SessionController {
           } else {
             try {
               const warning = turn.rejectedUiRequests?.size ? [
-                "部分操作未执行：IM 和定时任务不支持交互审批，以下请求已自动拒绝或取消：",
+                "部分操作未执行，请在浏览器中重试：",
                 ...[...turn.rejectedUiRequests].map(title => `- ${title}`),
-                "如需执行这些操作，请在浏览器中重新发起请求并确认所需权限。",
               ].join("\n") : undefined;
               this.publishTurn(turn.id, "completed", {
                 output: warning ? [output, warning].filter(Boolean).join("\n\n") : output ?? null,

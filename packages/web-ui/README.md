@@ -34,11 +34,9 @@ Runtime channel faults are isolated and reported in the TUI.
 Tasks are workspace-scoped and run in the current Web conversation. Missed occurrences
 are not replayed. Browser-created tasks keep their result in Web; IM-created tasks return
 to their originating conversation. Permissions come from the TUI. Browser requests use
-browser approvals; IM and scheduled work immediately reject new approvals and cancel
-other interactive requests. Their results report unperformed operations, and Scheduler
-preserves the warnings in `lastRun.warnings` even if the Agent turn is `completed`.
-Resubmit in the browser to handle the required permissions or interaction; rejected runs
-are not automatically replayed. The original TUI remains independently usable, with
+browser approvals; IM and scheduled work reject new approvals and cancel other
+interactive requests. Their results list unperformed operations, and Scheduler saves
+these warnings in `lastRun.warnings`. The original TUI remains independently usable, with
 the existing advisory reminder and possible history branching.
 
 `/tui` and TUI exit stop HTTP, Scheduler and IM together. Takeback checks Agent and

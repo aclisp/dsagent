@@ -17,7 +17,7 @@ export function weChatHasAttachments(message: WeixinMessage): boolean {
 }
 
 export class WeChatPreparationError extends Error {
-  constructor() { super("本次附件下载或解密失败，尚未开始处理。请重发附件和说明文字。"); }
+  constructor() { super("附件读取失败，请重发附件和说明。"); }
 }
 
 export async function prepareWeChatBatch(options: {

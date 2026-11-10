@@ -70,7 +70,7 @@ export class WeChatChatProvider implements ChatProvider {
     if (error instanceof WeChatApiError && error.code === -14) {
       this.pausedUntil = Date.now() + 60 * 60 * 1000;
       this.setStatus("paused (session expired; log in again)");
-      this.log("WeChat session expired; API calls paused for one hour. Log in again and restart the service if needed.");
+      this.log("WeChat session expired; paused for one hour. Log in again and restart to resume.");
     }
   };
 
@@ -96,7 +96,7 @@ export class WeChatChatProvider implements ChatProvider {
     this.started = true;
     this.setStatus("connecting");
     const state = this.state!;
-    if (state.interruptedCount) this.log(`WeChat retained ${state.interruptedCount} interrupted request(s); automatic replay is disabled.`);
+    if (state.interruptedCount) this.log(`WeChat retained ${state.interruptedCount} interrupted request(s).`);
     for (const record of state.pending()) this.enqueue(record);
     this.pollTask = this.poll();
     void this.api.notify("start", this.lifetime.signal).catch(this.onApiError);
@@ -209,7 +209,7 @@ export class WeChatChatProvider implements ChatProvider {
   }
   private runBatch(records: WeChatInboundRecord[]): void {
     const task = this.processBatch(records).catch(() => {
-      if (!this.lifetime.signal.aborted) this.log("WeChat inbound request handling failed; automatic replay is disabled after admission.");
+      if (!this.lifetime.signal.aborted) this.log("WeChat inbound request handling failed.");
     }).finally(() => {
       this.processing.delete(task);
       for (const record of records) this.enqueued.delete(record.id);
@@ -229,7 +229,7 @@ export class WeChatChatProvider implements ChatProvider {
     try {
       if (records.some(record => (record.message.item_list ?? []).some(item => item.type === 3 && !item.voice_item?.text?.trim()))) {
         this.state!.finish(reference.ids, "unsupported");
-        await this.delivery!.notice(reference.peer, reference.token, "这条语音没有附带转写文字，请改发文字后重试。");
+        await this.delivery!.notice(reference.peer, reference.token, "语音没有转写，请改发文字。");
         return;
       }
       const text = await prepareWeChatBatch({
@@ -239,7 +239,7 @@ export class WeChatChatProvider implements ChatProvider {
       });
       if (!text) {
         this.state!.finish(reference.ids, "unsupported");
-        await this.delivery!.notice(reference.peer, reference.token, "首版支持文字、图片和文件，请改用这些形式发送。");
+        await this.delivery!.notice(reference.peer, reference.token, "请发送文字、图片或文件。");
         return;
       }
       this.lifetime.signal.throwIfAborted();
@@ -260,7 +260,7 @@ export class WeChatChatProvider implements ChatProvider {
         const admitted = reference.ids.some(id => ["admitting", "running"].includes(this.state!.status(id) ?? ""));
         this.state!.finish(reference.ids, admitted ? "interrupted" : "failed");
         await this.delivery!.notice(reference.peer, reference.token,
-          admitted ? "请求的执行结果未能确认，已停止自动重试。请检查会话后再决定是否重发。" : "本次请求准备失败，请稍后重新发送。");
+          admitted ? "执行结果未确认，请到 Web UI 查看。" : "消息处理失败，请重新发送。");
       }
     } finally {
       if (!accepted) this.delivery?.replies.delete(last.id);
@@ -269,7 +269,7 @@ export class WeChatChatProvider implements ChatProvider {
 
   private stopForStorageError(): void {
     this.setStatus("failed (private state storage)");
-    this.log("WeChat stopped because private state could not be persisted; other Providers remain available.");
+    this.log("WeChat stopped: could not save private state.");
     this.lifetime.abort();
   }
   async dispose(): Promise<void> {

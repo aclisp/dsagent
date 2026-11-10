@@ -52,7 +52,7 @@ export class WeChatDelivery {
       };
       this.progress.set(request.id, progress);
       if (collected.skipped.some(item => item.reason === "too_large" || item.reason === "too_many")) {
-        progress.text.push("部分文件超过发送大小或数量限制，请通过 Web UI 获取。");
+        progress.text.push("部分文件超出发送限制，请到 Web UI 获取。");
       }
     }
     if (progress.flight) return progress.flight;
@@ -110,7 +110,7 @@ export class WeChatDelivery {
     if (status === "failed" && progress && progress.textIndex === progress.text.length) {
       const missing = progress.artifacts.filter((_, index) => index >= progress.fileIndex || progress.failed.has(index));
       if (missing.length) await this.notice(progress.peer, progress.token,
-        `文字结果已送达，但部分文件发送失败：${missing.map(file => file.name).join("、")}。请通过 Web UI 获取，或稍后让我重新发送。`);
+        `部分文件发送失败：${missing.map(file => file.name).join("、")}。请到 Web UI 获取。`);
     }
   }
 

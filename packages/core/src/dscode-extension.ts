@@ -1432,7 +1432,7 @@ function formatManagedResult(result: ManagedProcessResult, theme?: Theme): strin
     ...(result.exitedAfterMs === undefined ? [] : [paint(`process_exited_after_ms: ${result.exitedAfterMs}`)]),
     ...(result.timedOut ? [paint("timed_out: true", "error")] : []),
     ...(result.timeoutReason ? [paint("timeout_reason: " + (result.timeoutReason === "output_open"
-      ? "output pipes were still open after the main process exited; background processes may hold them."
+      ? "output pipes were still open after the main process exited."
       : "main process was still running at the deadline."))] : []),
     paint(`sandbox: ${result.sandbox}`),
   ].join("\n");

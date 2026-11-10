@@ -80,7 +80,7 @@ export async function loginWeChat(options: {
         break;
       }
       case "binded_redirect":
-        if (existing) { io.write("当前绑定已存在；重启 DSCode 服务后启用。\n"); return existing; }
+        if (existing) { io.write("微信已绑定，重启 DSCode 服务后生效。\n"); return existing; }
         throw new Error("微信已有绑定，但本机没有对应凭据。请在手机解除原绑定后重试。");
       case "confirmed": {
         if (!response.bot_token?.trim() || !response.ilink_bot_id?.trim() || !response.ilink_user_id?.trim()) {
@@ -92,7 +92,7 @@ export async function loginWeChat(options: {
           savedAt: new Date().toISOString(),
         };
         saveWeChatCredentials(home, credentials);
-        io.write("微信登录成功，已保存私有凭据。请在服务空闲时重启 DSCode 服务以启用。\n");
+        io.write("微信绑定成功，重启 DSCode 服务后生效。\n");
         return credentials;
       }
       default: throw new Error("微信返回了当前版本不支持的登录状态，请核对协议版本。");

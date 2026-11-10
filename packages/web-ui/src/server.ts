@@ -47,7 +47,7 @@ try {
   });
   if (wechat) chatProviders.push(wechat);
 } catch {
-  console.error("WeChat configuration could not be loaded; check the private binding or run dscode channels login wechat. Other Providers remain enabled.");
+  console.error("Could not load WeChat binding; run dscode channels login wechat.");
 }
 
 const server = await createWebUiServer({
