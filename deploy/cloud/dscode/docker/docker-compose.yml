@@ -37,6 +37,7 @@ services:
       IM_WECOM_SECRET: "${IM_WECOM_SECRET:-}"
       IM_WECOM_BOT_NAME: "${IM_WECOM_BOT_NAME:-}"
       IM_WECOM_WS_URL: "${IM_WECOM_WS_URL:-}"
+      IM_WECHAT_ENABLED: "${IM_WECHAT_ENABLED:-}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env}"
     volumes:
       - type: bind

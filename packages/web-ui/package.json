@@ -22,7 +22,8 @@
     "fastify": "catalog:",
     "marked": "catalog:",
     "qrcode": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "@aclisp/dsagent-wechat": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

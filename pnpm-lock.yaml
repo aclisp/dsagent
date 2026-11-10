@@ -229,6 +229,9 @@ importers:
       '@aclisp/dsagent-http-adapter':
         specifier: workspace:*
         version: link:../http-adapter
+      '@aclisp/dsagent-wechat':
+        specifier: workspace:*
+        version: link:../wechat
       '@aclisp/dsagent-wecom':
         specifier: workspace:*
         version: link:../wecom
@@ -256,6 +259,28 @@ importers:
       yaml:
         specifier: 'catalog:'
         version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.19.19
+      '@types/qrcode':
+        specifier: 'catalog:'
+        version: 1.5.6
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@types/node@22.19.19)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/wechat:
+    dependencies:
+      '@aclisp/dsagent-chat-client':
+        specifier: workspace:*
+        version: link:../chat-client
+      qrcode:
+        specifier: 'catalog:'
+        version: 1.5.4
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

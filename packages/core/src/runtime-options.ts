@@ -232,6 +232,8 @@ Session and editor features:
   --mode text|json|rpc, --print, --no-session, --continue, --resume
 
 DSCode commands:
+  dscode channels login wechat     Bind the server's personal WeChat channel (restart server after login)
+  dscode channels --license        Show WeChat upstream attribution
   /permissions /effort /base-url /status /undo /checkpoints /diff /jobs /doctor
   /web [--host <address>] [--port <port>] [--url <origin>]
   /web status /tui                 Hand conversation to Web and take it back

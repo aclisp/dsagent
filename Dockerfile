@@ -22,6 +22,7 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/http-adapter/package.json packages/http-adapter/package.json
 COPY packages/chat-client/package.json packages/chat-client/package.json
 COPY packages/wecom/package.json packages/wecom/package.json
+COPY packages/wechat/package.json packages/wechat/package.json
 COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN pnpm install --prod --frozen-lockfile
 
@@ -64,6 +65,7 @@ COPY --from=build /app/packages/web-ui/static ./packages/web-ui/static
 COPY --from=build /app/dist/bundle ./dist/bundle
 COPY --from=build /app/packages/core/package.json ./packages/core/package.json
 COPY --from=build /app/packages/core/themes ./packages/core/themes
+COPY --from=build /app/packages/wechat/LICENSE.tencent ./third-party/openclaw-weixin.LICENSE
 COPY --from=build /app/dist/vision-cli.js ./dist/vision-cli.js
 RUN chmod 0555 /app/dist/vision-cli.js /app/dist/bundle/cli.js \
     && ln -s /app/dist/vision-cli.js /usr/local/bin/dscode-vision \

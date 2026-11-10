@@ -1,5 +1,14 @@
 # CLI & Runtime Reference
 
+## WeChat channel login
+
+Run `dscode channels login wechat` to display the QR code and enter phone verification digits when requested.
+The binding is stored under the current `DSCODE_HOME`; restart the server when idle to enable it.
+In Docker, run `docker compose exec -it dscode dscode channels login wechat` in the service container.
+Saved bindings auto-enable on server startup; `IM_WECHAT_ENABLED=false` disables them.
+Options: `--qr-output /absolute/path/to/new-file.png` (must not already exist) and `--timeout 480`.
+Use `dscode channels --license` for upstream attribution. See the [channel guide](../packages/wechat/README.md).
+
 ## Terminal app
 
 Requirements: Node.js 26.x and Git; source builds also need pnpm 12.x. DSCode also uses `rg`.

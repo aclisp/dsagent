@@ -23,6 +23,7 @@
     "packages/core/package.json",
     "packages/core/README.md",
     "packages/core/LICENSE",
+    "packages/wechat/LICENSE.tencent",
     "docs",
     "editors",
     "scripts/install-message.mjs",

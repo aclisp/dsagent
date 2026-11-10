@@ -1,5 +1,14 @@
 # CLI 与运行时参考
 
+## 微信通道登录
+
+`dscode channels login wechat` 在终端显示二维码，并在需要时接收手机微信显示的数字。
+凭据保存在当前 `DSCODE_HOME` 下的通道私有目录；登录后在服务空闲时手动重启。
+Docker 部署在容器内运行 `docker compose exec -it dscode dscode channels login wechat`。
+已保存绑定会在服务启动时自动启用，`IM_WECHAT_ENABLED=false` 可禁用。
+支持 `--qr-output /absolute/path/to/new-file.png` 和 `--timeout 480`；二维码目标文件必须尚不存在。
+上游许可信息可用 `dscode channels --license` 查看。功能边界见 [微信通道说明](../packages/wechat/README.md)。
+
 ## 终端应用
 
 要求 Node.js 26.x 和 Git；源码构建还需要 pnpm 12.x。DSCode 运行时也使用 `rg`。

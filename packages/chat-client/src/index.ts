@@ -6,6 +6,8 @@ export {
   type ChatClientLogger,
   type ChatConversation,
   type ChatDelivery,
+  type ChatDeliveryRequest,
+  type ChatTurnLifecycle,
   type ChatDeliveryResult,
   type ChatMessageHandlingResult,
   type ChatProvider,
@@ -32,3 +34,6 @@ export {
   type SenderReference,
   type SenderResolution,
 } from "./conversation-registry.ts";
+
+export { redactChatPrivateUrls } from "./private-urls.ts";
+export { collectChatOutboundArtifacts, MAX_OUTBOUND_MEDIA_BYTES, MAX_OUTBOUND_MEDIA_COUNT, type ChatOutboundArtifact, type SkippedChatOutboundArtifact, type CollectChatOutboundArtifactsResult } from "./artifacts.ts";

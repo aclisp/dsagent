@@ -32,6 +32,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
 | `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` from group text |
 | `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
+| `IM_WECHAT_ENABLED` | Auto-enable a saved binding | `false` disables WeChat; `true` requires a binding created with `dscode channels login wechat`. Restart after login. |
 
 ## Headless Chat Provider composition
 
