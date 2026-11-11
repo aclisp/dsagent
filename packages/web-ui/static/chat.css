@@ -919,11 +919,6 @@ input {
   border: 0;
 }
 
-.icon-button::before {
-  background: var(--chat-background);
-  border: 1px solid var(--border);
-}
-
 .icon-button svg {
   width: 18px;
   height: 18px;
@@ -1213,6 +1208,10 @@ a:focus-visible {
 }
 
 @media (hover: hover) {
+  .icon-button:not(:disabled):hover::before {
+    background: var(--border);
+  }
+
   .work-process summary:hover,
   .attachment-card:hover {
     background: var(--muted);
