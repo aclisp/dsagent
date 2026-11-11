@@ -52,6 +52,9 @@ export async function buildCliBundle({
         context.onResolve({ filter: /\/web-continuation\.js$/ }, args => {
           if (args.importer === path.join(root, "dist/cli.js")) return { path: path.join(root, "src/web-continuation.ts") };
         });
+        context.onResolve({ filter: /\/channel-cli\.js$/ }, args => {
+          if (args.importer === path.join(root, "dist/cli.js")) return { path: path.join(root, "src/channel-cli.ts") };
+        });
         context.onResolve({ filter: /^dscode-bundle-origins$/ }, () => ({ path: "origins", namespace: "dscode" }));
         context.onLoad({ filter: /^origins$/, namespace: "dscode" }, () => ({
           contents: `import { createRequire } from "node:module";
@@ -129,6 +132,7 @@ export async function buildCliBundle({
   const main = await build({ ...options, entryPoints: {
     ...entryPoints,
     "web-continuation": path.join(root, "src/web-continuation.ts"),
+    "channel-cli": path.join(root, "src/channel-cli.ts"),
   }, outdir, splitting: true, chunkNames: "[name]-[hash]" });
   const lazy = await build({
     ...options,
@@ -182,6 +186,7 @@ export async function buildCliBundle({
   writeFileSync(manifestPath, `${JSON.stringify({ ...summary, files: [...outputs] }, null, 2)}\n`);
   if (outdir === path.join(root, "dist/bundle")) {
     writeFileSync(path.join(root, "dist/web-continuation.js"), 'export { startWebContinuation } from "./bundle/web-continuation.js";\n');
+    writeFileSync(path.join(root, "dist/channel-cli.js"), 'export { runChannelCli } from "./bundle/channel-cli.js";\n');
   }
   console.log(`Bundled CLI: ${summary.mainInputs} modules, ${(bytes / 1024 / 1024).toFixed(1)} MiB, ${summary.outputFiles} files`);
   return summary;

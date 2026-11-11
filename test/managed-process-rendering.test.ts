@@ -107,20 +107,103 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(expanded.red).toEqual([]);
   });
 
-  it.each([null, 1])("exposes a timeout with exit %s without coloring ordinary output red", async (exitCode) => {
-    const { tool, result } = await execute(name, { ...base, exitCode, timedOut: true });
-    for (const expanded of [false, true]) {
-      const rendered = render(tool, result, expanded);
-      expect(rendered.text).toContain("command output");
-      expect(rendered.text).toContain("timed_out: true");
-      expect(rendered.red).toEqual(exitCode === null ? ["timed_out: true"] : ["1", "timed_out: true"]);
-      expect(rendered.text).toContain("status: completed");
-    }
+  it.each([null, 1])("keeps a timeout with exit %s collapsed and expands its details on demand", async (exitCode) => {
+    const details = { ...base, exitCode, timedOut: true };
+    const { tool, result } = await execute(name, details);
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toMatch(/^  └ timed out · 1 output line · host · .* to expand$/);
+    expect(collapsed.red).toEqual(["timed out"]);
+
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain("command output");
+    expect(expanded.text).toContain("timed_out: true");
+    expect(expanded.text).toContain("status: completed");
+    expect(expanded.text).toContain(`exit_code: ${exitCode}`);
+    expect(expanded.red).toEqual(exitCode === null ? ["timed_out: true"] : ["1", "timed_out: true"]);
+    expect(result.details).toEqual(details);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("command output") });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("timed_out: true") });
+    expect(JSON.stringify(result.content)).not.toContain("\\u001b");
+    expect(result.isError).not.toBe(true);
   });
 
-  it("preserves error presentation for process launch failures", async () => {
+  it.each([0, 1])("counts %i actual output lines for a timeout with a completion placeholder", async (outputLineCount) => {
     const { tool, result } = await execute(name, {
-      ...base, output: "[error] spawn ENOENT", exitCode: -2, processError: "spawn ENOENT",
+      ...base, output: "(process completed)", outputLineCount, exitCode: null, timedOut: true,
+    });
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toContain(`timed out · ${outputLineCount === 0 ? "no output" : "1 output line"} · host · `);
+    expect(collapsed.text.split("\n")).toHaveLength(1);
+    expect(collapsed.text).toContain("to expand");
+    expect(collapsed.text).not.toContain("(process completed)");
+    expect(collapsed.red).toEqual(["timed out"]);
+    expect(render(tool, result, true).text).toContain("(process completed)");
+  });
+
+  it.each(["\n", "\r\n", "\r"])("counts timeout output with %j line breaks and preserves the sandbox", async (ending) => {
+    const output = `first${ending}${ending}[stderr] diagnostic${ending}`;
+    const { tool, result } = await execute(name, { ...base, output, timedOut: true, sandbox: "workspace-write" });
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toMatch(/^  └ timed out · 3 output lines · workspace-write · .* to expand$/);
+    expect(collapsed.red).toEqual(["timed out"]);
+    expect(result.details?.output).toBe(output);
+  });
+
+  it("keeps the timeout summary while the process is still stopping", async () => {
+    const { exitCode: _exitCode, ...stopping } = { ...base, running: true, timedOut: true };
+    const { tool, result } = await execute(name, stopping);
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toMatch(/^  └ timed out · 1 output line · host · .* to expand$/);
+    expect(collapsed.red).toEqual(["timed out"]);
+  });
+
+  it("distinguishes waiting for output from a main process that is still running", async () => {
+    const details = { ...base, running: true, exitedAfterMs: 200 };
+    const { tool, result } = await execute(name, details);
+    expect(render(tool, result, false).text).toContain("waiting for output · process 1 · host");
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain("status: running");
+    expect(expanded.text).toContain("exit_code: 0");
+    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    expect(expanded.text).not.toContain("timeout_reason:");
+    expect(result.details).toEqual(details);
+  });
+
+  it.each([0, 3])("explains a timeout after the main process exited with code %i", async (exitCode) => {
+    const details: ManagedProcessResult = {
+      ...base, exitCode, exitedAfterMs: 200, timedOut: true, timeoutReason: "output_open",
+    };
+    const { tool, result } = await execute(name, details);
+    const collapsed = render(tool, result, false);
+    expect(collapsed.text).toContain("timed out waiting for output · 1 output line · host");
+    expect(collapsed.red).toEqual(["timed out waiting for output"]);
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain(`exit_code: ${exitCode}`);
+    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    expect(expanded.text).toContain("timeout_reason: output pipes were still open after the main process exited.");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("output pipes were still open") });
+    expect(result.details).toEqual(details);
+    expect(JSON.stringify(result.content)).not.toContain("\\u001b");
+  });
+
+  it("explains a deadline reached before the main process exited", async () => {
+    const details: ManagedProcessResult = {
+      ...base, exitCode: null, exitSignal: "SIGTERM", exitedAfterMs: 1_010,
+      timedOut: true, timeoutReason: "process_running",
+    };
+    const { tool, result } = await execute(name, details);
+    expect(render(tool, result, false).text).toContain("timed out · 1 output line · host");
+    const expanded = render(tool, result, true);
+    expect(expanded.text).toContain("exit_signal: SIGTERM");
+    expect(expanded.text).toContain("process_exited_after_ms: 1010");
+    expect(expanded.text).toContain("timeout_reason: main process was still running at the deadline.");
+    expect(expanded.text).not.toContain("background processes");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
+  });
+
+  it.each([false, true])("preserves error presentation for process launch failures with timedOut=%s", async (timedOut) => {
+    const { tool, result } = await execute(name, {
+      ...base, output: "[error] spawn ENOENT", exitCode: -2, processError: "spawn ENOENT", timedOut,
     });
     const rendered = render(tool, result, false);
     expect(rendered.text).toContain("[error] spawn ENOENT");
@@ -136,18 +219,23 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
   });
 });
 
-it.each(["\r\n", "\r"])("preserves stdin error details with %j while highlighting only the error message", async (ending) => {
-  const { exitCode: _exitCode, ...running } = { ...base, running: true };
-  const details = { ...running, writeError: `write EPIPE${ending}pipe closed` };
-  const { tool, result } = await execute("write_stdin", details);
-  expect(result.isError).toBe(true);
-  expect(result.details).toEqual(details);
-  for (const expanded of [false, true]) {
-    const rendered = render(tool, result, expanded);
-    expect(rendered.red).toEqual(["write EPIPE", "pipe closed"]);
-    expect(rendered.text.split("\n").some((line: string) => line.trim() === "")).toBe(false);
-    expect(rendered.text).toContain("status: running");
-    expect(rendered.text).toContain("command output");
-    expect(rendered.text).toContain("stdin_write_error:");
-  }
+describe.each([false, true])("stdin failures with timedOut=%s", (timedOut) => {
+  it.each(["\r\n", "\r"])("preserves stdin error details with %j while highlighting only generated error fields", async (ending) => {
+    const { exitCode: _exitCode, ...running } = { ...base, running: true };
+    const details = {
+      ...running, writeError: `write EPIPE${ending}pipe closed`,
+      ...(timedOut ? { running: false, exitCode: null, timedOut: true } : {}),
+    };
+    const { tool, result } = await execute("write_stdin", details);
+    expect(result.isError).toBe(true);
+    expect(result.details).toEqual(details);
+    for (const expanded of [false, true]) {
+      const rendered = render(tool, result, expanded);
+      expect(rendered.red).toEqual(["write EPIPE", "pipe closed", ...(timedOut ? ["timed_out: true"] : [])]);
+      expect(rendered.text.split("\n").some((line: string) => line.trim() === "")).toBe(false);
+      expect(rendered.text).toContain(`status: ${timedOut ? "completed" : "running"}`);
+      expect(rendered.text).toContain("command output");
+      expect(rendered.text).toContain("stdin_write_error:");
+    }
+  });
 });

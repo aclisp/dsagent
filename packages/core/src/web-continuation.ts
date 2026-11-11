@@ -13,6 +13,8 @@ export interface WebPreferences {
 export interface WebContinuationService {
   readonly url: string;
   readonly qr: string;
+  activate?(): void;
+  status?(): string;
   /** Synchronously close request admission and check all runtime/job state. */
   prepareTakeback(): SessionPosition | null;
   close(): Promise<void>;
@@ -25,6 +27,7 @@ export interface StartWebContinuationOptions {
   position: SessionPosition | null;
   sessionDir: string;
   onStopped(error?: unknown): void;
+  onNotice?(message: string): void;
 }
 
 export type WebContinuationFactory = (options: StartWebContinuationOptions) => Promise<WebContinuationService>;
@@ -116,7 +119,7 @@ export class WebContinuationController {
         try {
           const overrides = parseWebArguments(args);
           if (overrides === "status") {
-            this.notify(this.service ? `Web is running.\n${this.service.url}` : "Web is stopped.");
+            this.notify(this.service ? `Web is running.\n${this.service.url}\n${this.service.status?.() ?? ""}` : "Web is stopped.");
             return;
           }
           if (this.transitioning) throw new Error("A Web handoff is already in progress.");
@@ -125,7 +128,7 @@ export class WebContinuationController {
             if (JSON.stringify(requested) !== JSON.stringify(this.network)) {
               throw new Error("Run /tui before changing the Web service's network parameters.");
             }
-            this.notify(`Web is running.\n${this.service.url}\n${this.service.qr}`);
+            this.notify(`Web is running.\n${this.service.url}\n${this.service.status?.() ?? ""}\n${this.service.qr}`);
             return;
           }
           this.transitioning = true;
@@ -147,9 +150,11 @@ export class WebContinuationController {
                 this.remind();
                 this.notify(`Web stopped${error ? `: ${errorMessage(error)}` : "."} Use /resume to recover saved work.`, "error");
               },
+              onNotice: message => { if (service && this.service === service) this.notify(message, "warning"); },
             });
             try {
               runtime.assertIdle();
+              service.activate?.();
             } catch (error) {
               await service.close();
               throw error;
@@ -158,7 +163,7 @@ export class WebContinuationController {
             this.network = network;
             this.workspace = runtimeOptions.cwd;
             this.remind();
-            this.notify(`Web is running.\n${service.url}\n${service.qr}\nRun /tui when you return.`);
+            this.notify(`Web is running.\n${service.url}\n${service.status?.() ?? ""}\n${service.qr}\nRun /tui when you return.`);
             try {
               await saveWebPreferences(network, { cwd: runtimeOptions.cwd, id: workspaceId });
             } catch (error) {

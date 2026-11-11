@@ -16,6 +16,36 @@ node packages/web-ui/dist/server.js
 
 Then open http://127.0.0.1:8899/chat/<workspaceId>.
 
+## Temporary service from the TUI
+
+Run `/web` in the DSCode TUI to continue its selected conversation in a browser and
+start this workspace's scheduler and configured WeCom/WeChat channels. `/web status`
+shows Scheduler and IM state. The bundled `scheduled-tasks` skill is discovered through Pi: the initial prompt contains
+its name, description and file path, and the Agent reads its instructions on demand.
+This works in installed Node and standalone CLIs. Existing same-name skills take precedence.
+`--no-skills` disables automatic discovery; explicit `--skill` paths retain Pi's behavior
+and are carried into Web on handoff.
+
+WeCom reads the TUI's inherited `IM_WECOM_*` variables. WeChat uses the binding saved
+by `dscode channels login wechat` under the same `DSCODE_HOME`. Local initialization
+failure rolls back the entire handoff; network authentication happens in the background.
+Runtime channel faults are isolated and reported in the TUI.
+
+Tasks are workspace-scoped and run in the current Web conversation. Missed occurrences
+are not replayed. Browser-created tasks keep their result in Web; IM-created tasks return
+to their originating conversation. Permissions come from the TUI. Browser requests use
+browser approvals; IM and scheduled work reject new approvals and cancel other
+interactive requests. Their results list unperformed operations, and Scheduler saves
+these warnings in `lastRun.warnings`. The original TUI remains independently usable, with
+the existing advisory reminder and possible history branching.
+
+`/tui` and TUI exit stop HTTP, Scheduler and IM together. Takeback checks Agent and
+managed-job idleness; it may interrupt file delivery or pending scheduled submission.
+New-version CLI and Server instances sharing the local coordination directory reject
+conflicting workspace/account ownership. Crash-abandoned locks expire after 30 seconds;
+separate hosts or isolated containers require separate deployment coordination.
+See [ADR-0009](../../docs/decisions/0009-web-background-services.md).
+
 ## Configuration (environment)
 
 | Variable | Default | Meaning |
@@ -32,6 +62,7 @@ Then open http://127.0.0.1:8899/chat/<workspaceId>.
 | `IM_WECOM_SECRET` | — | WeCom smart-bot secret; keep it in the deployment secret store and never in a prompt, task file, or log |
 | `IM_WECOM_BOT_NAME` | — | Required when WeCom is enabled; exact display name used to find and strip `@BOT_NAME` from group text |
 | `IM_WECOM_WS_URL` | `wss://openws.work.weixin.qq.com` | Optional custom WeCom WebSocket endpoint for a compatible/private deployment |
+| `IM_WECHAT_ENABLED` | Auto-enable a saved binding | `false` disables WeChat; `true` requires a binding created with `dscode channels login wechat`. Restart after login. |
 
 ## Headless Chat Provider composition
 
@@ -321,6 +352,10 @@ volume's `/root/.dscode/skills/`.
 `dscode-delegate` loads child-launch guidance on demand. It uses the same discovery and
 seeding mechanism as `dscode-vision`; ordinary CLI and standalone users install its
 directory manually into their skills directory.
+
+`scheduled-tasks` is also a built-in fallback for Web runtimes with a Scheduler,
+including `/web` in Node and standalone CLIs. Existing seeded or user-installed
+copies win; the fallback uses the same canonical Markdown source.
 
 ### Prompt profiles and protected prompt files
 

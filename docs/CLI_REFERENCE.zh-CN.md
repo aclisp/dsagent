@@ -1,5 +1,14 @@
 # CLI 与运行时参考
 
+## 微信通道登录
+
+`dscode channels login wechat` 在终端显示二维码，并在需要时接收手机微信显示的数字。
+凭据保存在当前 `DSCODE_HOME` 下的通道私有目录；登录后重启服务生效。
+Docker 部署在容器内运行 `docker compose exec -it dscode dscode channels login wechat`。
+已保存绑定会在服务启动时自动启用，`IM_WECHAT_ENABLED=false` 可禁用。
+支持 `--qr-output /absolute/path/to/new-file.png` 和 `--timeout 480`；二维码目标文件必须尚不存在。
+上游许可信息可用 `dscode channels --license` 查看。功能边界见 [微信通道说明](../packages/wechat/README.md)。
+
 ## 终端应用
 
 要求 Node.js 26.x 和 Git；源码构建还需要 pnpm 12.x。DSCode 运行时也使用 `rg`。
@@ -259,7 +268,7 @@ RPC 子进程。输出缓冲区有大小上限，需定期轮询。协议请求�
 转发为 Web UI 的原生审批对话框。
 
 
-MCP 使用 Pi 1.5.0 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
+MCP 使用 Pi 1.5.2 的原生实现和配置格式：全局配置为 `DSCODE_HOME/mcp.json`
 （默认 `~/.dscode/mcp.json`），受信任项目使用 `.pi/mcp.json`。server 通过
 `enabled: false` 禁用；默认 `exposure: "codemode"`，也可选 `deferred` 或 `direct`。
 默认工具通过 codemode 调用；`searchTools()` 和 `describeTool()` 可发现工具，
@@ -621,3 +630,26 @@ Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing D
 
 我们不认为功能清单能够证明 DSCode 全面更好。项目应在真实仓库任务上按成功率、耗时、成本、
 安全和人工接管率进行评测。
+
+## TUI 中的 Web、定时任务与 IM
+
+`/web [--host <地址>] [--port <端口>] [--url <浏览器访问源>]` 接续当前已保存会话的精确分支，
+显示私有网址及二维码，并默认启动工作目录中的调度器和已配置的 wecom、wechat。
+`/web status` 查看网址及各组件状态；`/tui` 停止这些组件并接回 Web 当前会话，保留 TUI 自己的运行设置。
+服务随 TUI 进程退出而停止，SSH 使用时可通过 tmux 保持进程。
+
+wecom 读取启动 TUI 时继承的 `IM_WECOM_*` 环境变量；wechat 读取同一 `DSCODE_HOME` 下由
+`dscode channels login wechat` 保存的绑定。CLI 内置 `scheduled-tasks` skill，初始只展示名称、描述和路径，任务需要时再读取正文。
+已有同名 skill 优先；`--no-skills` 禁用自动发现，显式 `--skill` 路径仍按 Pi 原有规则加载并传递到 Web。
+任务归属于工作目录，在本次 Web 会话中执行；错过的任务不补跑。浏览器创建的任务把结果保存在 Web，
+IM 创建的任务回投当前 IM 对话。时区使用 `TZ`，缺省为 `Asia/Shanghai`。
+
+Web 继承 TUI 当时的模型、工具、权限、沙箱和网络设置。浏览器请求在浏览器审批；
+IM 和定时任务拒绝新增审批、取消其他交互请求，并在结果中列出未执行的操作。
+TUI 仍可独立工作，可能产生历史分支，接回不合并并发工作。`/tui` 仍要求 Agent 和后台命令空闲，
+但允许中断尚未完成的 IM 回传或待提交定时任务。
+
+本地配置或初始化失败、工作目录或账号占用冲突时，整个 `/web` 启动回滚。
+启动不等待网络认证，之后的通道故障独立重连或暂停，并通过 TUI 提示及 `/web status` 展示。
+共享本机协调目录的新版本 CLI 和 Server 遵守互斥规则；崩溃遗留占用在 30 秒后可恢复。
+不同机器、独立容器属于独立部署，详见 [ADR-0009](decisions/0009-web-background-services.md)。

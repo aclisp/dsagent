@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent-core",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "description": "Reusable multi-provider DSCode agent runtime with local sessions, tools, and RPC.",
   "type": "module",
@@ -39,7 +39,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:windows-sandbox": "node ../../scripts/build-windows-sandbox.mjs",
-    "postbuild": "node -e \"require('node:fs').chmodSync('dist/rpc-entry.js', 0o755)\"",
+    "postbuild": "node ../../scripts/build-core-resources.mjs",
     "prepack": "pnpm build && pnpm build:windows-sandbox",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

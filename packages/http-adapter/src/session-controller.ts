@@ -59,6 +59,7 @@ export type HttpAdapterEvent =
       turnId: string;
       status: HttpTurnStatus;
       output?: string | null;
+      warnings?: readonly string[];
       error?: string;
       message?: string;
       clientId?: string;
@@ -126,6 +127,7 @@ interface ActiveTurn {
   clientId?: string;
   context?: SessionPortTurnContext;
   abortAttempt?: Promise<AbortAttempt>;
+  rejectedUiRequests?: Set<string>;
 }
 
 function failureMessage(error: unknown): string {
@@ -174,6 +176,7 @@ export class SessionController {
       ) {
         return;
       }
+      (this.activeTurn.rejectedUiRequests ??= new Set()).add(event.request.title);
       try {
         host.uiBroker.respond(
           event.request.method === "confirm"
@@ -327,6 +330,7 @@ export class SessionController {
     status: HttpTurnStatus,
     extras: {
       output?: string | null;
+      warnings?: readonly string[];
       error?: string;
       message?: string;
       clientId?: string;
@@ -337,6 +341,7 @@ export class SessionController {
       turnId,
       status,
       ...(extras.output !== undefined ? { output: extras.output } : {}),
+      ...(extras.warnings !== undefined ? { warnings: extras.warnings } : {}),
       ...(extras.error !== undefined ? { error: extras.error } : {}),
       ...(extras.message !== undefined ? { message: extras.message } : {}),
       ...(extras.clientId !== undefined ? { clientId: extras.clientId } : {}),
@@ -348,6 +353,7 @@ export class SessionController {
         status,
         turnId,
         output: extras.output ?? null,
+        ...(extras.warnings !== undefined ? { warnings: extras.warnings } : {}),
         ...(this.activeTurn?.context !== undefined
           ? { context: this.activeTurn.context }
           : {}),
@@ -549,8 +555,13 @@ export class SessionController {
             this.publishTurn(turn.id, "failed", { error: failureMessage(failure) });
           } else {
             try {
+              const warning = turn.rejectedUiRequests?.size ? [
+                "部分操作未执行，请在浏览器中重试：",
+                ...[...turn.rejectedUiRequests].map(title => `- ${title}`),
+              ].join("\n") : undefined;
               this.publishTurn(turn.id, "completed", {
-                output: output ?? null,
+                output: warning ? [output, warning].filter(Boolean).join("\n\n") : output ?? null,
+                ...(warning ? { warnings: [warning] } : {}),
               });
             } catch (error) {
               this.log.error({ err: error, turnId: turn.id }, "Agent turn failed");

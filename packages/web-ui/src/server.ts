@@ -2,6 +2,8 @@ import { mkdir } from "node:fs/promises";
 import process from "node:process";
 import { getDSCodeHome } from "@aclisp/dsagent-core";
 import { createWeComChatProviderFromEnv } from "@aclisp/dsagent-wecom";
+import { createWeChatChatProviderFromHome } from "@aclisp/dsagent-wechat";
+import type { ChatProvider } from "@aclisp/dsagent-chat-client";
 import { resolveChatAgentName } from "./chat-page.ts";
 import { resolveConfiguredTimezone } from "./task-scheduler.ts";
 import { createWebUiServer } from "./web-ui-server.ts";
@@ -37,6 +39,16 @@ const chatProvider = createWeComChatProviderFromEnv(process.env, {
   workspacePath: firstWorkspacePath,
   maxUploadBytes,
 });
+const chatProviders: ChatProvider[] = chatProvider ? [chatProvider] : [];
+try {
+  const wechat = createWeChatChatProviderFromHome({
+    homePath: getDSCodeHome(), workspacePath: firstWorkspacePath, maxUploadBytes,
+    ...(process.env.IM_WECHAT_ENABLED === undefined ? {} : { enabled: process.env.IM_WECHAT_ENABLED }),
+  });
+  if (wechat) chatProviders.push(wechat);
+} catch {
+  console.error("Could not load WeChat binding; run dscode channels login wechat.");
+}
 
 const server = await createWebUiServer({
   workspaces,
@@ -47,7 +59,7 @@ const server = await createWebUiServer({
   timezone,
   runtimeArgs,
   ...(corsOrigins !== undefined ? { corsOrigins } : {}),
-  ...(chatProvider !== undefined ? { chatProviders: [chatProvider] } : {}),
+  ...(chatProviders.length > 0 ? { chatProviders } : {}),
   onChatProviderStarted: (providerId) =>
     console.log(`dscode chat provider ${providerId} started`),
 });

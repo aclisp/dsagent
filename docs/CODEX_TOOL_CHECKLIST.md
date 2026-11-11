@@ -35,7 +35,7 @@ For each item, use this sequence:
 **AP-05** (patch anchors), **EX-07** (output truncation), the failure-reporting scope of **AP-08**,
 and the checkpoint-listing scope of **AP-09** have been discussed and implemented.
 **EX-06** has been discussed; retain the existing 120-second default deadline.
-**AP-06** has been discussed; retain Pi-style LF/CRLF normalization and existing BOM/final-newline behavior.
+**AP-06** follows Pi 1.5.1's preservation of unchanged line endings, retaining DSCode's BOM and handling final newlines at edit boundaries.
 **AP-10** has been discussed; retain independent command-sandbox and patch-tool controls.
 **AP-12** has been discussed and implemented: fixed content limits and cancellation before mutation.
 **EX-12** has been discussed and implemented: a 64-running-job admission limit per session.
@@ -168,30 +168,34 @@ DSCode
 
 - [x] **AP-06 — Line endings and final newlines.** Codex retains individual unchanged line endings,
   including mixed LF/CRLF/CR, and its update path adds a final newline to nonempty resulting lines.
-  DSCode reconstructs the edited file using its first newline convention and preserves whether the
-  file ended with a newline; it explicitly preserves a UTF-8 BOM. Illustrate a tiny edit in a file
-  with mixed endings and a file with no final newline. Decide which unrelated formatting changes to
-  avoid and which conventions to preserve.
+  DSCode preserves unchanged line endings and a UTF-8 BOM, with final-newline handling determined
+  by each edit boundary rather than a file-wide final-newline flag.
 
-  **Decision (2026-10-21): keep the existing Pi-style LF/CRLF strategy.** Detect the first newline's
-  convention, normalize CRLF to LF for editing, and reconstruct the edited file using the selected
-  convention. Mixed LF/CRLF endings are intentionally unified; this is accepted behavior, not a
-  pending defect. Prefer this simple, predictable rule over Codex's per-line ending preservation,
-  accepting that a local edit in a mixed-ending file can change unrelated line endings.
+  **Decision (2026-11-10): align with Pi 1.5.1's line-ending preservation.** Match logical lines
+  across LF, CRLF, and lone CR, retaining their original terminators. Keep context and lines
+  outside each changed block intact. New internal line breaks use the replacement/insertion
+  start's current or next LF/CRLF, falling back to a preceding one at EOF; use CR in files with
+  CR but no LF, and LF when there is no existing line ending. Preserve the terminator after the
+  last replaced line. When a retained CR meets an LF across a new boundary, add an LF so two
+  logical line breaks cannot merge into one CRLF, matching Pi's boundary handling.
 
-  **Illustration:** changing `b` to `B` in `a\r\nb\n` produces `a\r\nB\r\n`; the same edit in
-  `a\nb\r\n` produces `a\nB\n`. Retain DSCode's UTF-8 BOM and whether an existing file has a final
-  newline. Move-only patches preserve content exactly, and newly added files continue to use LF.
+  **Illustration:** changing `b` to `B` in `a\r\nb\n` produces `a\r\nB\n`; the same edit in
+  `a\nb\r\n` produces `a\nB\r\n`. Move-only patches preserve
+  content exactly, and newly added files continue to use LF.
 
-  **Pi reference:** [edit execution](../../pi/packages/coding-agent/src/core/tools/edit.ts) uses
-  `detectLineEnding`, `normalizeToLF`, and `restoreLineEndings` from
-  [edit-diff.ts](../../pi/packages/coding-agent/src/core/tools/edit-diff.ts). This decision concerns
-  the shared LF/CRLF strategy, rather than requiring every newline edge case to match Pi.
-  DSCode's existing implementation and mixed-ending tests were introduced in `cd7c435`
-  (`fix: preserve file line endings in apply_patch`, 2026-10-09); see
-  [patch implementation](../packages/core/src/patch.ts) and [tests](../test/patch.test.ts).
-  This decision requires no code, tool instruction, or argument changes. Documentation only;
-  no tests or builds were run for this record.
+  **EOF behavior:** preserve the surviving lines' terminators when deleting at EOF.
+  Deleting `b` from `a\nb` produces `a\n`. Editing the middle of a file does not
+  change its final newline, and replacing an unterminated final line keeps it unterminated.
+  Appending to an unterminated file adds the needed separators while keeping the last appended
+  line unterminated; appending to an empty existing file follows the same rule. Each hunk updates
+  the line-ending state for later edits. Deleting all text leaves an empty file, retaining a BOM
+  if present.
+
+  **Pi reference:** [v1.5.1 edit-diff.ts](https://github.com/earendil-works/pi/blob/v1.5.1/packages/coding-agent/src/core/tools/edit-diff.ts)
+  applies replacements to the original text, preserving unchanged line endings.
+  See [patch implementation](../packages/core/src/patch.ts), [patch tests](../test/patch.test.ts),
+  and [checkpoint tests](../test/checkpoint.test.ts). Coverage includes mixed endings, lone CR,
+  multiple replacements, insertions, CR/LF boundaries, BOMs, EOF, moves, and exact undo restoration.
 
 - [ ] **AP-07 — Validation and multiple operations on one file.** Both tool paths verify patches
   before executing writes. DSCode calculates edits in a virtual staged map, allowing later operations
@@ -551,6 +555,16 @@ DSCode
   deliberately long-running tasks. Yielding or polling does not reset the process deadline.
   No runtime, tool argument, or instruction changes are needed.
 
+  **Diagnostic follow-up (2026-11-10):** record the direct child's exit code, signal, and elapsed
+  time on `exit`, while retaining `close` as the point at which the job and output collection
+  complete. At the deadline, snapshot whether the process was still running or had already exited
+  with output pipes open, before sending termination signals. Expose `exitSignal`, `exitedAfterMs`,
+  and `timeoutReason` in structured results, and return the exit code as soon as it is observed.
+  Both command tools explain the distinction in model-visible text and expanded results; collapsed
+  summaries distinguish waiting for output and timing out while waiting for output.
+  Regression coverage includes inherited stdout/stderr, zero and non-zero exits, delayed output,
+  exits caused by termination after the deadline, signal termination, and both tool renderers.
+
 - [x] **EX-07 — Large output and visible truncation.** Codex has bounded byte buffers and
   model-facing output-token budgets with omission notices. At the comparison baseline, DSCode
   accumulated output in a `BoundedOutput`, but returned a separate `pending` string truncated with
@@ -608,8 +622,11 @@ DSCode
   the TUI.** Both `exec_command` and `write_stdin` keep ordinary completed results collapsed,
   including non-zero exits. Color only a non-zero exit number red in the summary and expanded
   `exit_code` field. Expanded command output and ordinary metadata remain neutral; `null` remains
-  unavailable rather than being classified as a crash. Highlight the generated `timed_out: true`
-  field and stdin error messages red, retaining automatic exposure of these failures. Preserve
+  unavailable rather than being classified as a crash. Timeouts stay collapsed by default for
+  both tools, using the ordinary exit summary's output line count, sandbox, and expansion hint,
+  with a red `timed out` in place of `exit N`. Keep the output body and detailed process metadata
+  hidden until manually expanded; highlight the generated `timed_out: true` field red in the
+  expanded view. Highlight stdin error messages red and retain their automatic exposure. Preserve
   existing error presentation for genuine process/tool failures, including unavailable backends,
   process launch errors, unknown IDs, access denials, and capacity rejection.
 

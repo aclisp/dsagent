@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "1.5.0";
+export const PI_VERSION = "1.5.2";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);
@@ -33,6 +33,13 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
   return {
     name: "dscode-standalone",
     setup(build) {
+      build.onResolve({ filter: /^node:sqlite$/ }, args => {
+        if (args.importer !== path.join(root, "packages/wechat/dist/state.js")) {
+          throw new Error(`Unreviewed standalone SQLite consumer: ${args.importer}`);
+        }
+        audit.adapted.add("packages/wechat/dist/state.js: node:sqlite");
+        return { path: path.join(standalone, "wechat-sqlite.mjs") };
+      });
       build.onResolve({ filter: /^dscode:tool-versions$/ }, () => ({ path: "tool-versions", namespace: "dscode" }));
       build.onLoad({ filter: /^tool-versions$/, namespace: "dscode" }, () => ({
         loader: "js", contents: `export const versions = ${JSON.stringify(toolVersions)};`,
@@ -73,6 +80,10 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
         if (file === path.join(root, "packages/core/dist/themes.js")) {
           audit.adapted.add(path.relative(root, file));
           return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function getDSCodeThemePaths() { return [assets["dscode-light.json"], assets["dscode-dark.json"]]; }' };
+        }
+        if (file === path.join(root, "packages/core/dist/skill-assets.js")) {
+          audit.adapted.add(path.relative(root, file));
+          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function scheduledTasksAssetPath() { return assets["skills/scheduled-tasks/SKILL.md"]; }' };
         }
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));

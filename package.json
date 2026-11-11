@@ -1,6 +1,6 @@
 {
   "name": "@aclisp/dsagent",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "description": "A local-first, multi-provider coding agent with DeepSeek defaults.",
   "type": "module",
@@ -23,6 +23,7 @@
     "packages/core/package.json",
     "packages/core/README.md",
     "packages/core/LICENSE",
+    "packages/wechat/LICENSE.tencent",
     "docs",
     "editors",
     "scripts/install-message.mjs",
@@ -38,7 +39,7 @@
   },
   "scripts": {
     "build:standalone": "pnpm build:packages && bun standalone/build.mjs",
-    "check:standalone": "pnpm build:standalone && node standalone/test/verify.mjs",
+    "check:standalone": "pnpm build:standalone && bun standalone/test/wechat-state.mjs && node standalone/test/verify.mjs",
     "bundle:server": "node scripts/bundle-server.mjs",
     "bundle:vision": "node scripts/bundle-vision-cli.mjs",
     "bundle:cli": "node scripts/bundle-cli.mjs",

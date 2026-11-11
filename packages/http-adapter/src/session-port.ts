@@ -29,6 +29,8 @@ export type SessionPortTurnEvent =
       status: "completed";
       turnId: string;
       output: string | null;
+      /** The Agent finished, but some requested operations were not performed. */
+      warnings?: readonly string[];
       context?: SessionPortTurnContext;
     }
   | { status: "failed"; turnId: string; context?: SessionPortTurnContext }

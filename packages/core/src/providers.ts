@@ -20,13 +20,13 @@ const DEFAULT_MODELS: Record<SupportedProviderId, string> = {
   deepseek: "deepseek-flash",
   "openai-codex": "gpt-5.6-sol",
   openai: "gpt-5.6-sol",
-  anthropic: "claude-opus-4-8",
-  openrouter: "moonshotai/kimi-k2.6",
+  anthropic: "claude-opus-5-5",
+  openrouter: "moonshotai/kimi-k2.7-code",
   zai: "glm-5.3",
   "kimi-coding": "kimi-for-coding",
-  minimax: "MiniMax-M2.7",
+  minimax: "MiniMax-M3",
   xai: "grok-4.5",
-  "opencode-go": "kimi-k3",
+  "opencode-go": "kimi-k3.1-pro",
 };
 
 const DEFAULT_EFFORTS: Record<SupportedProviderId, string> = {

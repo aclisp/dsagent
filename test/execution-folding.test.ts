@@ -96,6 +96,7 @@ describe("execution boundaries and persisted elapsed time", () => {
 interface Fixture {
   chatContainer: Container;
   loadedResourcesContainer: Container;
+  pendingMessagesContainer: Container;
   renderer: { mode: "fullscreen" | "regular"; resetTextSelection(): void };
   ui: TUI;
   outputPad: number;
@@ -139,6 +140,7 @@ function fixture(entries: SessionEntry[], mode: "fullscreen" | "regular" = "full
   runtime.entries = entries;
   runtime.chatContainer = new Container();
   runtime.loadedResourcesContainer = new Container();
+  runtime.pendingMessagesContainer = new Container();
   runtime.renderer = { mode, resetTextSelection() {} };
   runtime.ui = { requestRender() {} } as unknown as TUI;
   runtime.outputPad = 0;
@@ -450,6 +452,24 @@ describe("fullscreen execution folding adapter", () => {
     expect(output(runtime)).not.toContain("SHELL_OUTPUT_0");
     runtime.toggleToolOutputExpansion();
     expect(output(runtime)).toContain("SHELL_OUTPUT_0");
+  });
+
+  it("toggles pending shell output while completed executions stay folded", () => {
+    const runtime = fixture(execution());
+    runtime.renderSessionEntries(runtime.entries);
+    const shell = new BashExecutionComponent("echo pending", runtime.ui);
+    shell.setComplete(0, false);
+    shell.appendOutput(Array.from({ length: 100 }, (_, i) => `PENDING_OUTPUT_${i}`).join("\n"));
+    runtime.pendingMessagesContainer.addChild(shell);
+    const pendingOutput = () => runtime.pendingMessagesContainer.render(100).map(stripTerminalSequences).join("\n");
+
+    expect(pendingOutput()).not.toContain("PENDING_OUTPUT_0");
+    runtime.toggleToolOutputExpansion();
+    expect(pendingOutput()).toContain("PENDING_OUTPUT_0");
+    expect(output(runtime)).not.toContain("PROGRESS_A");
+    runtime.toggleToolOutputExpansion();
+    expect(pendingOutput()).not.toContain("PENDING_OUTPUT_0");
+    expect(output(runtime)).not.toContain("PROGRESS_A");
   });
 
   it("keeps regular mode's remembered toggle even when mouse states differ", () => {

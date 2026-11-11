@@ -12,6 +12,8 @@ import {
   DEFAULT_VISION_CLI_EXECUTABLE,
 } from "./vision-command.ts";
 
+type TimeoutReason = "process_running" | "output_open";
+
 export interface ManagedProcessResult {
   processId: string;
   running: boolean;
@@ -19,7 +21,11 @@ export interface ManagedProcessResult {
   // Lines in this result's output, excluding the empty-output placeholder.
   outputLineCount?: number;
   exitCode?: number | null;
+  exitSignal?: NodeJS.Signals;
+  // Elapsed time from spawn to the direct child's exit, independent of pipe closure.
+  exitedAfterMs?: number;
   timedOut?: boolean;
+  timeoutReason?: TimeoutReason;
   writeError?: string;
   processError?: string;
   sandbox: string;
@@ -34,7 +40,9 @@ interface ProcessRecord {
   output: BoundedOutput;
   running: boolean;
   exitCode?: number | null;
-  timedOut: boolean;
+  exitSignal?: NodeJS.Signals;
+  exitedAfterMs?: number;
+  timeoutReason?: TimeoutReason;
   stdinError?: Error;
   processError?: string;
   sandbox: string;
@@ -161,6 +169,7 @@ export class ManagedProcessRegistry {
     const child = options.stdinOpen
       ? spawn(invocation.command, invocation.args, { ...spawnOptions, stdio: ["pipe", "pipe", "pipe"] })
       : spawn(invocation.command, invocation.args, { ...spawnOptions, stdio: ["ignore", "pipe", "pipe"] });
+    const startedAt = performance.now();
     trackChild(child);
     const id = String(this.nextProcessId++);
     let resolveCompletion = (): void => {};
@@ -172,14 +181,14 @@ export class ManagedProcessRegistry {
       child,
       output: new BoundedOutput(MAX_PENDING_OUTPUT_LENGTH),
       running: true,
-      timedOut: false,
       sandbox: invocation.description,
       completion,
       resolveCompletion,
     };
     if (options.timeoutMs > 0) {
       record.timeout = setTimeout(() => {
-        record.timedOut = true;
+        // Snapshot before termination; the resulting exit must not change the reason.
+        record.timeoutReason = record.exitedAfterMs === undefined ? "process_running" : "output_open";
         stopChild(record.child);
       }, options.timeoutMs);
       record.timeout.unref();
@@ -199,6 +208,11 @@ export class ManagedProcessRegistry {
     child.once("error", (error) => {
       record.processError = error.message;
       append("[error] ", error.message);
+    });
+    child.once("exit", (exitCode, signal) => {
+      record.exitCode = exitCode;
+      if (signal) record.exitSignal = signal;
+      record.exitedAfterMs = Math.round(performance.now() - startedAt);
     });
     child.once("close", (exitCode) => {
       record.running = false;
@@ -319,8 +333,10 @@ export class ManagedProcessRegistry {
       running: record.running,
       output: output || (record.running ? "(no new output)" : "(process completed)"),
       outputLineCount: output.trimEnd() ? output.trimEnd().split("\n").length : 0,
-      ...(!record.running ? { exitCode: record.exitCode } : {}),
-      ...(record.timedOut ? { timedOut: true } : {}),
+      ...(record.exitCode === undefined ? {} : { exitCode: record.exitCode }),
+      ...(record.exitSignal === undefined ? {} : { exitSignal: record.exitSignal }),
+      ...(record.exitedAfterMs === undefined ? {} : { exitedAfterMs: record.exitedAfterMs }),
+      ...(record.timeoutReason ? { timedOut: true, timeoutReason: record.timeoutReason } : {}),
       ...(record.processError === undefined ? {} : { processError: record.processError }),
       sandbox: record.sandbox,
     };

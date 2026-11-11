@@ -119,6 +119,16 @@ try {
   if (run(process.execPath, [unbundledCli, "--version"], cliInstall).trim() !== cliPackage.version) {
     throw new Error("Retained unbundled CLI returned the wrong version");
   }
+  for (const launcher of [installedCli, unbundledCli]) {
+    const help = run(process.execPath, [launcher, "channels", "login", "wechat", "--help"], cliInstall);
+    if (!help.includes("dscode channels login wechat")) {
+      throw new Error("Installed WeChat login help is unavailable");
+    }
+    const license = run(process.execPath, [launcher, "channels", "--license"], cliInstall);
+    if (!license.includes("Tencent") || !license.includes("MIT")) {
+      throw new Error("Installed WeChat upstream license is unavailable");
+    }
+  }
   run(process.execPath, [path.join(projectRoot, "scripts/cli-bundle-smoke.mjs"), installedPackageRoot], cliInstall);
   if (process.platform !== "win32") {
     process.stdout.write(`${await verifyWebHandoff({ args: [installedCli], parentDirectory: scratch })}\n`);

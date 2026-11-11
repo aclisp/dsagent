@@ -40,12 +40,31 @@ export interface ChatReplyTarget {
   conversation: ChatConversation;
 }
 
+export type ChatDeliveryRequest =
+  | { id: string; kind: "reply"; target: ChatReplyTarget; text: string }
+  | { id: string; kind: "send"; conversation: ChatConversation; text: string };
+
+export interface ChatTurnLifecycle {
+  turnId: string;
+  conversation: ChatConversation;
+  messageId?: string;
+}
+
 export type ChatDeliveryResult =
   | { status: "delivered" }
   | { status: "retryable"; retryAfterMs?: number }
   | { status: "permanent_failure" };
 
 export interface ChatDelivery {
+  /** Opt-in lifecycle and stable delivery IDs; legacy Providers keep their behavior. */
+  readonly notifyOnFailure?: boolean;
+  beforeSubmit?(target: ChatReplyTarget): void | Promise<void>;
+  onTurnStarted?(event: ChatTurnLifecycle): void | Promise<void>;
+  onTurnFinished?(event: ChatTurnLifecycle & {
+    status: SessionPortTurnEvent["status"];
+  }): void | Promise<void>;
+  deliver?(request: ChatDeliveryRequest): Promise<ChatDeliveryResult>;
+  onDeliverySettled?(request: ChatDeliveryRequest, status: ProactiveDeliveryEvent["status"]): void | Promise<void>;
   reply(target: ChatReplyTarget, text: string): Promise<ChatDeliveryResult>;
   send(
     conversation: ChatConversation,
@@ -95,6 +114,12 @@ export type ChatProviderListener = (
  */
 export interface ChatProvider extends ChatDelivery {
   readonly providerId: string;
+  /** Stable, credential-free account identity for local process coordination. */
+  readonly resourceKey?: string;
+  getStatus?(): string;
+  subscribeStatus?(listener: (status: string) => void): () => void;
+  /** Prepare local resources without consuming input; return a synchronous commit. */
+  prepare?(): (() => void) | Promise<() => void>;
   subscribe(listener: ChatProviderListener): () => void;
   start?(): void | Promise<void>;
   dispose?(): void | Promise<void>;
@@ -210,8 +235,13 @@ function fallbackDelay(attempt: number): number {
   return Math.round(baseDelay * (0.8 + Math.random() * 0.4));
 }
 
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
+function sleep(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) { resolve(); return; }
+    const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+    const timer = setTimeout(done, delayMs);
+    signal.addEventListener("abort", done, { once: true });
+  });
 }
 
 class DefaultHeadlessChatClient implements HeadlessChatClient {
@@ -219,6 +249,9 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
   private readonly turnTargets = new Map<string, TurnDeliveryTarget>();
   private readonly logger: ChatClientLogger;
   private readonly unsubscribe: () => void;
+  private readonly lifetime = new AbortController();
+  private readonly earlyEvents = new Map<string, SessionPortTurnEvent>();
+  private pendingSubmissions = 0;
   private disposed = false;
 
   constructor(options: CreateHeadlessChatClientOptions) {
@@ -284,19 +317,21 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
         conversationAlias: conversationReference.alias,
       },
     };
-    const submission = await this.options.sessionPort.submitTurn(
-      this.options.workspaceId,
-      formatPrompt(message, conversationReference, senderReference),
-      context,
-    );
+    // A Provider may durably record admission before the Agent can cause effects.
+    // Failure here must prevent submission, rather than becoming a diagnostic hook.
+    await this.options.delivery.beforeSubmit?.(target);
+    this.pendingSubmissions++;
+    let submission;
+    try {
+      submission = await this.options.sessionPort.submitTurn(
+        this.options.workspaceId, formatPrompt(message, conversationReference, senderReference), context,
+      );
+    } catch (error) { this.finishSubmission(); throw error; }
     if (submission.status === "busy") {
-      await this.deliverWithRetry(
-        "reply",
-        () =>
-          this.options.delivery.reply(
-            target,
-            conversation.type === "direct" ? DIRECT_BUSY_REPLY : GROUP_BUSY_REPLY,
-          ),
+      this.finishSubmission();
+      await this.deliverRequest(
+        { id: `busy:${message.messageId}`, kind: "reply", target,
+          text: conversation.type === "direct" ? DIRECT_BUSY_REPLY : GROUP_BUSY_REPLY },
         {
           dedupeKey,
           conversationAlias: conversationReference.alias,
@@ -312,7 +347,14 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
         dedupeKey,
         conversationAlias: conversationReference.alias,
       });
-    }
+      const early = this.earlyEvents.get(submission.turnId);
+      this.earlyEvents.delete(submission.turnId);
+      this.finishSubmission();
+      await this.lifecycle(() => this.options.delivery.onTurnStarted?.({
+        turnId: submission.turnId, conversation, messageId: message.messageId,
+      }));
+      if (early) await this.handleTerminalEvent(early);
+    } else this.finishSubmission();
     return { status: "accepted", turnId: submission.turnId };
   }
 
@@ -329,20 +371,28 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
       conversation: normalized,
       ...(listener !== undefined ? { listener } : {}),
     });
+    void this.lifecycle(() => this.options.delivery.onTurnStarted?.({ turnId, conversation: normalized }));
     return true;
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
     this.unsubscribe();
     for (const [turnId, target] of this.turnTargets) {
+      void this.lifecycle(() => this.options.delivery.onTurnFinished?.({
+        turnId, status: "aborted",
+        conversation: target.type === "reply" ? target.target.conversation : target.conversation,
+        ...(target.type === "reply" ? { messageId: target.target.messageId } : {}),
+      }));
       if (target.type === "send") {
         this.notifyProactiveDelivery(target, { turnId, status: "abandoned" });
       }
     }
     this.turnTargets.clear();
     this.dedupe.clear();
+    this.earlyEvents.clear();
   }
 
   private assertActive(): void {
@@ -352,15 +402,25 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
   private async handleTerminalEvent(event: SessionPortTurnEvent): Promise<void> {
     if (this.disposed) return;
     const target = this.turnTargets.get(event.turnId);
-    if (!target) return;
+    if (!target) {
+      // An immediately completing Agent can finish before submitTurn resolves.
+      if (this.pendingSubmissions > 0 && this.earlyEvents.size < 1000) this.earlyEvents.set(event.turnId, event);
+      return;
+    }
     this.turnTargets.delete(event.turnId);
-    if (event.status !== "completed") return;
+    await this.lifecycle(() => this.options.delivery.onTurnFinished?.({
+      turnId: event.turnId, status: event.status,
+      conversation: target.type === "reply" ? target.target.conversation : target.conversation,
+      ...(target.type === "reply" ? { messageId: target.target.messageId } : {}),
+    }));
+    if (event.status !== "completed" && !this.options.delivery.notifyOnFailure) return;
 
-    const text = event.output?.length ? event.output : EMPTY_COMPLETION_REPLY;
+    const text = event.status === "completed"
+      ? (event.output?.length ? event.output : EMPTY_COMPLETION_REPLY)
+      : event.status === "failed" ? "本次处理失败，请稍后重试。" : "本次处理已中止。";
     if (target.type === "reply") {
-      await this.deliverWithRetry(
-        "reply",
-        () => this.options.delivery.reply(target.target, text),
+      await this.deliverRequest(
+        { id: event.turnId, kind: "reply", target: target.target, text },
         {
           dedupeKey: target.dedupeKey,
           turnId: event.turnId,
@@ -370,12 +430,36 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
       );
       return;
     }
-    const status = await this.deliverWithRetry(
-      "send",
-      () => this.options.delivery.send(target.conversation, text),
+    const status = await this.deliverRequest(
+      { id: event.turnId, kind: "send", conversation: target.conversation, text },
       { turnId: event.turnId, providerId: this.options.providerId },
     );
     this.notifyProactiveDelivery(target, { turnId: event.turnId, status });
+  }
+
+  private finishSubmission(): void {
+    this.pendingSubmissions--;
+    if (this.pendingSubmissions === 0) this.earlyEvents.clear();
+  }
+
+  private async lifecycle(callback: () => void | Promise<void> | undefined): Promise<void> {
+    try { await callback(); } catch {
+      this.logger.error({ attempt: 1, delivery: "reply", providerId: this.options.providerId }, "Chat Provider lifecycle notification failed");
+    }
+  }
+
+  private async deliverRequest(
+    request: ChatDeliveryRequest,
+    context: { dedupeKey?: string; turnId?: string; providerId?: string; conversationAlias?: string },
+  ): Promise<ProactiveDeliveryEvent["status"]> {
+    const status = await this.deliverWithRetry(request.kind, () => {
+      if (this.options.delivery.deliver) return this.options.delivery.deliver(request);
+      return request.kind === "reply"
+        ? this.options.delivery.reply(request.target, request.text)
+        : this.options.delivery.send(request.conversation, request.text);
+    }, context);
+    await this.lifecycle(() => this.options.delivery.onDeliverySettled?.(request, status));
+    return status;
   }
 
   private notifyProactiveDelivery(
@@ -436,7 +520,7 @@ class DefaultHeadlessChatClient implements HeadlessChatClient {
         retryAfterMs >= 0
           ? retryAfterMs
           : fallbackDelay(attempt);
-      await sleep(delay);
+      await sleep(delay, this.lifetime.signal);
     }
     return "failed";
   }

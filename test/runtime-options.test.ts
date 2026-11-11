@@ -87,20 +87,25 @@ describe("parseRuntimeArgs", () => {
       .toBe("engineering");
   });
 
-  it("selects OpenCode Zen Go with the default kimi-k3 model", () => {
+  it.each([
+    { providerId: "anthropic", modelId: "claude-opus-5-5" },
+    { providerId: "openrouter", modelId: "moonshotai/kimi-k2.7-code" },
+    { providerId: "minimax", modelId: "MiniMax-M3" },
+    { providerId: "opencode-go", modelId: "kimi-k3.1-pro" },
+  ])("selects $providerId with the default $modelId model", ({ providerId, modelId }) => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
-    const parsed = parseRuntimeArgs(["--provider", "opencode-go"]);
+    const parsed = parseRuntimeArgs(["--provider", providerId]);
     expect(parsed.options).toMatchObject({
-      providerId: "opencode-go",
-      modelId: "kimi-k3",
+      providerId,
+      modelId,
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining([
         "--provider",
-        "opencode-go",
+        providerId,
         "--model",
-        "kimi-k3",
+        modelId,
       ]),
     );
     expect(parsed.piArgs).not.toContain("--thinking");

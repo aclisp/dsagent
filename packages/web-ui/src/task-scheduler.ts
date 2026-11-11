@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { ProactiveDeliveryListener } from "@aclisp/dsagent-chat-client";
 import type {
@@ -96,6 +96,7 @@ interface RuntimeRun {
   finishedAt?: string;
   turnId?: string;
   errorCode?: string;
+  warnings?: readonly string[];
   cancelled: boolean;
   cancelWait?: () => void;
 }
@@ -153,12 +154,19 @@ export interface CreateTaskSchedulerOptions {
   random?: () => number;
   retryDelaysMs?: readonly number[];
   watch?: boolean;
+  startPaused?: boolean;
+  strictInitialConfig?: boolean;
+  onStatusChange?: () => void;
+  /** Stat reconciliation for runtimes with unreliable directory notifications. */
+  configPollIntervalMs?: number;
 }
 
 export interface TaskScheduler {
   readonly scheduleFilePath: string;
   readonly statusFilePath: string;
   reload(): Promise<void>;
+  start(): void;
+  getStatus(): string;
   dispose(): Promise<void>;
 }
 
@@ -223,6 +231,9 @@ function copyRun(value: unknown): RuntimeRun | undefined {
     ...(typeof value.errorCode === "string"
       ? { errorCode: value.errorCode }
       : {}),
+    ...(Array.isArray(value.warnings) && value.warnings.every(warning => typeof warning === "string")
+      ? { warnings: [...value.warnings] }
+      : {}),
   };
 }
 
@@ -254,6 +265,7 @@ function publicRun(run: RuntimeRun): Record<string, unknown> {
     ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
     ...(run.turnId !== undefined ? { turnId: run.turnId } : {}),
     ...(run.errorCode !== undefined ? { errorCode: run.errorCode } : {}),
+    ...(run.warnings !== undefined ? { warnings: run.warnings } : {}),
   };
 }
 
@@ -302,6 +314,7 @@ class DefaultTaskScheduler implements TaskScheduler {
   readonly scheduleFilePath: string;
   readonly statusFilePath: string;
   private readonly directoryPath: string;
+  private paused: boolean;
   private readonly now: () => Date;
   private readonly random: () => number;
   private readonly retryDelaysMs: readonly number[];
@@ -320,6 +333,8 @@ class DefaultTaskScheduler implements TaskScheduler {
   private observedConfig: ScheduleConfig | undefined;
   private activeContentHash: string | null = null;
   private watcher: FSWatcher | undefined;
+  private configPollTimer: NodeJS.Timeout | undefined;
+  private configPollTask: Promise<void> | undefined;
   private reloadTimer: NodeJS.Timeout | undefined;
   private statusVerifyTimer: NodeJS.Timeout | undefined;
   private recoveryTimer: NodeJS.Timeout | undefined;
@@ -335,6 +350,7 @@ class DefaultTaskScheduler implements TaskScheduler {
 
   private constructor(options: CreateTaskSchedulerOptions) {
     this.options = options;
+    this.paused = options.startPaused ?? false;
     this.directoryPath = path.join(options.workspacePath, SCHEDULE_DIRECTORY);
     this.scheduleFilePath = path.join(this.directoryPath, SCHEDULE_FILE);
     this.statusFilePath = path.join(this.directoryPath, STATUS_FILE);
@@ -377,6 +393,30 @@ class DefaultTaskScheduler implements TaskScheduler {
     const attempt = this.reloadChain.then(() => this.loadAndApply(false));
     this.reloadChain = attempt.catch(() => undefined);
     return attempt;
+  }
+
+  start(): void {
+    if (this.disposed) throw new Error("Scheduler is disposed");
+    this.paused = false;
+    // Preparation/listen can cross a deadline. Normalize missed one-time tasks
+    // again rather than turning startup latency into catch-up execution.
+    const missed = [...this.runtimes.values()].some(runtime =>
+      runtime.task.enabled && runtime.task.type === "once" && runtime.task.atDate.getTime() <= this.now().getTime());
+    if (!missed) { this.scheduleJobs(); void this.persistStatus(false); return; }
+    void this.reload().catch(error => {
+      this.options.logger.error({ err: error }, "Scheduler activation reload failed");
+      this.statusWritable = false;
+      this.stopJobs();
+      this.scheduleStatusRecovery();
+      try { this.options.onStatusChange?.(); } catch { /* Diagnostic observer. */ }
+    });
+  }
+
+  getStatus(): string {
+    if (this.disposed) return "stopped";
+    if (!this.statusWritable) return "unavailable (status storage failed)";
+    if (this.observedConfig && !this.observedConfig.valid) return "invalid configuration";
+    return `${this.paused ? "prepared" : "running"} (${this.runtimes.size} tasks; ${this.options.timezone})`;
   }
 
   private handleTurnStarted(event: SessionPortTurnStartedEvent): void {
@@ -490,6 +530,7 @@ class DefaultTaskScheduler implements TaskScheduler {
     this.loadedAt = this.now().toISOString();
 
     if (!config.valid) {
+      if (initial && this.options.strictInitialConfig) throw new Error("Invalid scheduled task configuration");
       this.observedConfig = config;
       const written = await this.persistStatus(initial);
       if (!written && initial) throw new Error("Could not write schedules.status.json");
@@ -498,6 +539,7 @@ class DefaultTaskScheduler implements TaskScheduler {
 
     const immutableErrors = this.deliveryImmutabilityErrors(config);
     if (immutableErrors.length > 0) {
+      if (initial && this.options.strictInitialConfig) throw new Error("Invalid scheduled task delivery configuration");
       this.observedConfig = {
         valid: false,
         contentHash: config.contentHash,
@@ -670,6 +712,33 @@ class DefaultTaskScheduler implements TaskScheduler {
   }
 
   private startWatcher(): void {
+    const interval = this.options.configPollIntervalMs ?? (process.versions.bun ? 250 : 0);
+    if (interval > 0) {
+      const stamps = new Map<string, string>();
+      this.configPollTimer = setInterval(() => {
+        if (this.disposed || this.configPollTask) return;
+        this.configPollTask = (async () => {
+          for (const file of [this.scheduleFilePath, this.statusFilePath]) {
+            let stamp: string;
+            try {
+              const value = await stat(file);
+              stamp = `${value.mtimeMs}:${value.ctimeMs}:${value.size}:${value.ino}`;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+              stamp = "missing";
+            }
+            if (this.disposed) return;
+            if (stamps.get(file) === stamp) continue;
+            if (file === this.scheduleFilePath) await this.reload();
+            else await this.verifyStatusFile();
+            stamps.set(file, stamp);
+          }
+        })().catch(error => {
+          if (!this.disposed) this.options.logger.error({ err: error }, "Schedule reconciliation failed");
+        }).finally(() => { this.configPollTask = undefined; });
+      }, interval);
+      this.configPollTimer.unref();
+    }
     this.watcher = watch(
       this.directoryPath,
       { encoding: "utf8", persistent: false },
@@ -729,7 +798,7 @@ class DefaultTaskScheduler implements TaskScheduler {
       taskCount: config?.valid === true ? config.tasks.length : 0,
       activeTaskCount: this.runtimes.size,
       sourceDeliveryAvailable: this.options.sourceDelivery !== undefined,
-      operational: true,
+      operational: !this.disposed && !this.paused,
       tasks: [...this.runtimes.values()].map((runtime) => ({
         id: runtime.task.id,
         definitionHash: runtime.definitionHash,
@@ -787,6 +856,8 @@ class DefaultTaskScheduler implements TaskScheduler {
       this.options.logger.error({ err: error }, "Schedule status write failed");
       if (!initial) this.scheduleStatusRecovery();
       return false;
+    } finally {
+      try { this.options.onStatusChange?.(); } catch { /* Diagnostic observer. */ }
     }
   }
 
@@ -800,7 +871,7 @@ class DefaultTaskScheduler implements TaskScheduler {
   }
 
   private scheduleJobs(): void {
-    if (this.disposed || !this.statusWritable || !this.observedConfig?.valid) return;
+    if (this.disposed || this.paused || !this.statusWritable || !this.observedConfig?.valid) return;
     for (const runtime of this.runtimes.values()) {
       if (!runtime.task.enabled || runtime.job) continue;
       if (runtime.task.delivery === "source" && runtime.sourceAlias === undefined) {
@@ -1154,6 +1225,7 @@ class DefaultTaskScheduler implements TaskScheduler {
       this.turnContexts.delete(event.turnId);
       const { runtime, run } = context;
       run.status = event.status;
+      if (event.status === "completed" && event.warnings?.length) run.warnings = [...event.warnings];
       run.finishedAt = this.now().toISOString();
       if (event.status !== "completed" && run.deliveryStatus === "pending") {
         run.deliveryStatus = "not_applicable";
@@ -1191,6 +1263,7 @@ class DefaultTaskScheduler implements TaskScheduler {
     if (this.disposed) return;
     this.disposed = true;
     this.watcher?.close();
+    if (this.configPollTimer) clearInterval(this.configPollTimer);
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     if (this.statusVerifyTimer) clearTimeout(this.statusVerifyTimer);
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
@@ -1212,6 +1285,8 @@ class DefaultTaskScheduler implements TaskScheduler {
     this.turnContexts.clear();
     this.activeSourceTurns.clear();
     this.pendingSourceBindings.clear();
+    await this.configPollTask;
+    await this.reloadChain;
     await this.persistStatus(true);
   }
 }

@@ -18,6 +18,11 @@ if (flags.includes("--update-bundled-tools")) {
       process.exitCode = 1;
     }
   }
+} else if (args[0] === "channels") {
+  const { getDSCodeHome } = await import("../packages/core/dist/home.js");
+  const { runWeChatCli } = await import("../packages/wechat/dist/cli.js");
+  try { await runWeChatCli(args.slice(1), getDSCodeHome()); }
+  catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
 } else if (extensionFlag) {
   process.stderr.write("User extensions are not supported in the standalone CLI. Local skills and MCP remain available.\n");
   process.exitCode = 1;

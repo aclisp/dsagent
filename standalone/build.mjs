@@ -54,6 +54,7 @@ async function buildPlatform(platform) {
     const entry = path.join(work, "cli.mjs");
     fs.writeFileSync(entry, `import ${JSON.stringify(path.join(root, "standalone/cli.mjs"))};\n`);
     const assets = { "package.json": piPackage, ...await prepareTools(platform, work) };
+    assets["skills/scheduled-tasks/SKILL.md"] = path.join(root, "packages/core/dist/builtin-skills/scheduled-tasks/SKILL.md");
     for (const [name, file] of Object.entries(webAssetPaths(root))) {
       // Bun must not see the same Marked module as both executable JS (TUI) and
       // a file asset (browser). Give the embedded browser copy its own path.

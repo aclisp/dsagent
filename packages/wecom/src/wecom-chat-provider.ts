@@ -111,6 +111,7 @@ export interface CreateWeComChatProviderOptions {
 export interface WeComChatProviderRuntimeOptions {
   workspacePath?: string;
   maxUploadBytes?: number;
+  logger?: WeComChatProviderLogger;
 }
 
 export type WeComEnvironment = Readonly<
@@ -446,6 +447,22 @@ function textFitsWeComLimit(text: string): boolean {
 
 export class WeComChatProvider implements ChatProvider {
   readonly providerId = "wecom";
+  get resourceKey(): string { return `wecom:${this.botId}`; }
+  private status = "stopped";
+  private readonly statusListeners = new Set<(status: string) => void>();
+  getStatus(): string { return this.status; }
+  subscribeStatus(listener: (status: string) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => { this.statusListeners.delete(listener); };
+  }
+  private setStatus(status: string): void {
+    if (this.status === status) return;
+    this.status = status;
+    for (const listener of this.statusListeners) try { listener(status); } catch { /* Diagnostic observer. */ }
+  }
+  private readonly authenticated = () => { if (!this.disposed) this.setStatus("connected"); };
+  private readonly disconnected = () => { if (!this.disposed && !this.status.startsWith("failed")) this.setStatus("disconnected"); };
+  private readonly reconnecting = () => { if (!this.disposed) this.setStatus("reconnecting"); };
   private readonly botId: string;
   private readonly botName: string;
   private readonly client: WeComClient;
@@ -459,6 +476,7 @@ export class WeComChatProvider implements ChatProvider {
     void this.receive(frame);
   };
   private readonly handleClientError = (error: unknown): void => {
+    if (!this.disposed) this.setStatus("failed (connection or authentication error)");
     const message = error instanceof Error ? error.message : String(error);
     this.logger.error(`WeCom Chat Provider connection error: ${message}`);
   };
@@ -469,6 +487,11 @@ export class WeComChatProvider implements ChatProvider {
     this.botId = requiredOption("botId", options.botId);
     const secret = requiredOption("secret", options.secret);
     this.botName = requiredOption("botName", options.botName);
+    if (options.wsUrl?.trim()) {
+      const url = new URL(options.wsUrl.trim());
+      if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("WeCom endpoint must use ws or wss");
+      if (url.hash) throw new Error("WeCom endpoint must not have a URL fragment");
+    }
     this.logger = options.logger ?? defaultLogger;
     const workspacePath = options.workspacePath?.trim();
     this.workspacePath =
@@ -524,12 +547,21 @@ export class WeComChatProvider implements ChatProvider {
       this.handleMessage as unknown as EventListener,
     );
     this.client.on("error", this.handleClientError as EventListener);
+    this.client.on("authenticated", this.authenticated);
+    this.client.on("disconnected", this.disconnected);
+    this.client.on("reconnecting", this.reconnecting);
+  }
+
+  prepare(): () => void {
+    this.assertActive();
+    return () => this.start();
   }
 
   start(): void {
     this.assertActive();
     if (this.started) return;
     this.started = true;
+    this.setStatus("connecting");
     try {
       this.client.connect();
     } catch (error) {
@@ -611,6 +643,8 @@ export class WeComChatProvider implements ChatProvider {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.setStatus("stopped");
+    this.statusListeners.clear();
     const wasStarted = this.started;
     this.started = false;
     this.listeners.clear();
@@ -637,6 +671,9 @@ export class WeComChatProvider implements ChatProvider {
       this.handleMessage as unknown as EventListener,
     );
     this.client.off("error", this.handleClientError as EventListener);
+    this.client.off("authenticated", this.authenticated);
+    this.client.off("disconnected", this.disconnected);
+    this.client.off("reconnecting", this.reconnecting);
     if (wasStarted) this.client.disconnect();
   }
 
@@ -815,6 +852,7 @@ export function createWeComChatProviderFromEnv(
     botId: botId as string,
     secret: secret as string,
     botName: botName as string,
+    ...(runtime.logger ? { logger: runtime.logger } : {}),
     ...(wsUrl !== undefined ? { wsUrl } : {}),
     ...(runtime.workspacePath !== undefined
       ? { workspacePath: runtime.workspacePath }

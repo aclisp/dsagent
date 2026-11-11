@@ -102,6 +102,32 @@ describe("Web network preferences", () => {
 });
 
 describe("TUI Web ownership", () => {
+  it("rolls back a synchronous activation failure and keeps the TUI available", async () => {
+    const h = await setup();
+    h.service.activate = vi.fn(() => { throw new Error("transport initialization failed"); });
+    await h.run("web");
+    expect(h.service.close).toHaveBeenCalledOnce();
+    expect(h.ui.notify).toHaveBeenLastCalledWith("transport initialization failed", "error");
+    await h.run("web", "status");
+    expect(h.ui.notify).toHaveBeenLastCalledWith("Web is stopped.", "info");
+  });
+
+  it("commits background admission only after rechecking TUI idleness and reports live component states", async () => {
+    const h = await setup();
+    h.service.activate = vi.fn();
+    h.service.status = vi.fn(() => "Scheduler: running\nwechat: connecting");
+    vi.mocked(h.runtime.assertIdle).mockImplementationOnce(() => {}).mockImplementationOnce(() => { throw new Error("TUI became busy"); });
+    await h.run("web");
+    expect(h.service.activate).not.toHaveBeenCalled(); expect(h.service.close).toHaveBeenCalledOnce();
+    await h.run("web");
+    expect(h.service.activate).toHaveBeenCalledOnce();
+    await h.run("web", "status");
+    expect(h.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining("wechat: connecting"), "info");
+    h.start.mock.calls.at(-1)![0].onNotice?.("wechat: paused (session expired)");
+    expect(h.ui.notify).toHaveBeenLastCalledWith("wechat: paused (session expired)", "warning");
+    await h.controller.close();
+  });
+
   it("reuses the workspace ID across handoffs and TUI restarts while passing the current conversation", async () => {
     const first = await setup();
     await first.run("web");

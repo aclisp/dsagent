@@ -762,6 +762,7 @@ function toolResultOutcome(result, isError) {
 }
 
 function updateWorkProcess(process) {
+  process.details.dataset.status = process.running ? "running" : (process.status ?? "unknown");
   const count = process.steps.size;
   if (process.running) {
     process.summaryText.textContent = `正在处理 · ${count} 项操作`;
@@ -956,12 +957,18 @@ function renderStatus() {
     return;
   }
   const label = WORKING_PHASE_LABELS[state.workingPhase] ?? "正在处理";
-  statusText.textContent = state.workingSeconds === null
-    ? label
-    : `${label} · ${state.workingSeconds} 秒`;
+  if (state.workingSeconds === null) {
+    statusText.textContent = label;
+    return;
+  }
+  const seconds = document.createElement("span");
+  seconds.className = "status-seconds";
+  seconds.textContent = String(state.workingSeconds);
+  statusText.replaceChildren(`${label} · `, seconds, " 秒");
 }
 
 function focusMessageInput() {
+  if (!window.matchMedia("(pointer: fine)").matches) return;
   if (state.booting || !state.connected || state.running || state.submitting) return;
   requestAnimationFrame(() => {
     if (state.booting || !state.connected || state.running || state.submitting) return;
@@ -1125,6 +1132,8 @@ function friendlyOptionLabel(option) {
   const labels = {
     "Allow once": "仅本次允许",
     "Allow this command for this session": "本会话允许此命令",
+    "Allow this tool for this session": "本会话允许此工具",
+    "Allow all tools from this server for this session": "本会话允许此服务的所有工具",
     Deny: "拒绝",
     "Trust this project": "信任此工作区",
     "Trust for this session only": "仅本次会话信任",
@@ -1134,12 +1143,7 @@ function friendlyOptionLabel(option) {
   if (labels[option]) return labels[option];
   const parentMatch = /^Trust parent folder \((.*)\)$/i.exec(option);
   if (parentMatch) return `信任上级目录（${parentMatch[1]}）`;
-  return option
-    .replace(/\s+—\s+API key$/i, " · API 密钥")
-    .replace(/\s+—\s+ChatGPT plan$/i, " · ChatGPT 方案")
-    .replace(/\s+—\s+Claude account or API key$/i, " · Claude 账号或 API 密钥")
-    .replace(/\s+—\s+Coding Plan API key$/i, " · Coding Plan API 密钥")
-    .replace(/\s+—\s+account or API key$/i, " · 账号或 API 密钥");
+  return option;
 }
 
 function friendlyRequest(request) {

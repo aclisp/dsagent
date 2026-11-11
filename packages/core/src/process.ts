@@ -50,16 +50,9 @@ export function runProcess(
     let timedOut = false;
     let settled = false;
 
-    const append = (target: "stdout" | "stderr", chunk: Buffer): void => {
-      if (target === "stdout") {
-        stdoutBuffer.append(chunk.toString("utf8"));
-      } else {
-        stderrBuffer.append(chunk.toString("utf8"));
-      }
-    };
-
-    child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
-    child.stderr.on("data", (chunk: Buffer) => append("stderr", chunk));
+    // Each stream retains incomplete UTF-8 between chunks and flushes it at EOF.
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => stdoutBuffer.append(chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => stderrBuffer.append(chunk));
 
     const stop = (): void => {
       if (child.killed) return;
@@ -159,13 +152,17 @@ export class BoundedOutput {
       this.head += remaining.slice(0, take);
       remaining = remaining.slice(take);
     }
-    if (remaining) {
+    if (remaining && this.tailLimit > 0) {
       this.tail = `${this.tail}${remaining}`.slice(-this.tailLimit);
     }
   }
 
   value(): string {
     if (!this.truncated) return this.head + this.tail;
-    return `${this.head}\n... output truncated; tail follows ...\n${this.tail}`;
+    // A pair split between the stored parts must stay intact while all output
+    // fits. Only drop cut characters when the truncation notice separates them.
+    const head = this.head.replace(/[\uD800-\uDBFF]$/u, "");
+    const tail = this.tail.replace(/^[\uDC00-\uDFFF]/u, "");
+    return `${head}\n... output truncated; tail follows ...\n${tail}`;
   }
 }
