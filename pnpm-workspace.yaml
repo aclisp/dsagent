@@ -9,11 +9,11 @@ overrides:
   'vite>tsx': '-'
 
 catalog:
-  '@earendil-works/pi-agent-core': 1.5.1
-  '@earendil-works/pi-ai': 1.5.1
-  '@earendil-works/pi-coding-agent': 1.5.1
-  '@earendil-works/pi-tui': 1.5.1
-  '@earendil-works/pi-mcp': 1.5.1
+  '@earendil-works/pi-agent-core': 1.5.2
+  '@earendil-works/pi-ai': 1.5.2
+  '@earendil-works/pi-coding-agent': 1.5.2
+  '@earendil-works/pi-tui': 1.5.2
+  '@earendil-works/pi-mcp': 1.5.2
   '@fastify/cors': 11.3.1
   '@fastify/multipart': 10.1.4
   '@modelcontextprotocol/sdk': 1.32.1
@@ -41,11 +41,11 @@ allowBuilds:
 
 # Keep the already-pinned pi release installable during the one-day age window.
 minimumReleaseAgeExclude:
-  - '@earendil-works/pi-agent-core@1.5.1'
-  - '@earendil-works/pi-ai@1.5.1'
-  - '@earendil-works/pi-codemode@1.5.1'
-  - '@earendil-works/pi-coding-agent@1.5.1'
-  - '@earendil-works/pi-mcp@1.5.1'
-  - '@earendil-works/pi-schema@1.5.1'
-  - '@earendil-works/pi-telemetry@1.5.1'
-  - '@earendil-works/pi-tui@1.5.1'
+  - '@earendil-works/pi-agent-core@1.5.2'
+  - '@earendil-works/pi-ai@1.5.2'
+  - '@earendil-works/pi-codemode@1.5.2'
+  - '@earendil-works/pi-coding-agent@1.5.2'
+  - '@earendil-works/pi-mcp@1.5.2'
+  - '@earendil-works/pi-schema@1.5.2'
+  - '@earendil-works/pi-telemetry@1.5.2'
+  - '@earendil-works/pi-tui@1.5.2'
