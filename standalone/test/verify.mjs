@@ -90,11 +90,16 @@ const server = http.createServer(async (request, response) => {
   const childCall = plannedTool?.child && toolIssued && !childReadIssued && childProcess;
   let currentTool = childCall ? {name:"read",args:{path:"home/forbidden.js"}} : plannedTool;
   let call = plannedTool && !toolIssued || childCall;
-  if (plannedTool?.child && toolIssued && !childProcess && !JSON.stringify(payload.input).includes("exit_code: 0")) {
-    const processId = /process_id: (\d+)/.exec(JSON.stringify(payload.input))?.[1];
-    currentTool = {name:"write_stdin",args:{process_id:processId,...(!childEofSent ? {eof:true} : {}),yield_time_ms:30000}};
-    childEofSent = true;
-    call = true;
+  if (plannedTool?.name === "exec_command" && toolIssued && !childProcess) {
+    // Older running results remain in history after completion. Poll only the
+    // latest result, and stop on any terminal outcome (including nonzero exit).
+    const output = (payload.input ?? []).filter(item => item.type === "function_call_output").at(-1)?.output;
+    const processId = typeof output === "string" ? /\nprocess_id: (\d+)\nstatus: running\n/.exec(output)?.[1] : undefined;
+    if (processId !== undefined) {
+      currentTool = {name:"write_stdin",args:{process_id:processId,...(plannedTool.child && !childEofSent ? {eof:true} : {}),yield_time_ms:30000}};
+      if (plannedTool.child) childEofSent = true;
+      call = true;
+    }
   }
   if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
   if (call) toolIssued = true;
@@ -310,17 +315,21 @@ try {
     {name:"read",args:{path:"image.png"}},
     {name:"find",args:{pattern:"image.png"}},
     {name:"grep",args:{pattern:"USER_EXTENSION_EXECUTED",path:"home/forbidden.js"}},
-    {name:"exec_command",args:{cmd:windows
-      ? "Get-Location; (Get-Command rg.exe).Source; (Get-Command fd.exe).Source; rg --version; fd --version; if (Get-Command node.exe,bun.exe -ErrorAction SilentlyContinue) { throw 'Runtime unexpectedly available on PATH' }"
-      : "pwd; command -v rg; command -v fd; rg --version; fd --version"}},
+    {name:"exec_command",args:{yield_time_ms:0,cmd:windows
+      ? "Start-Sleep -Milliseconds 150; Get-Location; (Get-Command rg.exe).Source; (Get-Command fd.exe).Source; rg --version; fd --version; if (Get-Command node.exe,bun.exe -ErrorAction SilentlyContinue) { throw 'Runtime unexpectedly available on PATH' }"
+      : "sleep 0.15; pwd; command -v rg; command -v fd; rg --version; fd --version"}},
+    {name:"exec_command",probe:"nonzero exit",expectedExitCode:7,args:{yield_time_ms:0,cmd:windows
+      ? "Start-Sleep -Milliseconds 150; Write-Output 'COMMAND_FAILED_SENTINEL'; exit 7"
+      : "sleep 0.15; printf 'COMMAND_FAILED_SENTINEL\\n'; exit 7"}},
     {name:"apply_patch",args:{input:"*** Begin Patch\n*** Add File: patched.txt\n+standalone patch\n*** End Patch"}},
     ...["dscode", ...(windows ? ["DSCode.EXE"] : [])].map(executable => ({name:"exec_command",child:true,executable,
       args:{cmd:`${executable} -C "${scratch}${windows ? "\\" : ""}" --base-url ${base[1]} --model standalone-child --effort low --permission auto --tools read,find,grep,exec_command,write_stdin,apply_patch --no-mcp --no-session -p 'Read home/forbidden.js and return file evidence'`,yield_time_ms:0,timeout_ms:0}})),
   ]) {
-    await check(`real tool execution: ${tool.child ? `CLI child (${tool.executable})` : tool.name}`, async () => {
+    await check(`real tool execution: ${tool.child ? `CLI child (${tool.executable})` : tool.probe ?? tool.name}`, async () => {
       plannedTool = tool; toolIssued = false; toolOutputs = []; childReadIssued = false; childEofSent = false;
       // JSON parent and child must work without extracting a native UI addon.
       const result = await run("dscode", [...base, ...(tool.child ? ["--permission", "full"] : []), "--tools", "read,find,grep,exec_command,write_stdin,apply_patch", "--mode", "json", "-p", "run tool once"], false, false, tool.child === true);
+      assert.equal(result.timedOut, false, result.stdout + result.stderr);
       assert.equal(result.code, 0, result.stderr);
       const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
       const finished = events.find(event => event.type === "tool_execution_end" && event.toolName === tool.name);
@@ -346,12 +355,21 @@ try {
         assert.match(JSON.stringify(toolOutputs), /USER_EXTENSION_EXECUTED/);
       }
       else {
-        assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
-        const normalizedOutput = JSON.stringify(toolOutputs).replace(/\\+/g, "/");
-        assert.match(normalizedOutput, /home\/bin\/rg/);
-        assert.match(normalizedOutput, /home\/bin\/fd/);
-        assert.match(JSON.stringify(toolOutputs), /ripgrep 15\.2\.0/);
-        assert.match(JSON.stringify(toolOutputs), /fd 10\.5\.0/);
+        assert.equal(finished.result.details.running, true, JSON.stringify(finished));
+        const terminal = events.filter(event => event.type === "tool_execution_end" && event.toolName === "write_stdin").at(-1);
+        assert.ok(terminal, "Command returned running but was never polled: " + JSON.stringify(finished));
+        assert.equal(terminal.result.details.running, false, JSON.stringify(terminal));
+        assert.equal(terminal.result.details.exitCode, tool.expectedExitCode ?? 0, JSON.stringify(terminal));
+        if (tool.expectedExitCode !== undefined) {
+          assert.match(JSON.stringify(toolOutputs), /COMMAND_FAILED_SENTINEL/);
+        } else {
+          assert.match(JSON.stringify(toolOutputs), /dscode-standalone-run-/);
+          const normalizedOutput = JSON.stringify(toolOutputs).replace(/\\+/g, "/");
+          assert.match(normalizedOutput, /home\/bin\/rg/);
+          assert.match(normalizedOutput, /home\/bin\/fd/);
+          assert.match(JSON.stringify(toolOutputs), /ripgrep 15\.2\.0/);
+          assert.match(JSON.stringify(toolOutputs), /fd 10\.5\.0/);
+        }
       }
     });
   }
@@ -387,11 +405,12 @@ try {
         if (sample.blocked) assert.match(JSON.stringify(toolOutputs),/interactive approval UI/);
         else {
           const events=result.stdout.trim().split("\n").map(line=>JSON.parse(line));
-          const finished=events.find(event=>event.type==="tool_execution_end" && event.toolName==="exec_command");
+          const finished=events.filter(event=>event.type==="tool_execution_end" && (event.toolName==="exec_command" || event.toolName==="write_stdin")).at(-1);
           assert.ok(finished,result.stdout);
           assert.equal(finished.isError,false,JSON.stringify(finished));
+          assert.equal(finished.result.details.running,false,JSON.stringify(finished));
           assert.equal(finished.result.details.exitCode,0,JSON.stringify(finished));
-          if (sample.output) assert.ok(JSON.stringify(finished.result).includes(sample.output),JSON.stringify(finished));
+          if (sample.output) assert.ok(JSON.stringify(toolOutputs).includes(sample.output),JSON.stringify(toolOutputs));
         }
         assert.equal(await fs.readFile(target,"utf8"),"APPROVAL_FIXTURE");
       });

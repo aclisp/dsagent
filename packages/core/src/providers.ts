@@ -18,8 +18,8 @@ export type SupportedProviderId = (typeof SUPPORTED_PROVIDER_IDS)[number];
 
 const DEFAULT_MODELS: Record<SupportedProviderId, string> = {
   deepseek: "deepseek-flash",
-  "openai-codex": "gpt-5.6-sol",
-  openai: "gpt-5.6-sol",
+  "openai-codex": "gpt-6.1-terra",
+  openai: "gpt-6.1-terra",
   anthropic: "claude-opus-5-5",
   openrouter: "moonshotai/kimi-k2.7-code",
   zai: "glm-5.3",

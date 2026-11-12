@@ -98,7 +98,7 @@ dscode login opencode-go   # OpenCode Zen Go API key
 The selected provider and model are saved for later runs. Override them at any time:
 
 ```bash
-dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
+dscode --provider openai-codex --model gpt-6.1-terra -C /path/to/project
 dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 

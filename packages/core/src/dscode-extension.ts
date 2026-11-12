@@ -1418,6 +1418,15 @@ function colorPatch(
 function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
   const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
     theme ? normalizeDisplayText(text).split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
+  const showMainProcessExit = result.exitSignal !== undefined ||
+    (result.exitedAfterMs !== undefined && (result.running || result.timedOut));
+  const exitDescription = result.exitSignal ? `terminated by ${result.exitSignal}` : "exited";
+  const exitTiming = result.exitedAfterMs === undefined
+    ? ""
+    : `${result.exitSignal ? "," : ""} ${result.exitedAfterMs} ms after start`;
+  const waitingForOutput = result.running && result.timeoutReason !== "output_open"
+    ? "; waiting for output pipes to close"
+    : "";
   return [
     paint(result.output.trimEnd()),
     paint(`process_id: ${result.processId}`),
@@ -1428,9 +1437,8 @@ function formatManagedResult(result: ManagedProcessResult, theme?: Theme): strin
       String(result.exitCode),
       result.exitCode === null ? "dim" : result.exitCode !== 0 ? "error" : "toolOutput",
     )]),
-    ...(result.exitSignal ? [paint(`exit_signal: ${result.exitSignal}`)] : []),
-    ...(result.exitedAfterMs === undefined ? [] : [paint(`process_exited_after_ms: ${result.exitedAfterMs}`)]),
     ...(result.timedOut ? [paint("timed_out: true", "error")] : []),
+    ...(showMainProcessExit ? [paint(`main_process_exit: ${exitDescription}${exitTiming}${waitingForOutput}`)] : []),
     ...(result.timeoutReason ? [paint("timeout_reason: " + (result.timeoutReason === "output_open"
       ? "output pipes were still open after the main process exited."
       : "main process was still running at the deadline."))] : []),

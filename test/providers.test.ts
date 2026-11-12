@@ -30,9 +30,9 @@ describe("DSCode model providers", () => {
   it("uses provider-appropriate model and effort defaults", () => {
     expect(defaultModelForProvider("deepseek")).toBe("deepseek-flash");
     expect(defaultEffortForProvider("deepseek")).toBe("max");
-    expect(defaultModelForProvider("openai-codex")).toBe("gpt-5.6-sol");
+    expect(defaultModelForProvider("openai-codex")).toBe("gpt-6.1-terra");
     expect(defaultEffortForProvider("openai-codex")).toBe("medium");
-    expect(defaultModelForProvider("openai")).toBe("gpt-5.6-sol");
+    expect(defaultModelForProvider("openai")).toBe("gpt-6.1-terra");
     expect(defaultModelForProvider("anthropic")).toBe("claude-opus-5-5");
     expect(defaultModelForProvider("openrouter")).toBe("moonshotai/kimi-k2.7-code");
     expect(defaultModelForProvider("zai")).toBe("glm-5.3");
