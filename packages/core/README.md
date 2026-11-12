@@ -58,7 +58,7 @@ Select another supported provider without changing the host integration:
 const client = createDSCodeRpcClient({
   cwd: "/path/to/project",
   provider: "openai-codex",
-  model: "gpt-5.6-sol",
+  model: "gpt-6.1-terra",
 });
 ```
 

@@ -59,24 +59,31 @@ describe("parseRuntimeArgs", () => {
     expect(parsed.piArgs).toContain("inspect this repo");
   });
 
-  it("selects the current Codex subscription model without overriding saved effort", () => {
+  it.each(["openai-codex", "openai"])("selects the default %s model without overriding saved effort", (providerId) => {
     delete process.env.DSCODE_MODEL;
     delete process.env.DSCODE_EFFORT;
-    const parsed = parseRuntimeArgs(["--provider", "openai-codex", "inspect this image"]);
+    const parsed = parseRuntimeArgs(["--provider", providerId, "inspect this image"]);
 
     expect(parsed.options).toMatchObject({
-      providerId: "openai-codex",
-      modelId: "gpt-5.6-sol",
+      providerId,
+      modelId: "gpt-6.1-terra",
     });
     expect(parsed.piArgs).toEqual(
       expect.arrayContaining([
         "--provider",
-        "openai-codex",
+        providerId,
         "--model",
-        "gpt-5.6-sol",
+        "gpt-6.1-terra",
       ]),
     );
     expect(parsed.piArgs).not.toContain("--thinking");
+  });
+
+  it.each(["openai-codex", "openai"])("preserves explicit %s model selections", (providerId) => {
+    process.env.DSCODE_MODEL = "gpt-5.6-sol";
+    expect(parseRuntimeArgs(["--provider", providerId]).options.modelId).toBe("gpt-5.6-sol");
+    expect(parseRuntimeArgs(["--provider", providerId, "--model", "gpt-5.6-terra"]).options.modelId)
+      .toBe("gpt-5.6-terra");
   });
 
   it("uses the prompt contract environment default and lets the CLI override it", () => {

@@ -91,7 +91,7 @@ dscode login opencode-go   # OpenCode Zen Go API key
 选择的 provider 和模型会保存供后续启动使用，也可以随时覆盖：
 
 ```bash
-dscode --provider openai-codex --model gpt-5.6-sol -C /path/to/project
+dscode --provider openai-codex --model gpt-6.1-terra -C /path/to/project
 dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 
