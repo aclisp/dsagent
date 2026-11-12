@@ -44,6 +44,17 @@ const base: ManagedProcessResult = {
 };
 
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
+  it.each([0, 1])("omits exit timing for an ordinary exit with code %i", async (exitCode) => {
+    const details = { ...base, exitCode, exitedAfterMs: 200 };
+    const { tool, result } = await execute(name, details);
+    const text = [
+      "command output", "process_id: 1", "status: completed", `exit_code: ${exitCode}`, "sandbox: host",
+    ].join("\n");
+    expect(result.content).toEqual([{ type: "text", text }]);
+    expect(render(tool, result, true).text).not.toContain("main_process_exit:");
+    expect(result.details).toEqual(details);
+  });
+
   it.each(["\r\n", "\r"])("renders output with %j as line breaks while preserving the model's original output", async (ending) => {
     const output = `first${ending}${ending}second\nthird`;
     const details = { ...base, output, outputLineCount: output.split("\n").length, exitCode: 1 };
@@ -105,6 +116,26 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(expanded.text).toContain("status: running");
     expect(expanded.text).not.toContain("exit_code:");
     expect(expanded.red).toEqual([]);
+    expect(result.content).toEqual([{ type: "text", text: [
+      "command output", "process_id: 1", "status: running", "Use write_stdin to poll or interact.", "sandbox: host",
+    ].join("\n") }]);
+  });
+
+  it.each([0, 1_010])("reports signal termination after %i ms without a timeout", async (exitedAfterMs) => {
+    const details: ManagedProcessResult = { ...base, exitCode: null, exitSignal: "SIGTERM", exitedAfterMs };
+    const { tool, result } = await execute(name, details);
+    const exit = `main_process_exit: terminated by SIGTERM, ${exitedAfterMs} ms after start`;
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining(exit) });
+    expect(render(tool, result, true).text).toContain(exit);
+    expect(JSON.stringify(result.content)).not.toContain("exit_signal:");
+    expect(JSON.stringify(result.content)).not.toContain("process_exited_after_ms:");
+    expect(JSON.stringify(result.content)).not.toContain("timeout_reason:");
+  });
+
+  it("reports a signal even if exit timing is unavailable", async () => {
+    const { result } = await execute(name, { ...base, exitCode: null, exitSignal: "SIGTERM" });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main_process_exit: terminated by SIGTERM") });
+    expect(JSON.stringify(result.content)).not.toContain("ms after start");
   });
 
   it.each([null, 1])("keeps a timeout with exit %s collapsed and expands its details on demand", async (exitCode) => {
@@ -164,9 +195,23 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     const expanded = render(tool, result, true);
     expect(expanded.text).toContain("status: running");
     expect(expanded.text).toContain("exit_code: 0");
-    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    const exit = "main_process_exit: exited 200 ms after start; waiting for output pipes to close";
+    expect(expanded.text).toContain(exit);
     expect(expanded.text).not.toContain("timeout_reason:");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining(exit) });
     expect(result.details).toEqual(details);
+  });
+
+  it("reports a signal while waiting for output pipes", async () => {
+    const details: ManagedProcessResult = {
+      ...base, running: true, exitCode: null, exitSignal: "SIGTERM", exitedAfterMs: 200,
+    };
+    const { result } = await execute(name, details);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "main_process_exit: terminated by SIGTERM, 200 ms after start; waiting for output pipes to close",
+      ),
+    });
   });
 
   it.each([0, 3])("explains a timeout after the main process exited with code %i", async (exitCode) => {
@@ -179,8 +224,9 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(collapsed.red).toEqual(["timed out waiting for output"]);
     const expanded = render(tool, result, true);
     expect(expanded.text).toContain(`exit_code: ${exitCode}`);
-    expect(expanded.text).toContain("process_exited_after_ms: 200");
+    expect(expanded.text).toContain("main_process_exit: exited 200 ms after start");
     expect(expanded.text).toContain("timeout_reason: output pipes were still open after the main process exited.");
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main_process_exit: exited 200 ms after start") });
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining("output pipes were still open") });
     expect(result.details).toEqual(details);
     expect(JSON.stringify(result.content)).not.toContain("\\u001b");
@@ -194,10 +240,42 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     const { tool, result } = await execute(name, details);
     expect(render(tool, result, false).text).toContain("timed out · 1 output line · host");
     const expanded = render(tool, result, true);
-    expect(expanded.text).toContain("exit_signal: SIGTERM");
-    expect(expanded.text).toContain("process_exited_after_ms: 1010");
+    expect(expanded.text).toContain("main_process_exit: terminated by SIGTERM, 1010 ms after start");
     expect(expanded.text).toContain("timeout_reason: main process was still running at the deadline.");
     expect(expanded.text).not.toContain("background processes");
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("main_process_exit: terminated by SIGTERM, 1010 ms after start"),
+    });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
+  });
+
+  it("reports a graceful exit after the process was still running at the deadline", async () => {
+    const { result } = await execute(name, {
+      ...base, exitedAfterMs: 1_010, timedOut: true, timeoutReason: "process_running",
+    });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("exit_code: 0") });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main_process_exit: exited 1010 ms after start") });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
+  });
+
+  it("does not invent an exit while a timed-out process is still running", async () => {
+    const { exitCode: _exitCode, ...stopping } = { ...base, running: true };
+    const { result } = await execute(name, { ...stopping, timedOut: true, timeoutReason: "process_running" });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("timed_out: true") });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
+    expect(JSON.stringify(result.content)).not.toContain("main_process_exit:");
+  });
+
+  it("explains waiting for output after a timed-out process exits", async () => {
+    const { result } = await execute(name, {
+      ...base, running: true, exitCode: null, exitSignal: "SIGTERM", exitedAfterMs: 1_010,
+      timedOut: true, timeoutReason: "process_running",
+    });
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "main_process_exit: terminated by SIGTERM, 1010 ms after start; waiting for output pipes to close",
+      ),
+    });
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining("main process was still running at the deadline") });
   });
 
