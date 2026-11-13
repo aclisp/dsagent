@@ -197,8 +197,9 @@ Every search is fresh and returns five results by default. Optional parameters a
 `count` (1–50), `ori_question` (up to 128 Unicode characters), `localization` (an IP
 address used to prioritize localized results), and `need_content` (default `false`).
 Omit `localization` or pass an empty string to leave the location hint unspecified.
-Queries retain native operators such as `site:`, `lang:`, and
-`after:`. Results preserve server order, summaries, URLs, dates, and scores.
+Queries support `site:domain` (join sites with `OR`), `-site:domain`, `-word`,
+`-"phrase"`, `"exact phrase"`, `lang:zh,en`, and `after:`/`before:` (`YYYY` or
+`YYYY-MM-DD`). Results preserve server order, summaries, URLs, dates, and scores.
 With `need_content: true`, available full pages are saved as snapshots rather than
 included in the search output.
 

@@ -106,7 +106,7 @@ export function registerWebTools(
         description: "Search the web for current sources. Each call is fresh; results preserve server order.",
         promptSnippet: "Find web sources",
         parameters: Type.Object({
-          query: Type.String({ minLength: 1, maxLength: 128, description: "Supports site:, -site:, quoted phrases, lang:, after:, before:" }),
+          query: Type.String({ minLength: 1, maxLength: 128, description: "Supports site:domain (join sites with OR), -site:domain, -word, -\"phrase\", \"exact phrase\", lang:zh,en, after: and before: (YYYY or YYYY-MM-DD)." }),
           count: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "Number of results (default 5)" })),
           ori_question: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()], { description: "Original user question, only when useful" })),
           localization: Type.Optional(Type.String({ description: "IP address used to prioritize localized results. Omit or use an empty string for no location hint." })),
