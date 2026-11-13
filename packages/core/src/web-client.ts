@@ -39,6 +39,7 @@ export interface WebAuth {
 // Each process spaces requests independently for Search and Fetch. The server
 // enforces account-wide limits across other processes and API keys via HTTP 429.
 const nextRequest = new Map<string, number>();
+const REQUEST_INTERVAL_MS = { search: 50, fetch: 200 };
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 export function validateWebUrl(value: string): string {
@@ -91,7 +92,7 @@ export class DeepSeekWebClient {
       signal?.throwIfAborted();
       const now = Date.now();
       const start = Math.max(now, nextRequest.get(rateKey) ?? now);
-      nextRequest.set(rateKey, start + 210);
+      nextRequest.set(rateKey, start + REQUEST_INTERVAL_MS[operation]);
       if (start > now) await delay(start - now, undefined, { signal });
       const timeout = AbortSignal.timeout(this.timeoutMs);
       const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
