@@ -561,13 +561,15 @@ If no sandbox backend is available, DSCode fails closed rather than silently exe
   images through the Files API and reuse `file_id` references. This applies to user attachments and
   tool images in TUI, RPC, and Web. Pi's processed image bytes remain in the local session; only the
   outbound request changes. Custom gateways and other models/transports retain their normal behavior.
-- File references are cached only in the current session's memory and remote files expire after
-  24 hours. Reloading/resuming a session or restarting uploads images again when needed. Images near
-  expiry are reuploaded. Uploads share a 15-second batch budget with at most two in flight. Failed or
+- File reference metadata is saved in the session and reused after reload, resume, or restart
+  while valid for the same credentials. Non-persistent sessions keep references in memory only.
+  Remote files expire after 24 hours; images near expiry are reuploaded.
+  Uploads share a 15-second batch budget with at most two in flight. Failed or
   timed-out images fall back to Base64, with at most one failure warning per user request and a
   60-second upload cooldown. Cooldown fallbacks are silent; a failed upload retry can warn again.
   Already uploaded images can still be reused. User cancellation aborts uploads.
-- An explicit invalid/expired file-reference error clears the affected request's cached references
+- An explicit invalid/expired file-reference error records the invalidation in the session, clears
+  the affected request's cached references,
   and asks you to retry; DSCode does not automatically replay the LLM request. For the initial call
   measured by `/x-metrics`, Files API time is part of `request_preparation`; `request_bytes` and
   `request_upload` describe only the final LLM request, and total first-content latency includes preparation.

@@ -6,6 +6,7 @@ const COOLDOWN_MS = 60_000;
 const FILE_LIFETIME_SECONDS = 86_400;
 const EXPIRY_MARGIN_MS = 60_000;
 const UPLOAD_CONCURRENCY = 2;
+const FILE_REFERENCE_ENTRY = "dscode-deepseek-file";
 const FALLBACK_NOTICE = "DeepSeek image upload failed or timed out; some images will be sent inline (Base64). This request may be slower. Files API uploads are paused for 60 seconds.";
 
 type RecordValue = Record<string, unknown>;
@@ -84,6 +85,18 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
       cache.clear();
       cooldownUntil = 0;
       scope = requestScope;
+      // File references belong to the session, not to a particular history branch.
+      for (const entry of ctx.sessionManager.getEntries()) {
+        if (entry.type !== "custom" || entry.customType !== FILE_REFERENCE_ENTRY ||
+          !isRecord(entry.data) || entry.data.scope !== requestScope || typeof entry.data.key !== "string") continue;
+        const { key, file } = entry.data;
+        cache.delete(key);
+        if (isRecord(file) && typeof file.id === "string" && /^file-api-[\w-]+$/.test(file.id) &&
+          typeof file.expiresAt === "number" && Number.isSafeInteger(file.expiresAt) &&
+          file.expiresAt > Date.now() + EXPIRY_MARGIN_MS) {
+          cache.set(key, { id: file.id, expiresAt: file.expiresAt });
+        }
+      }
     }
 
     const missing: InlineImage[] = [];
@@ -109,7 +122,10 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
             if (!image) break;
             try {
               const file = await uploadImage(image, headers, signal);
-              if (!signal.aborted && requestGeneration === generation && scope === requestScope) cache.set(image.key, file);
+              if (!signal.aborted && requestGeneration === generation && scope === requestScope) {
+                pi.appendEntry(FILE_REFERENCE_ENTRY, { scope: requestScope, key: image.key, file });
+                cache.set(image.key, file);
+              }
             } catch {
               if (!ctx.signal?.aborted && requestGeneration === generation && scope === requestScope) {
                 pauseUploads(ctx);
@@ -147,7 +163,10 @@ export function registerDeepSeekFiles(pi: ExtensionAPI): void {
       message.model !== "deepseek-flash" || message.api !== "openai-responses" ||
       message.stopReason !== "error" || !usedReferences.size ||
       !isInvalidFileError(message.errorMessage ?? "")) return;
-    for (const key of usedReferences) cache.delete(key);
+    for (const key of usedReferences) {
+      cache.delete(key);
+      pi.appendEntry(FILE_REFERENCE_ENTRY, { scope, key, file: null });
+    }
     usedReferences.clear();
     ctx.ui.notify("DeepSeek rejected an expired or invalid image file reference. Cached references were cleared; retry your request to upload the images again.", "warning");
   });

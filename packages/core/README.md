@@ -40,7 +40,8 @@ Global configuration is `DSCODE_HOME/mcp.json`; trusted projects use `.pi/mcp.js
 
 The built-in extension reuses image uploads through DeepSeek's Files API for `deepseek-flash`
 over `openai-responses` on the official endpoint. The session retains Pi's processed image bytes;
-only outgoing image parts become `file_id` references. References live in session memory and files
+only outgoing image parts become `file_id` references. Reference metadata is saved in the session
+and reused after reload, resume, or restart while valid for the same credentials. Remote files
 expire after 24 hours. Upload failure/timeout falls back to Base64 with a warning and 60-second
 cooldown. Requests during cooldown fall back silently; a failed upload retry can warn again.
 The whole batch has a 15-second upload budget. No Web/API changes or extra commands are needed.

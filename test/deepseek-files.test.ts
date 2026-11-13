@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerDeepSeekFiles } from "../packages/core/src/deepseek-files.ts";
 
@@ -9,12 +9,16 @@ const fileResponse = (id = "file-api-test") => Response.json({ id, expires_at: M
 
 function harness() {
   const handlers = new Map<string, (event: any, ctx: ExtensionContext) => unknown>();
-  registerDeepSeekFiles({ on: (name: string, handler: (event: any, ctx: ExtensionContext) => unknown) => handlers.set(name, handler) } as unknown as ExtensionAPI);
+  const session = SessionManager.inMemory(process.cwd());
+  registerDeepSeekFiles({
+    on: (name: string, handler: (event: any, ctx: ExtensionContext) => unknown) => handlers.set(name, handler),
+    appendEntry: (type: string, data: unknown) => { session.appendCustomEntry(type, data); },
+  } as unknown as ExtensionAPI);
   const notify = vi.fn();
   const auth = { ok: true as const, apiKey: "test-key", headers: {} };
   const ctx = {
     model: { provider: "deepseek", id: "deepseek-flash", api: "openai-responses", baseUrl: "https://api.deepseek.com" },
-    modelRegistry: { getApiKeyAndHeaders: vi.fn(async () => auth) }, ui: { notify },
+    modelRegistry: { getApiKeyAndHeaders: vi.fn(async () => auth) }, ui: { notify }, sessionManager: session,
   } as unknown as ExtensionContext;
   return {
     ctx, auth, notify,
@@ -101,7 +105,7 @@ describe("DeepSeek Files extension", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it("reuploads before expiration, on credential changes, and after session reload", async () => {
+  it("reuploads before expiration and on credential changes, but reuses references after reload", async () => {
     let count = 0;
     const upload = vi.fn(async () => fileResponse(`file-api-${++count}`));
     vi.stubGlobal("fetch", upload);
@@ -115,7 +119,7 @@ describe("DeepSeek Files extension", () => {
     await h.transform();
     await h.emit("session_start");
     await h.transform();
-    expect(upload).toHaveBeenCalledTimes(4);
+    expect(upload).toHaveBeenCalledTimes(3);
   });
 
   it("warns on actual failures, stays silent during cooldown and warns again on a failed retry", async () => {
