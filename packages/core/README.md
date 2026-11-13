@@ -19,7 +19,9 @@ and `--no-tools` disables them.
 Disabled network access hides both tools and blocks calls, including cached snapshot
 reads. `--network`, full permissions, or a full-access sandbox enable network access.
 Search returns five results by default and optionally saves full pages with
-`need_content: true`. Fetch reads immutable, versioned Markdown snapshots by URL or
+`need_content: true`. Optional `localization` supplies an IP address to prioritize
+localized search results; omit it or pass an empty string for no location hint.
+Fetch reads immutable, versioned Markdown snapshots by URL or
 `snapshot_id`, with 1-based `offset`/`limit` pagination. `refresh: true` fetches a new
 version without replacing historical snapshots. Snapshot files live in
 `DSCODE_HOME/web-snapshots`; session entries contain only their metadata. Best-effort

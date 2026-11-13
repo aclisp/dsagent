@@ -194,8 +194,10 @@ DeepSeek base URL and credentials; proxies must support `/v1/tools/search` and `
 `--no-tools` disables them; `--no-mcp` does not affect these native tools.
 
 Every search is fresh and returns five results by default. Optional parameters are
-`count` (1–50), `ori_question` (up to 128 Unicode characters), and `need_content`
-(default `false`). Queries retain native operators such as `site:`, `lang:`, and
+`count` (1–50), `ori_question` (up to 128 Unicode characters), `localization` (an IP
+address used to prioritize localized results), and `need_content` (default `false`).
+Omit `localization` or pass an empty string to leave the location hint unspecified.
+Queries retain native operators such as `site:`, `lang:`, and
 `after:`. Results preserve server order, summaries, URLs, dates, and scores.
 With `need_content: true`, available full pages are saved as snapshots rather than
 included in the search output.

@@ -172,7 +172,8 @@ Shell 内部的管道和输入重定向仍可正常提供输入。
 `--no-tools` 禁用全部工具，`--no-mcp` 不影响它们。
 
 搜索每次请求最新结果，默认返回 5 条；可设置 `count`（1～50）、`ori_question`
-（不超过 128 个 Unicode 字符）和 `need_content`（默认 `false`）。支持 `site:`、
+（不超过 128 个 Unicode 字符）、`localization`（用于本地化排序的 IP 地址）和
+`need_content`（默认 `false`）。省略 `localization` 或传空字符串表示不指定地域提示。支持 `site:`、
 `lang:`、`after:` 等原生查询语法。结果保留排序、摘要、URL、日期及评分。
 `need_content: true` 获取的正文保存为快照，不直接塞入搜索结果。
 

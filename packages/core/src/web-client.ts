@@ -24,6 +24,7 @@ const searchInput = z.object({
   query: shortQuestion,
   count: z.number().int().min(1).max(50).default(5),
   ori_question: shortQuestion.nullable().optional(),
+  localization: z.string().optional(),
   need_content: z.boolean().default(false),
 });
 

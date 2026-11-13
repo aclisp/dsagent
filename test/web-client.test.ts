@@ -32,6 +32,16 @@ describe("DeepSeek web client", () => {
     expect(validateWebUrl("https://example.org/docs")).toBe("https://example.org/docs");
   });
 
+  it.each(["203.0.113.7", "2001:db8::7", ""])("forwards explicit localization %j unchanged", async (localization) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ results: [] }));
+    const input = { query: "docs", localization };
+    await new DeepSeekWebClient(fetchImpl).search(auth(), input);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string)).toEqual({
+      query: "docs", localization, count: 5, need_content: false,
+    });
+  });
+
   it.each([400, 401, 402, 403, 404])("does not retry HTTP %s or leak the key", async (status) => {
     const credentials = auth();
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ error: { message: `rejected ${credentials.apiKey}` } }, { status }));

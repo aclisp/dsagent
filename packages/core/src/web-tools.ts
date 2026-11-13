@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
-import { DeepSeekWebClient, validateWebUrl, type WebAuth } from "./web-client.ts";
+import { DeepSeekWebClient, validateWebUrl, type WebAuth, type WebSearchInput } from "./web-client.ts";
 import { readSnapshotPage, snapshotReference, WEB_SNAPSHOT_ENTRY, WebSnapshotStore } from "./web-snapshots.ts";
 
 export const WEB_TOOL_NAMES = ["web_search", "web_fetch"] as const;
@@ -109,10 +109,11 @@ export function registerWebTools(
           query: Type.String({ minLength: 1, maxLength: 128, description: "Supports site:, -site:, quoted phrases, lang:, after:, before:" }),
           count: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "Number of results (default 5)" })),
           ori_question: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()], { description: "Original user question, only when useful" })),
+          localization: Type.Optional(Type.String({ description: "IP address used to prioritize localized results. Omit or use an empty string for no location hint." })),
           need_content: Type.Optional(Type.Boolean({ description: "Save available full pages as snapshots (default false)" })),
         }),
         outputSchema: searchOutput,
-        async execute(_id: string, params: { query: string; count?: number; ori_question?: string | null; need_content?: boolean }, signal: AbortSignal | undefined, _update: unknown, ctx: ExtensionContext) {
+        async execute(_id: string, params: WebSearchInput, signal: AbortSignal | undefined, _update: unknown, ctx: ExtensionContext) {
           return withNetwork(signal, async (signal) => {
             const sessionId = ctx.sessionManager.getSessionId();
             const response = await client.search(await authFor(ctx), params, signal);

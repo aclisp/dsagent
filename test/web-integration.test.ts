@@ -108,6 +108,7 @@ describe("web tools in the Pi session runtime", () => {
     expectDeferredWebTools(host);
     const discovery = await executeCode(host, 'console.log(await describeTool("web_search")); console.log(await searchTools("web_fetch"));');
     expect(discovery).toContain("need_content");
+    expect(discovery).toContain("localization");
     expect(discovery).toContain("snapshot_id");
     expectDeferredWebTools(host);
     expect(h.requests).toHaveLength(0);
@@ -119,6 +120,20 @@ describe("web tools in the Pi session runtime", () => {
     await host.session.reload();
     expect(host.session.getActiveToolNames()).toContain("web_search");
     expect(host.session.getActiveToolNames()).not.toContain("web_fetch");
+  }, 15_000);
+
+  it("forwards only explicitly provided localization through codemode", async () => {
+    const h = await setup();
+    const host = await h.create();
+    for (const input of [{ query: "fixture" }, { query: "fixture", localization: "203.0.113.7" }, { query: "fixture", localization: "" }]) {
+      const result = await executeCode(host, `console.log((await tools.web_search(${JSON.stringify(input)})).results[0].title);`);
+      expect(result).toContain("Fixture docs");
+    }
+    expect(h.requests.map((request) => request.body)).toEqual([
+      { query: "fixture", count: 5, need_content: false },
+      { query: "fixture", localization: "203.0.113.7", count: 5, need_content: false },
+      { query: "fixture", localization: "", count: 5, need_content: false },
+    ]);
   }, 15_000);
 
   it("hides web tools without network access and updates both loadouts when permissions change", async () => {
