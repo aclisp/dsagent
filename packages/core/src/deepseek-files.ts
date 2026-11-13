@@ -207,8 +207,8 @@ function replaceImages(payload: RecordValue, replacements: Map<RecordValue, Reco
 async function uploadImage(image: InlineImage, headers: Headers, signal: AbortSignal): Promise<CachedFile> {
   const body = new FormData();
   const extension = image.mimeType === "image/jpeg" ? "jpg" : image.mimeType.slice(6);
-  body.set("file", new Blob([Buffer.from(image.data, "base64")], { type: image.mimeType }), `${image.key}.${extension}`);
   body.set("purpose", "user_data");
+  body.set("file", new Blob([Buffer.from(image.data, "base64")], { type: image.mimeType }), `${image.key}.${extension}`);
   body.set("expires_after[anchor]", "created_at");
   body.set("expires_after[seconds]", String(FILE_LIFETIME_SECONDS));
   const response = await fetch("https://api.deepseek.com/files", { method: "POST", headers, body, signal, redirect: "error" });
