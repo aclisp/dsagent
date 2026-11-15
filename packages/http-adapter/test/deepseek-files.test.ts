@@ -20,6 +20,17 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
   const requests: string[] = [];
   const notices: string[] = [];
 
+  async function startHost(sessionId?: string): Promise<void> {
+    host = await createAgentSessionHost({
+      cwd: root, runtimeArgs: ["--provider", "deepseek", "--model", "deepseek-flash", "--transport", "responses", "--base-url", "https://api.deepseek.com", "--no-mcp", "--tools", "read"],
+      session: sessionId ? { type: "resume", id: sessionId } : { type: "persistent" },
+    });
+    host.subscribe((event) => {
+      if (event.type === "ui_event" && event.event.method === "notify") notices.push(event.event.message);
+    });
+    await host.session.modelRuntime.setRuntimeApiKey("deepseek", "test-only-key");
+  }
+
   beforeEach(async () => {
     uploads.length = requests.length = notices.length = 0;
     uploadFailure = referenceFailure = readImage = holdUpload = false;
@@ -68,13 +79,7 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
       return nativeFetch(input instanceof Request ? new Request(local, input) : local, init);
     };
     vi.stubGlobal("fetch", routeFetch);
-    host = await createAgentSessionHost({
-      cwd: root, runtimeArgs: ["--provider", "deepseek", "--model", "deepseek-flash", "--transport", "responses", "--base-url", "https://api.deepseek.com", "--no-mcp", "--tools", "read"],
-    });
-    host.subscribe((event) => {
-      if (event.type === "ui_event" && event.event.method === "notify") notices.push(event.event.message);
-    });
-    await host.session.modelRuntime.setRuntimeApiKey("deepseek", "test-only-key");
+    await startHost();
   });
 
   afterEach(async () => {
@@ -104,6 +109,18 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
     expect(requests).toHaveLength(2);
     expect(requests[1]).toContain('"file_id":"file-api-1"');
     expect(requests[1]).not.toContain(PNG);
+
+    const sessionId = host!.session.sessionManager.getSessionId();
+    await host!.dispose();
+    host = undefined;
+    uploadFailure = true;
+    await startHost(sessionId);
+    await host!.prompt("Continue after restarting the server");
+    expect(uploads).toHaveLength(1);
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toContain('"file_id":"file-api-1"');
+    expect(requests[2]).not.toContain(PNG);
+    expect(notices.some((notice) => notice.includes("Base64"))).toBe(false);
   });
 
   it("warns on an upload failure and silently sends inline images during cooldown", async () => {
@@ -132,7 +149,7 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
     expect(requests[2]).toContain('"file_id":"file-api-1"');
   });
 
-  it("invalidates rejected references and reuploads only on the next user request", async () => {
+  it("persists reference invalidation across restart and reuploads only on retry", async () => {
     await host!.session.prompt("Inspect", { source: "rpc", images: [{ type: "image", data: PNG, mimeType: "image/png" }] });
     referenceFailure = true;
     await host!.prompt("Continue");
@@ -140,6 +157,10 @@ describe("DeepSeek Files through a real session host", { concurrent: false }, ()
     expect(uploads).toHaveLength(1);
     expect(notices.some((notice) => notice.includes("retry your request"))).toBe(true);
     referenceFailure = false;
+    const sessionId = host!.session.sessionManager.getSessionId();
+    await host!.dispose();
+    host = undefined;
+    await startHost(sessionId);
     await host!.prompt("Retry");
     expect(requests).toHaveLength(3);
     expect(uploads).toHaveLength(2);

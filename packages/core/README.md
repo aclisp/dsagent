@@ -19,7 +19,9 @@ and `--no-tools` disables them.
 Disabled network access hides both tools and blocks calls, including cached snapshot
 reads. `--network`, full permissions, or a full-access sandbox enable network access.
 Search returns five results by default and optionally saves full pages with
-`need_content: true`. Fetch reads immutable, versioned Markdown snapshots by URL or
+`need_content: true`. Optional `localization` supplies an IP address to prioritize
+localized search results; omit it or pass an empty string for no location hint.
+Fetch reads immutable, versioned Markdown snapshots by URL or
 `snapshot_id`, with 1-based `offset`/`limit` pagination. `refresh: true` fetches a new
 version without replacing historical snapshots. Snapshot files live in
 `DSCODE_HOME/web-snapshots`; session entries contain only their metadata. Best-effort
@@ -38,7 +40,8 @@ Global configuration is `DSCODE_HOME/mcp.json`; trusted projects use `.pi/mcp.js
 
 The built-in extension reuses image uploads through DeepSeek's Files API for `deepseek-flash`
 over `openai-responses` on the official endpoint. The session retains Pi's processed image bytes;
-only outgoing image parts become `file_id` references. References live in session memory and files
+only outgoing image parts become `file_id` references. Reference metadata is saved in the session
+and reused after reload, resume, or restart while valid for the same credentials. Remote files
 expire after 24 hours. Upload failure/timeout falls back to Base64 with a warning and 60-second
 cooldown. Requests during cooldown fall back silently; a failed upload retry can warn again.
 The whole batch has a 15-second upload budget. No Web/API changes or extra commands are needed.

@@ -108,6 +108,7 @@ describe("web tools in the Pi session runtime", () => {
     expectDeferredWebTools(host);
     const discovery = await executeCode(host, 'console.log(await describeTool("web_search")); console.log(await searchTools("web_fetch"));');
     expect(discovery).toContain("need_content");
+    expect(discovery).toContain("localization");
     expect(discovery).toContain("snapshot_id");
     expectDeferredWebTools(host);
     expect(h.requests).toHaveLength(0);
