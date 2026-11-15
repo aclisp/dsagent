@@ -5,7 +5,7 @@
 # DSCode
 
 <p align="center">
-  A heavily customized Pi coding agent and Linux server operations companion.
+  A heavily customized Pi coding agent.
 </p>
 
 <p align="center">
@@ -16,16 +16,29 @@
 
 ## Why DSCode
 
-- **A coding agent on infrastructure you control.** Run DSCode on your Linux server and work with
-  your projects over SSH, where you can inspect services, run commands, track their output, and
-  review or undo file changes.
-- **One runtime, multiple ways to work.** Choose an interface: the CLI/TUI, REST+SSE API, or Web UI.
-  All three use the same Core, show live agent activity, and let you
-  respond to prompts for confirmation or choices.
-- **Bring your team’s chat into the workflow.** In WeCom, teammates can message DSCode directly or
-  mention it in a group to delegate tasks, share images and files, and receive replies and generated
-  files. They can also ask DSCode to schedule one-time or recurring tasks. DSCode sends each result to
-  the conversation where the task was requested.
+- **A harness you can inspect and control.** DSCode is an open-source agent harness: inspect and
+  change its prompts, tools, permissions, and runtime behavior. Use your chosen LLM API without
+  relying on a provider-controlled agent harness.
+- **A personal and team agent in WeCom.** Message DSCode privately or mention it in a group to
+  delegate tasks, exchange files, and schedule recurring work.
+
+## How DSCode builds on Pi
+
+- **Permissions and sandboxing:** `ask`, `auto`, and `full` permission modes control approvals;
+  command sandbox and network settings provide separate execution boundaries. In `auto` mode,
+  potentially destructive commands require approval.
+- **Long-running processes:** `exec_command` and `write_stdin` can start, monitor, interact with,
+  and terminate managed processes.
+- **Checkpoints and undo:** `apply_patch` adds, edits, deletes, or moves files and saves checkpoints
+  for successful patches; `/undo` checks for conflicts before restoring changes.
+- **DeepSeek and images:** For official `deepseek-flash` Responses requests, uploaded images can
+  be reused via `file_id` instead of repeatedly sending their bytes.
+- **Web research:** DeepSeek-backed `web_search` and `web_fetch` are available on demand to all chat
+  providers when DeepSeek credentials and network access are available.
+- **Shared runtime:** The CLI/TUI, REST+SSE API, and Web UI use the same Core runtime, exposing
+  live agent activity and interactive confirmations and choices.
+- **Interaction and diagnostics:** The fullscreen TUI groups and folds completed execution steps;
+  `/status` and `/doctor` expose runtime information.
 
 ## Quick start
 
