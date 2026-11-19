@@ -102,9 +102,11 @@ const server = http.createServer(async (request, response) => {
     }
   }
   if (childCall) { childReadIssued = true; childTools = payload.tools.map(tool => tool.name).sort(); }
-  if (call) toolIssued = true;
+  if (call && currentTool.next) plannedTool = currentTool.next;
+  else if (call) toolIssued = true;
+  const callId = currentTool?.next ? "first" : "probe";
   const item = call
-    ? {id:"fc_probe",call_id:"call_probe",type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
+    ? {id:`fc_${callId}`,call_id:`call_${callId}`,type:"function_call",status:"completed",name:currentTool.name,arguments:JSON.stringify(currentTool.args)}
     : { id: "msg_probe", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: "standalone ok", annotations: [], logprobs: [] }] };
   const events = [
     { type: "response.created", response: { id: "resp_probe", status: "in_progress", output: [] } },
@@ -373,6 +375,24 @@ try {
       }
     });
   }
+  await check("read then apply_patch to the same file", async () => {
+    const name = "read-then-update.txt";
+    const target = path.join(scratch, name);
+    const prefix = "x".repeat(1024 * 1024) + "\n";
+    await fs.writeFile(target, prefix + "before\n");
+    plannedTool = {
+      name: "read", args: { path: name, offset: 2 },
+      next: { name: "apply_patch", args: { input: `*** Begin Patch\n*** Update File: ${name}\n@@\n-before\n+after\n*** End Patch` } },
+    };
+    toolIssued = false;
+    const result = await run("dscode", [...base, "--tools", "read,apply_patch", "--mode", "json", "-p", "update the file"]);
+    assert.equal(result.timedOut, false, result.stderr);
+    assert.equal(result.code, 0, result.stderr);
+    const finished = result.stdout.trim().split("\n").map(line => JSON.parse(line)).filter(event => event.type === "tool_execution_end");
+    assert.deepEqual(finished.map(event => [event.toolName, event.isError]), [["read", false], ["apply_patch", false]], JSON.stringify(finished));
+    assert.equal(finished[0].result.content[0].text, "before\n");
+    assert.equal(await fs.readFile(target, "utf8"), prefix + "after\n");
+  });
   await check("auto permissions deny noninteractive CLI children", async () => {
     plannedTool = {name:"exec_command",args:{cmd:`${windows ? "DSCode.EXE" : "dscode"} --permission full -p 'must require parent approval'`}};
     toolIssued=false; toolOutputs=[];
