@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-responses";
-import { DefaultResourceLoader, ProjectTrustStore, SettingsManager, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, initTheme, ProjectTrustStore, SettingsManager, ToolExecutionComponent, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import { stripTerminalSequences, type TUI } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDSCodeExtension } from "../packages/core/src/dscode-extension.ts";
 import { createDSCodePiBuiltins } from "../packages/core/src/pi-builtins.ts";
@@ -54,6 +55,46 @@ async function executeCode(host: Awaited<ReturnType<typeof createAgentSessionHos
 }
 
 describe("DSCode Pi built-ins", () => {
+  it("replaces only the ordinary codemode title and shell in the terminal", async () => {
+    const { root } = await setup();
+    const host = await createAgentSessionHost({ cwd: root, runtimeArgs: ["--no-mcp"] });
+    try {
+      initTheme("dark");
+      const native = host.session.getToolDefinition("codemode")!;
+      const styled = host.session.extensionRunner.resolveToolRenderers("codemode", () => native)!;
+      expect(styled.renderShell).toBe("self");
+      expect(styled.renderResult).toBe(native.renderResult);
+
+      const tui = { requestRender() {} } as TUI;
+      const code = Array.from({ length: 15 }, (_, i) => `text(${i});`).join("\n");
+      const row = new ToolExecutionComponent("codemode", "call", { code }, {}, styled, tui, root);
+      const original = new ToolExecutionComponent("codemode", "call", { code }, {}, { ...native, renderShell: "self" }, tui, root);
+      for (const expanded of [false, true]) {
+        row.setExpanded(expanded);
+        original.setExpanded(expanded);
+        const [, title, ...script] = row.render(80);
+        expect(stripTerminalSequences(title!).trimEnd()).toBe("• Code");
+        expect(script).toEqual(original.render(80).slice(2));
+        expect(script.join("\n")).toContain(expanded ? "14" : "more lines");
+      }
+      row.markExecutionStarted();
+      const call = { id: "call/1", name: "read", args: "{}" };
+      row.updateResult({ content: [], details: { calls: [{ ...call, status: "running" }] }, isError: false }, true);
+      const progress = stripTerminalSequences(row.render(80).join("\n"));
+      row.updateResult({
+        content: [{ type: "text", text: "script output" }],
+        details: { calls: [{ ...call, status: "error", error: "nested failure" }] },
+        isError: true, durationMs: 5100,
+      });
+      expect(progress).toContain("… read");
+      expect(progress).toContain("Elapsed");
+      const final = stripTerminalSequences(row.render(80).join("\n"));
+      for (const detail of ["✗ read", "nested failure", "script output", "Took 5.1s"]) expect(final).toContain(detail);
+      row.updateArgs({ code: 42 });
+      expect(stripTerminalSequences(row.render(80).join("\n"))).toContain("codemode [invalid arg]");
+    } finally { await host.dispose(); }
+  });
+
   it.each([
     { args: [], tools: ["codemode", "tool_search"], mcp: true },
     { args: ["--no-mcp"], tools: ["codemode", "tool_search"], mcp: false },
