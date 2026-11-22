@@ -50,6 +50,18 @@ describe("DSCode read presentation", () => {
     expect(render(false, true)).toContain("└ one");
   });
 
+  it("shows the image placeholder warning in both collapsed and expanded output", () => {
+    const tool = createDSCodeReadTool(process.cwd());
+    const result = {
+      content: [{ type: "text" as const, text: "Read image file [image/png]" }],
+      details: { imageUnsupportedByModel: "text-only-model" },
+    };
+    for (const expanded of [false, true]) {
+      const lines = tool.renderResult!(result, { expanded, isPartial: false }, theme, context).render(100);
+      expect(lines.join("\n")).toContain("text-only-model received a placeholder");
+    }
+  });
+
   it("reveals the full long path and requested range when expanded", () => {
     const tool = createDSCodeReadTool(process.cwd());
     const filePath = `${"long-directory/".repeat(12)}file.txt`;

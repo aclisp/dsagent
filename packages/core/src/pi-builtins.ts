@@ -4,12 +4,15 @@ import {
   createCodemodeExtension,
   createMcpExtension,
   createToolSearchExtension,
+  type ExtensionAPI,
   type InlineExtension,
 } from "@earendil-works/pi-coding-agent";
 import { StdioTransport } from "@earendil-works/pi-mcp";
+import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { isStandalone } from "./distribution.ts";
 import { stripModelCredentialEnvironment } from "./providers.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
+import { renderToolCall } from "./tool-ui.ts";
 
 let credentialGuard: Promise<void> | undefined;
 const guardedTransports = new WeakSet<typeof StdioTransport>();
@@ -62,12 +65,36 @@ export function isMcpTool(name: string): boolean {
   return name.startsWith("mcp__") || isMcpResourceTool(name);
 }
 
+function registerCodemode(pi: ExtensionAPI) {
+  pi.registerToolRenderer((name, next) => {
+    const upstream = next();
+    const renderCall = upstream?.renderCall;
+    if (name !== "codemode" || !renderCall) return upstream;
+    return {
+      ...upstream,
+      renderShell: "self",
+      renderCall(args, theme, context) {
+        const view = renderCall(args, theme, context);
+        // Pi 1.6 draws the plain title as its first Text. Leave diagnostics and unfamiliar layouts intact.
+        if (view instanceof Container) {
+          const title = view.children[0];
+          if (title instanceof Text && stripTerminalSequences(title.render(name.length).join("\n")) === name) {
+            view.children[0] = renderToolCall("Code", undefined, theme, context);
+          }
+        }
+        return view;
+      },
+    };
+  });
+  return createCodemodeExtension({ mode: "on", models: false })(pi);
+}
+
 /** Named replacements work in both Pi's CLI and the SDK, including /reload. */
 export async function createDSCodePiBuiltins(options: DSCodeRuntimeOptions): Promise<InlineExtension[]> {
   await installMcpCredentialGuard();
   const disabled = options.noTools;
   return [
-    { name: "codemode", builtin: true, factory: disabled ? () => {} : createCodemodeExtension({ mode: "on", models: false }) },
+    { name: "codemode", builtin: true, factory: disabled ? () => {} : registerCodemode },
     { name: "tool-search", builtin: true, factory: disabled ? () => {} : createToolSearchExtension() },
     { name: "mcp", builtin: true, factory: disabled || options.noMcp ? () => {} : createMcpExtension() },
   ];

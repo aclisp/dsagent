@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access, open, readFile } from "node:fs/promises";
 import { createReadToolDefinition, detectSupportedImageMimeTypeFromFile } from "@earendil-works/pi-coding-agent";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { renderCollapsibleToolResult, renderToolCall } from "./tool-ui.ts";
 
 // Bun 1.3.14 leaks the descriptor when a FileHandle is closed after createReadStream().
@@ -45,7 +46,13 @@ export function createDSCodeReadTool(cwd: string): ReturnType<typeof createReadT
       return renderToolCall("Read", `${args.path ?? "file"}${range}`, theme, context, context.expanded);
     },
     renderResult(result, options, theme, context) {
-      return renderCollapsibleToolResult(result, options, theme, context);
+      const output = renderCollapsibleToolResult(result, options, theme, context);
+      const model = result.details?.imageUnsupportedByModel;
+      if (!model) return output;
+      const view = new Container();
+      view.addChild(output);
+      view.addChild(new Text(theme.fg("warning", `    ${model} received a placeholder because it does not support images.`), 0, 0));
+      return view;
     },
   };
 }
