@@ -8,12 +8,19 @@ the acceptance criterion; retaining a simpler or different DSCode behavior is a 
 
 ## Source baseline
 
-- DSCode: `/Users/homerh/Code/dscode`, commit `0f7edea` (`release: v1.3.6`).
+**Latest targeted review** (`apply_patch`, `exec_command`, and `write_stdin`):
+
+- DSCode: `/Users/homerh/Code/dscode`, commit `21f3943345aefb22a3beeebcc5a8b61857ef56d6`.
 - Codex: `/Users/homerh/Code/codex-shallow`, shallow checkout at
-  `5670b1c18e861e5f89bafaff768b86ed579edd81` (2026-10-14).
-- The comparison used source inspection only. Neither project was built and no tests were run.
-- The Codex checkout is not established as the exact source of the installed desktop app's bundled
-  `0.162.0-alpha.17.2` CLI. Claims below concern the inspected checkout.
+  `357fe240c91563c1e6c9690bb27a2e609282d615` (commit dated 2026-11-22).
+- This was a targeted source comparison, not a commit-by-commit review. Neither project was built
+  and no tests were run for the comparison. Codex findings apply to the inspected checkout, not
+  necessarily to the CLI bundled with the desktop app.
+
+**Original comparison (2026-10-14):** DSCode `0f7edea` (`release: v1.3.6`) and Codex
+`5670b1c18e861e5f89bafaff768b86ed579edd81`. Historical observations and decision records below
+retain their original context.
+
 - Codex exposes some arguments and behavior conditionally, depending on features, policy, and
   execution environment. The normal resumable command path is distinguished from its completion-only
   fallback below.
@@ -42,6 +49,8 @@ and the checkpoint-listing scope of **AP-09** have been discussed and implemente
 **IN-05** has been discussed and implemented: separate wait windows for pure polls and active input.
 The Windows discovery/preparation and Unix shell-selection scopes of **EX-03** have been discussed
 and implemented.
+The follow-up comparison against Codex `357fe240` and DSCode `21f39433` was source-only.
+It recorded keep decisions for **AP-11**, **EX-02**, **EX-09**, **IN-06**, **IN-07**, and **IN-08** below.
 Other decisions remain pending.
 
 Decision record template:
@@ -353,11 +362,14 @@ DSCode
   Documentation only: no runtime code, active-tool filtering, tool instructions, or arguments change.
   No tests or builds were run for this record.
 
-- [ ] **AP-11 — Patching through a shell command.** Codex recognizes supported `apply_patch` command
+- [x] **AP-11 — Patching through a shell command.** Codex recognizes supported `apply_patch` command
   forms, including heredocs, and routes them through its patch handler. DSCode's managed command path
   has no equivalent patch interception. Shell-created file changes do not automatically produce
   DSCode checkpoints. Illustrate a tool patch and a shell redirection that make the same edit. Decide
   whether interception is useful or whether this boundary should remain explicit.
+
+  **Decision: keep.** Do not intercept shell patch commands. Only the patch tool creates checkpoints;
+  the same edit made through a shell command remains outside checkpoint/undo history.
 
 - [x] **AP-12 — Patch content budgets and cancellation.** Unbounded patch text, file reads, and retained
   snapshots/write plans can consume excessive memory even when each edit is small.
@@ -452,10 +464,13 @@ DSCode
   exposes `cmd`, `stdin_open`, `yield_time_ms`, and `timeout_ms`. Illustrate sending the same command through both
   tools. Decide which extra options solve real DSCode tasks rather than adding every option.
 
-- [ ] **EX-02 — Where the command runs.** Codex has a per-call `workdir`, defaulting to the turn's
+- [x] **EX-02 — Where the command runs.** Codex has a per-call `workdir`, defaulting to the turn's
   directory. DSCode starts commands in the session workspace; a shell `cd` changes the directory for
   that command but does not change the patch tool's workspace root. Illustrate testing a package in a
   monorepo. Decide whether an explicit working-directory argument improves clarity.
+
+  **Decision: keep.** Do not add `workdir`. A package test can use `cd packages/core && pnpm test`
+  within the command without changing the session workspace or patch root.
 
 - [x] **EX-03 — Which shell runs and whether startup files load.** Codex supports shell selection
   and a login-shell option subject to configuration and environment limits. At the comparison
@@ -657,12 +672,16 @@ DSCode
   reproduce the defects without Windows and cover actual read results, both command tools,
   stdin errors, LF/CRLF patches, and added/modified/deleted CRLF file diffs.
 
-- [ ] **EX-09 — Approvals and sandbox retries.** Codex uses execution policy, sandbox orchestration,
+- [x] **EX-09 — Approvals and sandbox retries.** Codex uses execution policy, sandbox orchestration,
   and conditional command permission arguments such as justification, prefix rules, and additional
   permissions. DSCode uses `ask|auto|full`, dangerous-command detection, and scoped network/host
   approvals; it can request access and rerun after detecting a sandbox failure. Illustrate a network
   request and a command blocked from writing outside its allowed area. Decide whether DSCode needs
   more precise grants, different retry behavior, or clearer approval explanations.
+
+  **Decision: keep.** A denial discovered only after the initial yield is not routed through the
+  same access-and-retry path when collected by `write_stdin`. This case is too rare to justify
+  changing diagnostics or retry behavior now.
 
 - [ ] **EX-10 — Environment variables and credentials.** DSCode strips model credentials from
   ordinary command environments and adds its managed binary directory to PATH. Its recognized child
@@ -812,26 +831,42 @@ DSCode
   Five focused suites passed (77 tests; one Windows-only test skipped); core and test typechecks
   passed. No build was run.
 
-- [ ] **IN-06 — Concurrent calls and output ownership.** Codex permits parallel command/stdin calls
+- [x] **IN-06 — Concurrent calls and output ownership.** Codex permits parallel command/stdin calls
   across sessions and locks interactions with one process because output is drained. DSCode registers
   all three tools as sequential for Pi's normal tool-call scheduling, but its registry has no
   equivalent per-process interaction lock. Nested code-mode scheduling needs separate verification
   before claiming all interactions are serialized. Illustrate two callers polling the same job and
   two callers polling different jobs. Decide whether locks and broader concurrency are needed.
 
-- [ ] **IN-07 — Approving input to an already privileged process.** When its stdin-approval feature
+  **Decision: keep.** Pi 1.6.0 honors `executionMode: "sequential"` for both direct tool calls
+  and sibling calls in `codemode`. Two polls submitted together for one job run in sequence:
+  the second receives only new output, or `Unknown process` if the first consumed the final result.
+  Polls for different jobs also run in sequence. Web/HTTP accepts only one active turn per session,
+  and different sessions have separate registries. No supported workflow was found that sends
+  concurrent polls directly to the same registry. Keep the existing scheduling and do not add
+  per-process locks. This was verified by source inspection, not runtime testing.
+
+- [x] **IN-07 — Approving input to an already privileged process.** When its stdin-approval feature
   is enabled, Codex compares retained launch permissions with current policy and may review or reject
   new input; a changed policy cannot retrofit a running sandbox. DSCode's `ask` mode approves input,
   EOF, and termination while exempting ordinary polls; `auto` does not perform an equivalent retained
   permission check. Illustrate a process launched with extra access and later receiving another
   instruction. Decide which permission semantics DSCode should enforce.
 
-- [ ] **IN-08 — New output, final output, and expired handles.** Both tools drain newly collected
+  **Decision: keep.** Do not add launch context to stdin approval prompts or change permission
+  rules. Sending further input to a process launched with extra access is too rare to justify it.
+
+- [x] **IN-08 — New output, final output, and expired handles.** Both tools drain newly collected
   output rather than replaying everything on each poll. Codex reports a live session handle while
   applicable and removes finished records after collecting completion. DSCode retains unread
   completed results within its completed-record cap, then removes the record when the final result
   is delivered; later calls report an unknown process. Illustrate a job finishing between polls,
   followed by polling twice. Decide whether current retention and error explanations are sufficient.
+
+  **Decision: keep.** Codex added opt-in model-visible command session discovery so a job remains
+  findable if a code-mode script starts it without returning its handle. No lost `process_id` has
+  been observed in DSCode. Retain `/jobs` for users and the existing output/retention behavior;
+  do not add a job-listing tool or inject job state into model context.
 
 - [ ] **IN-09 — Cancelling a tool call versus stopping its process.** DSCode distinguishes cancelling
   an active launch from cancelling a later poll/write: later cancellation can leave the yielded
