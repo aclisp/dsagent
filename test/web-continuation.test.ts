@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import type { DSCodeSessionRuntime } from "../packages/core/src/session-handoff.ts";
-import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebPreferences } from "../packages/core/src/settings.ts";
+import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "../packages/core/src/settings.ts";
 import {
   parseWebArguments, resolveWebPreferences, webOrigin, WebContinuationController,
   type StartWebContinuationOptions, type WebContinuationService,
@@ -71,17 +71,6 @@ describe("Web network preferences", () => {
     expect(() => parseWebArguments("--wat yes")).toThrow("Usage");
   });
 
-  it("saves only network preferences while preserving unrelated user configuration", async () => {
-    const { root } = await setup();
-    const file = path.join(root, "config.json");
-    await writeFile(file, JSON.stringify({ other: { enabled: true }, web: { future: true } }));
-    await saveWebPreferences({ host: "127.0.0.1", port: 9123 });
-    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-      other: { enabled: true }, web: { future: true, host: "127.0.0.1", port: 9123 },
-    });
-    expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 9123 });
-  });
-
   it("resolves workspace aliases to the same stored ID and rejects invalid stored IDs", async () => {
     const { root } = await setup();
     const workspace = path.join(root, "workspace");
@@ -89,7 +78,7 @@ describe("Web network preferences", () => {
     await mkdir(workspace);
     await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
     const id = "a".repeat(32);
-    await saveWebPreferences({ host: "127.0.0.1", port: 9123 }, { cwd: alias, id });
+    await saveWebWorkspaceId({ cwd: alias, id });
     expect(getStoredWebWorkspaceId(workspace)).toBe(id);
     expect(getStoredWebWorkspaceId(alias)).toBe(id);
     expect(getStoredWebWorkspaceId(root)).toBeUndefined();
@@ -102,6 +91,30 @@ describe("Web network preferences", () => {
 });
 
 describe("TUI Web ownership", () => {
+  it.each([
+    [{}, { host: "127.0.0.1", port: 8899 }],
+    [{ port: 9123 }, { host: "127.0.0.1", port: 9123 }],
+    [{ host: "::1", port: 9123, url: "https://saved.example/" }, { host: "::1", port: 9123, url: "https://saved.example" }],
+  ])("uses overrides for one start and leaves configured network values unchanged (%j)", async (configured, nextNetwork) => {
+    const h = await setup();
+    const file = path.join(h.root, "config.json");
+    const settings = { other: { enabled: true }, web: { future: true, ...configured } };
+    await writeFile(file, JSON.stringify(settings));
+
+    await h.run("web", "--host 0.0.0.0 --port 8900 --url https://temporary.example");
+    const { network, workspaceId } = h.start.mock.calls[0]![0];
+    expect(network).toEqual({ host: "0.0.0.0", port: 8900, url: "https://temporary.example" });
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      ...settings, web: { ...settings.web, workspaceIds: { [realpathSync(h.root)]: workspaceId } },
+    });
+
+    await h.run("tui");
+    await h.run("web");
+    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId });
+    expect(h.start.mock.calls[1]![0].network).toEqual(nextNetwork);
+    await h.controller.close();
+  });
+
   it("rolls back a synchronous activation failure and keeps the TUI available", async () => {
     const h = await setup();
     h.service.activate = vi.fn(() => { throw new Error("transport initialization failed"); });
@@ -154,7 +167,7 @@ describe("TUI Web ownership", () => {
     expect(otherId).not.toBe(id);
     expect(getStoredWebWorkspaceId(first.root)).toBe(id);
     expect(getStoredWebWorkspaceId(otherWorkspace)).toBe(otherId);
-    expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 8899 });
+    expect(getStoredWebPreferences()).toEqual({});
     await second.controller.close();
   });
 
@@ -219,7 +232,7 @@ describe("TUI Web ownership", () => {
     expect(h.ui.setWidget).toHaveBeenLastCalledWith("dscode-web", undefined);
   });
 
-  it("keeps a successfully started service when saving preferences fails", async () => {
+  it("keeps a successfully started service when saving the workspace ID fails", async () => {
     const h = await setup();
     await writeFile(path.join(h.root, "config.json"), "{}");
     // Invalid JSON is introduced after preflight, so the save cannot overwrite it.

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebPreferences } from "./settings.ts";
+import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "./settings.ts";
 import { loadSessionPosition, type DSCodeSessionRuntime, type SessionPosition } from "./session-handoff.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
 
@@ -165,9 +165,9 @@ export class WebContinuationController {
             this.remind();
             this.notify(`Web is running.\n${service.url}\n${service.status?.() ?? ""}\n${service.qr}\nRun /tui when you return.`);
             try {
-              await saveWebPreferences(network, { cwd: runtimeOptions.cwd, id: workspaceId });
+              await saveWebWorkspaceId({ cwd: runtimeOptions.cwd, id: workspaceId });
             } catch (error) {
-              this.notify(`Web is running, but its settings were not saved; the browser URL may change on the next start: ${errorMessage(error)}`, "warning");
+              this.notify(`Web is running, but its workspace ID was not saved; the browser URL may change on the next start: ${errorMessage(error)}`, "warning");
             }
           } finally {
             this.transitioning = false;

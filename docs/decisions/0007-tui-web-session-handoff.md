@@ -198,10 +198,9 @@ addresses such as `0.0.0.0` and `::` require an explicit or saved `url`; report 
 missing origin before starting the service. Do not enumerate network interfaces
 or try to discover a public address.
 
-Persist the last successfully activated `host`, `port`, and optional `url` in
-DSCode's user configuration, using the existing `getDSCodeSettingsPath()`
-resolution: `DSCODE_CONFIG_PATH`, or `DSCODE_HOME/config.json` by default. Add a
-`web` namespace, for example:
+Read `host`, `port`, and optional `url` defaults from DSCode's user configuration,
+using the existing `getDSCodeSettingsPath()` resolution: `DSCODE_CONFIG_PATH`, or
+`DSCODE_HOME/config.json` by default. For example:
 
 ```json
 {
@@ -216,15 +215,14 @@ resolution: `DSCODE_CONFIG_PATH`, or `DSCODE_HOME/config.json` by default. Add a
 }
 ```
 
-Explicit command arguments override saved preferences; saved preferences override
-fresh defaults. A previously saved external bind address is therefore reused by
-`/web` on later TUI starts. Update only these preferences, preserving unrelated
-configuration through the existing atomic settings-write approach. Validate the
-configuration before startup, then attempt to save network preferences and the
-workspace ID together after the service starts successfully. If saving fails,
-keep the service running and warn that its settings were not saved and its URL
-may change on the next start. Persistence is not a condition for successful
-handoff.
+Explicit command arguments override configured values for that start only;
+configured values override built-in defaults. Never write network settings back,
+even on first use. Users edit the configuration directly to change lasting
+defaults. Validate the resolved network settings before startup. After the service
+starts successfully, save the workspace ID through the existing atomic settings
+write, leaving network settings and unrelated configuration unchanged. If saving
+fails, keep the service running and warn that its workspace ID was not saved and
+its URL may change on the next start.
 
 Store workspace IDs separately from network preferences in `web.workspaceIds`,
 keyed by the workspace's canonical absolute path (resolving symbolic links).
@@ -322,7 +320,7 @@ is used so ordinary TUI startup does not eagerly initialize an HTTP server.
 | --- | --- |
 | `packages/core/src/cli-runtime.ts` and TUI command registration | Own the service controller across session replacements, implement commands and reminders, read current runtime parameters for Web, and preserve the TUI's own parameters when resuming Web history. |
 | `packages/core/src/managed-process.ts` | Expose the existing running-job state for handoff preflight. Keep service ownership separate from agent command jobs. |
-| `packages/core/src/settings.ts` | Validate and persist network preferences and random workspace IDs through the existing private user configuration; report save failures as warnings. |
+| `packages/core/src/settings.ts` | Read network defaults and persist random workspace IDs through the existing private user configuration; report ID save failures as warnings. |
 | `packages/http-adapter` | Resume explicit session/branch positions with supplied runtime parameters, expose busy/job state and the actual active position, and serialize takeback with request admission. |
 | `packages/web-ui` | Compose browser chat, approvals, files, scheduler and configured IM Providers under ADR-0009. Reuse existing workspace-secret URLs and browser access behavior. |
 | CLI bundles and `standalone/` | Package dependencies and assets, retain lazy startup, and verify installed/relocated execution. |

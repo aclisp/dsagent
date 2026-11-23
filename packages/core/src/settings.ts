@@ -62,17 +62,15 @@ export function getStoredWebWorkspaceId(cwd: string, settingsPath = getDSCodeSet
   return id;
 }
 
-export async function saveWebPreferences(
-  preferences: WebPreferences,
-  workspace?: { cwd: string; id: string },
+export async function saveWebWorkspaceId(
+  workspace: { cwd: string; id: string },
   settingsPath = getDSCodeSettingsPath(),
 ): Promise<void> {
   const settings = await readSettings(settingsPath);
-  settings.web = { ...settings.web, ...preferences };
-  if (preferences.url === undefined) delete settings.web.url;
-  if (workspace) {
-    settings.web.workspaceIds = { ...settings.web.workspaceIds, [fs.realpathSync(workspace.cwd)]: workspace.id };
-  }
+  settings.web = {
+    ...settings.web,
+    workspaceIds: { ...settings.web?.workspaceIds, [fs.realpathSync(workspace.cwd)]: workspace.id },
+  };
   await writeSettings(settings, settingsPath);
 }
 

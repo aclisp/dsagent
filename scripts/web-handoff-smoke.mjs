@@ -25,7 +25,6 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   const workspace = path.join(root, "workspace");
   await mkdir(home);
   await mkdir(workspace);
-  await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve" }));
   await writeFile(path.join(home, "settings.json"), JSON.stringify({ cacheWarming: "off" }));
   const wechatDirectory = path.join(home, "channels/wechat");
   await mkdir(wechatDirectory, { recursive: true });
@@ -107,6 +106,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
   };
   try {
+    await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve", web: { port } }));
     const tuiArgs = [...args, "--provider", "deepseek", "--model", "deepseek-flash", "--thinking", "low", "--permission", "auto", "--sandbox", "read-only", "--network", "--no-mcp", "--no-approve", "--base-url", `http://127.0.0.1:${provider.address().port}`];
     let program = executable;
     let programArgs = tuiArgs;
@@ -206,7 +206,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests[3].reasoning.effort, "max");
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
-      web: { host: "127.0.0.1", port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
+      web: { port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
     await command("/web", "Run /tui when you return.");
     assert.equal((await fetch(privateUrl)).status, 200, "the saved URL also serves a different conversation in the workspace");
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
