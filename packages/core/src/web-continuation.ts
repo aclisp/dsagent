@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, RegisteredCommand } from "@earendil-works/pi-coding-agent";
 import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "./settings.ts";
 import { loadSessionPosition, type DSCodeSessionRuntime, type SessionPosition } from "./session-handoff.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
@@ -48,8 +48,60 @@ export function parseWebArguments(args: string): Partial<WebPreferences> | "stat
   return result;
 }
 
+const WEB_DEFAULTS = { host: "127.0.0.1", port: 8899 };
+const WEB_OPTION_DESCRIPTIONS = {
+  host: "Listen address (e.g. 127.0.0.1 or 0.0.0.0)",
+  port: "Listen port (1–65535, e.g. 8899)",
+  url: "Browser origin (e.g. https://agent.example.com)",
+} satisfies Record<keyof WebPreferences, string>;
+
+const completeWebArguments: NonNullable<RegisteredCommand["getArgumentCompletions"]> = (prefix) => {
+  // Pi replaces the entire argument prefix, so carry completed options into each result.
+  const token = /\S*$/.exec(prefix)![0];
+  const before = prefix.slice(0, prefix.length - token.length);
+  const pending = /(?:^|\s)--(host|port|url)\s+$/.exec(before);
+  const inline = /^--(host|port|url)=(.*)$/.exec(token);
+  const key = (pending?.[1] ?? inline?.[1]) as keyof WebPreferences | undefined;
+  try {
+    const completed = parseWebArguments(pending ? before.slice(0, pending.index) : before);
+    if (completed === "status" || token === "status") return null;
+    const saved = getStoredWebPreferences();
+    const host = completed.host ?? saved.host ?? WEB_DEFAULTS.host;
+    const port = completed.port ?? saved.port ?? WEB_DEFAULTS.port;
+    const needsUrl = ["0.0.0.0", "::", "[::]"].includes(host) && completed.url === undefined && saved.url === undefined;
+    const lanExample = `http://192.168.1.20:${port}`;
+    if (key) {
+      const partial = pending ? token : inline![2]!;
+      const examples = {
+        host: [WEB_DEFAULTS.host, "0.0.0.0", "::1"],
+        port: [String(WEB_DEFAULTS.port)],
+        url: needsUrl ? [lanExample, "https://agent.example.com"] : ["https://agent.example.com"],
+      }[key];
+      return examples.filter(example => example.startsWith(partial) && example !== partial).map(example => ({
+        value: `${before}${pending ? "" : `--${key}=`}${example}`,
+        label: example,
+        description: key === "url" ? "Example only; replace with your browser origin" : WEB_OPTION_DESCRIPTIONS[key],
+      }));
+    }
+
+    const keys: (keyof WebPreferences)[] = needsUrl ? ["url", "host", "port"] : ["host", "port", "url"];
+    const items = keys.filter(option => completed[option] === undefined && `--${option}`.startsWith(token)).map(option => ({
+      value: `${before}--${option} `,
+      label: `--${option}`,
+      description: option === "url" && needsUrl ? `Required for wildcard host (e.g. ${lanExample})` : WEB_OPTION_DESCRIPTIONS[option],
+    }));
+    if (!before.trim() && "status".startsWith(token)) {
+      items.push({ value: `${before}status`, label: "status", description: "Show the running service and its URL" });
+    }
+    return items;
+  } catch {
+    // Completion should not interrupt typing when the command or config is incomplete or invalid.
+    return null;
+  }
+};
+
 export function resolveWebPreferences(saved: Partial<WebPreferences>, overrides: Partial<WebPreferences>): WebPreferences {
-  const preferences = { host: "127.0.0.1", port: 8899, ...saved, ...overrides };
+  const preferences = { ...WEB_DEFAULTS, ...saved, ...overrides };
   if (typeof preferences.host !== "string" || !preferences.host || /[\s/\\?#@]/.test(preferences.host)) {
     throw new Error("Web host must be a hostname or IP address, without a URL scheme or path.");
   }
@@ -113,7 +165,8 @@ export class WebContinuationController {
 
   register(pi: ExtensionAPI, baseOptions: DSCodeRuntimeOptions): void {
     pi.registerCommand("web", {
-      description: "Continue this conversation in a browser; /web status shows the service",
+      description: "Continue in a browser; Enter uses defaults, Space shows options",
+      getArgumentCompletions: completeWebArguments,
       handler: async (args, ctx) => {
         if (ctx.mode !== "tui") return;
         try {

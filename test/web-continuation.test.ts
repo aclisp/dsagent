@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import type { DSCodeSessionRuntime } from "../packages/core/src/session-handoff.ts";
@@ -38,7 +38,7 @@ async function setup(root?: string) {
   };
   const start = vi.fn(async (_options: StartWebContinuationOptions) => service);
   const controller = new WebContinuationController(start);
-  const commands = new Map<string, { handler(args: string, ctx: ExtensionCommandContext): Promise<void> }>();
+  const commands = new Map<string, Pick<RegisteredCommand, "handler" | "getArgumentCompletions">>();
   const pi = { registerCommand: (name: string, command: typeof commands extends Map<string, infer T> ? T : never) => commands.set(name, command) } as unknown as ExtensionAPI;
   const ui = { notify: vi.fn(), setWidget: vi.fn() };
   const ctx = { mode: "tui", ui, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
@@ -49,10 +49,35 @@ async function setup(root?: string) {
   controller.register(pi, options);
   controller.attach(runtime, ctx);
   const run = (name: string, args = "") => commands.get(name)!.handler(args, ctx);
-  return { root, options, runtime, service, start, controller, ctx, ui, run };
+  const completeWeb = (prefix: string) => commands.get("web")!.getArgumentCompletions!(prefix);
+  return { root, options, runtime, service, start, controller, ctx, ui, run, completeWeb };
 }
 
 describe("Web network preferences", () => {
+  it("guides argument entry without overwriting previous options or requiring example values", async () => {
+    const { completeWeb } = await setup();
+    expect((await completeWeb(""))?.map(item => item.label)).toEqual(["--host", "--port", "--url", "status"]);
+    expect((await completeWeb("--ho"))?.[0]?.value).toBe("--host ");
+    expect((await completeWeb("--host "))?.map(item => item.label)).toContain("127.0.0.1");
+    expect((await completeWeb("--host ::1 --port=8"))?.[0]?.value).toBe("--host ::1 --port=8899");
+    expect((await completeWeb("--port 8899")) ?? []).toEqual([]);
+    expect((await completeWeb("--port 9123")) ?? []).toEqual([]);
+    expect((await completeWeb("--host ::1 --port 9123 "))?.map(item => item.label)).toEqual(["--url"]);
+    expect(await completeWeb("status")).toBeNull();
+  });
+
+  it("prioritizes the browser origin when the effective host is a wildcard and no URL is configured", async () => {
+    const { root, completeWeb } = await setup();
+    const prefix = "--host=0.0.0.0 --port 8900 ";
+    expect((await completeWeb(prefix))?.[0]).toMatchObject({ label: "--url", description: expect.stringContaining("192.168.1.20:8900") });
+    expect((await completeWeb(`${prefix}--url `))?.[0]?.value).toBe(`${prefix}--url http://192.168.1.20:8900`);
+    const file = path.join(root, "config.json");
+    await writeFile(file, JSON.stringify({ web: { host: "::" } }));
+    expect((await completeWeb(""))?.[0]?.label).toBe("--url");
+    await writeFile(file, JSON.stringify({ web: { host: "::", url: "https://saved.example" } }));
+    expect((await completeWeb(""))?.[0]?.label).toBe("--host");
+  });
+
   it("uses explicit, saved, then default parameters and separates origin from binding", () => {
     expect(resolveWebPreferences({}, {})).toEqual({ host: "127.0.0.1", port: 8899 });
     const saved = { host: "0.0.0.0", port: 1234, url: "https://agent.example.com/" };

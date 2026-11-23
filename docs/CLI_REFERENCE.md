@@ -407,6 +407,10 @@ loads the Web conversation while keeping the TUI's own current settings. The two
 interfaces do not synchronize live. The reminder above the editor stays visible
 while Web is running; run `/tui` before continuing in the TUI.
 
+Press Enter after `/web` to start with defaults, or type a space to see the
+options and examples. Use Tab to select an option, then start typing its value
+to see matching suggestions. Type a space and `-` to see the remaining options.
+
 Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same LAN:
 
 ```text

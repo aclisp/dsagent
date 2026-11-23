@@ -641,6 +641,9 @@ Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing D
 `/web status` 查看网址及各组件状态；`/tui` 停止这些组件并接回 Web 当前会话，保留 TUI 自己的运行设置。
 服务随 TUI 进程退出而停止，SSH 使用时可通过 tmux 保持进程。
 
+输入 `/web` 后直接回车按默认设置启动，输入空格查看可用选项和示例。按 Tab 补全选项，开始输入值时会显示匹配的建议。
+填完一个值后，输入空格和 `-` 可查看剩余选项。
+
 `--host`、`--port`、`--url` 只覆盖本次启动的设置，不写回配置。要长期修改默认值，请编辑
 `$DSCODE_HOME/config.json`（或 `DSCODE_CONFIG_PATH` 指定的文件）中的 `web.host`、`web.port` 和 `web.url`。
 默认监听 `127.0.0.1:8899`；没指定 `url` 时，用实际监听地址生成浏览器访问地址。
