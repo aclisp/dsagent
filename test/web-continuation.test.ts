@@ -2,11 +2,11 @@ import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import type { DSCodeSessionRuntime } from "../packages/core/src/session-handoff.ts";
-import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebPreferences } from "../packages/core/src/settings.ts";
+import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "../packages/core/src/settings.ts";
 import {
   parseWebArguments, resolveWebPreferences, webOrigin, WebContinuationController,
   type StartWebContinuationOptions, type WebContinuationService,
@@ -38,7 +38,7 @@ async function setup(root?: string) {
   };
   const start = vi.fn(async (_options: StartWebContinuationOptions) => service);
   const controller = new WebContinuationController(start);
-  const commands = new Map<string, { handler(args: string, ctx: ExtensionCommandContext): Promise<void> }>();
+  const commands = new Map<string, Pick<RegisteredCommand, "handler" | "getArgumentCompletions">>();
   const pi = { registerCommand: (name: string, command: typeof commands extends Map<string, infer T> ? T : never) => commands.set(name, command) } as unknown as ExtensionAPI;
   const ui = { notify: vi.fn(), setWidget: vi.fn() };
   const ctx = { mode: "tui", ui, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
@@ -49,10 +49,35 @@ async function setup(root?: string) {
   controller.register(pi, options);
   controller.attach(runtime, ctx);
   const run = (name: string, args = "") => commands.get(name)!.handler(args, ctx);
-  return { root, options, runtime, service, start, controller, ctx, ui, run };
+  const completeWeb = (prefix: string) => commands.get("web")!.getArgumentCompletions!(prefix);
+  return { root, options, runtime, service, start, controller, ctx, ui, run, completeWeb };
 }
 
 describe("Web network preferences", () => {
+  it("guides argument entry without overwriting previous options or requiring example values", async () => {
+    const { completeWeb } = await setup();
+    expect((await completeWeb(""))?.map(item => item.label)).toEqual(["--host", "--port", "--url", "status"]);
+    expect((await completeWeb("--ho"))?.[0]?.value).toBe("--host ");
+    expect((await completeWeb("--host "))?.map(item => item.label)).toContain("127.0.0.1");
+    expect((await completeWeb("--host ::1 --port=8"))?.[0]?.value).toBe("--host ::1 --port=8899");
+    expect((await completeWeb("--port 8899")) ?? []).toEqual([]);
+    expect((await completeWeb("--port 9123")) ?? []).toEqual([]);
+    expect((await completeWeb("--host ::1 --port 9123 "))?.map(item => item.label)).toEqual(["--url"]);
+    expect(await completeWeb("status")).toBeNull();
+  });
+
+  it("prioritizes the browser origin when the effective host is a wildcard and no URL is configured", async () => {
+    const { root, completeWeb } = await setup();
+    const prefix = "--host=0.0.0.0 --port 8900 ";
+    expect((await completeWeb(prefix))?.[0]).toMatchObject({ label: "--url", description: expect.stringContaining("192.168.1.20:8900") });
+    expect((await completeWeb(`${prefix}--url `))?.[0]?.value).toBe(`${prefix}--url http://192.168.1.20:8900`);
+    const file = path.join(root, "config.json");
+    await writeFile(file, JSON.stringify({ web: { host: "::" } }));
+    expect((await completeWeb(""))?.[0]?.label).toBe("--url");
+    await writeFile(file, JSON.stringify({ web: { host: "::", url: "https://saved.example" } }));
+    expect((await completeWeb(""))?.[0]?.label).toBe("--host");
+  });
+
   it("uses explicit, saved, then default parameters and separates origin from binding", () => {
     expect(resolveWebPreferences({}, {})).toEqual({ host: "127.0.0.1", port: 8899 });
     const saved = { host: "0.0.0.0", port: 1234, url: "https://agent.example.com/" };
@@ -71,17 +96,6 @@ describe("Web network preferences", () => {
     expect(() => parseWebArguments("--wat yes")).toThrow("Usage");
   });
 
-  it("saves only network preferences while preserving unrelated user configuration", async () => {
-    const { root } = await setup();
-    const file = path.join(root, "config.json");
-    await writeFile(file, JSON.stringify({ other: { enabled: true }, web: { future: true } }));
-    await saveWebPreferences({ host: "127.0.0.1", port: 9123 });
-    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-      other: { enabled: true }, web: { future: true, host: "127.0.0.1", port: 9123 },
-    });
-    expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 9123 });
-  });
-
   it("resolves workspace aliases to the same stored ID and rejects invalid stored IDs", async () => {
     const { root } = await setup();
     const workspace = path.join(root, "workspace");
@@ -89,7 +103,7 @@ describe("Web network preferences", () => {
     await mkdir(workspace);
     await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
     const id = "a".repeat(32);
-    await saveWebPreferences({ host: "127.0.0.1", port: 9123 }, { cwd: alias, id });
+    await saveWebWorkspaceId({ cwd: alias, id });
     expect(getStoredWebWorkspaceId(workspace)).toBe(id);
     expect(getStoredWebWorkspaceId(alias)).toBe(id);
     expect(getStoredWebWorkspaceId(root)).toBeUndefined();
@@ -102,6 +116,30 @@ describe("Web network preferences", () => {
 });
 
 describe("TUI Web ownership", () => {
+  it.each([
+    [{}, { host: "127.0.0.1", port: 8899 }],
+    [{ port: 9123 }, { host: "127.0.0.1", port: 9123 }],
+    [{ host: "::1", port: 9123, url: "https://saved.example/" }, { host: "::1", port: 9123, url: "https://saved.example" }],
+  ])("uses overrides for one start and leaves configured network values unchanged (%j)", async (configured, nextNetwork) => {
+    const h = await setup();
+    const file = path.join(h.root, "config.json");
+    const settings = { other: { enabled: true }, web: { future: true, ...configured } };
+    await writeFile(file, JSON.stringify(settings));
+
+    await h.run("web", "--host 0.0.0.0 --port 8900 --url https://temporary.example");
+    const { network, workspaceId } = h.start.mock.calls[0]![0];
+    expect(network).toEqual({ host: "0.0.0.0", port: 8900, url: "https://temporary.example" });
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      ...settings, web: { ...settings.web, workspaceIds: { [realpathSync(h.root)]: workspaceId } },
+    });
+
+    await h.run("tui");
+    await h.run("web");
+    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId });
+    expect(h.start.mock.calls[1]![0].network).toEqual(nextNetwork);
+    await h.controller.close();
+  });
+
   it("rolls back a synchronous activation failure and keeps the TUI available", async () => {
     const h = await setup();
     h.service.activate = vi.fn(() => { throw new Error("transport initialization failed"); });
@@ -154,7 +192,7 @@ describe("TUI Web ownership", () => {
     expect(otherId).not.toBe(id);
     expect(getStoredWebWorkspaceId(first.root)).toBe(id);
     expect(getStoredWebWorkspaceId(otherWorkspace)).toBe(otherId);
-    expect(getStoredWebPreferences()).toEqual({ host: "127.0.0.1", port: 8899 });
+    expect(getStoredWebPreferences()).toEqual({});
     await second.controller.close();
   });
 
@@ -219,7 +257,7 @@ describe("TUI Web ownership", () => {
     expect(h.ui.setWidget).toHaveBeenLastCalledWith("dscode-web", undefined);
   });
 
-  it("keeps a successfully started service when saving preferences fails", async () => {
+  it("keeps a successfully started service when saving the workspace ID fails", async () => {
     const h = await setup();
     await writeFile(path.join(h.root, "config.json"), "{}");
     // Invalid JSON is introduced after preflight, so the save cannot overwrite it.

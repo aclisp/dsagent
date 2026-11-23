@@ -641,6 +641,14 @@ Release 并发布 full 和 lean Docker Hub 镜像。详细流程见 [Releasing D
 `/web status` 查看网址及各组件状态；`/tui` 停止这些组件并接回 Web 当前会话，保留 TUI 自己的运行设置。
 服务随 TUI 进程退出而停止，SSH 使用时可通过 tmux 保持进程。
 
+输入 `/web` 后直接回车按默认设置启动，输入空格查看可用选项和示例。按 Tab 补全选项，开始输入值时会显示匹配的建议。
+填完一个值后，输入空格和 `-` 可查看剩余选项。
+
+`--host`、`--port`、`--url` 只覆盖本次启动的设置，不写回配置。要长期修改默认值，请编辑
+`$DSCODE_HOME/config.json`（或 `DSCODE_CONFIG_PATH` 指定的文件）中的 `web.host`、`web.port` 和 `web.url`。
+默认监听 `127.0.0.1:8899`；没指定 `url` 时，用实际监听地址生成浏览器访问地址。
+监听 `0.0.0.0` 或 `::` 时，必须通过参数或配置提供 `url`。
+
 wecom 读取启动 TUI 时继承的 `IM_WECOM_*` 环境变量；wechat 读取同一 `DSCODE_HOME` 下由
 `dscode channels login wechat` 保存的绑定。CLI 内置 `scheduled-tasks` skill，初始只展示名称、描述和路径，任务需要时再读取正文。
 已有同名 skill 优先；`--no-skills` 禁用自动发现，显式 `--skill` 路径仍按 Pi 原有规则加载并传递到 Web。

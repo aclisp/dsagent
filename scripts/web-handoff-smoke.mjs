@@ -25,7 +25,6 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   const workspace = path.join(root, "workspace");
   await mkdir(home);
   await mkdir(workspace);
-  await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve" }));
   await writeFile(path.join(home, "settings.json"), JSON.stringify({ cacheWarming: "off" }));
   const wechatDirectory = path.join(home, "channels/wechat");
   await mkdir(wechatDirectory, { recursive: true });
@@ -92,8 +91,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   await new Promise(resolve => reserve.close(resolve));
   let output = "", stderr = "", exitCode;
   let child, verificationError;
-  const waitFor = async (predicate, description) => {
-    const deadline = Date.now() + (process.platform === "win32" ? 30_000 : 12_000);
+  const waitFor = async (predicate, description, timeout = process.platform === "win32" ? 30_000 : 12_000) => {
+    const deadline = Date.now() + timeout;
     while (!await predicate()) {
       if (exitCode !== undefined) throw new Error(`TUI exited (${exitCode}) while waiting for ${description}: ${stderr}\n${output.slice(-12000)}`);
       if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}: ${stderr}\n${output.slice(-16000)}`);
@@ -106,7 +105,25 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     send(`${text}\r`);
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
   };
+  // Ctrl+C closes the open argument menu. The PTY bridge can hand that byte and the
+  // following command to the TUI in one read, which the editor then drops, so keep
+  // cancelling until the TUI demonstrably runs a command after clearing the line.
+  const cancelInput = async () => {
+    for (let attempt = 1; ; attempt++) {
+      const start = output.length;
+      send("\x03");
+      await new Promise(resolve => setTimeout(resolve, 100));
+      send("/web status\r");
+      try {
+        await waitFor(() => output.slice(start).includes("Web is stopped."), "editor reset after Ctrl+C", 4_000);
+        return;
+      } catch (error) {
+        if (attempt === 3) throw error;
+      }
+    }
+  };
   try {
+    await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve", web: { port } }));
     const tuiArgs = [...args, "--provider", "deepseek", "--model", "deepseek-flash", "--thinking", "low", "--permission", "auto", "--sandbox", "read-only", "--network", "--no-mcp", "--no-approve", "--base-url", `http://127.0.0.1:${provider.address().port}`];
     let program = executable;
     let programArgs = tuiArgs;
@@ -137,6 +154,19 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("TUI_BEFORE_HANDOFF", "handoff reply 1");
     assert.equal(requests[0].model, "deepseek-v4-pro");
     assert.doesNotMatch(JSON.stringify(requests[0]), /<name>scheduled-tasks<\/name>/);
+    const completionStart = output.length;
+    send("/web");
+    await waitFor(() => output.slice(completionStart).includes("Space shows options"), "Web command hint");
+    send(" ");
+    await waitFor(() => /--host[\s\S]*--port[\s\S]*--url/.test(output.slice(completionStart)), "Web argument menu");
+    send("\t");
+    await waitFor(() => output.slice(completionStart).includes("/web --host "), "Web host completion");
+    const valueMenuStart = output.length;
+    send("0");
+    await waitFor(() => output.slice(valueMenuStart).includes("Listen address"), "Web host value examples");
+    send(".0.0.0 -");
+    await waitFor(() => output.slice(completionStart).includes("Required for wildcard host"), "Web wildcard origin hint");
+    await cancelInput();
     const failedStart = output.length;
     send(`/web --port ${provider.address().port}\r`);
     await waitFor(() => output.slice(failedStart).toLowerCase().includes("in use"), "occupied-port rollback");
@@ -206,7 +236,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests[3].reasoning.effort, "max");
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
-      web: { host: "127.0.0.1", port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
+      web: { port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
     await command("/web", "Run /tui when you return.");
     assert.equal((await fetch(privateUrl)).status, 200, "the saved URL also serves a different conversation in the workspace");
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();

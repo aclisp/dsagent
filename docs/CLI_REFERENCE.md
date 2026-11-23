@@ -407,6 +407,10 @@ loads the Web conversation while keeping the TUI's own current settings. The two
 interfaces do not synchronize live. The reminder above the editor stays visible
 while Web is running; run `/tui` before continuing in the TUI.
 
+Press Enter after `/web` to start with defaults, or type a space to see the
+options and examples. Use Tab to select an option, then start typing its value
+to see matching suggestions. Type a space and `-` to see the remaining options.
+
 Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same LAN:
 
 ```text
@@ -416,8 +420,11 @@ Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same 
 Replace the example address with the host's LAN address. For a cloud host behind
 an existing HTTPS reverse proxy, use `/web --url https://agent.example.com` and
 configure its listener with `--host` and `--port` as needed. A wildcard host needs
-an explicit browser origin. Successful network settings are reused from
-`$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`). The same file stores a random
+an explicit browser origin. `--host`, `--port`, and `--url` override defaults for
+this start only and are never saved. To set lasting defaults, edit `web.host`,
+`web.port`, and `web.url` in `$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`).
+Without a configured or explicit `url`, the browser origin comes from the host and
+port. The same file stores a random
 ID per canonical workspace path in `web.workspaceIds`. With the same origin, that
 workspace keeps its private URL across handoffs and TUI restarts: refresh the
 saved browser page after `/web` to open the current TUI conversation. `/tui` stops
