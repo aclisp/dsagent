@@ -91,8 +91,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
   await new Promise(resolve => reserve.close(resolve));
   let output = "", stderr = "", exitCode;
   let child, verificationError;
-  const waitFor = async (predicate, description) => {
-    const deadline = Date.now() + (process.platform === "win32" ? 30_000 : 12_000);
+  const waitFor = async (predicate, description, timeout = process.platform === "win32" ? 30_000 : 12_000) => {
+    const deadline = Date.now() + timeout;
     while (!await predicate()) {
       if (exitCode !== undefined) throw new Error(`TUI exited (${exitCode}) while waiting for ${description}: ${stderr}\n${output.slice(-12000)}`);
       if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}: ${stderr}\n${output.slice(-16000)}`);
@@ -104,6 +104,23 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const start = output.length;
     send(`${text}\r`);
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
+  };
+  // Ctrl+C closes the open argument menu. The PTY bridge can hand that byte and the
+  // following command to the TUI in one read, which the editor then drops, so keep
+  // cancelling until the TUI demonstrably runs a command after clearing the line.
+  const cancelInput = async () => {
+    for (let attempt = 1; ; attempt++) {
+      const start = output.length;
+      send("\x03");
+      await new Promise(resolve => setTimeout(resolve, 100));
+      send("/web status\r");
+      try {
+        await waitFor(() => output.slice(start).includes("Web is stopped."), "editor reset after Ctrl+C", 4_000);
+        return;
+      } catch (error) {
+        if (attempt === 3) throw error;
+      }
+    }
   };
   try {
     await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve", web: { port } }));
@@ -149,7 +166,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await waitFor(() => output.slice(valueMenuStart).includes("Listen address"), "Web host value examples");
     send(".0.0.0 -");
     await waitFor(() => output.slice(completionStart).includes("Required for wildcard host"), "Web wildcard origin hint");
-    send("\x03");
+    await cancelInput();
     const failedStart = output.length;
     send(`/web --port ${provider.address().port}\r`);
     await waitFor(() => output.slice(failedStart).toLowerCase().includes("in use"), "occupied-port rollback");
