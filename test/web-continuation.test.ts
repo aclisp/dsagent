@@ -158,7 +158,7 @@ describe("Web network preferences", () => {
 });
 
 describe("TUI Web ownership", () => {
-  it("migrates legacy entries after a successful start without changing the workspace ID", async () => {
+  it("moves the legacy workspace ID after a successful start without changing it", async () => {
     const h = await setup();
     const key = realpathSync(h.root);
     const other = path.join(key, "other");
@@ -168,7 +168,6 @@ describe("TUI Web ownership", () => {
     const legacy = { web: {
       port: 8899,
       workspaceIds: { [key]: id, [other]: otherId },
-      workspaceOverrides: { [key]: { port: 8900 }, [other]: { port: 8901 } },
     } };
     await writeFile(file, JSON.stringify(legacy));
 
@@ -177,12 +176,11 @@ describe("TUI Web ownership", () => {
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(legacy);
 
     await h.run("web");
-    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId: id, network: { port: 8900 } });
+    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId: id, network: { port: 8899 } });
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ web: {
       port: 8899,
-      workspaces: { [key]: { id, port: 8900 } },
+      workspaces: { [key]: { id } },
       workspaceIds: { [other]: otherId },
-      workspaceOverrides: { [other]: { port: 8901 } },
     } });
     await h.controller.close();
   });

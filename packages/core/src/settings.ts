@@ -24,7 +24,6 @@ type WebWorkspaceSettings = Partial<WebPreferences> & { id?: string };
 type WebSettings = Partial<WebPreferences> & {
   workspaces?: Record<string, WebWorkspaceSettings>;
   workspaceIds?: Record<string, string>;
-  workspaceOverrides?: Record<string, Partial<WebPreferences>>;
 };
 
 interface DSCodeSettings {
@@ -52,19 +51,17 @@ export function getWebWorkspaceSettings(cwd: string, settingsPath = getDSCodeSet
   const web = readSettingsSync(settingsPath).web;
   const global = readWebPreferences(web, "web");
   const key = fs.realpathSync(cwd);
-  const saved = webObject(web?.workspaces, "web.workspaces")[key];
+  const record = webObject(webObject(web?.workspaces, "web.workspaces")[key], "web.workspaces entry");
   const legacyId = webObject(web?.workspaceIds, "web.workspaceIds")[key];
-  const legacyNetwork = webObject(web?.workspaceOverrides, "web.workspaceOverrides")[key];
-  const record = webObject(saved, "web.workspaces entry");
   const id: unknown = record.id === undefined ? legacyId : record.id;
   if (id !== undefined && (typeof id !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(id))) {
     throw new Error("Stored Web workspace ID must be a 32-character base64url string");
   }
   return {
     global,
-    workspace: readWebPreferences(saved === undefined ? legacyNetwork : record, "Web workspace settings"),
+    workspace: readWebPreferences(record, "web.workspaces entry"),
     id,
-    needsMigration: legacyId !== undefined || legacyNetwork !== undefined,
+    needsMigration: legacyId !== undefined,
   };
 }
 
@@ -89,20 +86,15 @@ export async function saveWebWorkspaceSettings(
 ): Promise<void> {
   const key = fs.realpathSync(workspace.cwd);
   await updateSettings(settingsPath, settings => {
-    const { workspaces, workspaceIds, workspaceOverrides, ...web } = webObject(settings.web, "web");
+    const { workspaces, workspaceIds, ...web } = webObject(settings.web, "web");
     const entries = webObject(workspaces, "web.workspaces");
     const ids = { ...webObject(workspaceIds, "web.workspaceIds") };
-    const overrides = { ...webObject(workspaceOverrides, "web.workspaceOverrides") };
-    const previous = entries[key] === undefined
-      ? readWebPreferences(overrides[key], "web.workspaceOverrides entry")
-      : webObject(entries[key], "web.workspaces entry");
+    const previous = webObject(entries[key], "web.workspaces entry");
     delete ids[key];
-    delete overrides[key];
     settings.web = {
       ...web,
       workspaces: { ...entries, [key]: { ...previous, id: workspace.id, ...workspace.overrides } },
       ...(Object.keys(ids).length ? { workspaceIds: ids } : {}),
-      ...(Object.keys(overrides).length ? { workspaceOverrides: overrides } : {}),
     };
   });
 }

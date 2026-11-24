@@ -225,8 +225,8 @@ workspace ID in one locked, atomic settings update. If saving fails, keep Web ru
 and warn that its workspace settings were not saved and its URL may change on the next start.
 
 Store each workspace's ID and optional network fields in `web.workspaces`, keyed by
-its canonical absolute path (resolving symbolic links). Read legacy `web.workspaceIds`
-and `web.workspaceOverrides` and migrate that workspace on its next successful handoff.
+its canonical absolute path (resolving symbolic links). Read legacy IDs from
+`web.workspaceIds` and move each ID on that workspace's next successful handoff.
 Do not persist complete private chat URLs or runtime settings. The workspace IDs
 are access credentials and use the existing private user-configuration file.
 
