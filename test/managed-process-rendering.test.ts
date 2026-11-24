@@ -44,11 +44,11 @@ const base: ManagedProcessResult = {
 };
 
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
-  it.each([0, 1])("omits exit timing for an ordinary exit with code %i", async (exitCode) => {
+  it.each([0, 1])("omits the completed process ID and exit timing from model output for exit code %i", async (exitCode) => {
     const details = { ...base, exitCode, exitedAfterMs: 200 };
     const { tool, result } = await execute(name, details);
     const text = [
-      "command output", "process_id: 1", "status: completed", `exit_code: ${exitCode}`, "sandbox: host",
+      "command output", "status: completed", `exit_code: ${exitCode}`, "sandbox: host",
     ].join("\n");
     expect(result.content).toEqual([{ type: "text", text }]);
     expect(render(tool, result, true).text).not.toContain("main_process_exit:");
@@ -117,7 +117,7 @@ describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) 
     expect(expanded.text).not.toContain("exit_code:");
     expect(expanded.red).toEqual([]);
     expect(result.content).toEqual([{ type: "text", text: [
-      "command output", "process_id: 1", "status: running", "Use write_stdin to poll or interact.", "sandbox: host",
+      "command output", "process_id: 1", "status: running", "sandbox: host",
     ].join("\n") }]);
   });
 

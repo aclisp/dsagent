@@ -155,7 +155,7 @@ export class ManagedProcessRegistry {
     if (running >= MAX_RUNNING_PROCESSES) {
       throw new Error([
         `Cannot start command: this session already has ${MAX_RUNNING_PROCESSES} running jobs.`,
-        "Use /jobs to inspect them, then wait for a job to finish or stop one with write_stdin using terminate: true.",
+        "Wait for a job to finish, or stop an unneeded job with write_stdin (terminate: true).",
       ].join("\n"));
     }
     // Admission through record registration stays synchronous, including parallel start calls.

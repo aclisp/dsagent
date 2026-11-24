@@ -558,7 +558,10 @@ describe("checkpoint extension commands", () => {
       undefined,
       ctx as any,
     );
-    expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("Applied checkpoint") });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringMatching(/^Applied checkpoint [^\n]+\.\nfiles: [^\n]+\ndiff: \+2 -1$/),
+    });
     // Later disk edits must not change the checkpoint's displayed diff.
     await fs.writeFile(path.join(root, "config.txt"), "unrelated\n");
     await commands.get("diff")!.handler("", ctx);

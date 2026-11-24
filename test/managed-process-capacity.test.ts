@@ -49,7 +49,7 @@ describe("managed process capacity", () => {
       expect(started.every((result) => result.running)).toBe(true);
       expect(jobs).toHaveLength(64);
       await expect(registry.start("echo rejected", options)).rejects.toThrow(
-        "Cannot start command: this session already has 64 running jobs.\nUse /jobs to inspect them, then wait for a job to finish or stop one with write_stdin using terminate: true.",
+        "Cannot start command: this session already has 64 running jobs.\nWait for a job to finish, or stop an unneeded job with write_stdin (terminate: true).",
       );
       expect(spawn).toHaveBeenCalledTimes(64);
       expect(registry.list()).toEqual(jobs);
