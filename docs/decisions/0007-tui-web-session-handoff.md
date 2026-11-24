@@ -208,24 +208,25 @@ using the existing `getDSCodeSettingsPath()` resolution: `DSCODE_CONFIG_PATH`, o
     "host": "127.0.0.1",
     "port": 8899,
     "url": "https://agent.example.com",
-    "workspaceIds": {
-      "/home/me/project": "<random-workspace-id>"
+    "workspaces": {
+      "/home/me/project": { "id": "<random-workspace-id>", "port": 8900 }
     }
   }
 }
 ```
 
-Explicit command arguments override configured values for that start only;
-configured values override built-in defaults. Never write network settings back,
-even on first use. Users edit the configuration directly to change lasting
-defaults. Validate the resolved network settings before startup. After the service
-starts successfully, save the workspace ID through the existing atomic settings
-write, leaving network settings and unrelated configuration unchanged. If saving
-fails, keep the service running and warn that its workspace ID was not saved and
-its URL may change on the next start.
+Explicit command arguments override network fields in the current `web.workspaces`
+entry, then the user-configured global defaults, then the built-in defaults.
+Validate the resolved network settings before startup. After a successful start,
+merge only explicitly supplied flags into that workspace's saved overrides; do not
+copy inherited values or rewrite global defaults. Removing network fields restores
+the corresponding defaults without changing the `id`. Save network fields and the
+workspace ID in one locked, atomic settings update. If saving fails, keep Web running
+and warn that its workspace settings were not saved and its URL may change on the next start.
 
-Store workspace IDs separately from network preferences in `web.workspaceIds`,
-keyed by the workspace's canonical absolute path (resolving symbolic links).
+Store each workspace's ID and optional network fields in `web.workspaces`, keyed by
+its canonical absolute path (resolving symbolic links). Read legacy `web.workspaceIds`
+and `web.workspaceOverrides` and migrate that workspace on its next successful handoff.
 Do not persist complete private chat URLs or runtime settings. The workspace IDs
 are access credentials and use the existing private user-configuration file.
 
@@ -235,7 +236,7 @@ This feature is a temporary browser entry for one person's own workspace. Reuse
 the existing Web UI workspace-secret URL scheme and access behavior.
 
 On the first successful handoff for a workspace, save a random 24-byte base64url
-workspace ID in `web.workspaceIds`. Reuse it on subsequent handoffs, including
+workspace ID in its `web.workspaces` entry. Reuse it on subsequent handoffs, including
 after the TUI restarts, when using the same user configuration. Do not derive the
 access credential from a plain hash of a guessable workspace path. A different
 canonical workspace path gets its own random ID.
@@ -320,7 +321,7 @@ is used so ordinary TUI startup does not eagerly initialize an HTTP server.
 | --- | --- |
 | `packages/core/src/cli-runtime.ts` and TUI command registration | Own the service controller across session replacements, implement commands and reminders, read current runtime parameters for Web, and preserve the TUI's own parameters when resuming Web history. |
 | `packages/core/src/managed-process.ts` | Expose the existing running-job state for handoff preflight. Keep service ownership separate from agent command jobs. |
-| `packages/core/src/settings.ts` | Read network defaults and persist random workspace IDs through the existing private user configuration; report ID save failures as warnings. |
+| `packages/core/src/settings.ts` | Read network defaults and persist each workspace's network overrides and random ID in the private user configuration. |
 | `packages/http-adapter` | Resume explicit session/branch positions with supplied runtime parameters, expose busy/job state and the actual active position, and serialize takeback with request admission. |
 | `packages/web-ui` | Compose browser chat, approvals, files, scheduler and configured IM Providers under ADR-0009. Reuse existing workspace-secret URLs and browser access behavior. |
 | CLI bundles and `standalone/` | Package dependencies and assets, retain lazy startup, and verify installed/relocated execution. |

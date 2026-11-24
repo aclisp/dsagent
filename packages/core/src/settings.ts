@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { lock } from "proper-lockfile";
 import { getDSCodeHome } from "./home.ts";
 import { isStandalone } from "./distribution.ts";
 import type { WebPreferences } from "./web-continuation.ts";
@@ -19,8 +20,15 @@ export interface DSCodeStorageSettings {
   sqliteHome?: string;
 }
 
+type WebWorkspaceSettings = Partial<WebPreferences> & { id?: string };
+type WebSettings = Partial<WebPreferences> & {
+  workspaces?: Record<string, WebWorkspaceSettings>;
+  workspaceIds?: Record<string, string>;
+  workspaceOverrides?: Record<string, Partial<WebPreferences>>;
+};
+
 interface DSCodeSettings {
-  web?: Partial<WebPreferences> & { workspaceIds?: Record<string, string> };
+  web?: WebSettings;
   deepseek?: {
     baseUrl?: unknown;
   };
@@ -40,38 +48,63 @@ export function getDSCodeSettingsPath(): string {
   return process.env.DSCODE_CONFIG_PATH ?? path.join(getDSCodeHome(), "config.json");
 }
 
-export function getStoredWebPreferences(settingsPath = getDSCodeSettingsPath()): Partial<WebPreferences> {
-  const value = readSettingsSync(settingsPath).web;
-  if (value === undefined) return {};
-  if (!isRecord(value)) throw new Error("web preferences must be an object");
-  return {
-    ...(value.host !== undefined ? { host: value.host } : {}),
-    ...(value.port !== undefined ? { port: value.port } : {}),
-    ...(value.url !== undefined ? { url: value.url } : {}),
-  };
-}
-
-export function getStoredWebWorkspaceId(cwd: string, settingsPath = getDSCodeSettingsPath()): string | undefined {
-  const value = readSettingsSync(settingsPath).web?.workspaceIds;
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) throw new Error("web.workspaceIds must be an object");
-  const id = value[fs.realpathSync(cwd)];
+export function getWebWorkspaceSettings(cwd: string, settingsPath = getDSCodeSettingsPath()) {
+  const web = readSettingsSync(settingsPath).web;
+  const global = readWebPreferences(web, "web");
+  const key = fs.realpathSync(cwd);
+  const saved = webObject(web?.workspaces, "web.workspaces")[key];
+  const legacyId = webObject(web?.workspaceIds, "web.workspaceIds")[key];
+  const legacyNetwork = webObject(web?.workspaceOverrides, "web.workspaceOverrides")[key];
+  const record = webObject(saved, "web.workspaces entry");
+  const id: unknown = record.id === undefined ? legacyId : record.id;
   if (id !== undefined && (typeof id !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(id))) {
     throw new Error("Stored Web workspace ID must be a 32-character base64url string");
   }
-  return id;
+  return {
+    global,
+    workspace: readWebPreferences(saved === undefined ? legacyNetwork : record, "Web workspace settings"),
+    id,
+    needsMigration: legacyId !== undefined || legacyNetwork !== undefined,
+  };
 }
 
-export async function saveWebWorkspaceId(
-  workspace: { cwd: string; id: string },
+function readWebPreferences(value: unknown, name: string): Partial<WebPreferences> {
+  const preferences = webObject(value, name);
+  return {
+    ...(preferences.host !== undefined ? { host: preferences.host } : {}),
+    ...(preferences.port !== undefined ? { port: preferences.port } : {}),
+    ...(preferences.url !== undefined ? { url: preferences.url } : {}),
+  };
+}
+
+function webObject(value: unknown, name: string): Record<string, any> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) throw new Error(`${name} must be an object`);
+  return value;
+}
+
+export async function saveWebWorkspaceSettings(
+  workspace: { cwd: string; id: string; overrides: Partial<WebPreferences> },
   settingsPath = getDSCodeSettingsPath(),
 ): Promise<void> {
-  const settings = await readSettings(settingsPath);
-  settings.web = {
-    ...settings.web,
-    workspaceIds: { ...settings.web?.workspaceIds, [fs.realpathSync(workspace.cwd)]: workspace.id },
-  };
-  await writeSettings(settings, settingsPath);
+  const key = fs.realpathSync(workspace.cwd);
+  await updateSettings(settingsPath, settings => {
+    const { workspaces, workspaceIds, workspaceOverrides, ...web } = webObject(settings.web, "web");
+    const entries = webObject(workspaces, "web.workspaces");
+    const ids = { ...webObject(workspaceIds, "web.workspaceIds") };
+    const overrides = { ...webObject(workspaceOverrides, "web.workspaceOverrides") };
+    const previous = entries[key] === undefined
+      ? readWebPreferences(overrides[key], "web.workspaceOverrides entry")
+      : webObject(entries[key], "web.workspaces entry");
+    delete ids[key];
+    delete overrides[key];
+    settings.web = {
+      ...web,
+      workspaces: { ...entries, [key]: { ...previous, id: workspace.id, ...workspace.overrides } },
+      ...(Object.keys(ids).length ? { workspaceIds: ids } : {}),
+      ...(Object.keys(overrides).length ? { workspaceOverrides: overrides } : {}),
+    };
+  });
 }
 
 export function getWebSnapshotRetentionDays(settingsPath = getDSCodeSettingsPath()): number {
@@ -129,24 +162,35 @@ export async function saveDeepSeekBaseUrl(
   settingsPath = getDSCodeSettingsPath(),
 ): Promise<string> {
   const normalized = normalizeDeepSeekBaseUrl(baseUrl);
-  const settings = await readSettings(settingsPath);
-  settings.deepseek = { ...(settings.deepseek ?? {}), baseUrl: normalized };
-  await writeSettings(settings, settingsPath);
+  await updateSettings(settingsPath, settings => {
+    settings.deepseek = { ...settings.deepseek, baseUrl: normalized };
+  });
   return normalized;
 }
 
-async function writeSettings(settings: DSCodeSettings, settingsPath: string): Promise<void> {
+async function updateSettings(settingsPath: string, update: (settings: DSCodeSettings) => void): Promise<void> {
   const directory = path.dirname(settingsPath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700).catch(() => undefined);
-  const temporaryPath = `${settingsPath}.${process.pid}.${randomUUID()}.tmp`;
+  // Lock the whole read-modify-write, not just the atomic replacement.
+  const file = path.join(await realpath(directory), path.basename(settingsPath));
+  let compromised: Error | undefined;
+  const release = await lock(file, {
+    realpath: false,
+    retries: { retries: 30, minTimeout: 25, maxTimeout: 100 },
+    onCompromised: error => { compromised = error; },
+  });
+  const temporaryPath = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
+    const settings = await readSettings(file);
+    update(settings);
     await writeFile(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
     await chmod(temporaryPath, 0o600);
-    await rename(temporaryPath, settingsPath);
-    await chmod(settingsPath, 0o600);
+    if (compromised) throw compromised;
+    await rename(temporaryPath, file);
   } finally {
     await unlink(temporaryPath).catch(() => undefined);
+    if (!compromised) await release();
   }
 }
 

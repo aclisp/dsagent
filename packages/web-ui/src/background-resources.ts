@@ -1,4 +1,3 @@
-/// <reference path="./proper-lockfile.d.ts" />
 import { createHash } from "node:crypto";
 import { mkdir, lstat, realpath } from "node:fs/promises";
 import os from "node:os";

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import type { ExtensionAPI, ExtensionContext, RegisteredCommand } from "@earendil-works/pi-coding-agent";
-import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "./settings.ts";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getWebWorkspaceSettings, saveWebWorkspaceSettings } from "./settings.ts";
 import { loadSessionPosition, type DSCodeSessionRuntime, type SessionPosition } from "./session-handoff.ts";
 import type { DSCodeRuntimeOptions } from "./runtime-options.ts";
 
@@ -49,14 +49,14 @@ export function parseWebArguments(args: string): Partial<WebPreferences> | "stat
   return result;
 }
 
-const WEB_DEFAULTS = { host: "127.0.0.1", port: 8899 };
+const WEB_DEFAULTS: WebPreferences = { host: "127.0.0.1", port: 8899 };
 const WEB_OPTION_DESCRIPTIONS = {
   host: "Listen address (e.g. 127.0.0.1 or 0.0.0.0)",
   port: "Listen port (1–65535, e.g. 8899)",
-  url: "Browser origin (e.g. https://agent.example.com)",
+  url: "Browser origin (derived from host and port if unset)",
 } satisfies Record<keyof WebPreferences, string>;
 
-const completeWebArguments: NonNullable<RegisteredCommand["getArgumentCompletions"]> = (prefix) => {
+function completeWebArguments(prefix: string, cwd: string) {
   // Pi replaces the entire argument prefix, so carry completed options into each result.
   const token = /\S*$/.exec(prefix)![0];
   const before = prefix.slice(0, prefix.length - token.length);
@@ -66,23 +66,26 @@ const completeWebArguments: NonNullable<RegisteredCommand["getArgumentCompletion
   try {
     const completed = parseWebArguments(pending ? before.slice(0, pending.index) : before);
     if (completed === "status" || token === "status") return null;
-    const saved = getStoredWebPreferences();
+    const { global, workspace } = getWebWorkspaceSettings(cwd);
+    const saved = { ...global, ...workspace };
     const host = completed.host ?? saved.host ?? WEB_DEFAULTS.host;
     const port = completed.port ?? saved.port ?? WEB_DEFAULTS.port;
     const needsUrl = ["0.0.0.0", "::", "[::]"].includes(host) && completed.url === undefined && saved.url === undefined;
     const lanExample = `http://192.168.1.20:${port}`;
     if (key) {
       const partial = pending ? token : inline![2]!;
-      const examples = {
-        host: [WEB_DEFAULTS.host, "0.0.0.0", "::1"],
-        port: [String(WEB_DEFAULTS.port)],
-        url: needsUrl ? [lanExample, "https://agent.example.com"] : ["https://agent.example.com"],
-      }[key];
-      return examples.filter(example => example.startsWith(partial) && example !== partial).map(example => ({
-        value: `${before}${pending ? "" : `--${key}=`}${example}`,
-        label: example,
-        description: key === "url" ? "Example only; replace with your browser origin" : WEB_OPTION_DESCRIPTIONS[key],
-      }));
+      const seen = new Set<string>();
+      const sources = [
+        { value: workspace[key], description: "Saved for this workspace" },
+        { value: global[key], description: "Global default" },
+        { value: WEB_DEFAULTS[key], description: "Built-in default" },
+      ];
+      return sources.flatMap(({ value, description }) => {
+        const label = webCandidateValue(key, value);
+        if (label === undefined || seen.has(label) || !label.startsWith(partial) || label === partial) return [];
+        seen.add(label);
+        return [{ value: `${before}${pending ? "" : `--${key}=`}${label}`, label, description }];
+      });
     }
 
     const keys: (keyof WebPreferences)[] = needsUrl ? ["url", "host", "port"] : ["host", "port", "url"];
@@ -99,27 +102,49 @@ const completeWebArguments: NonNullable<RegisteredCommand["getArgumentCompletion
     // Completion should not interrupt typing when the command or config is incomplete or invalid.
     return null;
   }
-};
+}
 
 export function resolveWebPreferences(saved: Partial<WebPreferences>, overrides: Partial<WebPreferences>): WebPreferences {
   const preferences = { ...WEB_DEFAULTS, ...saved, ...overrides };
-  if (typeof preferences.host !== "string" || !preferences.host || /[\s/\\?#@]/.test(preferences.host)) {
-    throw new Error("Web host must be a hostname or IP address, without a URL scheme or path.");
-  }
-  preferences.host = preferences.host.replace(/^\[([\da-fA-F:]+)\]$/, "$1");
-  if (!Number.isInteger(preferences.port) || preferences.port < 1 || preferences.port > 65535) {
-    throw new Error("Web port must be an integer between 1 and 65535.");
-  }
-  if (preferences.url !== undefined) {
-    const parsed = new URL(preferences.url);
-    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password ||
-      parsed.search || parsed.hash || parsed.pathname !== "/") {
-      throw new Error("Web URL must be an HTTP(S) origin, without a path, credentials, query, or fragment.");
-    }
-    preferences.url = parsed.origin;
-  }
+  preferences.host = normalizeWebHost(preferences.host);
+  preferences.port = validateWebPort(preferences.port);
+  if (preferences.url !== undefined) preferences.url = normalizeWebUrl(preferences.url);
   webOrigin(preferences);
   return preferences;
+}
+
+function webCandidateValue(key: keyof WebPreferences, value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    if (key === "host") return normalizeWebHost(value);
+    if (key === "port") return String(validateWebPort(value));
+    return normalizeWebUrl(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeWebHost(host: unknown): string {
+  if (typeof host !== "string" || !host || /[\s/\\?#@]/.test(host)) {
+    throw new Error("Web host must be a hostname or IP address, without a URL scheme or path.");
+  }
+  return host.replace(/^\[([\da-fA-F:]+)\]$/, "$1");
+}
+
+function validateWebPort(port: unknown): number {
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Web port must be an integer between 1 and 65535.");
+  }
+  return port;
+}
+
+function normalizeWebUrl(url: unknown): string {
+  const parsed = typeof url === "string" ? new URL(url) : undefined;
+  if (!parsed || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password ||
+    parsed.search || parsed.hash || parsed.pathname !== "/") {
+    throw new Error("Web URL must be an HTTP(S) origin, without a path, credentials, query, or fragment.");
+  }
+  return parsed.origin;
 }
 
 export function webOrigin(preferences: WebPreferences): string {
@@ -167,7 +192,7 @@ export class WebContinuationController {
   register(pi: ExtensionAPI, baseOptions: DSCodeRuntimeOptions): void {
     pi.registerCommand("web", {
       description: "Continue in a browser; Enter uses defaults, Space shows options",
-      getArgumentCompletions: completeWebArguments,
+      getArgumentCompletions: prefix => completeWebArguments(prefix, this.current?.ctx.cwd ?? baseOptions.cwd),
       handler: async (args, ctx) => {
         if (ctx.mode !== "tui") return;
         try {
@@ -192,8 +217,9 @@ export class WebContinuationController {
             const position = runtime.getPosition();
             const sessionName = ctx.sessionManager.getSessionName();
             const runtimeOptions = runtime.getOptions();
-            const network = resolveWebPreferences(getStoredWebPreferences(), overrides);
-            const workspaceId = getStoredWebWorkspaceId(runtimeOptions.cwd) ?? randomBytes(24).toString("base64url");
+            const { global, workspace, id, needsMigration } = getWebWorkspaceSettings(runtimeOptions.cwd);
+            const network = resolveWebPreferences({ ...global, ...workspace }, overrides);
+            const workspaceId = id ?? randomBytes(24).toString("base64url");
             let service: WebContinuationService | undefined;
             service = await this.startService({
               workspaceId, network, position, runtimeOptions, sessionDir: runtime.sessionDir,
@@ -220,10 +246,12 @@ export class WebContinuationController {
             this.workspace = runtimeOptions.cwd;
             this.remind();
             this.notify(`Web is running.\n${service.url}\n${service.status?.() ?? ""}\n${service.qr}\nRun /tui when you return.`);
-            try {
-              await saveWebWorkspaceId({ cwd: runtimeOptions.cwd, id: workspaceId });
-            } catch (error) {
-              this.notify(`Web is running, but its workspace ID was not saved; the browser URL may change on the next start: ${errorMessage(error)}`, "warning");
+            if (!id || needsMigration || Object.keys(overrides).length > 0) {
+              try {
+                await saveWebWorkspaceSettings({ cwd: runtimeOptions.cwd, id: workspaceId, overrides });
+              } catch (error) {
+                this.notify(`Web is running, but its workspace settings were not saved; the browser URL may change on the next start: ${errorMessage(error)}`, "warning");
+              }
             }
           } finally {
             this.transitioning = false;

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import {
   getWebSnapshotRetentionDays,
   normalizeDeepSeekBaseUrl,
   saveDeepSeekBaseUrl,
+  saveWebWorkspaceSettings,
 } from "../packages/core/src/settings.ts";
 
 describe("DSCode settings", () => {
@@ -54,6 +55,30 @@ describe("DSCode settings", () => {
       deepseek: { baseUrl: "https://gateway.example.com/v1" },
     });
     expect((await stat(settingsPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps all fields when multiple writers update the same config", async () => {
+    const first = await mkdtemp(path.join(os.tmpdir(), "dscode-settings-test-"));
+    const second = await mkdtemp(path.join(os.tmpdir(), "dscode-settings-test-"));
+    temporaryDirectories.push(first, second);
+    const settingsPath = path.join(first, "config.json");
+    const firstId = "a".repeat(32);
+    const secondId = "b".repeat(32);
+    await writeFile(settingsPath, JSON.stringify({ web: { port: 8899 } }));
+    await Promise.all([
+      saveWebWorkspaceSettings({ cwd: first, id: firstId, overrides: { port: 8901 } }, settingsPath),
+      saveWebWorkspaceSettings({ cwd: second, id: secondId, overrides: { port: 8902 } }, settingsPath),
+      saveDeepSeekBaseUrl("https://saved.example.com/v1", settingsPath),
+    ]);
+    const firstKey = await realpath(first);
+    const secondKey = await realpath(second);
+    expect(JSON.parse(await readFile(settingsPath, "utf8"))).toEqual({
+      deepseek: { baseUrl: "https://saved.example.com/v1" },
+      web: {
+        port: 8899,
+        workspaces: { [firstKey]: { id: firstId, port: 8901 }, [secondKey]: { id: secondId, port: 8902 } },
+      },
+    });
   });
 
   it("rejects unsafe or invalid endpoint values", () => {
