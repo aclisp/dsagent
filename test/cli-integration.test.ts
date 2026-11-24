@@ -3,7 +3,9 @@ import http from "node:http";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { stripVTControlCharacters } from "node:util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isolatedRuntimeEnvironment, ptyInvocation } from "../scripts/pty.mjs";
 
 describe("DSCode Pi integration", () => {
   let server: http.Server | undefined;
@@ -52,6 +54,68 @@ describe("DSCode Pi integration", () => {
         expect.objectContaining({ name: "configured", state: "connected", tools: ["echo"] }),
       ]),
     });
+  }, 15_000);
+
+  it.skipIf(process.platform === "win32")("masks the API key in the interactive /login flow", async () => {
+    const key = "test-login-secret-not-for-display";
+    const terminal = ptyInvocation(process.execPath, [path.resolve("dist/bundle/cli.js"),
+      "--provider", "deepseek", "--model", "deepseek-flash", "--no-mcp", "--no-session", "--no-approve",
+    ]);
+    const child = spawn(terminal.command, terminal.args, {
+      cwd: root,
+      env: { ...isolatedRuntimeEnvironment(root, root), DSCODE_HOME: root, DSCODE_CREDENTIALS_STORE: "file",
+        DEEPSEEK_API_KEY: "startup-only-key", PI_OFFLINE: "1", TERM: "xterm-256color" },
+    });
+    let output = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
+    child.on("error", (error) => { output += error.message; });
+    child.stdin.on("error", (error) => { output += error.message; });
+    const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+    const send = (text: string) => child.stdin.write(`${JSON.stringify({ text })}\n`);
+    const screen = () => stripVTControlCharacters(output);
+    try {
+      await vi.waitFor(() => expect(screen()).toContain("DeepSeek Flash"), { timeout: 5_000 });
+      send("/login deepseek\r");
+      await vi.waitFor(() => expect(screen()).toContain("Enter DeepSeek API key"), { timeout: 5_000 });
+      const beforeTyping = output.length;
+      send(key);
+      await vi.waitFor(() => {
+        const typed = stripVTControlCharacters(output.slice(beforeTyping));
+        expect(typed.includes(key) || /•{8,}/u.test(typed), "API key input was not rendered").toBe(true);
+      }, { timeout: 3_000 });
+      expect(screen()).not.toContain(key);
+      send("\r");
+      await vi.waitFor(() => expect(screen()).toContain("Saved API key for DeepSeek"), { timeout: 5_000 });
+      expect(JSON.parse(await fs.readFile(path.join(root, "auth.json"), "utf8"))).toMatchObject({
+        deepseek: { type: "api_key", key },
+      });
+    } finally {
+      child.stdin.end();
+      await closed;
+    }
+    expect(screen()).not.toContain(key);
+  }, 20_000);
+
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("authenticates model requests with the configured keyring (%s)", async (entry) => {
+    const authorizations: Array<string | undefined> = [];
+    server = http.createServer((request, response) => {
+      authorizations.push(request.headers.authorization);
+      request.resume();
+      respondOnce(response, { id: "msg_keyring", type: "message", status: "completed", role: "assistant", content: [
+        { type: "output_text", text: "keyring response", annotations: [], logprobs: [] },
+      ] });
+    });
+    const { port } = await listen(server);
+    await fs.writeFile(path.join(root, "config.json"), JSON.stringify({ cli_auth_credentials_store: "keyring" }));
+    const result = await spawnCapture(process.execPath, ["--import", path.resolve("test/fixtures/keyring-preload.mjs"), path.resolve(entry),
+      "--provider", "deepseek", "--model", "deepseek-flash", "--base-url", `http://127.0.0.1:${port}`,
+      "--no-tools", "--no-mcp", "--no-session", "--no-approve", "-p", "Check stored credentials",
+    ], { ...isolatedRuntimeEnvironment(root, root), DSCODE_HOME: root, PI_OFFLINE: "1" }, root);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("keyring response");
+    expect(authorizations).toEqual(["Bearer keyring-only-test-key"]);
   }, 15_000);
 
   it.each([
