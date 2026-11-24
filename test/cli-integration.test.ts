@@ -33,6 +33,27 @@ describe("DSCode Pi integration", () => {
     await expect(fs.stat(path.join(root, ".dscode/mcp.json"))).rejects.toThrow();
   }, 15_000);
 
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("filters inherited but preserves configured model keys in Pi MCP CLI (%s)", async (entry) => {
+    const probe = path.resolve("test/fixtures/mcp-credential-probe.mjs");
+    const configuredKey = "explicit-server-key";
+    await fs.writeFile(path.join(root, "mcp.json"), JSON.stringify({ mcpServers: {
+      inherited: { command: process.execPath, args: [probe] },
+      configured: { command: process.execPath, args: [probe, configuredKey], env: { DEEPSEEK_API_KEY: configuredKey } },
+    } }));
+
+    const result = await spawnCapture(process.execPath, [path.resolve(entry), "mcp", "list", "--json"], {
+      PATH: process.env.PATH, HOME: root, DSCODE_HOME: root, PI_OFFLINE: "1", DEEPSEEK_API_KEY: "inherited-test-key",
+    }, root);
+    expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      errors: [],
+      servers: expect.arrayContaining([
+        expect.objectContaining({ name: "inherited", state: "connected", tools: ["echo"] }),
+        expect.objectContaining({ name: "configured", state: "connected", tools: ["echo"] }),
+      ]),
+    });
+  }, 15_000);
+
   it.each([
     { toolArgs: [], noTools: false },
     { toolArgs: ["--tools", "read,exec_command,write_stdin,apply_patch"], noTools: false },
