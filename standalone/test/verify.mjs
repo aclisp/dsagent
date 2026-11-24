@@ -179,7 +179,11 @@ try {
   await check("version", async () => {
     const result = await run("dscode", ["--version"]);
     assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /^\d+\.\d+\.\d+\s*$/);
+    const { version, gitCommit, gitDirty } = metadata;
+    const expected = gitCommit
+      ? `${version}${version.includes("+") ? "." : "+"}g${gitCommit.slice(0, 7)}${gitDirty ? ".dirty" : ""}`
+      : version;
+    assert.equal(result.stdout.trim(), expected);
   });
   await check("ignores Bun project runtime configuration", async () => {
     await fs.writeFile(path.join(scratch, "bunfig.toml"), 'preload = ["./must-not-load.js"]\n');
