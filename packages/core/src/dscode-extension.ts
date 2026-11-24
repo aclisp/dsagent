@@ -1136,7 +1136,10 @@ function renderManagedProcessResult(
     });
   }
   // Style only generated fields, without interpreting anything printed by the command.
-  const styled = { ...result, content: [{ type: "text" as const, text: formatManagedResult(details, theme) }] };
+  const styled = {
+    ...result,
+    content: [{ type: "text" as const, text: formatManagedResult(details, { theme, showCompletedId: true }) }],
+  };
   return renderCollapsibleToolResult(styled, options, theme, context, {
     collapsedSummary: () => managedProcessSummary(details, theme),
     forceError: Boolean(details.writeError),
@@ -1414,7 +1417,10 @@ function colorPatch(
     .join("\n");
 }
 
-function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
+function formatManagedResult(
+  result: ManagedProcessResult,
+  { theme, showCompletedId = false }: { theme?: Theme; showCompletedId?: boolean } = {},
+): string {
   const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
     theme ? normalizeDisplayText(text).split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
   const showMainProcessExit = result.exitSignal !== undefined ||
@@ -1428,8 +1434,7 @@ function formatManagedResult(result: ManagedProcessResult, theme?: Theme): strin
     : "";
   return [
     paint(result.output.trimEnd()),
-    // Keep the ID in the rendered result for reference, but only expose usable IDs to the model.
-    ...(result.running || theme ? [paint(`process_id: ${result.processId}`)] : []),
+    ...(result.running || showCompletedId ? [paint(`process_id: ${result.processId}`)] : []),
     paint(`status: ${result.running ? "running" : "completed"}`),
     ...(result.writeError ? [paint("stdin_write_error: ") + paint(result.writeError, "error")] : []),
     ...(result.exitCode === undefined ? [] : [paint("exit_code: ") + paint(
