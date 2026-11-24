@@ -41,7 +41,8 @@ async function setup(root?: string) {
   const commands = new Map<string, Pick<RegisteredCommand, "handler" | "getArgumentCompletions">>();
   const pi = { registerCommand: (name: string, command: typeof commands extends Map<string, infer T> ? T : never) => commands.set(name, command) } as unknown as ExtensionAPI;
   const ui = { notify: vi.fn(), setWidget: vi.fn() };
-  const ctx = { mode: "tui", ui, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
+  const sessionManager = { getSessionName: vi.fn<() => string | undefined>() };
+  const ctx = { mode: "tui", ui, sessionManager, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
     controller.attach(runtime, ctx);
     await options?.withSession?.({ ...ctx, sendMessage: vi.fn(), sendUserMessage: vi.fn() });
     return { cancelled: false };
@@ -50,7 +51,7 @@ async function setup(root?: string) {
   controller.attach(runtime, ctx);
   const run = (name: string, args = "") => commands.get(name)!.handler(args, ctx);
   const completeWeb = (prefix: string) => commands.get("web")!.getArgumentCompletions!(prefix);
-  return { root, options, runtime, service, start, controller, ctx, ui, run, completeWeb };
+  return { root, options, runtime, service, start, controller, ctx, sessionManager, ui, run, completeWeb };
 }
 
 describe("Web network preferences", () => {
@@ -116,6 +117,21 @@ describe("Web network preferences", () => {
 });
 
 describe("TUI Web ownership", () => {
+  it("passes the current session name only when starting Web", async () => {
+    const h = await setup();
+    h.sessionManager.getSessionName.mockReturnValue("Backend refactor");
+    await h.run("web");
+    expect(h.start.mock.calls[0]![0].sessionName).toBe("Backend refactor");
+
+    h.sessionManager.getSessionName.mockReturnValue(undefined);
+    await h.run("web");
+    expect(h.start).toHaveBeenCalledOnce();
+    await h.run("tui");
+    await h.run("web");
+    expect(h.start.mock.calls[1]![0].sessionName).toBeUndefined();
+    await h.controller.close();
+  });
+
   it.each([
     [{}, { host: "127.0.0.1", port: 8899 }],
     [{ port: 9123 }, { host: "127.0.0.1", port: 9123 }],

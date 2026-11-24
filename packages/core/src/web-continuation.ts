@@ -25,6 +25,7 @@ export interface StartWebContinuationOptions {
   network: WebPreferences;
   runtimeOptions: DSCodeRuntimeOptions;
   position: SessionPosition | null;
+  sessionName?: string;
   sessionDir: string;
   onStopped(error?: unknown): void;
   onNotice?(message: string): void;
@@ -189,12 +190,14 @@ export class WebContinuationController {
             const runtime = this.current!.runtime;
             runtime.assertIdle();
             const position = runtime.getPosition();
+            const sessionName = ctx.sessionManager.getSessionName();
             const runtimeOptions = runtime.getOptions();
             const network = resolveWebPreferences(getStoredWebPreferences(), overrides);
             const workspaceId = getStoredWebWorkspaceId(runtimeOptions.cwd) ?? randomBytes(24).toString("base64url");
             let service: WebContinuationService | undefined;
             service = await this.startService({
               workspaceId, network, position, runtimeOptions, sessionDir: runtime.sessionDir,
+              ...(sessionName ? { sessionName } : {}),
               onStopped: (error) => {
                 if (this.service !== service) return;
                 this.service = undefined;

@@ -152,6 +152,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("/permissions ask", "Permission mode: ask");
     await command("/model deepseek/deepseek-v4-pro", "DeepSeek V4 Pro");
     await command("TUI_BEFORE_HANDOFF", "handoff reply 1");
+    await command("/name Handoff & Review", "Session name set: Handoff & Review");
     assert.equal(requests[0].model, "deepseek-v4-pro");
     assert.doesNotMatch(JSON.stringify(requests[0]), /<name>scheduled-tasks<\/name>/);
     const completionStart = output.length;
@@ -179,7 +180,10 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const privateUrl = output.match(new RegExp(`${origin}/chat/[A-Za-z0-9_-]+`))?.[0];
     assert.ok(privateUrl, "private URL is shown in TUI");
     const workspaceId = new URL(privateUrl).pathname.split("/").at(-1);
-    for (const asset of [privateUrl, `${origin}/chat.js`, `${origin}/chat.css`, `${origin}/marked.esm.js`, `${origin}/favicon.png`]) {
+    const chatPage = await fetch(privateUrl);
+    assert.equal(chatPage.status, 200);
+    assert.match(await chatPage.text(), /<title>与 Handoff &amp; Review 私聊<\/title>/);
+    for (const asset of [`${origin}/chat.js`, `${origin}/chat.css`, `${origin}/marked.esm.js`, `${origin}/favicon.png`]) {
       const response = await fetch(asset);
       assert.equal(response.status, 200, asset);
       assert.ok((await response.arrayBuffer()).byteLength > 0, asset);
@@ -238,7 +242,9 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
       web: { port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
     await command("/web", "Run /tui when you return.");
-    assert.equal((await fetch(privateUrl)).status, 200, "the saved URL also serves a different conversation in the workspace");
+    const unnamedChatPage = await fetch(privateUrl);
+    assert.equal(unnamedChatPage.status, 200, "the saved URL also serves a different conversation in the workspace");
+    assert.match(await unnamedChatPage.text(), /<title>与 Steve Code 私聊<\/title>/);
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
     id = latest.sessions[0].session.id;
     assert.notEqual(id, cleared.id);
