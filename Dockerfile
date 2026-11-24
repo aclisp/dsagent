@@ -4,7 +4,7 @@
 FROM node:26-trixie AS build
 RUN npm install --global pnpm@12
 WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.build.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.build.json ./
 # The root postinstall references scripts/postinstall.mjs.
 COPY scripts ./scripts
 COPY packages ./packages
