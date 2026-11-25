@@ -1136,7 +1136,10 @@ function renderManagedProcessResult(
     });
   }
   // Style only generated fields, without interpreting anything printed by the command.
-  const styled = { ...result, content: [{ type: "text" as const, text: formatManagedResult(details, theme) }] };
+  const styled = {
+    ...result,
+    content: [{ type: "text" as const, text: formatManagedResult(details, { theme, showCompletedId: true }) }],
+  };
   return renderCollapsibleToolResult(styled, options, theme, context, {
     collapsedSummary: () => managedProcessSummary(details, theme),
     forceError: Boolean(details.writeError),
@@ -1239,7 +1242,6 @@ function registerPatchTool(pi: ExtensionAPI, checkpoints: PatchCheckpoint[]): vo
               `Applied checkpoint ${checkpoint.id}.`,
               `files: ${result.files.join(", ")}`,
               `diff: +${result.additions} -${result.deletions}`,
-              "Use /diff to inspect or /undo to restore this checkpoint.",
             ].join("\n"),
           },
         ],
@@ -1415,7 +1417,10 @@ function colorPatch(
     .join("\n");
 }
 
-function formatManagedResult(result: ManagedProcessResult, theme?: Theme): string {
+function formatManagedResult(
+  result: ManagedProcessResult,
+  { theme, showCompletedId = false }: { theme?: Theme; showCompletedId?: boolean } = {},
+): string {
   const paint = (text: string, color: "toolOutput" | "error" | "dim" = "toolOutput"): string =>
     theme ? normalizeDisplayText(text).split("\n").map((line) => theme.fg(color, line)).join("\n") : text;
   const showMainProcessExit = result.exitSignal !== undefined ||
@@ -1429,10 +1434,9 @@ function formatManagedResult(result: ManagedProcessResult, theme?: Theme): strin
     : "";
   return [
     paint(result.output.trimEnd()),
-    paint(`process_id: ${result.processId}`),
+    ...(result.running || showCompletedId ? [paint(`process_id: ${result.processId}`)] : []),
     paint(`status: ${result.running ? "running" : "completed"}`),
     ...(result.writeError ? [paint("stdin_write_error: ") + paint(result.writeError, "error")] : []),
-    ...(result.running ? [paint("Use write_stdin to poll or interact.")] : []),
     ...(result.exitCode === undefined ? [] : [paint("exit_code: ") + paint(
       String(result.exitCode),
       result.exitCode === null ? "dim" : result.exitCode !== 0 ? "error" : "toolOutput",

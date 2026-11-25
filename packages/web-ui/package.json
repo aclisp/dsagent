@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/proper-lockfile": "catalog:",
     "@types/qrcode": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseRuntimeArgs } from "../packages/core/src/runtime-options.ts";
 import type { DSCodeSessionRuntime } from "../packages/core/src/session-handoff.ts";
-import { getStoredWebPreferences, getStoredWebWorkspaceId, saveWebWorkspaceId } from "../packages/core/src/settings.ts";
+import { getWebWorkspaceSettings, saveWebWorkspaceSettings } from "../packages/core/src/settings.ts";
 import {
   parseWebArguments, resolveWebPreferences, webOrigin, WebContinuationController,
   type StartWebContinuationOptions, type WebContinuationService,
@@ -41,7 +41,8 @@ async function setup(root?: string) {
   const commands = new Map<string, Pick<RegisteredCommand, "handler" | "getArgumentCompletions">>();
   const pi = { registerCommand: (name: string, command: typeof commands extends Map<string, infer T> ? T : never) => commands.set(name, command) } as unknown as ExtensionAPI;
   const ui = { notify: vi.fn(), setWidget: vi.fn() };
-  const ctx = { mode: "tui", ui, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
+  const sessionManager = { getSessionName: vi.fn<() => string | undefined>() };
+  const ctx = { mode: "tui", cwd: root, ui, sessionManager, newSession: vi.fn(async (options: Parameters<ExtensionCommandContext["newSession"]>[0]) => {
     controller.attach(runtime, ctx);
     await options?.withSession?.({ ...ctx, sendMessage: vi.fn(), sendUserMessage: vi.fn() });
     return { cancelled: false };
@@ -50,7 +51,7 @@ async function setup(root?: string) {
   controller.attach(runtime, ctx);
   const run = (name: string, args = "") => commands.get(name)!.handler(args, ctx);
   const completeWeb = (prefix: string) => commands.get("web")!.getArgumentCompletions!(prefix);
-  return { root, options, runtime, service, start, controller, ctx, ui, run, completeWeb };
+  return { root, options, runtime, service, start, controller, ctx, sessionManager, ui, run, completeWeb };
 }
 
 describe("Web network preferences", () => {
@@ -66,15 +67,50 @@ describe("Web network preferences", () => {
     expect(await completeWeb("status")).toBeNull();
   });
 
+  it("orders matching values by source and deduplicates them in favor of the highest priority", async () => {
+    const { root, completeWeb } = await setup();
+    await writeFile(path.join(root, "config.json"), JSON.stringify({ web: {
+      host: "[::1]", port: 9000, url: "https://global.example",
+      workspaces: { [realpathSync(root)]: { host: "::1", port: 8900, url: "https://workspace.example/" } },
+    } }));
+
+    expect(await completeWeb("--port ")).toEqual([
+      { label: "8900", value: "--port 8900", description: "Saved for this workspace" },
+      { label: "9000", value: "--port 9000", description: "Global default" },
+      { label: "8899", value: "--port 8899", description: "Built-in default" },
+    ]);
+    expect((await completeWeb("--host ::1 --port=8"))?.map(item => item.value)).toEqual([
+      "--host ::1 --port=8900", "--host ::1 --port=8899",
+    ]);
+    expect((await completeWeb("--host "))?.map(({ label, description }) => [label, description])).toEqual([
+      ["::1", "Saved for this workspace"], ["127.0.0.1", "Built-in default"],
+    ]);
+    expect((await completeWeb("--url "))?.map(item => item.label)).toEqual([
+      "https://workspace.example", "https://global.example",
+    ]);
+  });
+
+  it("explains the derived browser origin without offering it as a value", async () => {
+    const { completeWeb } = await setup();
+    expect(await completeWeb("--u")).toEqual([
+      { label: "--url", value: "--url ", description: "Browser origin (derived from host and port if unset)" },
+    ]);
+    expect(await completeWeb("--url ")).toEqual([]);
+  });
+
   it("prioritizes the browser origin when the effective host is a wildcard and no URL is configured", async () => {
     const { root, completeWeb } = await setup();
     const prefix = "--host=0.0.0.0 --port 8900 ";
     expect((await completeWeb(prefix))?.[0]).toMatchObject({ label: "--url", description: expect.stringContaining("192.168.1.20:8900") });
-    expect((await completeWeb(`${prefix}--url `))?.[0]?.value).toBe(`${prefix}--url http://192.168.1.20:8900`);
+    expect(await completeWeb(`${prefix}--url `)).toEqual([]);
     const file = path.join(root, "config.json");
     await writeFile(file, JSON.stringify({ web: { host: "::" } }));
     expect((await completeWeb(""))?.[0]?.label).toBe("--url");
     await writeFile(file, JSON.stringify({ web: { host: "::", url: "https://saved.example" } }));
+    expect((await completeWeb(""))?.[0]?.label).toBe("--host");
+    await writeFile(file, JSON.stringify({ web: { host: "::", workspaces: {
+      [realpathSync(root)]: { url: "https://workspace.example" },
+    } } }));
     expect((await completeWeb(""))?.[0]?.label).toBe("--host");
   });
 
@@ -96,48 +132,114 @@ describe("Web network preferences", () => {
     expect(() => parseWebArguments("--wat yes")).toThrow("Usage");
   });
 
-  it("resolves workspace aliases to the same stored ID and rejects invalid stored IDs", async () => {
+  it("resolves workspace aliases to the same saved ID and network parameters", async () => {
     const { root } = await setup();
     const workspace = path.join(root, "workspace");
     const alias = path.join(root, "alias");
     await mkdir(workspace);
     await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
     const id = "a".repeat(32);
-    await saveWebWorkspaceId({ cwd: alias, id });
-    expect(getStoredWebWorkspaceId(workspace)).toBe(id);
-    expect(getStoredWebWorkspaceId(alias)).toBe(id);
-    expect(getStoredWebWorkspaceId(root)).toBeUndefined();
+    await saveWebWorkspaceSettings({ cwd: alias, id, overrides: { port: 8900, url: "https://workspace.example" } });
+    const expected = { id, workspace: { port: 8900, url: "https://workspace.example" }, needsMigration: false };
+    expect(getWebWorkspaceSettings(workspace)).toMatchObject(expected);
+    expect(getWebWorkspaceSettings(alias)).toMatchObject(expected);
+    expect(getWebWorkspaceSettings(root)).toMatchObject({ id: undefined, workspace: {} });
     if (process.platform !== "win32") expect((await stat(path.join(root, "config.json"))).mode & 0o777).toBe(0o600);
-    for (const workspaceIds of [[], "invalid", { [realpathSync(workspace)]: "invalid" }]) {
-      await writeFile(path.join(root, "config.json"), JSON.stringify({ web: { workspaceIds } }));
-      expect(() => getStoredWebWorkspaceId(workspace)).toThrow();
+    const key = realpathSync(workspace);
+    const invalidSettings = [
+      { workspaces: [] }, { workspaces: "invalid" }, { workspaces: { [key]: { id: "invalid" } } },
+      { workspaceIds: { [key]: "invalid" } },
+    ];
+    for (const web of invalidSettings) {
+      await writeFile(path.join(root, "config.json"), JSON.stringify({ web }));
+      expect(() => getWebWorkspaceSettings(workspace)).toThrow();
     }
   });
 });
 
 describe("TUI Web ownership", () => {
-  it.each([
-    [{}, { host: "127.0.0.1", port: 8899 }],
-    [{ port: 9123 }, { host: "127.0.0.1", port: 9123 }],
-    [{ host: "::1", port: 9123, url: "https://saved.example/" }, { host: "::1", port: 9123, url: "https://saved.example" }],
-  ])("uses overrides for one start and leaves configured network values unchanged (%j)", async (configured, nextNetwork) => {
+  it("moves the legacy workspace ID after a successful start without changing it", async () => {
+    const h = await setup();
+    const key = realpathSync(h.root);
+    const other = path.join(key, "other");
+    const id = "a".repeat(32);
+    const otherId = "b".repeat(32);
+    const file = path.join(h.root, "config.json");
+    const legacy = { web: {
+      port: 8899,
+      workspaceIds: { [key]: id, [other]: otherId },
+    } };
+    await writeFile(file, JSON.stringify(legacy));
+
+    h.start.mockRejectedValueOnce(new Error("port is in use"));
+    await h.run("web");
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(legacy);
+
+    await h.run("web");
+    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId: id, network: { port: 8899 } });
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ web: {
+      port: 8899,
+      workspaces: { [key]: { id } },
+      workspaceIds: { [other]: otherId },
+    } });
+    await h.controller.close();
+  });
+
+  it("passes the current session name only when starting Web", async () => {
+    const h = await setup();
+    h.sessionManager.getSessionName.mockReturnValue("Backend refactor");
+    await h.run("web");
+    expect(h.start.mock.calls[0]![0].sessionName).toBe("Backend refactor");
+
+    h.sessionManager.getSessionName.mockReturnValue(undefined);
+    await h.run("web");
+    expect(h.start).toHaveBeenCalledOnce();
+    await h.run("tui");
+    await h.run("web");
+    expect(h.start.mock.calls[1]![0].sessionName).toBeUndefined();
+    await h.controller.close();
+  });
+
+  it("remembers only explicit flags across takeback and restart, ahead of global defaults", async () => {
     const h = await setup();
     const file = path.join(h.root, "config.json");
-    const settings = { other: { enabled: true }, web: { future: true, ...configured } };
+    const key = realpathSync(h.root);
+    const settings = { other: { enabled: true }, web: { future: true, host: "::1", port: 9123, url: "https://global.example/" } };
     await writeFile(file, JSON.stringify(settings));
 
-    await h.run("web", "--host 0.0.0.0 --port 8900 --url https://temporary.example");
+    await h.run("web", "--port 8900 --url https://workspace.example");
     const { network, workspaceId } = h.start.mock.calls[0]![0];
-    expect(network).toEqual({ host: "0.0.0.0", port: 8900, url: "https://temporary.example" });
+    expect(network).toEqual({ host: "::1", port: 8900, url: "https://workspace.example" });
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-      ...settings, web: { ...settings.web, workspaceIds: { [realpathSync(h.root)]: workspaceId } },
+      ...settings, web: { ...settings.web, workspaces: { [key]: { id: workspaceId, port: 8900, url: "https://workspace.example" } } },
     });
 
     await h.run("tui");
-    await h.run("web");
-    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId });
-    expect(h.start.mock.calls[1]![0].network).toEqual(nextNetwork);
+    await h.run("web", "--port 9000");
+    const nextNetwork = { ...network, port: 9000 };
+    expect(h.start.mock.calls[1]![0]).toMatchObject({ workspaceId, network: nextNetwork });
     await h.controller.close();
+
+    const restarted = await setup(h.root);
+    await restarted.run("web");
+    expect(restarted.start.mock.calls[0]![0]).toMatchObject({ workspaceId, network: nextNetwork });
+    await restarted.run("tui");
+
+    const remembered = JSON.parse(await readFile(file, "utf8"));
+    expect(remembered.web.workspaces[key]).toEqual({ id: workspaceId, port: 9000, url: "https://workspace.example" });
+    remembered.web.workspaces[key] = { id: workspaceId };
+    await writeFile(file, JSON.stringify(remembered));
+    const globalNetwork = { host: "::1", port: 9123, url: "https://global.example" };
+    await restarted.run("web");
+    expect(restarted.start.mock.calls[1]![0]).toMatchObject({ workspaceId, network: globalNetwork });
+    await restarted.run("tui");
+
+    const other = path.join(h.root, "other");
+    await mkdir(other);
+    vi.mocked(restarted.runtime.getOptions).mockReturnValue({ ...restarted.options, cwd: other });
+    await restarted.run("web");
+    expect(restarted.start.mock.calls[2]![0].network).toEqual(globalNetwork);
+    await restarted.controller.close();
   });
 
   it("rolls back a synchronous activation failure and keeps the TUI available", async () => {
@@ -171,7 +273,7 @@ describe("TUI Web ownership", () => {
     await first.run("web");
     const id = first.start.mock.calls[0]![0].workspaceId;
     expect(id).toMatch(/^[A-Za-z0-9_-]{32}$/);
-    expect(getStoredWebWorkspaceId(first.root)).toBe(id);
+    expect(getWebWorkspaceSettings(first.root).id).toBe(id);
     await first.run("tui");
     await first.run("web");
     expect(first.start.mock.calls[1]![0].workspaceId).toBe(id);
@@ -190,9 +292,8 @@ describe("TUI Web ownership", () => {
     await second.run("web");
     const otherId = second.start.mock.calls[1]![0].workspaceId;
     expect(otherId).not.toBe(id);
-    expect(getStoredWebWorkspaceId(first.root)).toBe(id);
-    expect(getStoredWebWorkspaceId(otherWorkspace)).toBe(otherId);
-    expect(getStoredWebPreferences()).toEqual({});
+    expect(getWebWorkspaceSettings(first.root).id).toBe(id);
+    expect(getWebWorkspaceSettings(otherWorkspace)).toMatchObject({ id: otherId, workspace: {} });
     await second.controller.close();
   });
 
@@ -230,13 +331,17 @@ describe("TUI Web ownership", () => {
 
   it("leaves the TUI usable after startup failure and allows retry", async () => {
     const h = await setup();
+    await h.run("web", "--port 8900");
+    const { workspaceId } = h.start.mock.calls[0]![0];
+    await h.run("tui");
     h.start.mockRejectedValueOnce(new Error("port is in use"));
-    await h.run("web");
+    await h.run("web", "--port 9000");
     expect(h.ui.notify).toHaveBeenLastCalledWith("port is in use", "error");
-    expect(getStoredWebWorkspaceId(h.root)).toBeUndefined();
+    expect(getWebWorkspaceSettings(h.root)).toMatchObject({ id: workspaceId, workspace: { port: 8900 } });
     await h.run("web", "status");
     expect(h.ui.notify).toHaveBeenLastCalledWith("Web is stopped.", "info");
     await h.run("web");
+    expect(h.start.mock.calls[2]![0].network.port).toBe(8900);
     expect(h.ui.setWidget).toHaveBeenLastCalledWith("dscode-web", [expect.stringContaining("Run /tui")]);
     await h.controller.close();
   });
@@ -257,7 +362,7 @@ describe("TUI Web ownership", () => {
     expect(h.ui.setWidget).toHaveBeenLastCalledWith("dscode-web", undefined);
   });
 
-  it("keeps a successfully started service when saving the workspace ID fails", async () => {
+  it("keeps a successfully started service when saving workspace settings fails", async () => {
     const h = await setup();
     await writeFile(path.join(h.root, "config.json"), "{}");
     // Invalid JSON is introduced after preflight, so the save cannot overwrite it.

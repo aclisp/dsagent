@@ -51,13 +51,15 @@ Artifacts are written to `dist/standalone/<platform>/` (`darwin-arm64`, `linux-x
 
 - `dscode` (Windows: `dscode.exe`): the only file needed to run the CLI, relocatable to any directory. Missing bundled tools are extracted into DSCode's home at runtime. Sizes vary with the pinned runtime and dependencies; see `build.json`.
 - `dscode.sha256` (Windows: `dscode.exe.sha256`): SHA-256 checksum file.
-- `build.json`: version, build host, target, size, dependency removal, and adapter records.
+- `build.json`: package version, Git commit and dirty state (when available), build host, target, size, dependency removal, and adapter records.
 - `verification.json`: runtime acceptance results, generated only after validation; rebuilding removes the previous report.
 
 ```sh
 ./dist/standalone/linux-x64/dscode --version
 ./dist/standalone/linux-x64/dscode
 ```
+
+Standalone `--version` includes the first seven characters of the build's Git commit, for example `1.8.1+g8929bce`. Staged changes, unstaged changes, or non-ignored untracked files at build time add `.dirty`, as in `1.8.1+g8929bce.dirty`. If the commit is unavailable, it prints just the package version, as the npm CLI does.
 
 The GitHub release workflow builds and validates each platform on a native runner, then attaches `dscode-v<version>-<platform>.tar.gz` (Windows: `dscode-v<version>-windows-x64.zip`) to the release alongside the independent container publication. Each archive contains the executable and its SHA-256 file. Windows CI also validates the relocated executable before a release. Failed standalone jobs can be retried with GitHub Actions' **Re-run failed jobs**; uploading replaces an existing asset with the same name.
 

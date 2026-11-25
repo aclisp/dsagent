@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { getDSCodeHome, webOrigin, type StartWebContinuationOptions, type WebContinuationService } from "@aclisp/dsagent-core/session-runtime";
 import type { HttpSessionControl } from "@aclisp/dsagent-http-adapter";
-import { DEFAULT_CHAT_AGENT_NAME } from "./chat-page.ts";
+import { resolveChatAgentName } from "./chat-page.ts";
 import { createWebUiServer } from "./web-ui-server.ts";
 import { configuredContinuationProviders } from "./configured-chat-providers.ts";
 import type { WebBackgroundServices } from "./background-services.ts";
@@ -27,7 +27,7 @@ export async function startWebContinuation(options: StartWebContinuationOptions)
     chatProviders: providers,
     onBackgroundServices: services => { background = services; },
     ...(options.onNotice ? { onBackgroundNotice: options.onNotice } : {}),
-    chatAgentName: DEFAULT_CHAT_AGENT_NAME,
+    chatAgentName: resolveChatAgentName(options.sessionName),
     maxUploadBytes,
     requireWorkspaceIdForSessionList: true,
     onSessionControl: (value) => { control = value; },

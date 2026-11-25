@@ -53,9 +53,51 @@ const UNSAFE_UNQUOTED_CHARACTERS = new Set([
   "#",
 ]);
 
+const literalShellWord = String.raw`(?:[^\s'"\\$\x60#;&|<>()]+|'[^'\r\n]*'|"[^"\\$\x60\r\n]*")`;
+const simpleShellArgs = String.raw`(?:[ \t]+${literalShellWord}|[ \t]*>>?[ \t]*${literalShellWord})*`;
+const simpleShellLine = new RegExp(
+  String.raw`^[ \t]*([\w./:-]+)${simpleShellArgs}(?:[ \t]*<<(-?)[ \t]*(?:'([\w-]+)'|"([\w-]+)")${simpleShellArgs})?[ \t]*$`,
+);
+const shellKeywords = new Set(["case", "coproc", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if", "in", "select", "then", "time", "until", "while"]);
+
+function heredocEnd(command: string, newline: number, delimiter: string, stripTabs: boolean): number | undefined {
+  while (newline !== -1) {
+    const start = newline + 1;
+    newline = command.indexOf("\n", start);
+    const end = newline === -1 ? command.length : newline;
+    const line = command.slice(start, end);
+    if ((stripTabs ? line.replace(/^\t+/, "") : line) === delimiter) return end;
+  }
+}
+
+/** Locate literal bodies only while command boundaries are unambiguous.
+ * Leave unsupported syntax to the existing scanner rather than guessing where code resumes. */
+function quotedHeredocBodies(command: string): Map<number, number> | undefined {
+  if (!command.includes("<<")) return;
+  const bodies = new Map<number, number>();
+  let start = 0;
+  while (start < command.length) {
+    const newline = command.indexOf("\n", start);
+    if (newline === -1) break;
+    const line = command.slice(start, newline);
+    start = newline + 1;
+    if (/^[ \t]*$/.test(line)) continue;
+    const header = simpleShellLine.exec(line);
+    if (!header || shellKeywords.has(header[1]!)) break;
+    const delimiter = header[3] ?? header[4];
+    if (!delimiter) continue;
+    const end = heredocEnd(command, newline, delimiter, header[2] === "-");
+    if (end === undefined) break;
+    bodies.set(newline, end);
+    start = end + 1;
+  }
+  return bodies;
+}
+
 function containsChainedCommand(command: string, executable: string, windows: boolean): boolean {
   let quote: "'" | '"' | undefined;
   const escape = windows ? "`" : "\\";
+  const heredocs = windows ? undefined : quotedHeredocBodies(command);
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index]!;
     if (quote !== undefined) {
@@ -79,6 +121,7 @@ function containsChainedCommand(command: string, executable: string, windows: bo
     }
     if (!";&|()\n\r".includes(character)) continue;
 
+    index = heredocs?.get(index) ?? index;
     let commandStart = index + 1;
     while (/\s|[;&|()]/.test(command[commandStart] ?? "")) commandStart += 1;
     if (startsWithExecutable(command.slice(commandStart), executable, windows)) return true;

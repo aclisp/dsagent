@@ -123,7 +123,11 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     }
   };
   try {
-    await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve", web: { port } }));
+    const globalPort = provider.address().port;
+    const localWorkspace = realpathSync(workspace);
+    const legacyWorkspaceId = "a".repeat(32);
+    await writeFile(path.join(home, "config.json"), JSON.stringify({ cli_auth_credentials_store: "file", sentinel: "preserve",
+      web: { port: globalPort, workspaceIds: { [localWorkspace]: legacyWorkspaceId } } }));
     const tuiArgs = [...args, "--provider", "deepseek", "--model", "deepseek-flash", "--thinking", "low", "--permission", "auto", "--sandbox", "read-only", "--network", "--no-mcp", "--no-approve", "--base-url", `http://127.0.0.1:${provider.address().port}`];
     let program = executable;
     let programArgs = tuiArgs;
@@ -152,6 +156,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("/permissions ask", "Permission mode: ask");
     await command("/model deepseek/deepseek-v4-pro", "DeepSeek V4 Pro");
     await command("TUI_BEFORE_HANDOFF", "handoff reply 1");
+    await command("/name Handoff & Review", "Session name set: Handoff & Review");
     assert.equal(requests[0].model, "deepseek-v4-pro");
     assert.doesNotMatch(JSON.stringify(requests[0]), /<name>scheduled-tasks<\/name>/);
     const completionStart = output.length;
@@ -162,13 +167,14 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     send("\t");
     await waitFor(() => output.slice(completionStart).includes("/web --host "), "Web host completion");
     const valueMenuStart = output.length;
-    send("0");
-    await waitFor(() => output.slice(valueMenuStart).includes("Listen address"), "Web host value examples");
-    send(".0.0.0 -");
-    await waitFor(() => output.slice(completionStart).includes("Required for wildcard host"), "Web wildcard origin hint");
+    send("1");
+    await waitFor(() => output.slice(valueMenuStart).includes("Built-in default"), "Web host built-in value");
+    const wildcardMenuStart = output.length;
+    send("\x7f0.0.0.0 -");
+    await waitFor(() => output.slice(wildcardMenuStart).includes("Required for wildcard host"), "Web wildcard origin hint");
     await cancelInput();
     const failedStart = output.length;
-    send(`/web --port ${provider.address().port}\r`);
+    send(`/web --port ${globalPort}\r`);
     await waitFor(() => output.slice(failedStart).toLowerCase().includes("in use"), "occupied-port rollback");
     await command("/web status", "Web is stopped.");
     assert.equal(wecomFrames.length, 0, "a failed startup never activates IM transport");
@@ -179,7 +185,11 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const privateUrl = output.match(new RegExp(`${origin}/chat/[A-Za-z0-9_-]+`))?.[0];
     assert.ok(privateUrl, "private URL is shown in TUI");
     const workspaceId = new URL(privateUrl).pathname.split("/").at(-1);
-    for (const asset of [privateUrl, `${origin}/chat.js`, `${origin}/chat.css`, `${origin}/marked.esm.js`, `${origin}/favicon.png`]) {
+    assert.equal(workspaceId, legacyWorkspaceId, "migration preserves the existing private URL credential");
+    const chatPage = await fetch(privateUrl);
+    assert.equal(chatPage.status, 200);
+    assert.match(await chatPage.text(), /<title>与 Handoff &amp; Review 私聊<\/title>/);
+    for (const asset of [`${origin}/chat.js`, `${origin}/chat.css`, `${origin}/marked.esm.js`, `${origin}/favicon.png`]) {
       const response = await fetch(asset);
       assert.equal(response.status, 200, asset);
       assert.ok((await response.arrayBuffer()).byteLength > 0, asset);
@@ -236,9 +246,11 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests[3].reasoning.effort, "max");
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
-      web: { port, workspaceIds: { [realpathSync(workspace)]: workspaceId } } });
+      web: { port: globalPort, workspaces: { [localWorkspace]: { id: workspaceId, port } } } });
     await command("/web", "Run /tui when you return.");
-    assert.equal((await fetch(privateUrl)).status, 200, "the saved URL also serves a different conversation in the workspace");
+    const unnamedChatPage = await fetch(privateUrl);
+    assert.equal(unnamedChatPage.status, 200, "the saved URL also serves a different conversation in the workspace");
+    assert.match(await unnamedChatPage.text(), /<title>与 Steve Code 私聊<\/title>/);
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
     id = latest.sessions[0].session.id;
     assert.notEqual(id, cleared.id);

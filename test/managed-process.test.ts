@@ -5,6 +5,22 @@ import { describe, expect, it } from "vitest";
 import { ManagedProcessRegistry } from "../packages/core/src/managed-process.ts";
 
 describe("ManagedProcessRegistry", () => {
+  it.skipIf(process.platform === "win32").each(["cat >", "tee"])("writes quoted heredoc text mentioning dscode with %s", async (writer) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "dscode-heredoc-"));
+    const registry = new ManagedProcessRegistry();
+    try {
+      const result = await registry.start(`${writer} note.md <<'EOF'\ndscode 是不错的项目\nEOF`, {
+        cwd, sandbox: { mode: "danger-full-access", network: false },
+        yieldTimeMs: 2_000, timeoutMs: 5_000, thinkingLevel: "low",
+      });
+      expect(result).toMatchObject({ running: false, exitCode: 0, sandbox: "host" });
+      expect(await fs.readFile(path.join(cwd, "note.md"), "utf8")).toBe("dscode 是不错的项目\n");
+    } finally {
+      await registry.dispose();
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it.each([0, 60_000, 60_001, 80_000])("returns complete stdout without a notice at length %i", async (length) => {
     const registry = new ManagedProcessRegistry();
     try {

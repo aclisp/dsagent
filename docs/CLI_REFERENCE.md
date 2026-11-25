@@ -407,9 +407,14 @@ loads the Web conversation while keeping the TUI's own current settings. The two
 interfaces do not synchronize live. The reminder above the editor stays visible
 while Web is running; run `/tui` before continuing in the TUI.
 
+If the conversation has a name (set with `/name`), `/web` uses it as the chat
+display name when it starts. Unnamed conversations use `Steve Code`.
+
 Press Enter after `/web` to start with defaults, or type a space to see the
-options and examples. Use Tab to select an option, then start typing its value
-to see matching suggestions. Type a space and `-` to see the remaining options.
+options. Use Tab to select an option, then start typing its value to see matching
+workspace, global, and built-in values in that order, without duplicates.
+An automatically derived browser origin is not offered as an explicit `--url`
+value. Type a space and `-` to see the remaining options.
 
 Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same LAN:
 
@@ -420,14 +425,15 @@ Fresh configuration listens on `127.0.0.1:8899`. To connect a phone on the same 
 Replace the example address with the host's LAN address. For a cloud host behind
 an existing HTTPS reverse proxy, use `/web --url https://agent.example.com` and
 configure its listener with `--host` and `--port` as needed. A wildcard host needs
-an explicit browser origin. `--host`, `--port`, and `--url` override defaults for
-this start only and are never saved. To set lasting defaults, edit `web.host`,
-`web.port`, and `web.url` in `$DSCODE_HOME/config.json` (or `DSCODE_CONFIG_PATH`).
-Without a configured or explicit `url`, the browser origin comes from the host and
-port. The same file stores a random
-ID per canonical workspace path in `web.workspaceIds`. With the same origin, that
-workspace keeps its private URL across handoffs and TUI restarts: refresh the
-saved browser page after `/web` to open the current TUI conversation. `/tui` stops
+an explicit browser origin. After a successful start, `/web` remembers only flags
+you supplied, in `web.workspaces` in `$DSCODE_HOME/config.json` (or
+`DSCODE_CONFIG_PATH`), keyed by canonical workspace path. Flags override remembered
+values, which override the global `web.host`, `web.port`, and `web.url` defaults.
+Remembered values survive TUI restarts; remove the workspace's `host`, `port`, or
+`url` fields to restore the corresponding defaults, but keep `id` to preserve the
+link credential. Without a `url`, the browser origin comes from the host and port.
+With the same origin, the workspace keeps its private URL across handoffs and TUI
+restarts: refresh the saved browser page after `/web` to open the current TUI conversation. `/tui` stops
 access until Web is started again. Keep the URL private; `/web status` shows the
 active URL. HTTPS uses the external proxy.
 

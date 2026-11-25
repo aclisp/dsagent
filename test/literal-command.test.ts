@@ -69,4 +69,34 @@ describe("Unix literal child commands", () => {
     expect(classify("DSCODE --version", platform)).toEqual({ kind: "other" });
     expect(classify("dscode -p `whoami`", platform)).toMatchObject({ kind: "invalid" });
   });
+
+  it.each([
+    ["cat > note.md <<'EOF'", "EOF"],
+    ['cat <<-"EOF" >> "a note.md"', "\tEOF"],
+    ["tee -a 'a note.md' <<'EOF'", "EOF"],
+    ["mkdir -p docs\ntee docs/note.md <<'EOF'", "EOF"],
+  ])("treats a quoted heredoc as data and still checks commands after it: %s", (header, end) => {
+    const command = `${header}\ndscode is a project\ndscode-vision is a tool\nA quote: '\n${end}`;
+    for (const executable of ["dscode", "dscode-vision"]) {
+      expect(classifyLiteralCommand(command, executable, "linux")).toEqual({ kind: "other" });
+      expect(classifyLiteralCommand(`${command}\n${executable} --version`, executable, "linux"))
+        .toMatchObject({ kind: "invalid", reason: expect.stringContaining("must be invoked directly") });
+    }
+  });
+
+  it("handles consecutive simple heredocs without skipping real commands between them", () => {
+    const first = "cat <<'FIRST'\ndscode is a project\nFIRST";
+    const second = "tee note.md <<'SECOND'\ndscode is still a project\nSECOND";
+    expect(classify(`${first}\n${second}`, "linux")).toEqual({ kind: "other" });
+    expect(classify(`${first}\ndscode --version\n${second}`, "linux")).toMatchObject({ kind: "invalid" });
+  });
+
+  it.each([
+    "echo ready\ndscode --version",
+    "if echo ready; then\ndscode --version\nfi",
+    "cat > note.md <<'EOF'\ndscode --version\nEOF ",
+    "cat > note.md <<EOF\ndscode --version\nEOF",
+  ])("does not skip plain commands or unsupported heredocs: %j", command => {
+    expect(classify(command, "linux")).toMatchObject({ kind: "invalid" });
+  });
 });

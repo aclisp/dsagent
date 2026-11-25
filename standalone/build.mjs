@@ -31,6 +31,18 @@ const tui = fs.realpathSync(path.dirname(fileURLToPath(import.meta.resolve("@ear
 const piPackage = path.join(pi, "../package.json");
 if (JSON.parse(fs.readFileSync(piPackage)).version !== PI_VERSION) throw new Error(`Review adapters for pi upgrade; expected ${PI_VERSION}`);
 const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"))).version;
+// Don't pick up an enclosing repository when building from a source archive.
+const commitResult = fs.existsSync(path.join(root, ".git"))
+  ? spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root, encoding: "utf8" })
+  : undefined;
+const gitCommit = commitResult?.status === 0 ? commitResult.stdout.trim() : undefined;
+const statusResult = gitCommit
+  ? spawnSync("git", ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=normal"], { cwd: root, encoding: "utf8" })
+  : undefined;
+const gitDirty = statusResult?.status === 0 ? statusResult.stdout.length > 0 : undefined;
+const buildVersion = gitCommit
+  ? `${version}${version.includes("+") ? "." : "+"}g${gitCommit.slice(0, 7)}${gitDirty ? ".dirty" : ""}`
+  : version;
 const photon = createRequire(path.join(pi, "index.js")).resolve("@silvia-odwyer/photon-node");
 
 for (const platform of platforms) await buildPlatform(platform);
@@ -76,7 +88,7 @@ async function buildPlatform(platform) {
       compile: { outfile: path.join(work, name), target, autoloadBunfig: false, autoloadDotenv: false, autoloadTsconfig: false, autoloadPackageJson: false },
       target: "bun", minify: { syntax: true, whitespace: true, identifiers: false },
       naming: { asset: "[name].[ext]" },
-      define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(version) },
+      define: { DSCODE_STANDALONE: "true", DSCODE_BUILD_VERSION: JSON.stringify(buildVersion) },
       plugins: [piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorker, audit, platform, toolVersions })],
     });
     if (!result.success) throw new AggregateError(result.logs, "Standalone build failed");
@@ -94,7 +106,7 @@ async function buildPlatform(platform) {
     fs.rmSync(path.join(out, "verification.json"), { force: true });
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     fs.writeFileSync(path.join(out, `${name}.sha256`), `${sha256}  ${name}\n`);
-    fs.writeFileSync(path.join(out, "build.json"), JSON.stringify({ version, pi: PI_VERSION, bun: Bun.version,
+    fs.writeFileSync(path.join(out, "build.json"), JSON.stringify({ version, gitCommit, gitDirty, pi: PI_VERSION, bun: Bun.version,
       platform, target, host, bytes: bytes.length, sha256, tools: toolVersions,
       nativeModules: [...audit.inputs].filter(file => file.endsWith(".node")).map(file => path.relative(path.join(tui, ".."), file).replaceAll("\\", "/")).sort(),
       inputs: audit.inputs.size, excluded: [...audit.excluded].sort(), adapted: [...audit.adapted].sort(),
