@@ -329,8 +329,17 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(await (await fetch(scheduledUrl)).text(), "<h1>Unpublished edit</h1>");
     await command("/tui", "Conversation resumed in the TUI.");
     await assert.rejects(fetch(artifactUrl));
-    await command("/web", "Run /tui when you return.");
-    assert.equal(await (await fetch(artifactUrl)).text(), artifactHtml);
+    await command("/web");
+    // The terminal can redraw an old startup notice; wait for the share itself.
+    await waitFor(async () => {
+      const response = await fetch(artifactUrl).catch(error => {
+        if (error.cause?.code !== "ECONNREFUSED") throw error;
+      });
+      if (!response) return false;
+      assert.equal(response.status, 200, "share link works after restarting Web");
+      assert.equal(await response.text(), artifactHtml);
+      return true;
+    }, "artifact share after restarting Web");
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
