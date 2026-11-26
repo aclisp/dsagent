@@ -6,6 +6,7 @@ import Fastify, {
   type FastifyInstance,
   type FastifyLoggerOptions,
 } from "fastify";
+import type { ArtifactCommand } from "./artifact-command.ts";
 import {
   PersistedSessionAlreadyExistsError,
   PersistedSessionNotFoundError,
@@ -38,6 +39,7 @@ export interface HttpAdapterHostFactoryOptions {
   runtimeArgs?: readonly string[];
   runtimeOptions?: DSCodeRuntimeOptions;
   scheduledTasks?: boolean;
+  artifactCommand?: ArtifactCommand;
   session:
     | { type: "persistent"; id: string }
     | { type: "resume"; id: string; position?: SessionPosition };
@@ -58,6 +60,8 @@ export interface CreateHttpAdapterServerOptions {
   runtimeOptions?: DSCodeRuntimeOptions;
   /** Internal capability supplied by the Scheduler composition layer. */
   scheduledTaskWorkspaces?: readonly string[];
+  /** Publication capability supplied by the Web server for its sessions. */
+  artifactCommand?: ArtifactCommand;
   createHost?: HttpAdapterHostFactory;
   listPersistedSessions?: PersistedSessionLister;
   /** Require ?workspaceId= on GET /v1/sessions and return only that workspace. */
@@ -311,6 +315,7 @@ export function createHttpAdapter(
   ): Promise<SessionController> => {
     const host = await createHost({
       ...(options.scheduledTaskWorkspaces?.includes(workspaceId) ? { scheduledTasks: true } : {}),
+      ...(options.artifactCommand ? { artifactCommand: options.artifactCommand } : {}),
       cwd,
       session,
       ...(options.runtimeArgs !== undefined

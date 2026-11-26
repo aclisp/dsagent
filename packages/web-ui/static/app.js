@@ -260,17 +260,19 @@ function isFilePathToken(text) {
   return text.includes("/") || /^[^\s.].*\.[A-Za-z]{1,10}$/.test(text);
 }
 
-// Convert backticked and /workspace/... file paths in assistant text into share
-// links. The agent cites files by workspace-relative path; the page owns the URL.
+// Render public artifact paths and private workspace file links in assistant text.
 function linkifyFilePaths(text, workspaceId) {
   const base = `/share/${workspaceId}/`;
-  const pattern = /`([^`]+)`|\/workspace\/([^\s`]+)/g;
+  const pattern = /`([^`]+)`|\/workspace\/([^\s`]+)|(?<![\w/.])\/s\/[A-Za-z0-9_-]{12}\/(?![\w/%-])/g;
   let html = "";
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     html += escapeHtml(text.slice(last, match.index));
-    const raw = match[1] ?? match[2];
-    if (match[1] !== undefined && !isFilePathToken(match[1])) {
+    const raw = match[1] ?? match[2] ?? match[0];
+    if (/^\/s\/[A-Za-z0-9_-]{12}\/$/.test(raw)) {
+      const href = escapeHtml(window.location.origin + raw);
+      html += `<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`;
+    } else if (match[1] !== undefined && !isFilePathToken(match[1])) {
       html += escapeHtml(match[0]);
     } else {
       // Normalize an absolute container path back to workspace-relative and drop

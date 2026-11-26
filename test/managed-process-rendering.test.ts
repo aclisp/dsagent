@@ -43,6 +43,16 @@ const base: ManagedProcessResult = {
   processId: "1", running: false, output: "command output", exitCode: 0, sandbox: "host",
 };
 
+it("renders an artifact revocation after its tool result is replayed from JSONL", async () => {
+  const { tool } = await execute("exec_command", base);
+  const message = "Revoked: /s/abcdef0123_-/";
+  const result: AgentToolResult<unknown> = JSON.parse(JSON.stringify({
+    content: [{ type: "text", text: message }],
+    details: { artifact: undefined },
+  }));
+  expect(render(tool, result, true).text).toContain(message);
+});
+
 describe.each(["exec_command", "write_stdin"])("%s result presentation", (name) => {
   it.each([0, 1])("keeps the completed process ID only in the expanded UI for exit code %i", async (exitCode) => {
     const details = { ...base, exitCode, exitedAfterMs: 200 };

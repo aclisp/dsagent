@@ -1,4 +1,4 @@
-import { getScheduledTasksSkillPath } from "./builtin-skills.ts";
+import { getBuiltinSkillPath } from "./builtin-skills.ts";
 import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   getCurrentSystemMessage,
@@ -35,6 +35,7 @@ import { registerHooks } from "./hooks.ts";
 import { registerLocalImageInput } from "./image-input.ts";
 import { registerLlmMetrics } from "./llm-metrics.ts";
 import { partitionSessionFile } from "./home.ts";
+import { classifyLiteralCommand } from "./literal-command.ts";
 import { ManagedProcessRegistry, type ManagedProcessResult } from "./managed-process.ts";
 import { confirmMcpTool, type McpApprovalInfo } from "./mcp-confirmation.ts";
 import { McpSessionPermissions } from "./mcp-permissions.ts";
@@ -148,6 +149,7 @@ const applyPatchParameters = Type.Object({
 export interface DSCodeExtensionHooks {
   webContinuation?: WebContinuationController;
   scheduledTasks?: boolean;
+  artifactCommand?: (args: readonly string[], signal?: AbortSignal) => Promise<AgentToolResult<unknown>>;
   onSessionReady?: (runtime: DSCodeSessionRuntime) => void;
 }
 
@@ -264,10 +266,14 @@ export function createDSCodeExtension(
       registerNaturalExit(pi);
       registerSessionCommands(pi);
       hooks.webContinuation?.register(pi, options);
-      if (hooks.scheduledTasks && !options.noSkills) {
+      if ((hooks.scheduledTasks || hooks.artifactCommand) && !options.noSkills) {
         pi.on("resources_discover", async () => {
-          if (pi.getCommands().some(command => command.source === "skill" && command.name === "skill:scheduled-tasks")) return;
-          return { skillPaths: [await getScheduledTasksSkillPath()] };
+          const loaded = new Set(pi.getCommands().filter(command => command.source === "skill").map(command => command.name));
+          const skills = [
+            ...(hooks.scheduledTasks && !loaded.has("skill:scheduled-tasks") ? [getBuiltinSkillPath("scheduled-tasks")] : []),
+            ...(hooks.artifactCommand && !loaded.has("skill:publish-artifact") ? [getBuiltinSkillPath("publish-artifact")] : []),
+          ];
+          return { skillPaths: await Promise.all(skills) };
         });
       }
       registerEffortDefaults(pi, options);
@@ -285,6 +291,7 @@ export function createDSCodeExtension(
           const result = await enqueueApproval(async () => permission === "full" ? undefined : requestDestructiveCommandApproval(command, assessment, ctx));
           if (result?.block) throw new Error(result.reason);
         },
+        hooks.artifactCommand,
       );
       registerPatchTool(pi, checkpoints);
       registerEntryRenderers(pi);
@@ -982,6 +989,7 @@ function registerCommandTools(
   accessController: SessionAccessController,
   onAccessChanged: (ctx: ExtensionContext) => void,
   approveShellChange: (command: string, ctx: ExtensionContext, shell: ShellSyntax) => Promise<void>,
+  artifactCommand?: DSCodeExtensionHooks["artifactCommand"],
 ): void {
   pi.registerTool({
     name: "exec_command",
@@ -998,6 +1006,14 @@ function registerCommandTools(
     renderShell: "self",
     executionMode: "sequential",
     async execute(_id, params, signal, _onUpdate, ctx) {
+      if (artifactCommand) {
+        const command = classifyLiteralCommand(params.cmd, "dscode-artifact");
+        if (command.kind === "invalid") throw new Error(command.reason);
+        if (command.kind === "trusted") {
+          if (params.stdin_open) throw new Error("dscode-artifact does not accept stdin");
+          return artifactCommand(command.command.args, signal);
+        }
+      }
       let commandAccess = accessController.forCommand(getPermission(), params.cmd);
       let shell = sandboxShellSyntax({ mode: commandAccess.sandbox, network: commandAccess.network });
       if (!commandAccess.network && commandNeedsNetwork(params.cmd)) {
@@ -1130,7 +1146,7 @@ function renderManagedProcessResult(
 ): Text {
   const details = result.details as ManagedProcessResult | undefined;
   const processFailed = details?.processError !== undefined;
-  if (!details || processFailed || (context.isError && !details.writeError && !details.timedOut)) {
+  if (typeof details?.output !== "string" || processFailed || (context.isError && !details.writeError && !details.timedOut)) {
     return renderCollapsibleToolResult(result, options, theme, context, {
       forceError: processFailed,
     });

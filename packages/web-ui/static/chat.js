@@ -414,9 +414,19 @@ function shareHref(rawPath) {
     .join("/")}`;
 }
 
+function setArtifactLink(link, path) {
+  if (typeof path !== "string" || !/^\/s\/[A-Za-z0-9_-]{12}\/$/.test(path)) return false;
+  link.href = new URL(path, window.location.origin).href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  if (!link.textContent || link.textContent === path) link.textContent = link.href;
+  return true;
+}
+
 function enhanceFileLinks(root) {
   for (const link of root.querySelectorAll("a[href]")) {
     const href = link.getAttribute("href");
+    if (setArtifactLink(link, href)) continue;
     const suffixIndex = href.search(/[?#]/);
     const path = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
     const suffix = suffixIndex < 0 ? "" : href.slice(suffixIndex);
@@ -612,6 +622,48 @@ function appendSystemNotice(text, kind = "info", timestamp = Date.now(), options
   messagesElement.appendChild(notice);
   afterContentChange();
   return notice;
+}
+
+function appendArtifactResult(artifact, timestamp = Date.now()) {
+  if (!artifact) return;
+  if (artifact.kind === "preview" && Array.isArray(artifact.files)) {
+    const { bubble } = createMessageRow("assistant", timestamp);
+    const heading = document.createElement("p");
+    heading.textContent = `待发布 · ${artifact.directory} · 入口 ${artifact.entry}`;
+    const details = document.createElement("details");
+    details.open = true;
+    const summary = document.createElement("summary");
+    summary.textContent = `文件清单（${artifact.files.length} 个）`;
+    const files = document.createElement("pre");
+    files.textContent = artifact.files.join("\n");
+    const confirmation = document.createElement("p");
+    confirmation.textContent = "核对文件清单后，可以回复确认。";
+    details.append(summary, files);
+    bubble.append(heading, details, confirmation);
+  } else if (artifact.kind === "published" || artifact.kind === "list") {
+    const publications = artifact.kind === "published" ? [artifact.publication] : artifact.publications;
+    if (!Array.isArray(publications)) return;
+    const { bubble } = createMessageRow("assistant", timestamp);
+    const heading = document.createElement("p");
+    heading.textContent = artifact.kind === "published" ? "分享链接" : "当前工作区的有效分享链接";
+    bubble.appendChild(heading);
+    if (!publications.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "暂无分享链接。";
+      bubble.appendChild(empty);
+    } else {
+      const list = document.createElement("ul");
+      for (const publication of publications) {
+        const link = document.createElement("a");
+        if (!setArtifactLink(link, publication?.sharePath)) continue;
+        const item = document.createElement("li");
+        item.append(`${publication.entry} · ${new Date(publication.publishedAt).toLocaleString()}`, document.createElement("br"), link);
+        list.appendChild(item);
+      }
+      bubble.appendChild(list);
+    }
+  }
+  afterContentChange();
 }
 
 function appendCheckpointDiff(event) {
@@ -1115,6 +1167,9 @@ function handleToolEvent(event) {
       Date.now(),
       toolResultOutcome(event.result, event.isError),
     );
+    if (event.name === "exec_command" && !event.isError) {
+      appendArtifactResult(event.result?.details?.artifact);
+    }
     moveTypingToBottom(turn);
   }
 }
@@ -1525,6 +1580,7 @@ function renderHistoryMessage(message, currentTurn) {
       message.timestamp,
       toolResultOutcome(message.content, message.isError),
     );
+    appendArtifactResult(message.artifact, message.timestamp);
     for (const call of message.nestedCalls?.calls ?? []) {
       recordTool(
         turn, call.id, call.name, "completed", call.status !== "ok", message.timestamp,

@@ -1,6 +1,6 @@
 # ADR-0012: Publish artifact snapshots with independent share tokens
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-26
 - Related: [ADR-0007](0007-tui-web-session-handoff.md), [ADR-0011](0011-scope-http-sessions-to-workspace-credentials.md)
 
@@ -13,7 +13,7 @@ to open chat and discover or activate sessions. A passphrase in an input hook
 would run too late and protect only prompt submission, not the rest of the
 Web interface.
 
-## Proposed decision
+## Decision
 
 Publish an immutable snapshot of an explicitly selected static directory and
 entry page, such as `dist/` and `index.html`. Show the publisher the exact files
@@ -34,10 +34,32 @@ The share link `/s/<shareToken>/` redirects to the selected entry page at
 the entry is nested. Anyone with the token can use `GET` or `HEAD` to read files
 from the snapshot. The public route does not list directories, read from the
 live workspace, or accept writes. Opening a publication does not discover
-sessions, create a turn, or call a model. Only a holder of the owning workspace
-credential can publish, manage, or revoke the link. Revocation denies requests
-for the short link, the entry page, and its assets; already downloaded copies
-cannot be recalled.
+sessions, create a turn, or call a model. Publication management is scoped to
+the active chat session's workspace. Revocation denies requests for the short
+link, the entry page, and its assets. Copies recipients already downloaded
+remain outside the service's control.
+
+## Web chat workflow and service lifetime
+
+Use the same `publish-artifact` skill in standalone DSCode Web and in the Web
+service started by TUI `/web`. The skill calls `dscode-artifact` through the
+existing `exec_command` tool. Web chat, IM, and scheduled tasks use their
+existing access to the session to prepare and publish artifacts.
+
+The agent prepares a private draft from the selected workspace directory and
+entry page. The first-release interface in Web chat displays the complete file
+list and invites the user to confirm. The skill interprets confirmation in
+natural language and follows the user's instructions for scheduled publication.
+The publish command uses the prepared snapshot for the current session. The
+same skill lists active links for the current workspace and revokes a selected
+link. Web chat uses the browser's current origin to make a complete share URL.
+
+Persist publications and revocations under DSCode home and scope them to the
+owning workspace. Links have no automatic expiry. The Web service must be
+running and serving the owning workspace for its links to work. Running
+`/tui` or exiting TUI stops its Web service. Starting `/web` again with the
+same workspace, origin, and DSCode home restores the same links and snapshots
+for publications that are still active.
 
 ## External backends and frontend versions
 
@@ -54,9 +76,8 @@ Switching the frontend does not roll back backend data or schema changes.
 
 ## Single-origin deployment
 
-Use the same origin for the first release. Keep the existing private workspace
-credential for chat and management; do not add accounts, login cookies, or
-prompt passphrases. The public route never discloses a `workspace_id` or
+Use the same origin for the first release and retain the existing Web session
+authorization. The public route never discloses a `workspace_id` or
 `session_id` in its generated links or responses. The publisher must not include
 private URLs or IDs in the files being published. Suppress referrers on private
 pages and when opening a public link, and do not give a newly opened publication
@@ -71,8 +92,8 @@ can affect features such as storage and requests for assets.
 The existing `/share/<workspace_id>/…` route remains a private file preview, not
 a publication URL. Previously distributed workspace IDs must be treated as
 disclosed; new share tokens do not revoke them. ADR-0011 is deferred, so a separately
-leaked active session ID still grants access under the current API. This feature
-must not expose either private ID, but it does not change session authorization.
+leaked active session ID still grants access under the current API, including
+publication management for its workspace.
 
 ## Acceptance criteria
 
@@ -86,3 +107,8 @@ must not expose either private ID, but it does not change session authorization.
 - The owner can revoke a link without revoking other publications or changing
   the workspace ID. A fresh request for the revoked page or any of its assets
   fails. Existing private chat and file previews continue to work.
+- Both Web launch modes show the complete file list before confirmation and
+  can publish, list, and revoke links for the session's workspace. Web chat, IM,
+  and scheduled tasks can publish the prepared snapshot when they share a
+  session. Restarting Web restores active links for the owning workspace, and
+  revoked links remain unavailable.

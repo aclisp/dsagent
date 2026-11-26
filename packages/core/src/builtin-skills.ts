@@ -3,13 +3,19 @@ import { link, lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { isStandalone } from "./distribution.ts";
 import { getDSCodeHome } from "./home.ts";
-import { scheduledTasksAssetPath } from "./skill-assets.ts";
+import { builtinSkillAssetPath } from "./skill-assets.ts";
+
+type BuiltinSkill = Parameters<typeof builtinSkillAssetPath>[0];
 
 /** Publish an immutable resource without overwriting an existing cache or user skill. */
-export async function materializeBuiltinSkill(home: string, content: Buffer): Promise<string> {
+export async function materializeBuiltinSkill(
+  home: string,
+  content: Buffer,
+  name: BuiltinSkill,
+): Promise<string> {
   const hash = createHash("sha256").update(content).digest("hex").slice(0, 32);
   let directory = home;
-  for (const part of ["builtin-skills", hash, "scheduled-tasks"]) {
+  for (const part of ["builtin-skills", hash, name]) {
     directory = path.join(directory, part);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const entry = await lstat(directory);
@@ -39,7 +45,7 @@ export async function materializeBuiltinSkill(home: string, content: Buffer): Pr
   return target;
 }
 
-export async function getScheduledTasksSkillPath(): Promise<string> {
-  const asset = scheduledTasksAssetPath();
-  return isStandalone ? materializeBuiltinSkill(getDSCodeHome(), await readFile(asset)) : asset;
+export async function getBuiltinSkillPath(name: BuiltinSkill): Promise<string> {
+  const asset = builtinSkillAssetPath(name);
+  return isStandalone ? materializeBuiltinSkill(getDSCodeHome(), await readFile(asset), name) : asset;
 }

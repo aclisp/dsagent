@@ -55,3 +55,10 @@ export {
   type HttpUiResponse,
   type HttpUiResponseErrorCode,
 } from "./ui-broker.ts";
+export type {
+  ArtifactCommand,
+  ArtifactCommandContext,
+  ArtifactCommandDetails,
+  ArtifactCommandResult,
+  ArtifactPublicationSummary,
+} from "./artifact-command.ts";

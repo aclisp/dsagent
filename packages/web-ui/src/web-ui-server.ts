@@ -1,4 +1,6 @@
+import path from "node:path";
 import multipart from "@fastify/multipart";
+import { getDSCodeHome } from "@aclisp/dsagent-core/session-runtime";
 import {
   createHttpAdapter,
   type CreateHttpAdapterServerOptions,
@@ -6,6 +8,7 @@ import {
 import type { ChatProvider } from "@aclisp/dsagent-chat-client";
 import type { SessionPosition } from "@aclisp/dsagent-core/session-runtime";
 import type { FastifyInstance } from "fastify";
+import { ArtifactPublications } from "./artifact-publications.ts";
 import { renderChatPage } from "./chat-page.ts";
 import { readWebAsset } from "./web-assets.ts";
 import { prepareBackgroundServices, type WebBackgroundServices } from "./background-services.ts";
@@ -56,14 +59,17 @@ export async function createWebUiServer(
   }
 
   const providers = chatProviders === undefined ? [] : [...chatProviders];
+  const artifacts = new ArtifactPublications(path.join(getDSCodeHome(), ".artifact-publications"), options.workspaces);
   let sessionControl: import("@aclisp/dsagent-http-adapter").HttpSessionControl | undefined;
   const { server, sessionPort } = createHttpAdapter({
     ...httpAdapterOptions,
+    artifactCommand: (args, context, signal) => artifacts.command(args, context, signal),
     scheduledTaskWorkspaces: continuationMode ? [] : [firstWorkspaceId],
     onSessionControl: control => { sessionControl = control; httpAdapterOptions.onSessionControl?.(control); },
   });
   await server.register(multipart);
   registerFileRoutes(server, options.workspaces, { maxUploadBytes });
+  artifacts.registerRoutes(server);
 
   // Pages are served only with a configured workspace id, which is also the secret
   // credential. The friendly chat owns /chat; the raw terminal remains at /debug.
@@ -75,6 +81,7 @@ export async function createWebUiServer(
       }
       const html = await readWebAsset("chat.html");
       return reply
+        .header("Referrer-Policy", "no-referrer")
         .type("text/html; charset=utf-8")
         .send(renderChatPage(html, chatAgentName));
     },
@@ -87,7 +94,7 @@ export async function createWebUiServer(
         return reply.code(404).send({ error: "workspace_not_found" });
       }
       const html = await readWebAsset("index.html");
-      return reply.type("text/html; charset=utf-8").send(html);
+      return reply.header("Referrer-Policy", "no-referrer").type("text/html; charset=utf-8").send(html);
     },
   );
 

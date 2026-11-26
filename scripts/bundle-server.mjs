@@ -28,9 +28,9 @@ await build({
       setup(buildContext) {
         buildContext.onLoad({ filter: /skill-assets\.js$/ }, args => {
           if (args.path !== path.join(root, "packages/core/dist/skill-assets.js")) return;
-          const relative = path.relative(path.dirname(outputFile), path.join(root, "packages/core/dist/builtin-skills/scheduled-tasks/SKILL.md")).split(path.sep).join("/");
+          const relative = path.relative(path.dirname(outputFile), path.join(root, "packages/core/dist/builtin-skills")).split(path.sep).join("/");
           return { loader: "js", contents: `import { fileURLToPath } from "node:url";
-            export function scheduledTasksAssetPath() { return fileURLToPath(new URL(${JSON.stringify(relative)}, import.meta.url)); }` };
+            export function builtinSkillAssetPath(name) { return fileURLToPath(new URL(${JSON.stringify(relative + "/")} + name + "/SKILL.md", import.meta.url)); }` };
         });
         buildContext.onResolve({ filter: /\/version\.js$/ }, (args) => {
           if (args.importer.includes(`${path.sep}packages${path.sep}core${path.sep}dist`)) {

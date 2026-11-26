@@ -9,6 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig
 COPY scripts ./scripts
 COPY packages ./packages
 COPY deploy/default-skills/scheduled-tasks ./deploy/default-skills/scheduled-tasks
+COPY deploy/default-skills/publish-artifact ./deploy/default-skills/publish-artifact
 COPY src ./src
 RUN pnpm install --frozen-lockfile
 # Build all server packages, the bundled web server, and the standalone vision CLI.
