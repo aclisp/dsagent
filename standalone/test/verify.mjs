@@ -379,6 +379,30 @@ try {
       }
     });
   }
+  const sandboxImage = process.env.DSCODE_SANDBOX_IMAGE;
+  if (process.platform === "linux" && sandboxImage) {
+    await check("relocated Linux executable runs commands in a read-only Docker sandbox", async () => {
+      const writeProbe = "docker-sandbox-write-probe.txt";
+      plannedTool = {
+        name: "exec_command",
+        args: { cmd: `cat home/forbidden.js && ! touch ${writeProbe} 2>/dev/null` },
+      };
+      toolIssued = false;
+      const result = await run("dscode", [
+        ...base, "--sandbox", "read-only", "--tools", "exec_command", "--mode", "json", "-p", "probe Docker sandbox",
+      ]);
+      assert.equal(result.timedOut, false, result.stdout + result.stderr);
+      assert.equal(result.code, 0, result.stderr);
+      const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
+      const finished = events.find(event => event.type === "tool_execution_end" && event.toolName === "exec_command");
+      assert.ok(finished, result.stdout);
+      assert.equal(finished.isError, false, JSON.stringify(finished));
+      assert.equal(finished.result.details.exitCode, 0, JSON.stringify(finished));
+      assert.equal(finished.result.details.sandbox, `Docker ${sandboxImage} (read-only, no network)`);
+      assert.match(finished.result.details.output, /USER_EXTENSION_EXECUTED/);
+      await assert.rejects(fs.access(path.join(scratch, writeProbe)), { code: "ENOENT" });
+    });
+  }
   await check("read then apply_patch to the same file", async () => {
     const name = "read-then-update.txt";
     const target = path.join(scratch, name);

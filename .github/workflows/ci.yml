@@ -89,7 +89,7 @@ jobs:
         run: pnpm check
 
   standalone-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     env:
       DSCODE_SANDBOX_IMAGE: node:26-trixie-slim
