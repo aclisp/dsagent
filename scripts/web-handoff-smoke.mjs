@@ -116,6 +116,24 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     send(`${text}\r`);
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
   };
+  // The terminal can redraw an earlier startup notice, so prove readiness over HTTP.
+  // A restarting listener refuses connections, then answers 503 server_starting
+  // until admission opens.
+  const webResponse = async (url, description) => {
+    let response;
+    await waitFor(async () => {
+      try {
+        response = await fetch(url);
+      } catch (error) {
+        if (!["ECONNREFUSED", "ECONNRESET"].includes(error.cause?.code)) throw error;
+        return false;
+      }
+      if (response.status !== 503) return true;
+      assert.equal((await response.json()).error, "server_starting", `${description} must only wait for startup`);
+      return false;
+    }, description);
+    return response;
+  };
   // Ctrl+C closes the open argument menu. The PTY bridge can hand that byte and the
   // following command to the TUI in one read, which the editor then drops, so keep
   // cancelling until the TUI demonstrably runs a command after clearing the line.
@@ -241,11 +259,12 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests[2].model, "deepseek-v4-pro");
     assert.equal(requests[2].reasoning.effort, "max");
     assert.match(JSON.stringify(requests[2].input), /WEB_CONTINUED/);
-    await command("/web", "Run /tui when you return.");
+    await command("/web");
+    assert.equal((await webResponse(privateUrl, "restarted Web serving the saved browser URL")).status, 200,
+      "the saved browser URL works after restarting Web");
     const allUrls = output.match(new RegExp(`${origin}/chat/[A-Za-z0-9_-]+`, "g"));
     const nextUrl = allUrls.at(-1);
     assert.equal(nextUrl, privateUrl, "the workspace URL survives repeated handoffs");
-    assert.equal((await fetch(privateUrl)).status, 200, "the saved browser URL works after restarting Web");
     const nextWorkspaceId = new URL(nextUrl).pathname.split("/").at(-1);
     const current = await (await fetch(`${origin}/v1/sessions?workspaceId=${nextWorkspaceId}`)).json();
     id = current.sessions[0].session.id;
@@ -259,8 +278,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
       web: { port: globalPort, workspaces: { [localWorkspace]: { id: workspaceId, port } } } });
-    await command("/web", "Run /tui when you return.");
-    const unnamedChatPage = await fetch(privateUrl);
+    await command("/web");
+    const unnamedChatPage = await webResponse(privateUrl, "restarted Web serving the workspace conversation");
     assert.equal(unnamedChatPage.status, 200, "the saved URL also serves a different conversation in the workspace");
     assert.match(await unnamedChatPage.text(), /<title>与 Steve Code 私聊<\/title>/);
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
@@ -330,16 +349,9 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     await command("/tui", "Conversation resumed in the TUI.");
     await assert.rejects(fetch(artifactUrl));
     await command("/web");
-    // The terminal can redraw an old startup notice; wait for the share itself.
-    await waitFor(async () => {
-      const response = await fetch(artifactUrl).catch(error => {
-        if (error.cause?.code !== "ECONNREFUSED") throw error;
-      });
-      if (!response) return false;
-      assert.equal(response.status, 200, "share link works after restarting Web");
-      assert.equal(await response.text(), artifactHtml);
-      return true;
-    }, "artifact share after restarting Web");
+    const restartedShare = await webResponse(artifactUrl, "artifact share after restarting Web");
+    assert.equal(restartedShare.status, 200, "share link works after restarting Web");
+    assert.equal(await restartedShare.text(), artifactHtml);
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
