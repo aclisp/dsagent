@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { createRequire } from "node:module";
+import { createConnection } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -16,6 +17,21 @@ export async function removeHandoffFixture(root) {
   // Windows can retain directory handles briefly after the PTY has closed.
   // Bound the retry window; a persistent lock must still fail acceptance.
   await rm(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 10 : 0, retryDelay: 100 });
+}
+
+export function webListenerClosed(port) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.setTimeout(1000, () => socket.destroy(new Error(`Timed out connecting to Web listener on port ${port}`)));
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", error => {
+      if (error.code === "ECONNREFUSED") resolve(true);
+      else reject(error);
+    });
+  });
 }
 
 /** Offline acceptance of the actual TUI commands and the browser HTTP contract. */
@@ -115,6 +131,11 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const start = output.length;
     send(`${text}\r`);
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
+  };
+  const takeBack = async () => {
+    await command("/tui", "Conversation resumed in the TUI.");
+    // A closing Web server can still answer HTTP while it releases the listener.
+    await waitFor(() => webListenerClosed(port), "Web listener to close after /tui");
   };
   // The terminal can redraw an earlier startup notice, so prove readiness over HTTP.
   // A restarting listener refuses connections, then answers 503 server_starting
@@ -252,9 +273,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const reloaded = await fetch(`${origin}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, resumeSessionId: id }) });
     assert.equal(reloaded.status, 201, await reloaded.text());
     assert.match(JSON.stringify(await history()), /WEB_CONTINUED/);
-    await command("/tui", "Conversation resumed in the TUI.");
+    await takeBack();
     await command("/permissions", "permission: ask");
-    await assert.rejects(fetch(privateUrl));
     await command("TUI_AFTER_HANDOFF", "handoff reply 3");
     assert.equal(requests[2].model, "deepseek-v4-pro");
     assert.equal(requests[2].reasoning.effort, "max");
@@ -271,7 +291,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal((await fetch(`${origin}/v1/sessions/${id}`, { method: "DELETE" })).status, 204);
     const cleared = await (await fetch(`${origin}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: nextWorkspaceId }) })).json();
     assert.notEqual(cleared.id, id);
-    await command("/tui", "Conversation resumed in the TUI.");
+    await takeBack();
     await command("TUI_AFTER_CLEAR", "handoff reply 4");
     assert.doesNotMatch(JSON.stringify(requests[3].input), /WEB_CONTINUED|TUI_BEFORE_HANDOFF/);
     assert.equal(requests[3].reasoning.effort, "max");
@@ -346,8 +366,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const scheduledUrl = new URL(scheduledPublication.artifact.publication.sharePath, origin);
     assert.notEqual(String(scheduledUrl), String(artifactUrl));
     assert.equal(await (await fetch(scheduledUrl)).text(), "<h1>Unpublished edit</h1>");
-    await command("/tui", "Conversation resumed in the TUI.");
-    await assert.rejects(fetch(artifactUrl));
+    await takeBack();
     await command("/web");
     const restartedShare = await webResponse(artifactUrl, "artifact share after restarting Web");
     assert.equal(restartedShare.status, 200, "share link works after restarting Web");
@@ -355,8 +374,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
-    await assert.rejects(fetch(nextUrl));
-    await assert.rejects(fetch(artifactUrl));
+    assert.equal(await webListenerClosed(port), true, "TUI exit closes the Web listener");
     await waitFor(() => authenticated.size === 0, "IM exit cleanup");
     return "TUI/Web/TUI continuation, startup rollback, scheduled tasks and progressive skill read, WeCom SDK input/reply/source delivery, WeChat SQLite/fault isolation, current model and effort, files/assets, Web/IM/scheduled artifact publication and restart, clear, preferences, stable workspace URL, and exit cleanup passed";
   } catch (error) {
