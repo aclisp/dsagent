@@ -14,7 +14,7 @@ import {
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text, stripTerminalSequences, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   findCompletedExecutions,
   formatWorkedDuration,
@@ -155,8 +155,11 @@ function click(runtime: Fixture, text: string, width = 100, button: TuiMouseEven
   const rendered = lines(runtime, width);
   const y = rendered.findIndex((line) => line.includes(text));
   expect(y).toBeGreaterThanOrEqual(0);
-  runtime.chatContainer.handleMouse({ type: "click", button, x: 0, y, screenX: 0, screenY: y,
-    width, height: rendered.length, shift: false, alt: false, ctrl: false });
+  clickAt(runtime, y, width, rendered.length, button);
+}
+function clickAt(runtime: Fixture, y: number, width: number, height: number, button: TuiMouseEvent["button"] = "left") {
+  return runtime.chatContainer.handleMouse({ type: "click", button, x: 0, y, screenX: 0, screenY: y,
+    width, height, shift: false, alt: false, ctrl: false });
 }
 async function complete(runtime: Fixture, entries: SessionEntry[], aborted = false): Promise<void> {
   await runtime.handleEvent({ type: "agent_start" });
@@ -232,6 +235,37 @@ describe("fullscreen execution folding adapter", () => {
     expect(output(runtime)).not.toContain("PROGRESS_A");
     expect(output(runtime)).toContain("USER_A");
     expect(output(runtime)).toContain("FINAL_A");
+  });
+
+  it("hits the folded summary using the rendered layout without scanning the flat transcript", () => {
+    const runtime = fixture(execution());
+    runtime.renderSessionEntries(runtime.entries);
+    const rendered = lines(runtime);
+    const y = rendered.findIndex((line) => line.includes("Worked for"));
+    expect(y).toBeGreaterThanOrEqual(0);
+    const scan = vi.spyOn(runtime.chatContainer.children, Symbol.iterator);
+    expect(clickAt(runtime, y, 100, rendered.length)?.handled).toBe(true);
+    expect(scan).not.toHaveBeenCalled();
+    scan.mockRestore();
+    expect(output(runtime)).toContain("PROGRESS_A");
+  });
+
+  it.each(["before rendering", "after a width change"])("hits the folded summary %s", (scenario) => {
+    const entries = execution();
+    entries[0] = entry(user("A long user message that wraps at thirty columns but not one hundred."));
+    const reference = fixture(entries);
+    reference.renderSessionEntries(entries);
+    const narrow = lines(reference, 30);
+    const y = narrow.findIndex((line) => line.includes("Worked for"));
+    expect(y).toBeGreaterThanOrEqual(0);
+
+    const runtime = fixture(entries);
+    runtime.renderSessionEntries(entries);
+    if (scenario === "after a width change") {
+      expect(lines(runtime).findIndex((line) => line.includes("Worked for"))).not.toBe(y);
+    }
+    expect(clickAt(runtime, y, 30, narrow.length)?.handled).toBe(true);
+    expect(output(runtime)).toContain("PROGRESS_A");
   });
 
   it("folds a final message's thinking even without tools, keeping the stored message intact", () => {
