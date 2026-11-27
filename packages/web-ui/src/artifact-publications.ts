@@ -74,9 +74,9 @@ export class ArtifactPublications {
       this.drafts.clear();
       await Promise.all(drafts.map(draft => discardDraft(draft.location)));
     });
-    server.route<{ Params: { token: string; "*"?: string } }>({
+    const register = (url: string) => server.route<{ Params: { token: string; "*"?: string } }>({
       method: ["GET", "HEAD"],
-      url: "/s/:token/*",
+      url,
       handler: async (request, reply) => {
         reply.header("Cache-Control", "no-store")
           .header("Referrer-Policy", "no-referrer")
@@ -100,6 +100,8 @@ export class ArtifactPublications {
         }
       },
     });
+    register("/s/:token");
+    register("/s/:token/*");
   }
 
   private async prepare(

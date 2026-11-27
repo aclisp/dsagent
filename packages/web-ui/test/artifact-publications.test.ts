@@ -140,11 +140,16 @@ it("publishes a session's prepared files across clients and restores links after
   const { sharePath } = published.publication;
   expect(sharePath).toMatch(/^\/s\/[A-Za-z0-9_-]{12}\/$/);
   const modelCalls = h.modelCalls.mock.calls.length;
-  const redirect = await server.inject(sharePath);
-  expect(redirect.statusCode).toBe(302);
+  const sharePathWithoutSlash = sharePath.slice(0, -1);
   const entry = sharePath + "nested/start%20here.html";
-  expect(redirect.headers.location).toBe(entry);
-  expect(redirect.headers["cache-control"]).toBe("no-store");
+  for (const url of [sharePath, sharePathWithoutSlash]) {
+    for (const method of ["GET", "HEAD"] as const) {
+      const redirect = await server.inject({ method, url });
+      expect(redirect.statusCode).toBe(302);
+      expect(redirect.headers.location).toBe(entry);
+      expect(redirect.headers["cache-control"]).toBe("no-store");
+    }
+  }
   const page = await server.inject(entry);
   expect(page.body).toBe('<script src="../module.js"></script>');
   expect(page.headers["referrer-policy"]).toBe("no-referrer");
@@ -191,7 +196,7 @@ it("publishes a session's prepared files across clients and restores links after
   expect((await turn(resumed, otherId, "list")).artifact).toEqual({ kind: "list", publications: [] });
   expect((await turn(resumed, otherId, "revoke")).isError).toBe(true);
   expect((await turn(resumed, resumedId, "revoke")).isError).toBe(false);
-  for (const url of [sharePath, entry, sharePath + "module.js"]) {
+  for (const url of [sharePath, sharePathWithoutSlash, entry, sharePath + "module.js"]) {
     expect((await resumed.inject(url)).statusCode).toBe(404);
   }
   expect((await resumed.inject(newEntry)).statusCode).toBe(200);
