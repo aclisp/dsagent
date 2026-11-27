@@ -13,11 +13,16 @@ Invoke it directly, with literal arguments and no shell chaining.
    HTML entry path, relative to that directory. Ask if either is ambiguous.
    Only publish code the user trusts, including its dependencies. Keep private URLs,
    credentials, and unrelated files out of the artifact.
-2. Run `dscode-artifact preview "dist" "index.html"`. In interactive chats,
+2. Run `dscode-artifact preview <directory> <entry>`. Pass `<directory>` relative
+   to the workspace root and `<entry>` as an existing `.html` or `.htm` file
+   relative to `<directory>`. Use `/` separators and quote paths with spaces.
+   Absolute paths, `..` segments, hidden paths, and symlinks are not supported.
+   For example, `dscode-artifact preview "dist" "index.html"`. In interactive chats,
    show the complete file list and ask the user to confirm in their own words.
    Web chat displays the list automatically. For scheduled work, follow the
    user's task instructions.
 3. When the user has authorized publication, run `dscode-artifact publish`.
+   `publish` takes no arguments and publishes the draft prepared by `preview` in the current session.
    Use the returned share path. Web chat displays the full link using the
    current browser address. In other channels, relay the share path and tell
    the user where to find the full link in Web chat.
@@ -27,6 +32,6 @@ snapshot. To share a new version, prepare and confirm a new snapshot.
 
 Use `dscode-artifact list` to list the workspace's active publications.
 Use `dscode-artifact revoke <shareToken>` when the user explicitly asks to
-revoke the identified link. Extract the token from the share link rather than
-passing its full URL. If the user has not identified a unique link, list the
+revoke the identified link. For a share path `/s/<shareToken>/`, pass only
+`<shareToken>`. If the user has not identified a unique link, list the
 active links and ask which one to revoke. A revoked link cannot be restored.
