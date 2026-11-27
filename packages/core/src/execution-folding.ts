@@ -147,8 +147,18 @@ class ExecutionFolding {
     const chat = runtime.chatContainer;
     const render = chat.render;
     const handleMouse = chat.handleMouse;
-    chat.render = (width) => this.withVisibleChildren(() => render.call(chat, width));
-    chat.handleMouse = (event) => this.withVisibleChildren(() => handleMouse.call(chat, event));
+    let lastRenderWidth: number | undefined;
+    chat.render = (width) => {
+      const lines = this.withVisibleChildren(() => render.call(chat, width));
+      lastRenderWidth = width;
+      return lines;
+    };
+    chat.handleMouse = (event) => {
+      // Pi's Container uses the last render's child layout when widths match.
+      // Only supply the projection when Pi needs to compute a layout on demand.
+      if (event.width === lastRenderWidth) return handleMouse.call(chat, event);
+      return this.withVisibleChildren(() => handleMouse.call(chat, event));
+    };
   }
 
   private messageOf(component: Component): AgentMessage | undefined {

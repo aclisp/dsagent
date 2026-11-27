@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, NestedToolCalls, TextContent, ThinkingContent, ToolCall } from "@earendil-works/pi-ai";
+import { getArtifactCommandDetails, type ArtifactCommandDetails } from "./artifact-command.ts";
 
 export type { AgentMessage };
 
@@ -29,6 +30,7 @@ export type HttpSessionMessage =
       toolName: string;
       isError: boolean;
       nestedCalls?: NestedToolCalls;
+      artifact?: ArtifactCommandDetails;
       content: HttpMessageText[];
     }
   | { role: "compactionSummary"; timestamp: number; summary: string };
@@ -59,7 +61,10 @@ export function toHttpSessionMessages(messages: readonly AgentMessage[]): HttpSe
           content: assistantBlocks(message.content),
         });
         break;
-      case "toolResult":
+      case "toolResult": {
+        const artifact = message.toolName === "exec_command" && !message.isError
+          ? getArtifactCommandDetails(message.details)
+          : undefined;
         result.push({
           role: "toolResult",
           timestamp: message.timestamp,
@@ -67,9 +72,11 @@ export function toHttpSessionMessages(messages: readonly AgentMessage[]): HttpSe
           toolName: message.toolName,
           isError: message.isError,
           ...(message.nestedCalls ? { nestedCalls: message.nestedCalls } : {}),
+          ...(artifact ? { artifact } : {}),
           content: textBlocks(message.content),
         });
         break;
+      }
       case "compactionSummary":
         result.push({
           role: "compactionSummary",

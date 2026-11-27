@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const PI_VERSION = "1.6.0";
+export const PI_VERSION = "1.6.1";
 
 function replace(source, before, after) {
   if (!source.includes(before)) throw new Error(`Pi ${PI_VERSION} adapter mismatch: ${before}`);
@@ -83,7 +83,7 @@ export function piAdapter({ root, pi, tui, photon, assets, worker, codemodeWorke
         }
         if (file === path.join(root, "packages/core/dist/skill-assets.js")) {
           audit.adapted.add(path.relative(root, file));
-          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function scheduledTasksAssetPath() { return assets["skills/scheduled-tasks/SKILL.md"]; }' };
+          return { loader: "js", contents: 'import { assets } from "dscode:assets"; export function builtinSkillAssetPath(name) { return assets["skills/" + name + "/SKILL.md"]; }' };
         }
         if (replacements.has(file)) {
           audit.adapted.add(path.relative(root, file));

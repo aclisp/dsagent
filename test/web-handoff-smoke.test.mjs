@@ -1,8 +1,9 @@
 import { EventEmitter, once } from "node:events";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { removeHandoffFixture, verifyWebHandoff } from "../scripts/web-handoff-smoke.mjs";
+import { removeHandoffFixture, verifyWebHandoff, webListenerClosed } from "../scripts/web-handoff-smoke.mjs";
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), rm: vi.fn() }));
 vi.mock("node:child_process", async importOriginal => ({ ...await importOriginal(), spawn: mocks.spawn }));
@@ -43,6 +44,24 @@ it("keeps the original TUI failure visible when directory cleanup also fails", a
   expect(error.message).toContain(busy.message);
   expect(error.errors[0].message).toMatch(/TUI exited \(73\)/);
   expect(error.errors[1]).toBe(busy);
+});
+
+it("waits for the Web listener to close even when it replies server_closing", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(503, { "content-type": "application/json" });
+    response.end('{"error":"server_closing"}');
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "server_closing" });
+    expect(await webListenerClosed(port)).toBe(false);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+  expect(await webListenerClosed(port)).toBe(true);
 });
 
 it.runIf(process.platform === "win32")("waits for a child to release its Windows working-directory lock", async () => {

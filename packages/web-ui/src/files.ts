@@ -80,6 +80,7 @@ export function registerFileRoutes(
       const name = path.basename(resolved);
       reply
         .header("X-Content-Type-Options", "nosniff")
+        .header("Referrer-Policy", "no-referrer")
         .header("Content-Type", contentTypeFor(name))
         .header("Content-Disposition", contentDisposition(name));
       return reply.send(createReadStream(resolved));
@@ -156,7 +157,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
-function contentTypeFor(name: string): string {
+export function contentTypeFor(name: string): string {
   const ext = path.extname(name).toLowerCase();
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }

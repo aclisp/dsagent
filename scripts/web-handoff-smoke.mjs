@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { createRequire } from "node:module";
+import { createConnection } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -16,6 +17,21 @@ export async function removeHandoffFixture(root) {
   // Windows can retain directory handles briefly after the PTY has closed.
   // Bound the retry window; a persistent lock must still fail acceptance.
   await rm(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 10 : 0, retryDelay: 100 });
+}
+
+export function webListenerClosed(port) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.setTimeout(1000, () => socket.destroy(new Error(`Timed out connecting to Web listener on port ${port}`)));
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", error => {
+      if (error.code === "ECONNREFUSED") resolve(true);
+      else reject(error);
+    });
+  });
 }
 
 /** Offline acceptance of the actual TUI commands and the browser HTTP contract. */
@@ -48,6 +64,12 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
       socket.send(JSON.stringify({ headers: frame.headers, errcode: 0, errmsg: "ok" }));
     });
   });
+  const artifactCommands = [
+    ["ARTIFACT_PREVIEW_FIXTURE", "dscode-artifact preview public-example index.html"],
+    ["这份草稿可以发了", "dscode-artifact publish"],
+    ["ARTIFACT_SECOND_PREVIEW", "dscode-artifact preview public-example index.html"],
+    ["ARTIFACT_SCHEDULED_PUBLISH", "dscode-artifact publish"],
+  ];
   const provider = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -58,6 +80,9 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
       await writeFile(path.join(workspace, ".dscode/schedules.yaml"), `version: 1\ntasks:\n  - id: handoff-source\n    enabled: true\n    type: once\n    at: "${new Date(Date.now() + 1500).toISOString()}"\n    delivery: source\n    prompt: IM_SCHEDULED_FIXTURE\n`);
     }
     const readSkill = lastUser.includes("SKILL_READ_FIXTURE") && !current.input.some(item => item.type === "function_call_output" && item.call_id === "call_skill_probe");
+    const artifactIndex = artifactCommands.findIndex(([prompt]) => lastUser.includes(prompt));
+    const callId = `call_artifact_${artifactIndex}`;
+    const runArtifact = artifactIndex >= 0 && !current.input.some(item => item.type === "function_call_output" && item.call_id === callId);
     let skillPath;
     if (readSkill) {
       const strings = value => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
@@ -69,6 +94,8 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const text = `handoff reply ${requests.length}`;
     const message = readSkill
       ? { id: "fc_skill_probe", call_id: "call_skill_probe", type: "function_call", status: "completed", name: "read", arguments: JSON.stringify({ path: skillPath }) }
+      : runArtifact
+      ? { id: `fc_artifact_${artifactIndex}`, call_id: callId, type: "function_call", status: "completed", name: "exec_command", arguments: JSON.stringify({ cmd: artifactCommands[artifactIndex][1] }) }
       : { id: "msg_handoff", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text, annotations: [], logprobs: [] }] };
     const events = [
       { type: "response.created", response: { id: "resp_handoff", status: "in_progress", output: [] } },
@@ -79,7 +106,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     ];
     response.writeHead(200, { "content-type": "text/event-stream" });
     for (const event of events) {
-      if (readSkill && event.type === "response.output_text.delta") continue;
+      if (message.type === "function_call" && event.type === "response.output_text.delta") continue;
       response.write(`data: ${JSON.stringify(event)}\n\n`);
     }
     response.end();
@@ -104,6 +131,29 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const start = output.length;
     send(`${text}\r`);
     if (expected) await waitFor(() => output.slice(start).includes(expected), expected);
+  };
+  const takeBack = async () => {
+    await command("/tui", "Conversation resumed in the TUI.");
+    // A closing Web server can still answer HTTP while it releases the listener.
+    await waitFor(() => webListenerClosed(port), "Web listener to close after /tui");
+  };
+  // The terminal can redraw an earlier startup notice, so prove readiness over HTTP.
+  // A restarting listener refuses connections, then answers 503 server_starting
+  // until admission opens.
+  const webResponse = async (url, description) => {
+    let response;
+    await waitFor(async () => {
+      try {
+        response = await fetch(url);
+      } catch (error) {
+        if (!["ECONNREFUSED", "ECONNRESET"].includes(error.cause?.code)) throw error;
+        return false;
+      }
+      if (response.status !== 503) return true;
+      assert.equal((await response.json()).error, "server_starting", `${description} must only wait for startup`);
+      return false;
+    }, description);
+    return response;
   };
   // Ctrl+C closes the open argument menu. The PTY bridge can hand that byte and the
   // following command to the TUI in one read, which the editor then drops, so keep
@@ -214,6 +264,7 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.match(JSON.stringify(requests[1].input), /TUI_BEFORE_HANDOFF/);
     assert.equal(requests[1].reasoning.effort, "low");
     assert.match(JSON.stringify(requests[1]), /<name>scheduled-tasks<\/name>/);
+    assert.match(JSON.stringify(requests[1]), /<name>publish-artifact<\/name>/);
     assert.doesNotMatch(JSON.stringify(requests[1]), /Manage the current workspace's/);
     await command("/effort max", "Thinking effort: max");
     // /reload must retain Web's branch even after the old TUI appended settings
@@ -222,33 +273,33 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const reloaded = await fetch(`${origin}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, resumeSessionId: id }) });
     assert.equal(reloaded.status, 201, await reloaded.text());
     assert.match(JSON.stringify(await history()), /WEB_CONTINUED/);
-    await command("/tui", "Conversation resumed in the TUI.");
+    await takeBack();
     await command("/permissions", "permission: ask");
-    await assert.rejects(fetch(privateUrl));
     await command("TUI_AFTER_HANDOFF", "handoff reply 3");
     assert.equal(requests[2].model, "deepseek-v4-pro");
     assert.equal(requests[2].reasoning.effort, "max");
     assert.match(JSON.stringify(requests[2].input), /WEB_CONTINUED/);
-    await command("/web", "Run /tui when you return.");
+    await command("/web");
+    assert.equal((await webResponse(privateUrl, "restarted Web serving the saved browser URL")).status, 200,
+      "the saved browser URL works after restarting Web");
     const allUrls = output.match(new RegExp(`${origin}/chat/[A-Za-z0-9_-]+`, "g"));
     const nextUrl = allUrls.at(-1);
     assert.equal(nextUrl, privateUrl, "the workspace URL survives repeated handoffs");
-    assert.equal((await fetch(privateUrl)).status, 200, "the saved browser URL works after restarting Web");
     const nextWorkspaceId = new URL(nextUrl).pathname.split("/").at(-1);
     const current = await (await fetch(`${origin}/v1/sessions?workspaceId=${nextWorkspaceId}`)).json();
     id = current.sessions[0].session.id;
     assert.equal((await fetch(`${origin}/v1/sessions/${id}`, { method: "DELETE" })).status, 204);
     const cleared = await (await fetch(`${origin}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: nextWorkspaceId }) })).json();
     assert.notEqual(cleared.id, id);
-    await command("/tui", "Conversation resumed in the TUI.");
+    await takeBack();
     await command("TUI_AFTER_CLEAR", "handoff reply 4");
     assert.doesNotMatch(JSON.stringify(requests[3].input), /WEB_CONTINUED|TUI_BEFORE_HANDOFF/);
     assert.equal(requests[3].reasoning.effort, "max");
     const preferences = JSON.parse(await readFile(path.join(home, "config.json"), "utf8"));
     assert.deepEqual(preferences, { cli_auth_credentials_store: "file", sentinel: "preserve",
       web: { port: globalPort, workspaces: { [localWorkspace]: { id: workspaceId, port } } } });
-    await command("/web", "Run /tui when you return.");
-    const unnamedChatPage = await fetch(privateUrl);
+    await command("/web");
+    const unnamedChatPage = await webResponse(privateUrl, "restarted Web serving the workspace conversation");
     assert.equal(unnamedChatPage.status, 200, "the saved URL also serves a different conversation in the workspace");
     assert.match(await unnamedChatPage.text(), /<title>与 Steve Code 私聊<\/title>/);
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
@@ -282,12 +333,50 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.equal(requests.length, beforeRead + 2, "task instructions load through the real read tool on demand");
     assert.doesNotMatch(JSON.stringify(requests[beforeRead]), /Manage the current workspace's/);
     assert.match(JSON.stringify(requests[beforeRead + 1]), /Manage the current workspace's/);
+    await mkdir(path.join(workspace, "public-example"));
+    const artifactEntry = path.join(workspace, "public-example/index.html");
+    const artifactHtml = "<h1>Offline artifact publication</h1>";
+    await writeFile(artifactEntry, artifactHtml);
+    await turn("/permissions auto");
+    await turn("ARTIFACT_PREVIEW_FIXTURE");
+    const preview = (await history()).messages.findLast(message => message.artifact?.kind === "preview");
+    assert.deepEqual(preview?.artifact.files, ["index.html"]);
+    await writeFile(artifactEntry, "<h1>Unpublished edit</h1>");
+    const beforeArtifactIm = requests.length;
+    [...authenticated][0].send(JSON.stringify({ cmd: "aibot_msg_callback", headers: { req_id: "artifact-confirmation" },
+      body: { msgid: "artifact-confirmation", aibotid: "offline-bot", msgtype: "text", chattype: "single", from: { userid: "offline-owner" },
+        text: { content: "这份草稿可以发了" } } }));
+    let published;
+    await waitFor(async () => {
+      published = (await history()).messages.findLast(message => message.artifact?.kind === "published");
+      return published && (await (await fetch(`${origin}/v1/sessions/${id}`)).json()).status === "idle";
+    }, "IM confirmation publishing the Web draft");
+    assert.match(JSON.stringify(requests[beforeArtifactIm].input), /IM message: direct=conv-/);
+    const artifactUrl = new URL(published.artifact.publication.sharePath, origin);
+    assert.equal(await (await fetch(artifactUrl)).text(), artifactHtml);
+
+    await turn("ARTIFACT_SECOND_PREVIEW");
+    await writeFile(path.join(scheduleDirectory, "schedules.yaml"), `version: 1\ntasks:\n  - id: artifact-publication\n    enabled: true\n    type: once\n    at: "${new Date(Date.now() + 1500).toISOString()}"\n    delivery: session\n    prompt: ARTIFACT_SCHEDULED_PUBLISH\n`);
+    await waitFor(async () => {
+      const status = JSON.parse(await readFile(path.join(scheduleDirectory, "schedules.status.json"), "utf8"));
+      return status.tasks.find(task => task.id === "artifact-publication")?.lastRun?.status === "completed";
+    }, "scheduled artifact publication completion");
+    const scheduledPublication = (await history()).messages.findLast(message => message.artifact?.kind === "published");
+    assert.ok(scheduledPublication, "scheduled task published the second draft");
+    const scheduledUrl = new URL(scheduledPublication.artifact.publication.sharePath, origin);
+    assert.notEqual(String(scheduledUrl), String(artifactUrl));
+    assert.equal(await (await fetch(scheduledUrl)).text(), "<h1>Unpublished edit</h1>");
+    await takeBack();
+    await command("/web");
+    const restartedShare = await webResponse(artifactUrl, "artifact share after restarting Web");
+    assert.equal(restartedShare.status, 200, "share link works after restarting Web");
+    assert.equal(await restartedShare.text(), artifactHtml);
     send("\x04");
     await waitFor(() => exitCode !== undefined, "TUI exit with owned Web server");
     assert.equal(await finished, 0, stderr);
-    await assert.rejects(fetch(nextUrl));
+    assert.equal(await webListenerClosed(port), true, "TUI exit closes the Web listener");
     await waitFor(() => authenticated.size === 0, "IM exit cleanup");
-    return "TUI/Web/TUI continuation, startup rollback, scheduled tasks and progressive skill read, WeCom SDK input/reply/source delivery, WeChat SQLite/fault isolation, current model and effort, files/assets, clear, preferences, stable workspace URL, and exit cleanup passed";
+    return "TUI/Web/TUI continuation, startup rollback, scheduled tasks and progressive skill read, WeCom SDK input/reply/source delivery, WeChat SQLite/fault isolation, current model and effort, files/assets, Web/IM/scheduled artifact publication and restart, clear, preferences, stable workspace URL, and exit cleanup passed";
   } catch (error) {
     try {
       const status = JSON.parse(await readFile(path.join(workspace, ".dscode/schedules.status.json"), "utf8"));

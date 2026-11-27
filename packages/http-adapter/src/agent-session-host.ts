@@ -26,6 +26,7 @@ import {
   type DSCodeSessionRuntime,
   type SessionPosition,
 } from "@aclisp/dsagent-core/session-runtime";
+import type { ArtifactCommand } from "./artifact-command.ts";
 import {
   createHttpUiBroker,
   type HttpUiBroker,
@@ -65,6 +66,7 @@ export interface CreateAgentSessionHostOptions {
   session?: AgentSessionStorage;
   sessionDir?: string;
   scheduledTasks?: boolean;
+  artifactCommand?: ArtifactCommand;
 }
 
 export interface AgentSessionHost {
@@ -94,6 +96,7 @@ export async function createAgentSessionHost(
   if (!options.runtimeOptions) ensureThemeInitialized();
   const uiBroker = options.uiBroker ?? createHttpUiBroker();
   const sessionManager = await createSessionManager(cwd, options.session, options.sessionDir);
+  const artifactCommand = options.artifactCommand;
 
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({
     cwd: runtimeCwd,
@@ -113,6 +116,14 @@ export async function createAgentSessionHost(
         additionalSkillPaths: [...runtimeOptions.additionalSkillPaths ?? []],
         extensionFactories: [...await createDSCodePiBuiltins(runtimeOptions), createDSCodeExtension(runtimeOptions, {
           scheduledTasks: options.scheduledTasks ?? false,
+          ...(artifactCommand ? {
+            artifactCommand(args, signal) {
+              return artifactCommand(args, {
+                workspacePath: runtimeCwd,
+                sessionId: runtimeSessionManager.getSessionId(),
+              }, signal);
+            },
+          } : {}),
           onSessionReady: (state) => { sessionState = state; },
         })],
       },

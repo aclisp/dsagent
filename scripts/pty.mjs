@@ -26,7 +26,11 @@ export function terminatePty(child) {
 /** Keep the CLI's PATH free of Node/Bun while retaining Windows system commands. */
 export function isolatedRuntimeEnvironment(home, temporary, restrictPath = true) {
   if (process.platform !== "win32") {
-    return { HOME: home, USERPROFILE: home, TMPDIR: temporary, PATH: restrictPath ? "/usr/bin:/bin" : process.env.PATH };
+    const sandboxImage = process.platform === "linux" ? process.env.DSCODE_SANDBOX_IMAGE : undefined;
+    return {
+      HOME: home, USERPROFILE: home, TMPDIR: temporary, PATH: restrictPath ? "/usr/bin:/bin" : process.env.PATH,
+      ...(sandboxImage ? { DSCODE_SANDBOX_IMAGE: sandboxImage } : {}),
+    };
   }
   const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
   return {

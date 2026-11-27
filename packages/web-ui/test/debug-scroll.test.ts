@@ -108,6 +108,7 @@ function harness() {
       },
     },
     window: {
+      location: { origin: "https://dscode.example" },
       addEventListener: windowEvents.addEventListener.bind(windowEvents),
       getComputedStyle: () => ({
         borderTopWidth: "1px", borderBottomWidth: "1px",
@@ -126,6 +127,9 @@ function harness() {
 
   return {
     scroller, terminal, windowEvents, frames, writes,
+    linkify(text: string): string {
+      return runInContext(`linkifyFilePaths(${JSON.stringify(text)}, "test-workspace")`, context);
+    },
     content(height = 40, kind: "text" | "tool" | "indicator" = "text") {
       scroller.scrollHeight += height;
       const calls = {
@@ -162,6 +166,18 @@ function harness() {
     },
   };
 }
+
+it("links published artifacts using the browser origin and preserves private file previews", () => {
+  const page = harness();
+  const sharePath = "/s/abcdef0123_-/";
+  const url = `https://dscode.example${sharePath}`;
+  const link = `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  expect(page.linkify(`Published at \`${sharePath}\`.`)).toBe(`Published at ${link}.`);
+  expect(page.linkify(`Published at ${sharePath}.`)).toBe(`Published at ${link}.`);
+  expect(page.linkify(`External https://example.com${sharePath}`))
+    .toBe(`External https://example.com${sharePath}`);
+  expect(page.linkify("Private `dist/index.html`")).toContain('href="/share/test-workspace/dist/index.html"');
+});
 
 describe("debug scroll following", () => {
   it("coalesces output into one scroll per animation frame", () => {

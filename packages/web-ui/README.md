@@ -341,7 +341,8 @@ root process inside the same container.
 
 ### Default skills
 
-The image ships five skills — `dscode-vision`, `dscode-delegate`, `grill-me`, `scheduled-tasks`, and `skill-creator` —
+The image ships six skills — `dscode-vision`, `dscode-delegate`, `grill-me`,
+`publish-artifact`, `scheduled-tasks`, and `skill-creator` —
 bundled in `deploy/default-skills/`. Because `/root/.dscode` is a named volume, the entrypoint
 (`deploy/docker-entrypoint.sh`) copies them into `~/.dscode/skills` on every container start,
 only when missing, so existing deployments pick them up without user skills being overwritten.
@@ -356,6 +357,14 @@ directory manually into their skills directory.
 `scheduled-tasks` is also a built-in fallback for Web runtimes with a Scheduler,
 including `/web` in Node and standalone CLIs. Existing seeded or user-installed
 copies win; the fallback uses the same canonical Markdown source.
+
+`publish-artifact` is available in private chat on both the independent Web
+server and TUI `/web`. Ask the agent to publish a static directory such as
+`dist/` with entry `index.html`. Review the file list and reply with your
+confirmation to get a share link. IM and scheduled tasks can also publish a
+draft in their session. Ask the agent to list or revoke links for the current
+workspace. Published snapshots and revocations are stored in `DSCODE_HOME`
+and survive Web restarts.
 
 ### Prompt profiles and protected prompt files
 

@@ -46,12 +46,18 @@ it("resolves the packaged skill from the production Server bundle outside the ch
     const turn = await fetch(`http://127.0.0.1:${port}/v1/sessions/${session.id}/turns`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "ordinary prompt probe" }) });
     expect(turn.status).toBe(202); await vi.waitFor(() => expect(payload).toBeDefined());
     const text = JSON.stringify(payload);
-    expect(text).toContain("<name>scheduled-tasks</name>"); expect(text).not.toContain("Manage the current workspace's");
     const strings = (value: unknown): string[] => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
-    const location = strings(payload).join("\n").match(/<name>scheduled-tasks<\/name>[\s\S]*?<location>([^<]+)<\/location>/)![1]!;
     const entities: Record<string, string> = { amp: "&", apos: "'", quot: '"', lt: "<", gt: ">" };
-    const file = location.replace(/&(amp|apos|quot|lt|gt);/g, (_all, name: string) => entities[name]!);
-    expect(await readFile(file, "utf8")).toBe(await readFile(new URL("../../../deploy/default-skills/scheduled-tasks/SKILL.md", import.meta.url), "utf8"));
+    for (const [skill, instruction] of [
+      ["scheduled-tasks", "Manage the current workspace's"],
+      ["publish-artifact", "Use `exec_command` with the built-in"],
+    ]) {
+      expect(text).toContain(`<name>${skill}</name>`);
+      expect(text).not.toContain(instruction);
+      const location = strings(payload).join("\n").match(new RegExp(`<name>${skill}</name>[\\s\\S]*?<location>([^<]+)</location>`))![1]!;
+      const file = location.replace(/&(amp|apos|quot|lt|gt);/g, (_all, name: string) => entities[name]!);
+      expect(await readFile(file, "utf8")).toBe(await readFile(new URL(`../../../deploy/default-skills/${skill}/SKILL.md`, import.meta.url), "utf8"));
+    }
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await exited; model.closeAllConnections(); await new Promise<void>(resolve => { model.close(() => resolve()); });
