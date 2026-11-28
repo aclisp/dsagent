@@ -803,14 +803,20 @@ function toolResultText(result) {
   return "content" in result ? toolResultText(result.content) : "";
 }
 
-function isAuthorizationDenied(result) {
-  const text = toolResultText(result).toLowerCase();
-  return text.includes("user denied") || (text.includes("denied") && text.includes("by user"));
+function isAuthorizationDenied(result, toolName) {
+  const text = toolResultText(result).trim();
+  if (text === "Denied by user") return true;
+  if (toolName === "apply_patch") return /^Denied [^\r\n]+ by user$/.test(text);
+  if (toolName === "exec_command") {
+    return text === "Destructive command denied by user"
+      || /^User denied (?:network access|unrestricted host filesystem and network access) for: [^\r\n]+$/.test(text);
+  }
+  return false;
 }
 
-function toolResultOutcome(result, isError) {
-  if (isAuthorizationDenied(result)) return "denied";
-  return isError ? "failed" : "completed";
+function toolResultOutcome(result, isError, toolName) {
+  if (isError !== true) return "completed";
+  return isAuthorizationDenied(result, toolName) ? "denied" : "failed";
 }
 
 function updateWorkProcess(process) {
@@ -887,7 +893,7 @@ function recordTool(
   }
   if (phase === "completed") {
     step.completed = true;
-    step.outcome = outcome ?? toolResultOutcome(undefined, isError);
+    step.outcome = outcome ?? toolResultOutcome(undefined, isError, name);
   }
   updateWorkGroup(process, step.group);
   updateWorkProcess(process);
@@ -1135,12 +1141,7 @@ function onTurn(event) {
   finishWorkProcess(turn, event.status);
   if (event.status === "completed") reconcileCompletedOutput(event.output);
   if (event.status === "failed") {
-    appendSystemNotice(
-      isAuthorizationDenied(event.error)
-        ? "你未授权这次操作，未做任何修改。"
-        : "这次没有处理成功，请重试。",
-      isAuthorizationDenied(event.error) ? "warning" : "error",
-    );
+    appendSystemNotice("这次没有处理成功，请重试。", "error");
   }
   if (event.status === "aborted") appendSystemNotice("已停止");
   closeModal();
@@ -1165,7 +1166,7 @@ function handleToolEvent(event) {
       "completed",
       event.isError,
       Date.now(),
-      toolResultOutcome(event.result, event.isError),
+      toolResultOutcome(event.result, event.isError, event.name),
     );
     if (event.name === "exec_command" && !event.isError) {
       appendArtifactResult(event.result?.details?.artifact);
@@ -1578,13 +1579,13 @@ function renderHistoryMessage(message, currentTurn) {
       "completed",
       message.isError,
       message.timestamp,
-      toolResultOutcome(message.content, message.isError),
+      toolResultOutcome(message.content, message.isError, message.toolName),
     );
     appendArtifactResult(message.artifact, message.timestamp);
     for (const call of message.nestedCalls?.calls ?? []) {
       recordTool(
         turn, call.id, call.name, "completed", call.status !== "ok", message.timestamp,
-        toolResultOutcome(call.error ?? "", call.status !== "ok"),
+        toolResultOutcome(call.error, call.status !== "ok", call.name),
       );
     }
     return turn;
