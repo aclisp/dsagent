@@ -239,6 +239,15 @@ try {
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /Usage:/);
   });
+  await check("standalone tool update uses the CLI agent directory", async () => {
+    const profile = path.join(scratch, "maintenance profile");
+    const result = await run("dscode", ["--agent-dir", profile, "--update-bundled-tools"]);
+    assert.equal(result.code, 0, result.stderr);
+    for (const tool of ["fd", "rg"]) {
+      assert.ok((await fs.stat(path.join(profile, "bin", binaryName(tool)))).isFile());
+    }
+    await assert.rejects(fs.stat(path.join(profile, "settings.json")), { code: "ENOENT" });
+  });
   if (windows) await check("a running Windows tool survives an update and replacement can be retried after exit", async () => {
     const target = path.join(home, "bin", binaryName("rg"));
     const bytes = await fs.readFile(target);
@@ -270,7 +279,7 @@ try {
     }
   });
   await check("explicit extensions and package commands rejected", async () => {
-    for (const args of [["--extension",forbidden], ["-e",forbidden], ["install","npm:fixture"], ["update"], ["config"]]) {
+    for (const args of [["--extension",forbidden], ["-e",forbidden], ["install","npm:fixture"], ["update"], ["--agent-dir",home,"config"]]) {
       const result = await run("dscode",args);
       assert.notEqual(result.code,0);
       assert.match(result.stderr,/not supported/);

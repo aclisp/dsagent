@@ -35,6 +35,110 @@ describe("DSCode Pi integration", () => {
     await expect(fs.stat(path.join(root, ".dscode/mcp.json"))).rejects.toThrow();
   }, 15_000);
 
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("selects the agent directory before reading DSCode settings and credentials (%s)", async (entry) => {
+    const profile = path.join(root, "test profile");
+    const inheritedHome = path.join(root, "inherited-home");
+    const workspace = path.join(root, "workspace");
+    const key = "profile-only-test-key";
+    const authorizations: Array<string | undefined> = [];
+    server = http.createServer((request, response) => {
+      request.resume();
+      authorizations.push(request.headers.authorization);
+      respondOnce(response, { id: "msg_profile", type: "message", status: "completed", role: "assistant", content: [
+        { type: "output_text", text: "profile response", annotations: [], logprobs: [] },
+      ] });
+    });
+    const { port } = await listen(server);
+    await Promise.all([fs.mkdir(profile), fs.mkdir(workspace)]);
+    await fs.writeFile(path.join(profile, "config.json"), JSON.stringify({ deepseek: { baseUrl: `http://127.0.0.1:${port}` } }));
+    await fs.writeFile(path.join(profile, "auth.json"), JSON.stringify({ deepseek: { type: "api_key", key } }));
+
+    const result = await spawnCapture(process.execPath, [path.resolve(entry), "-C", workspace,
+      "--agent-dir", "test profile", "--no-mcp", "--no-session", "-p", "reply once"], {
+      ...isolatedRuntimeEnvironment(root, root), DSCODE_HOME: inheritedHome, DSCODE_CREDENTIALS_STORE: "file", PI_OFFLINE: "1",
+    }, root);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toBe("profile response");
+    expect(authorizations).toEqual([`Bearer ${key}`]);
+    await expect(fs.stat(inheritedHome)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(workspace, "test profile"))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
+  it.each(["src/cli.ts", "dist/bundle/cli.js"])("uses the selected home for global MCP configuration and preserves child arguments (%s)", async (entry) => {
+    const profile = path.join(root, "mcp profile");
+    const discardedProfile = path.join(root, "discarded-profile");
+    const inheritedHome = path.join(root, "inherited-home");
+    const result = await spawnCapture(process.execPath, [path.resolve(entry), "--agent-dir", discardedProfile,
+      "mcp", "add", "profile-server", `--agent-dir=${profile}`, "--", process.execPath, "--agent-dir", "child-argument"], {
+      ...isolatedRuntimeEnvironment(root, root), DSCODE_HOME: inheritedHome, DSCODE_PROVIDER: "invalid-for-model-parser", PI_OFFLINE: "1",
+    }, root);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(await fs.readFile(path.join(profile, "mcp.json"), "utf8"))).toMatchObject({
+      mcpServers: { "profile-server": { command: process.execPath, args: ["--agent-dir", "child-argument"] } },
+    });
+    for (const directory of [discardedProfile, inheritedHome]) {
+      await expect(fs.stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  }, 15_000);
+
+  it("rejects a missing agent directory before running a command", async () => {
+    const result = await spawnCapture(process.execPath, [path.resolve("dist/bundle/cli.js"), "--agent-dir", "--version"], {
+      ...isolatedRuntimeEnvironment(root, root), PI_OFFLINE: "1",
+    }, root);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("--agent-dir requires a directory");
+  }, 15_000);
+
+  it.skipIf(process.platform === "win32")("reopens the same session from the launch directory using the manual resume command", async () => {
+    const launchCwd = await fs.realpath(root);
+    const workspace = "resume workspace's $literal";
+    const cwd = path.join(launchCwd, workspace);
+    const profile = path.join(launchCwd, "resume profile");
+    const sessions = path.join(profile, "sessions");
+    const id = "0197f6e4-4cf9-7f44-a2d8-f8f7f49ee9d3";
+    const timestamp = new Date().toISOString();
+    await fs.mkdir(sessions, { recursive: true });
+    await fs.mkdir(cwd);
+    await fs.writeFile(path.join(sessions, `${timestamp.replaceAll(":", "-")}_${id}.jsonl`),
+      `${JSON.stringify({ type: "session", version: 3, id, timestamp, cwd })}\n`);
+    const entry = path.resolve("dist/bundle/cli.js");
+    const env = { ...isolatedRuntimeEnvironment(root, root), DSCODE_CREDENTIALS_STORE: "file",
+      DEEPSEEK_API_KEY: "test-only-key", PI_OFFLINE: "1", TERM: "xterm-256color", OSC7577_TOKEN: "fixture-resume-token",
+      DSCODE_TEST_NODE: process.execPath, DSCODE_TEST_ENTRY: entry };
+    async function quitAndReadResumeHint(command: string, args: string[]): Promise<string> {
+      const terminal = ptyInvocation(command, args);
+      const child = spawn(terminal.command, terminal.args, { cwd: launchCwd, env });
+      let output = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
+      child.on("error", (error) => { output += error.message; });
+      child.stdin.on("error", () => {});
+      const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+      try {
+        await vi.waitFor(() => expect(stripVTControlCharacters(output)).toContain("DeepSeek Flash"), { timeout: 5_000 });
+        child.stdin.write(`${JSON.stringify({ text: "/quit\r" })}\n`);
+        await vi.waitFor(() => expect(child.exitCode).not.toBeNull(), { timeout: 5_000 });
+        expect(await closed, output).toBe(0);
+        expect(output).not.toContain("\u001b]7577;");
+        const screen = stripVTControlCharacters(output);
+        expect(screen).not.toContain("Fork this session");
+        const hint = /To resume this session:\s*(dscode [^\r\n]+)/.exec(screen)?.[1];
+        if (!hint) throw new Error(`Missing DSCode resume hint:\n${screen}`);
+        return hint;
+      } finally {
+        child.stdin.end();
+        await closed;
+      }
+    }
+
+    const hint = await quitAndReadResumeHint(process.execPath, [entry, "-C", workspace,
+      "--agent-dir", profile, "--session", id, "--no-mcp", "--no-approve"]);
+    expect(hint).toContain(`--session ${id}`);
+    const reopened = await quitAndReadResumeHint("/bin/sh", ["-c",
+      `dscode() { exec "$DSCODE_TEST_NODE" "$DSCODE_TEST_ENTRY" "$@"; }; ${hint}`]);
+    expect(reopened).toBe(hint);
+  }, 20_000);
+
   it.each(["src/cli.ts", "dist/bundle/cli.js"])("filters inherited but preserves configured model keys in Pi MCP CLI (%s)", async (entry) => {
     const probe = path.resolve("test/fixtures/mcp-credential-probe.mjs");
     const configuredKey = "explicit-server-key";

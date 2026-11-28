@@ -21,6 +21,29 @@ const LEGACY_AGENT_ENTRIES = [
   "git",
 ] as const;
 
+/** Apply the CLI home override before any profile reads or workspace changes. */
+export function applyDSCodeAgentDirArg(argv: string[]): string[] {
+  const args: string[] = [];
+  let directory: string | undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (arg === "--") {
+      args.push(...argv.slice(i));
+      break;
+    }
+    if (arg !== "--agent-dir" && !arg.startsWith("--agent-dir=")) {
+      args.push(arg);
+      continue;
+    }
+    const separated = arg === "--agent-dir";
+    const value = separated ? argv[++i] : arg.slice("--agent-dir=".length);
+    if (!value || (separated && value.startsWith("-"))) throw new Error("--agent-dir requires a directory");
+    directory = value;
+  }
+  if (directory !== undefined) process.env.DSCODE_HOME = resolveHomePath(directory);
+  return args;
+}
+
 export function getDSCodeHome(): string {
   return resolveHomePath(process.env.DSCODE_HOME ?? path.join(os.homedir(), ".dscode"));
 }

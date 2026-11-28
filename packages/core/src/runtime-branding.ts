@@ -41,9 +41,12 @@ export function installDSCodeRuntimeBranding(): void {
   const shutdown = prototype.shutdown;
   prototype.shutdown = async function (...args): Promise<void> {
     const write = process.stdout.write;
+    const sessionManager = this.sessionManager;
     const brandedWrite: typeof write = function (this: typeof process.stdout, chunk, ...writeArgs) {
       if (typeof chunk === "string") {
-        chunk = chunk.replace(/(To resume this session:(?:\s|\u001b\[[0-9;]*m)*)pi(?=\s|$)/u, "$1dscode");
+        // Pi assumes the launch directory is the workspace. DSCode may have changed it using -C.
+        chunk = chunk.replace(/(To resume this session:(?:\s|\u001b\[[0-9;]*m)*)pi(?=\s|$)/u,
+          (_match, hint: string) => `${hint}dscode -C ${quoteResumeDirectory(path.resolve(sessionManager.getCwd()))}`);
       }
       return Reflect.apply(write, this, [chunk, ...writeArgs]);
     };
@@ -78,4 +81,9 @@ export function installDSCodeRuntimeBranding(): void {
       ),
     );
   };
+}
+
+function quoteResumeDirectory(directory: string): string {
+  // PowerShell doubles quotes inside a single-quoted string; POSIX shells close and reopen it.
+  return `'${directory.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}'`;
 }
