@@ -9,7 +9,7 @@ import type { ChatProvider } from "@aclisp/dsagent-chat-client";
 import type { SessionPosition } from "@aclisp/dsagent-core/session-runtime";
 import type { FastifyInstance } from "fastify";
 import { ArtifactPublications } from "./artifact-publications.ts";
-import { renderChatPage } from "./chat-page.ts";
+import { renderWebUiPage } from "./chat-page.ts";
 import { readWebAsset } from "./web-assets.ts";
 import { prepareBackgroundServices, type WebBackgroundServices } from "./background-services.ts";
 import { registerFileRoutes } from "./files.ts";
@@ -83,7 +83,7 @@ export async function createWebUiServer(
       return reply
         .header("Referrer-Policy", "no-referrer")
         .type("text/html; charset=utf-8")
-        .send(renderChatPage(html, chatAgentName));
+        .send(renderWebUiPage(html, chatAgentName));
     },
   );
 
@@ -94,7 +94,10 @@ export async function createWebUiServer(
         return reply.code(404).send({ error: "workspace_not_found" });
       }
       const html = await readWebAsset("index.html");
-      return reply.header("Referrer-Policy", "no-referrer").type("text/html; charset=utf-8").send(html);
+      return reply
+        .header("Referrer-Policy", "no-referrer")
+        .type("text/html; charset=utf-8")
+        .send(renderWebUiPage(html, chatAgentName));
     },
   );
 

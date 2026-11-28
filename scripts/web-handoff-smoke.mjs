@@ -236,9 +236,15 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     assert.ok(privateUrl, "private URL is shown in TUI");
     const workspaceId = new URL(privateUrl).pathname.split("/").at(-1);
     assert.equal(workspaceId, legacyWorkspaceId, "migration preserves the existing private URL credential");
+    const debugUrl = `${origin}/debug/${workspaceId}`;
     const chatPage = await fetch(privateUrl);
     assert.equal(chatPage.status, 200);
     assert.match(await chatPage.text(), /<title>与 Handoff &amp; Review 私聊<\/title>/);
+    const debugPage = await fetch(debugUrl);
+    assert.equal(debugPage.status, 200);
+    const debugHtml = await debugPage.text();
+    assert.match(debugHtml, /<title>Handoff &amp; Review — Debug<\/title>/);
+    assert.match(debugHtml, /<h1>Handoff &amp; Review<\/h1>/);
     for (const asset of [`${origin}/chat.js`, `${origin}/chat.css`, `${origin}/marked.esm.js`, `${origin}/favicon.png`]) {
       const response = await fetch(asset);
       assert.equal(response.status, 200, asset);
@@ -302,6 +308,11 @@ export async function verifyWebHandoff({ executable = process.execPath, args = [
     const unnamedChatPage = await webResponse(privateUrl, "restarted Web serving the workspace conversation");
     assert.equal(unnamedChatPage.status, 200, "the saved URL also serves a different conversation in the workspace");
     assert.match(await unnamedChatPage.text(), /<title>与 Steve Code 私聊<\/title>/);
+    const unnamedDebugPage = await fetch(debugUrl);
+    assert.equal(unnamedDebugPage.status, 200);
+    const unnamedDebugHtml = await unnamedDebugPage.text();
+    assert.match(unnamedDebugHtml, /<title>Steve Code — Debug<\/title>/);
+    assert.match(unnamedDebugHtml, /<h1>Steve Code<\/h1>/);
     const latest = await (await fetch(`${origin}/v1/sessions?workspaceId=${workspaceId}`)).json();
     id = latest.sessions[0].session.id;
     assert.notEqual(id, cleared.id);

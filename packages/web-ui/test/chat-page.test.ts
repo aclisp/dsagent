@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  renderChatPage,
+  renderWebUiPage,
   resolveChatAgentName,
 } from "../src/chat-page.ts";
 
@@ -18,7 +18,7 @@ describe("chat page identity", () => {
       '<title>{{CHAT_AGENT_NAME}}</title><meta content="{{CHAT_AGENT_NAME}}">',
     );
 
-    expect(renderChatPage(template, '研发 <助手> & "伙伴"')).toBe(
+    expect(renderWebUiPage(template, '研发 <助手> & "伙伴"')).toBe(
       '<title>研发 &lt;助手&gt; &amp; &quot;伙伴&quot;</title>' +
         '<meta content="研发 &lt;助手&gt; &amp; &quot;伙伴&quot;">',
     );

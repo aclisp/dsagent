@@ -24,7 +24,7 @@ function escapeHtml(value: string): string {
   });
 }
 
-export function renderChatPage(template: Buffer, agentName: string): string {
+export function renderWebUiPage(template: Buffer, agentName: string): string {
   const escapedName = escapeHtml(agentName);
   return template.toString("utf8").replaceAll(CHAT_AGENT_NAME_TOKEN, () => escapedName);
 }
