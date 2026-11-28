@@ -8,11 +8,12 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("standalone distribution defaults", () => {
-  it("resolves command tools from the current DSCode home instead of pi's import-time home", async () => {
-    vi.stubGlobal("DSCODE_STANDALONE", true);
+describe("distribution defaults", () => {
+  it.each([false, true])("resolves command tools from the current DSCode home (standalone: %s)", async (standalone) => {
+    vi.stubGlobal("DSCODE_STANDALONE", standalone);
     const home = path.join(os.tmpdir(), "dscode-custom-home");
     vi.stubEnv("DSCODE_HOME", home);
+    vi.stubEnv("PI_CODING_AGENT_DIR", path.join(os.tmpdir(), "unrelated-pi-home"));
     vi.resetModules();
     const { withPiManagedBinPath } = await import("../packages/core/src/process.ts");
     const environment = { PATH: os.tmpdir() };

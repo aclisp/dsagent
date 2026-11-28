@@ -3,9 +3,13 @@ import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { installDSCodeRuntimeBranding } from "../packages/core/src/runtime-branding.ts";
 
 describe("DSCode runtime branding", () => {
-  it("brands shutdown output and restores stdout when shutdown throws", async () => {
+  it("adds the workspace to the resume hint and restores stdout when shutdown throws", async () => {
+    const windows = process.platform === "win32";
+    const cwd = windows ? "C:\\work dir\\team's $&" : "/work dir/team's $&";
+    const quotedCwd = windows ? "'C:\\work dir\\team''s $&'" : "'/work dir/team'\\''s $&'";
+    const runtime = { sessionManager: { getCwd: () => cwd } };
     const prototype = InteractiveMode.prototype as unknown as {
-      shutdown(): Promise<void>;
+      shutdown(this: typeof runtime): Promise<void>;
     };
     const originalShutdown = prototype.shutdown;
     const failure = new Error("shutdown failed");
@@ -18,8 +22,8 @@ describe("DSCode runtime branding", () => {
     installDSCodeRuntimeBranding();
     const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     try {
-      await expect(prototype.shutdown()).rejects.toBe(failure);
-      expect(write).toHaveBeenCalledWith("\u001b[2mTo resume this session:\u001b[22m dscode --session-dir '/home/test user/.dscode/sessions' --session session-id\n");
+      await expect(prototype.shutdown.call(runtime)).rejects.toBe(failure);
+      expect(write).toHaveBeenCalledWith(`\u001b[2mTo resume this session:\u001b[22m dscode -C ${quotedCwd} --session-dir '/home/test user/.dscode/sessions' --session session-id\n`);
       expect(write).toHaveBeenCalledWith("other pi output\n");
       expect(process.stdout.write).toBe(write);
     } finally {

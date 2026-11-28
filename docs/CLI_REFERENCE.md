@@ -102,7 +102,7 @@ dscode --provider openai-codex --model gpt-6.1-terra -C /path/to/project
 dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 
-DSCode keeps all of its global state under `~/.dscode`:
+DSCode stores its global files under `~/.dscode` by default:
 
 ```text
 ~/.dscode/settings.json    TUI and runtime preferences
@@ -133,8 +133,13 @@ Credential, history, and snapshot retention settings can be configured in `~/.ds
 }
 ```
 
-Credential modes are `auto`, `keyring`, and `file`. Set history persistence to `none` to run new
-sessions without writing transcripts. `DSCODE_SQLITE_HOME` relocates only SQLite state.
+Credential modes are `auto`, `keyring`, and `file`. System keyring entries are shared by provider
+across `DSCODE_HOME` and `--agent-dir` selections. To keep stored credentials separate, set
+`"cli_auth_credentials_store": "file"` in each isolated home's `config.json` before signing in.
+This keeps credentials in that home's `auth.json` without reading or updating the shared keyring.
+
+Set history persistence to `none` to run new sessions without writing transcripts.
+`DSCODE_SQLITE_HOME` relocates only SQLite state.
 
 DSCode fills missing preferences in `~/.dscode/settings.json` on startup and preserves
 existing explicit values. TUI defaults are `hideThinkingBlock: true`, `tuiMode: "fullscreen"`,
@@ -158,10 +163,17 @@ Cache warming defaults to `off` to avoid additional model requests after an upgr
 set `"cacheWarming": "streaming"` (during runs) or `"cacheWarming": "idle"` (also between runs)
 in `~/.dscode/settings.json`. `/status` includes cache-warming usage and estimated cost.
 
-Set `DSCODE_HOME` to relocate the directory, or `DSCODE_SESSIONS_DIR` to relocate only session
-history. DSCode does not inherit `PI_CODING_AGENT_DIR`. Existing files under `~/.dscode/agent` are
+Set `DSCODE_HOME` to relocate the directory, or use `dscode --agent-dir <dir>` to override it for
+one invocation. Relative `--agent-dir` paths are resolved from the directory where you launch
+DSCode, not the directory specified by `-C`.
+Use `DSCODE_SESSIONS_DIR` to relocate only session history. DSCode does not use an inherited
+`PI_CODING_AGENT_DIR` to select its home directory. Existing files under `~/.dscode/agent` are
 copied into the new layout on first launch without deleting or overwriting anything. Project skills
 should use the portable `.agents/skills/` convention.
+
+Use the exit hint to resume a TUI session manually. The command includes the workspace, so you
+can run it from a different directory. Terminal-driven automatic resume (OSC 7577) is not enabled
+in DSCode.
 
 ## Default runtime
 

@@ -95,7 +95,7 @@ dscode --provider openai-codex --model gpt-6.1-terra -C /path/to/project
 dscode --provider deepseek --model deepseek-flash -C /path/to/project
 ```
 
-DSCode 的全局数据统一保存在 `~/.dscode`：
+DSCode 的全局文件默认保存在 `~/.dscode`：
 
 ```text
 ~/.dscode/settings.json    TUI 与运行时偏好
@@ -125,7 +125,12 @@ DSCode 的全局数据统一保存在 `~/.dscode`：
 }
 ```
 
-凭证模式支持 `auto`、`keyring`、`file`。把历史策略设为 `none` 后，新会话不会写入正文。
+凭证模式支持 `auto`、`keyring`、`file`。系统钥匙串按 provider 存储凭证，不同的 `DSCODE_HOME`
+或 `--agent-dir` 共用同一份条目。要隔离已保存的凭证，请在登录前将各独立 home 的 `config.json`
+设为 `"cli_auth_credentials_store": "file"`。这样凭证只保存在对应 home 的 `auth.json`，不会读写
+共享的系统钥匙串。
+
+把历史策略设为 `none` 后，新会话不会写入正文。
 `DSCODE_SQLITE_HOME` 可单独迁移 SQLite 状态目录。
 
 fullscreen 模式下，正常完成的执行段会自动把中间说明和工具调用收起，只显示可点击的
@@ -139,9 +144,14 @@ fullscreen 模式下，正常完成的执行段会自动把中间说明和工具
 确认等待和重试。fullscreen 搜索覆盖已展开内容，导出保留完整记录；regular 模式与退出时
 输出到终端的对话记录保持平铺。
 
-可用 `DSCODE_HOME` 修改整个目录，用 `DSCODE_SESSIONS_DIR` 单独修改会话目录。DSCode 不再继承
-`PI_CODING_AGENT_DIR`。首次启动会把旧的 `~/.dscode/agent` 内容无损复制到新目录，不删除、
-不覆盖已有文件。项目 skills 建议使用可移植的 `.agents/skills/` 约定。
+可用 `DSCODE_HOME` 修改整个目录，也可以用 `dscode --agent-dir <dir>` 覆盖本次启动的 home。
+`--agent-dir` 的相对路径以启动目录为准，不受 `-C` 影响。用 `DSCODE_SESSIONS_DIR` 可单独修改
+会话目录。DSCode 不使用继承的 `PI_CODING_AGENT_DIR` 来选择 home 目录。首次启动会把旧的
+`~/.dscode/agent` 内容无损复制到新目录，不删除、不覆盖已有文件。项目 skills 建议使用可移植的
+`.agents/skills/` 约定。
+
+可以复制退出提示里的命令手动恢复 TUI 会话。命令包含工作区路径，可以从其他目录执行。
+DSCode 未启用终端自动恢复（OSC 7577）。
 
 ## 默认配置
 

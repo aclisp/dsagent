@@ -224,6 +224,7 @@ Usage:
 
 DSCode options:
   -C, --cwd <dir>                  Workspace directory
+  --agent-dir <dir>                DSCode home directory (overrides DSCODE_HOME)
   --provider <id>                  ${SUPPORTED_PROVIDER_IDS.join("|")}
   --base-url <url>                 DeepSeek API base URL
   --model <id>                     Model ID (provider default when omitted)

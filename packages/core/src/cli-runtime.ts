@@ -1,10 +1,11 @@
 import process from "node:process";
+import { takeProgramResumeToken } from "@earendil-works/pi-tui";
 import pc from "picocolors";
 import { ensureFirstRunAuth, runAuthCommand } from "./auth.ts";
 import { installDSCodeCredentialStore } from "./credential-store.ts";
 import { installDSCodeExecutionFolding } from "./execution-folding.ts";
 import { createDSCodeExtension } from "./dscode-extension.ts";
-import { initializeDSCodeHome } from "./home.ts";
+import { applyDSCodeAgentDirArg, initializeDSCodeHome } from "./home.ts";
 import { installPiLoginSecretMask } from "./pi-login-mask.ts";
 import { installPiMarkdownCodeBlocks } from "./pi-markdown.ts";
 import { createDSCodePiBuiltins, installMcpCredentialGuard } from "./pi-builtins.ts";
@@ -20,12 +21,19 @@ import {
   runWindowsSandboxLifecycle,
 } from "./windows-sandbox.ts";
 
-/** Run one DSCode CLI, JSON, or RPC process using the shared runtime. */
 export interface DSCodeCliOptions {
+  /** Handle distribution-specific commands after the CLI home override is applied. */
+  handleCommand?: (args: readonly string[]) => boolean | Promise<boolean>;
   startWebContinuation?: WebContinuationFactory;
 }
 
-export async function runDSCode(argv: string[], cliOptions: DSCodeCliOptions = {}): Promise<void> {
+/** Run one DSCode CLI, JSON, or RPC process using the shared runtime. */
+export async function runDSCode(rawArgs: string[], cliOptions: DSCodeCliOptions = {}): Promise<void> {
+  // Pi's OSC 7577 report invokes pi, and cannot preserve DSCode-only restrictions.
+  // Consume the token before any startup code can pass it on to a child.
+  takeProgramResumeToken();
+  const argv = applyDSCodeAgentDirArg(rawArgs);
+  if (cliOptions.handleCommand && await cliOptions.handleCommand(argv)) return;
   const windowsSandboxCommand = parseWindowsSandboxLifecycleCommand(argv);
   if (windowsSandboxCommand) {
     runWindowsSandboxLifecycle(windowsSandboxCommand);
